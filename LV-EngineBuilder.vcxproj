@@ -1,0 +1,229 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{7C3E2A91-5B4D-4F6E-9A21-3D8B6C0F4E12}</ProjectGuid>
+    <RootNamespace>LVEngineBuilder</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros">
+    <!-- Lordi, the engine, as the LV submodule. Its Libraries folder holds every third-party library. -->
+    <LordiDir>$(ProjectDir)LV\</LordiDir>
+  </PropertyGroup>
+  <PropertyGroup>
+    <IncludePath>$(ProjectDir);$(LordiDir)Libraries\vulkan\Include;$(LordiDir)Libraries\glfw-3.4\include;$(LordiDir)Libraries\imgui;$(LordiDir)Libraries\glm;$(LordiDir)Libraries\magic_enum\include\magic_enum;$(LordiDir)Libraries\stb;$(LordiDir)Libraries\termcolor\include\termcolor;$(LordiDir)Libraries\tinyobjloader;$(LordiDir)Libraries\ufbx;$(LordiDir)Libraries\DLSS\include;$(IncludePath)</IncludePath>
+    <!-- Run from the repository root: Lordi's shaders are loaded from LV/, the game's files from here. -->
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;nvsdk_ngx_d_dbg.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LordiDir)Libraries\vulkan\Lib;$(LordiDir)Libraries\glfw-3.4\lib-vc2026;$(LordiDir)Libraries\DLSS\lib\Windows_x86_64\x64</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "$(LordiDir)Libraries\DLSS\lib\Windows_x86_64\rel\nvngx_dlss.dll" "$(OutDir)"</Command>
+      <Message>Copy the DLSS runtime next to the executable</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>vulkan-1.lib;glfw3.lib;nvsdk_ngx_d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LordiDir)Libraries\vulkan\Lib;$(LordiDir)Libraries\glfw-3.4\lib-vc2026;$(LordiDir)Libraries\DLSS\lib\Windows_x86_64\x64</AdditionalLibraryDirectories>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /y /d "$(LordiDir)Libraries\DLSS\lib\Windows_x86_64\rel\nvngx_dlss.dll" "$(OutDir)"</Command>
+      <Message>Copy the DLSS runtime next to the executable</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Game\EngineBuilderGame.cpp" />
+    <ClCompile Include="Game\GameSettings.cpp" />
+    <ClCompile Include="Game\Inventory\PlayerInventory.cpp" />
+    <ClCompile Include="Game\Save\SaveGame.cpp" />
+    <ClCompile Include="Game\Simulation\Dyno.cpp" />
+    <ClCompile Include="Game\Simulation\EngineAssembly.cpp" />
+    <ClCompile Include="Game\Simulation\EngineSpec.cpp" />
+    <ClCompile Include="Game\Simulation\Feature.cpp" />
+    <ClCompile Include="Game\Simulation\Machine.cpp" />
+    <ClCompile Include="Game\Simulation\Material.cpp" />
+    <ClCompile Include="Game\Simulation\MeasuringTool.cpp" />
+    <ClCompile Include="Game\Simulation\Part.cpp" />
+    <ClCompile Include="Game\Simulation\PartFactory.cpp" />
+    <ClCompile Include="Game\Simulation\Random.cpp" />
+    <ClCompile Include="Game\Simulation\Units.cpp" />
+    <ClCompile Include="Game\Simulation\Workshop.cpp" />
+    <ClCompile Include="Game\UI\DevMenu.cpp" />
+    <ClCompile Include="Game\UI\InventoryUI.cpp" />
+    <ClCompile Include="Game\UI\ItemIcons.cpp" />
+    <ClCompile Include="Game\UI\PartIcons.cpp" />
+    <ClCompile Include="Game\UI\PauseMenu.cpp" />
+    <ClCompile Include="Game\UI\Ratings.cpp" />
+    <ClCompile Include="Game\UI\WorkshopUI.cpp" />
+    <ClCompile Include="Game\World\FirstPersonController.cpp" />
+    <ClCompile Include="Game\World\ProceduralTextures.cpp" />
+    <ClCompile Include="Game\World\ShopAssets.cpp" />
+    <ClCompile Include="Game\World\ShopLighting.cpp" />
+    <ClCompile Include="Game\World\ShopOutdoors.cpp" />
+    <ClCompile Include="Game\World\ShopWorld.cpp" />
+    <ClCompile Include="Game\World\ShopWorldOutdoors.cpp" />
+    <ClCompile Include="Game\World\ShopWorldTools.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\DLSS.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Graphics.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\GraphicsLighting.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\GraphicsUpscaling.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\IMGUI\IMGUIManager.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Models\MeshBuilder.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Models\Model.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Models\ModelManager.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Models\Texture.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Models\TextureManager.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Renderer.cpp" />
+    <ClCompile Include="LV\Engine\Lordi.cpp" />
+    <ClCompile Include="LV\Engine\Objects\Camera.cpp" />
+    <ClCompile Include="LV\Engine\Objects\CameraManager.cpp" />
+    <ClCompile Include="LV\Engine\Objects\Entity.cpp" />
+    <ClCompile Include="LV\Engine\Objects\Object.cpp" />
+    <ClCompile Include="LV\Engine\Objects\ObjectManager.cpp" />
+    <ClCompile Include="LV\Engine\Utility\InputManager.cpp" />
+    <ClCompile Include="LV\Engine\Utility\PerformanceManager.cpp" />
+    <ClCompile Include="LV\Engine\Utility\Settings.cpp" />
+    <ClCompile Include="LV\Engine\Utility\Utility.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_glfw.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\imgui.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\imgui_demo.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\imgui_draw.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\imgui_tables.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="LV\Libraries\imgui\misc\cpp\imgui_stdlib.cpp" />
+    <ClCompile Include="LV\Libraries\ufbx\ufbx.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Game\EngineBuilderGame.h" />
+    <ClInclude Include="Game\GameSettings.h" />
+    <ClInclude Include="Game\Inventory\PlayerInventory.h" />
+    <ClInclude Include="Game\Save\SaveGame.h" />
+    <ClInclude Include="Game\Simulation\Dyno.h" />
+    <ClInclude Include="Game\Simulation\EngineAssembly.h" />
+    <ClInclude Include="Game\Simulation\EngineSpec.h" />
+    <ClInclude Include="Game\Simulation\Feature.h" />
+    <ClInclude Include="Game\Simulation\Machine.h" />
+    <ClInclude Include="Game\Simulation\Material.h" />
+    <ClInclude Include="Game\Simulation\MeasuringTool.h" />
+    <ClInclude Include="Game\Simulation\Part.h" />
+    <ClInclude Include="Game\Simulation\PartFactory.h" />
+    <ClInclude Include="Game\Simulation\Random.h" />
+    <ClInclude Include="Game\Simulation\Tolerance.h" />
+    <ClInclude Include="Game\Simulation\Units.h" />
+    <ClInclude Include="Game\Simulation\Workshop.h" />
+    <ClInclude Include="Game\UI\DevMenu.h" />
+    <ClInclude Include="Game\UI\InventoryUI.h" />
+    <ClInclude Include="Game\UI\ItemIcons.h" />
+    <ClInclude Include="Game\UI\PartIcons.h" />
+    <ClInclude Include="Game\UI\PauseMenu.h" />
+    <ClInclude Include="Game\UI\Ratings.h" />
+    <ClInclude Include="Game\UI\WorkshopUI.h" />
+    <ClInclude Include="Game\World\FirstPersonController.h" />
+    <ClInclude Include="Game\World\GarageLayout.h" />
+    <ClInclude Include="Game\World\ProceduralTextures.h" />
+    <ClInclude Include="Game\World\ShopAssets.h" />
+    <ClInclude Include="Game\World\ShopLighting.h" />
+    <ClInclude Include="Game\World\ShopWorld.h" />
+    <ClInclude Include="Game\World\ShopWorldShared.h" />
+    <ClInclude Include="Game\World\ToolShapes.h" />
+    <ClInclude Include="LV\Engine\Game.h" />
+    <ClInclude Include="LV\Engine\Graphics\DLSS.h" />
+    <ClInclude Include="LV\Engine\Graphics\Graphics.h" />
+    <ClInclude Include="LV\Engine\Graphics\IMGUI\IMGUIManager.h" />
+    <ClInclude Include="LV\Engine\Graphics\Lighting.h" />
+    <ClInclude Include="LV\Engine\Graphics\Models\MeshBuilder.h" />
+    <ClInclude Include="LV\Engine\Graphics\Models\Model.h" />
+    <ClInclude Include="LV\Engine\Graphics\Models\ModelManager.h" />
+    <ClInclude Include="LV\Engine\Graphics\Models\Texture.h" />
+    <ClInclude Include="LV\Engine\Graphics\Models\TextureManager.h" />
+    <ClInclude Include="LV\Engine\Graphics\Renderer.h" />
+    <ClInclude Include="LV\Engine\Lordi.h" />
+    <ClInclude Include="LV\Engine\Objects\Camera.h" />
+    <ClInclude Include="LV\Engine\Objects\CameraManager.h" />
+    <ClInclude Include="LV\Engine\Objects\Entity.h" />
+    <ClInclude Include="LV\Engine\Objects\Object.h" />
+    <ClInclude Include="LV\Engine\Objects\ObjectManager.h" />
+    <ClInclude Include="LV\Engine\Objects\ObjectShading.h" />
+    <ClInclude Include="LV\Engine\Utility\InputManager.h" />
+    <ClInclude Include="LV\Engine\Utility\Logger.h" />
+    <ClInclude Include="LV\Engine\Utility\PerformanceManager.h" />
+    <ClInclude Include="LV\Engine\Utility\Settings.h" />
+    <ClInclude Include="LV\Engine\Utility\Utility.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" />
+    <None Include="Resources\Models\models.cfg" />
+    <None Include="Resources\Models\README.md" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

@@ -1,0 +1,413 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Game">
+      <UniqueIdentifier>{100B16CA-DE0B-4500-A9E4-9C26F22AEA06}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Inventory">
+      <UniqueIdentifier>{7ABA9151-C86D-4563-B6B0-EFA8B57BDA4E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Save">
+      <UniqueIdentifier>{148333C9-D048-49D7-8FAB-8E34238AF4D5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Simulation">
+      <UniqueIdentifier>{30B103BE-FCC0-44DC-98E8-549C4C9204BA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\UI">
+      <UniqueIdentifier>{04CD73AC-B481-417B-AD85-18958DDBE529}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\World">
+      <UniqueIdentifier>{4FCAE0E0-DEAC-402E-B573-8E2DA65CD160}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV">
+      <UniqueIdentifier>{CC6C6A4B-9846-4950-A234-DEA03B3A7FB6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine">
+      <UniqueIdentifier>{FEF24004-031A-4215-91AB-E6425054CD3E}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine\Graphics">
+      <UniqueIdentifier>{1BA65BE4-1C02-4255-8533-E96E7DB2EAA8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine\Graphics\IMGUI">
+      <UniqueIdentifier>{E987F6CC-37E5-4F96-9B45-53140960402B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine\Graphics\Models">
+      <UniqueIdentifier>{F7A9F87D-F6CB-4FCC-BA64-1D162923544D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine\Objects">
+      <UniqueIdentifier>{B9C76221-D6F2-4884-8FD0-AC7EC586895B}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine\Utility">
+      <UniqueIdentifier>{4C9C07E4-C1EB-4522-8642-1529DAF8677D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Libraries">
+      <UniqueIdentifier>{F422E453-1CEC-4213-B942-BE7A7A171ADB}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Libraries\imgui">
+      <UniqueIdentifier>{C5D6D2ED-FE11-4324-9300-75B5F92ACAE7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Libraries\imgui\backends">
+      <UniqueIdentifier>{E12DB4AB-0F23-43CF-812F-2D3DFA6D1D13}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Libraries\imgui\misc">
+      <UniqueIdentifier>{1F5585D0-B78A-4669-BA29-07B5FCD5F425}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Libraries\imgui\misc\cpp">
+      <UniqueIdentifier>{03178833-2A81-4465-B6DA-667915F84E92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Libraries\ufbx">
+      <UniqueIdentifier>{0AE42742-89E0-42F1-A08E-5188AD471F47}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Game\EngineBuilderGame.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\GameSettings.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Inventory\PlayerInventory.cpp">
+      <Filter>Game\Inventory</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Save\SaveGame.cpp">
+      <Filter>Game\Save</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Dyno.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\EngineAssembly.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\EngineSpec.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Feature.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Machine.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Material.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\MeasuringTool.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Part.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\PartFactory.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Random.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Units.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Workshop.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\DevMenu.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\InventoryUI.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\ItemIcons.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\PartIcons.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\PauseMenu.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\Ratings.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\WorkshopUI.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\FirstPersonController.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ProceduralTextures.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopAssets.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopLighting.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopOutdoors.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorld.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldOutdoors.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldTools.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\DLSS.cpp">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\Graphics.cpp">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\GraphicsLighting.cpp">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\GraphicsUpscaling.cpp">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\IMGUI\IMGUIManager.cpp">
+      <Filter>LV\Engine\Graphics\IMGUI</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\Models\MeshBuilder.cpp">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\Models\Model.cpp">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\Models\ModelManager.cpp">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\Models\Texture.cpp">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\Models\TextureManager.cpp">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Graphics\Renderer.cpp">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Lordi.cpp">
+      <Filter>LV\Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Objects\Camera.cpp">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Objects\CameraManager.cpp">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Objects\Entity.cpp">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Objects\Object.cpp">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Objects\ObjectManager.cpp">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Utility\InputManager.cpp">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Utility\PerformanceManager.cpp">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Utility\Settings.cpp">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Utility\Utility.cpp">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_glfw.cpp">
+      <Filter>LV\Libraries\imgui\backends</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_vulkan.cpp">
+      <Filter>LV\Libraries\imgui\backends</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui.cpp">
+      <Filter>LV\Libraries\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_demo.cpp">
+      <Filter>LV\Libraries\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_draw.cpp">
+      <Filter>LV\Libraries\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_tables.cpp">
+      <Filter>LV\Libraries\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_widgets.cpp">
+      <Filter>LV\Libraries\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\misc\cpp\imgui_stdlib.cpp">
+      <Filter>LV\Libraries\imgui\misc\cpp</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\ufbx\ufbx.c">
+      <Filter>LV\Libraries\ufbx</Filter>
+    </ClCompile>
+    <ClInclude Include="Game\EngineBuilderGame.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\GameSettings.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Inventory\PlayerInventory.h">
+      <Filter>Game\Inventory</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Save\SaveGame.h">
+      <Filter>Game\Save</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Dyno.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\EngineAssembly.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\EngineSpec.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Feature.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Machine.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Material.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\MeasuringTool.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Part.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\PartFactory.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Random.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Tolerance.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Units.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Workshop.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\DevMenu.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\InventoryUI.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\ItemIcons.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\PartIcons.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\PauseMenu.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\Ratings.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\WorkshopUI.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\FirstPersonController.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\GarageLayout.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\ProceduralTextures.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\ShopAssets.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\ShopLighting.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\ShopWorld.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\ShopWorldShared.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\ToolShapes.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Game.h">
+      <Filter>LV\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\DLSS.h">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Graphics.h">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\IMGUI\IMGUIManager.h">
+      <Filter>LV\Engine\Graphics\IMGUI</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Lighting.h">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Models\MeshBuilder.h">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Models\Model.h">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Models\ModelManager.h">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Models\Texture.h">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Models\TextureManager.h">
+      <Filter>LV\Engine\Graphics\Models</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Graphics\Renderer.h">
+      <Filter>LV\Engine\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Lordi.h">
+      <Filter>LV\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Objects\Camera.h">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Objects\CameraManager.h">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Objects\Entity.h">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Objects\Object.h">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Objects\ObjectManager.h">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Objects\ObjectShading.h">
+      <Filter>LV\Engine\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Utility\InputManager.h">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Utility\Logger.h">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Utility\PerformanceManager.h">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Utility\Settings.h">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Utility\Utility.h">
+      <Filter>LV\Engine\Utility</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

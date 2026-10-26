@@ -1,0 +1,44 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include "Feature.h"
+
+// Checks that only make sense once parts are fitted together.
+enum class AssemblyCheck
+{
+	NONE,
+	OIL_CLEARANCE,		// Plastigauge across a main or rod bearing
+	CAM_CLEARANCE,		// Plastigauge across a cam journal
+	RING_GAP,			// ring squared in its bore, feeler gauge across the ends
+	DECK_CLEARANCE,		// dial indicator over the piston at TDC
+	INSTALLED_HEIGHT	// spring seat to retainer, valve held closed
+};
+
+struct MeasuringTool
+{
+	std::string name = "";
+	std::string description = "";
+	std::vector<FeatureKind> kinds = {};
+	bool measuresFinish = false;
+	std::vector<AssemblyCheck> assemblyChecks = {};
+	// Diameter range the tool physically fits; 0 means no limit.
+	double minSize = 0.0;
+	double maxSize = 0.0;
+	double resolution = 0.0;	// smallest increment the tool can show
+	double sigma = 0.0;			// repeatability error, 1 standard deviation
+	double price = 0.0;
+	double hoursPerUse = 0.0;
+	bool ownedAtStart = false;
+
+	bool CanMeasure(const Feature& feature) const;
+	bool CanCheck(AssemblyCheck check) const;
+	// A reading as the tool would display it: true value plus error, snapped to the resolution.
+	double Read(double trueValue) const;
+};
+
+namespace ToolCatalog
+{
+	const std::vector<MeasuringTool>& All();
+}

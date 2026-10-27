@@ -26,7 +26,6 @@ namespace MachineCatalog
 			ringFiler.maxRemoval = 0.50;
 			ringFiler.price = 150.0;
 			ringFiler.hoursPerUse = 0.15;
-			ringFiler.ownedAtStart = true;
 			list.push_back(ringFiler);
 
 			Machine manualHone;
@@ -40,7 +39,6 @@ namespace MachineCatalog
 			manualHone.price = 300.0;
 			manualHone.hoursPerUse = 0.3;
 			manualHone.hoursPerMm = 8.0;
-			manualHone.ownedAtStart = true;
 			list.push_back(manualHone);
 
 			Machine powerHone;
@@ -108,7 +106,6 @@ namespace MachineCatalog
 			reamer.maxRemoval = 0.45;
 			reamer.price = 180.0;
 			reamer.hoursPerUse = 0.2;
-			reamer.ownedAtStart = true;
 			list.push_back(reamer);
 
 			Machine seatCutter;

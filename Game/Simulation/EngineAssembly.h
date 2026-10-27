@@ -3,6 +3,7 @@
 #include <array>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "EngineSpec.h"
@@ -50,6 +51,17 @@ public:
 
 	bool IsComplete() const;
 	std::vector<std::string> MissingParts() const;
+
+	// The real build order: main bearings before the crank, the bottom end before the head gasket,
+	// the head before its valves, springs and cam. Install itself doesn't enforce it (a saved
+	// engine is restored as it was); the workshop checks it when the builder fits or removes a part.
+	std::vector<std::pair<AssemblySlot, int>> Prerequisites(AssemblySlot slot, int index) const;
+	// "Main Bearing 3", "Exhaust Valve Spring 2", "Crankshaft".
+	std::string PositionName(AssemblySlot slot, int index) const;
+	// What has to be fitted before this position can be, or nothing if it's ready.
+	std::optional<std::string> MissingPrerequisite(AssemblySlot slot, int index) const;
+	// What has to come off before the part in this position can, or nothing if it's free.
+	std::optional<std::string> RemovalBlockedBy(AssemblySlot slot, int index) const;
 
 	std::optional<double> MainClearance(int journal) const;
 	std::optional<double> RodClearance(int cylinder) const;

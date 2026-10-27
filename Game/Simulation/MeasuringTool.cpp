@@ -46,7 +46,6 @@ namespace ToolCatalog
 			caliper.sigma = 0.010;
 			caliper.price = 40.0;
 			caliper.hoursPerUse = 0.05;
-			caliper.ownedAtStart = true;
 			list.push_back(caliper);
 
 			MeasuringTool micrometer;
@@ -68,7 +67,6 @@ namespace ToolCatalog
 			telescoping.sigma = 0.006;
 			telescoping.price = 60.0;
 			telescoping.hoursPerUse = 0.2;
-			telescoping.ownedAtStart = true;
 			list.push_back(telescoping);
 
 			MeasuringTool boreGauge;
@@ -91,7 +89,6 @@ namespace ToolCatalog
 			smallHole.sigma = 0.004;
 			smallHole.price = 45.0;
 			smallHole.hoursPerUse = 0.15;
-			smallHole.ownedAtStart = true;
 			list.push_back(smallHole);
 
 			MeasuringTool smallBore;
@@ -133,7 +130,6 @@ namespace ToolCatalog
 			straightedge.sigma = 0.005;
 			straightedge.price = 80.0;
 			straightedge.hoursPerUse = 0.1;
-			straightedge.ownedAtStart = true;
 			list.push_back(straightedge);
 
 			MeasuringTool burette;
@@ -164,7 +160,6 @@ namespace ToolCatalog
 			plastigauge.sigma = 0.005;
 			plastigauge.price = 15.0;
 			plastigauge.hoursPerUse = 0.3;
-			plastigauge.ownedAtStart = true;
 			list.push_back(plastigauge);
 
 			MeasuringTool feeler;
@@ -175,7 +170,6 @@ namespace ToolCatalog
 			feeler.sigma = 0.004;
 			feeler.price = 25.0;
 			feeler.hoursPerUse = 0.1;
-			feeler.ownedAtStart = true;
 			list.push_back(feeler);
 
 			MeasuringTool dialIndicator;

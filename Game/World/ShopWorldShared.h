@@ -47,6 +47,8 @@ namespace ShopLayout
 	inline const glm::vec3 BENCH_POSITION = { -3.4f, 0.f, -4.45f };
 	inline const glm::vec3 TOOL_BOARD_POSITION = { -3.4f, 1.65f, -4.97f };
 	inline const glm::vec3 STAND_POSITION = { 0.f, 0.f, -1.2f };
+	// Where extra engine stands go when bought (stands 2 to 4), either side of the first and in front.
+	inline const glm::vec3 EXTRA_STAND_POSITIONS[] = { { 2.6f, 0.f, -1.2f }, { -2.4f, 0.f, -1.2f }, { 2.6f, 0.f, 1.2f } };
 	constexpr float STAND_MOUNT_HEIGHT = 1.05f;
 	constexpr float STAND_ROLL_PIVOT_Y = -0.13f;	// below the deck, about the block's middle
 	constexpr float STAND_ROLL_SPEED = 1.6f;		// radians per second
@@ -112,18 +114,38 @@ namespace ShopLayout
 		return std::nullopt;
 	}
 
-	inline std::optional<std::pair<AssemblySlot, int>> FindFreeSlot(const EngineAssembly& assembly, PartType type)
+	// Where a part of this type can go on the engine right now: the first empty position whose
+	// prerequisites are fitted. Otherwise why not (no empty position, or what has to go on first).
+	struct FitSpot
 	{
+		std::optional<std::pair<AssemblySlot, int>> slot = std::nullopt;
+		bool anyEmpty = false;
+		std::string notYet = "";
+	};
+	inline FitSpot FindFitSpot(const EngineAssembly& assembly, PartType type)
+	{
+		FitSpot spot;
 		for (size_t slot = 0; slot < static_cast<size_t>(AssemblySlot::COUNT); slot++)
 		{
 			auto slotType = static_cast<AssemblySlot>(slot);
 			if (EngineAssembly::SlotPartType(slotType) != type)
 				continue;
 			for (int index = 0; index < assembly.SlotCount(slotType); index++)
-				if (!assembly.Get(slotType, index))
-					return std::make_pair(slotType, index);
+			{
+				if (assembly.Get(slotType, index))
+					continue;
+				auto missing = assembly.MissingPrerequisite(slotType, index);
+				if (!missing)
+				{
+					spot.slot = std::make_pair(slotType, index);
+					return spot;
+				}
+				if (!spot.anyEmpty)
+					spot.notYet = *missing;
+				spot.anyEmpty = true;
+			}
 		}
-		return std::nullopt;
+		return spot;
 	}
 
 	inline std::optional<float> RayBox(const glm::vec3& origin, const glm::vec3& direction, const glm::vec3& boxMin, const glm::vec3& boxMax)

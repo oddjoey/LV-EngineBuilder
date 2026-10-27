@@ -9,6 +9,9 @@
 #include "../Simulation/Units.h"
 #include "../Simulation/Workshop.h"
 
+// Which screen the workshop window shows; only one at a time. BACKPACK is the inventory (Tab), the
+// rest open from their station. STORE isn't one: it opens the parts computer's own window (see
+// OpenStore).
 enum class WorkshopTab { BACKPACK, BENCH, MACHINE, ENGINE_STAND, DYNO, STORE };
 
 // A part the Bench tab can work on, and where it's sitting.
@@ -18,7 +21,7 @@ struct BenchItem
 	std::string location = "";
 	int machineIndex = -1;
 };
-enum class StoreCategory { PARTS, TOOLS, MACHINES };
+enum class StoreCategory { PARTS, ENGINES, TOOLS, MACHINES };
 
 // ImGui front end for the workshop. It only ever shows the player what they've measured;
 // the true geometry is visible only with the X-ray developer toggle.
@@ -31,6 +34,7 @@ public:
 	void Draw(Workshop& workshop);
 
 	void Open(WorkshopTab tab);
+	// The parts computer: a window of its own, separate from the workshop screens.
 	void OpenStore(StoreCategory category);
 	// The tab for one machine: the part set up in it and only what that machine can do to it.
 	void OpenMachine(int machineIndex);
@@ -44,6 +48,8 @@ public:
 	void Update(float deltaTime);
 	// Engine speed of the pull in progress (or coasting down after it), 0 when idle.
 	float GetLiveRpm() const;
+	// The engine on the dyno for that pull.
+	int GetPullEngine() const;
 	// Lets the world say a part can't be used yet (it's still in its delivery box).
 	void SetPartAvailability(const std::function<bool(uint32_t)>& isUsable);
 
@@ -59,7 +65,6 @@ public:
 private:
 	static constexpr float PULL_SECONDS = 6.f;
 
-	bool BeginTab(const char* label, WorkshopTab tab);
 	static std::string FeatureSection(PartType type, const std::string& featureName);
 	bool IsUsable(const Part& part) const;
 
@@ -73,6 +78,11 @@ private:
 	void DrawPartsStore(Workshop& workshop);
 	void DrawToolStore(Workshop& workshop);
 	void DrawMachineStore(Workshop& workshop);
+	// Engine stands and whole cores, for building more engines at once.
+	void DrawEngineStore(Workshop& workshop);
+	void DrawStoreWindow(Workshop& workshop);
+	// Which engine the Engine Stand and Dyno tabs show, when there's more than one.
+	void DrawEnginePicker(Workshop& workshop);
 	// One clickable catalogue card; draws its icon with drawIcon(drawList, min, size).
 	bool StoreCard(const char* id, const char* name, const std::string& price, bool selected, bool owned,
 		const std::function<void(ImDrawList*, ImVec2, float)>& drawIcon, const std::vector<float>& ratings = {});
@@ -80,7 +90,8 @@ private:
 	// Which tool to go and get for a measurement, for the hints that replaced the measure buttons.
 	std::string ToolHint(Workshop& workshop, int toolIndex) const;
 	void DrawAssemblyTab(Workshop& workshop);
-	void DrawAssemblySlots(Workshop& workshop);
+	// The parts fitted to the engine, by position; picks the one the stand screen inspects.
+	pPart DrawAssemblySlots(Workshop& workshop);
 	void DrawAssemblyChecks(Workshop& workshop);
 	void DrawDynoTab(Workshop& workshop);
 	void DrawLog(Workshop& workshop);
@@ -96,6 +107,7 @@ private:
 	static Feature FromReading(const Feature& feature, const FeatureReading& reading);
 
 	bool						m_open = false;
+	bool						m_storeOpen = false;
 	std::optional<WorkshopTab>	m_requestedTab = std::nullopt;
 	std::optional<StoreCategory>	m_requestedCategory = std::nullopt;
 	int							m_selectedTool = 0;
@@ -104,6 +116,7 @@ private:
 	Units::System		m_units = Units::System::METRIC;
 	bool				m_xray = false;
 	uint32_t			m_selectedPartId = 0;
+	uint32_t			m_standPartId = 0;		// the fitted part the stand screen shows (0: the engine checks)
 	std::string			m_selectedFeature = "";
 	int					m_selectedMachine = -1;
 	int					m_activeMachine = -1;		// the machine whose tab is showing, or -1 for none
@@ -122,4 +135,5 @@ private:
 	float				m_pullStartRpm = 0.f;
 	float				m_pullEndRpm = 0.f;
 	bool				m_pullFailed = false;
+	int					m_pullEngine = -1;
 };

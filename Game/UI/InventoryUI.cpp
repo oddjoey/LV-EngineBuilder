@@ -377,14 +377,31 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 
 void InventoryUI::DrawEngineChecklist(ShopWorld& world, Workshop& workshop)
 {
-	ImGui::SeparatorText("Engine on the stand");
+	// One engine at a time, picked here when there are several.
+	int engines = workshop.GetEngineCount();
+	m_checklistEngine = std::clamp(m_checklistEngine, 0, engines - 1);
+	if (engines > 1)
+	{
+		ImGui::SeparatorText("Engines");
+		for (int engine = 0; engine < engines; engine++)
+		{
+			if (engine > 0)
+				ImGui::SameLine();
+			if (ImGui::RadioButton(std::format("Engine {}##Checklist{}", engine + 1, engine).c_str(), m_checklistEngine == engine))
+				m_checklistEngine = engine;
+		}
+	}
+	else
+		ImGui::SeparatorText("Engine on the stand");
 
-	const auto& assembly = workshop.GetAssembly();
+	const auto& assembly = workshop.GetAssembly(m_checklistEngine);
+	// A part fitted to any engine isn't a spare for this one.
 	std::unordered_set<const Part*> fitted;
-	for (const auto& part : assembly.GetAllParts())
-		fitted.insert(part.get());
+	for (int engine = 0; engine < engines; engine++)
+		for (const auto& part : workshop.GetAssembly(engine).GetAllParts())
+			fitted.insert(part.get());
 
-	// Spares: parts of each kind in the shop that aren't in the engine (unopened deliveries included).
+	// Spares: parts of each kind in the shop that aren't in an engine (unopened deliveries included).
 	std::map<PartType, int> spares;
 	for (const auto& part : workshop.GetInventory())
 		if (!fitted.count(part.get()))
@@ -437,7 +454,7 @@ void InventoryUI::DrawEngineChecklist(ShopWorld& world, Workshop& workshop)
 	if (!shortfall.empty())
 	{
 		ImGui::Spacing();
-		ImGui::TextColored({ 1.f, 0.8f, 0.35f, 1.f }, "Still to buy (Store tab):");
+		ImGui::TextColored({ 1.f, 0.8f, 0.35f, 1.f }, "Still to buy (at the parts computer):");
 		ImGui::PushTextWrapPos(0.f);
 		ImGui::TextUnformatted(shortfall.c_str());
 		ImGui::PopTextWrapPos();

@@ -3,8 +3,16 @@
 #include <algorithm>
 #include <format>
 
-Workshop::Workshop(const EngineSpec& spec, double startingMoney) : m_spec(&spec), m_money(startingMoney), m_assembly(spec)
+namespace
 {
+	// What a core lot holds, besides the per-cylinder parts.
+	const PartType CORE_SINGLES[] = { PartType::BLOCK, PartType::CRANKSHAFT, PartType::CYLINDER_HEAD, PartType::CAMSHAFT };
+	constexpr double CORE_DISCOUNT = 0.8;	// a whole core costs less than its parts bought one by one
+}
+
+Workshop::Workshop(const EngineSpec& spec, double startingMoney) : m_spec(&spec), m_money(startingMoney)
+{
+	// Every tool and machine has to be bought: the shop starts with bare walls.
 	const auto& tools = ToolCatalog::All();
 	for (const auto& tool : tools)
 		m_ownedTools.push_back(tool.ownedAtStart);
@@ -13,11 +21,22 @@ Workshop::Workshop(const EngineSpec& spec, double startingMoney) : m_spec(&spec)
 	for (const auto& machine : machines)
 		m_ownedMachines.push_back(machine.ownedAtStart);
 
-	// Every career starts with a tired core engine dragged in off a trailer.
-	m_inventory.push_back(PartFactory::Create(PartType::BLOCK, spec, PartQuality::OEM, PartCondition::USED));
-	m_inventory.push_back(PartFactory::Create(PartType::CRANKSHAFT, spec, PartQuality::OEM, PartCondition::USED));
-	m_inventory.push_back(PartFactory::Create(PartType::CYLINDER_HEAD, spec, PartQuality::OEM, PartCondition::USED));
-	m_inventory.push_back(PartFactory::Create(PartType::CAMSHAFT, spec, PartQuality::OEM, PartCondition::USED));
+	// One engine stand, and a tired core engine dragged in off a trailer to put on it.
+	m_engines.push_back(std::make_unique<EngineBuild>(spec));
+	AddCore();
+
+	Log(std::format("Opened the shop with ${:.0f} and a worn-out {} core.", startingMoney, spec.name));
+}
+
+Workshop::~Workshop()
+{
+}
+
+void Workshop::AddCore()
+{
+	const auto& spec = *m_spec;
+	for (auto type : CORE_SINGLES)
+		m_inventory.push_back(PartFactory::Create(type, spec, PartQuality::OEM, PartCondition::USED));
 	for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
 		m_inventory.push_back(PartFactory::Create(PartType::CONNECTING_ROD, spec, PartQuality::OEM, PartCondition::USED));
 	for (auto type : { PartType::INTAKE_VALVE, PartType::EXHAUST_VALVE })
@@ -25,12 +44,6 @@ Workshop::Workshop(const EngineSpec& spec, double startingMoney) : m_spec(&spec)
 			m_inventory.push_back(PartFactory::Create(type, spec, PartQuality::OEM, PartCondition::USED));
 	for (int spring = 0; spring < spec.cylinders * 2; spring++)
 		m_inventory.push_back(PartFactory::Create(PartType::VALVE_SPRING, spec, PartQuality::OEM, PartCondition::USED));
-
-	Log(std::format("Opened the shop with ${:.0f} and a worn-out {} core.", startingMoney, spec.name));
-}
-
-Workshop::~Workshop()
-{
 }
 
 const EngineSpec& Workshop::GetSpec() const
@@ -111,6 +124,28 @@ bool Workshop::Buy(const PartOrder& order)
 	return true;
 }
 
+double Workshop::CorePrice() const
+{
+	const auto& spec = *m_spec;
+	auto used = [](PartType type) { return PartFactory::Price(type, PartQuality::OEM, PartCondition::USED); };
+	double price = 0.0;
+	for (auto type : CORE_SINGLES)
+		price += used(type);
+	price += used(PartType::CONNECTING_ROD) * spec.cylinders;
+	price += (used(PartType::INTAKE_VALVE) + used(PartType::EXHAUST_VALVE)) * spec.cylinders;
+	price += used(PartType::VALVE_SPRING) * spec.cylinders * 2;
+	return std::round(price * CORE_DISCOUNT);
+}
+
+bool Workshop::BuyCore()
+{
+	if (!Spend(CorePrice(), std::format("a {} core", m_spec->name)))
+		return false;
+	AddCore();
+	Log(std::format("Bought a used {} core.", m_spec->name));
+	return true;
+}
+
 const std::vector<pPart>& Workshop::GetInventory() const
 {
 	return m_inventory;
@@ -127,7 +162,7 @@ std::vector<pPart> Workshop::GetInventory(PartType type) const
 
 bool Workshop::SellPart(const pPart& part)
 {
-	if (m_assembly.Contains(part))
+	if (EngineOf(*part) >= 0)
 	{
 		Log("Take it off the engine stand before selling it.");
 		return false;
@@ -286,9 +321,8 @@ MachiningResult Workshop::MachineFeature(size_t machineIndex, Part& part, const 
 
 	const auto& machine = machines[machineIndex];
 
-	for (const auto& installed : m_assembly.GetAllParts())
-		if (installed.get() == &part)
-			return { false, "Pull it off the engine stand before machining it." };
+	if (EngineOf(part) >= 0)
+		return { false, "Pull it off the engine stand before machining it." };
 
 	auto feature = part.FindFeature(featureName);
 	if (!feature)
@@ -300,7 +334,6 @@ MachiningResult Workshop::MachineFeature(size_t machineIndex, Part& part, const 
 		// Setup, plus time for however much stock came off.
 		double hours = machine.hoursPerUse + result.removed * machine.hoursPerMm;
 		m_hours += hours;
-		m_dynoCurrent = false;
 		if (machine.hoursPerMm > 0.0)
 			result.message += std::format(" Took {:.1f} h to remove {:.3f} mm.", hours, result.removed);
 	}
@@ -308,20 +341,80 @@ MachiningResult Workshop::MachineFeature(size_t machineIndex, Part& part, const 
 	return result;
 }
 
+int Workshop::GetEngineCount() const
+{
+	return static_cast<int>(m_engines.size());
+}
+
+int Workshop::GetActiveEngine() const
+{
+	return m_activeEngine;
+}
+
+void Workshop::SetActiveEngine(int engine)
+{
+	if (engine >= 0 && engine < GetEngineCount())
+		m_activeEngine = engine;
+}
+
+const EngineBuild& Workshop::GetEngine(int engine) const
+{
+	return *m_engines[std::clamp(engine, 0, GetEngineCount() - 1)];
+}
+
+const EngineAssembly& Workshop::GetAssembly(int engine) const
+{
+	return GetEngine(engine).assembly;
+}
+
+int Workshop::EngineOf(const Part& part) const
+{
+	for (int engine = 0; engine < GetEngineCount(); engine++)
+		for (const auto& installed : m_engines[engine]->assembly.GetAllParts())
+			if (installed.get() == &part)
+				return engine;
+	return -1;
+}
+
+bool Workshop::BuyEngineStand()
+{
+	if (GetEngineCount() >= MAX_ENGINES)
+	{
+		Log("There's no room for another engine stand.");
+		return false;
+	}
+	if (!Spend(ENGINE_STAND_PRICE, "an engine stand"))
+		return false;
+
+	m_engines.push_back(std::make_unique<EngineBuild>(*m_spec));
+	Log(std::format("Bought engine stand {}.", GetEngineCount()));
+	return true;
+}
+
+EngineBuild& Workshop::Active()
+{
+	return *m_engines[m_activeEngine];
+}
+
+const EngineBuild& Workshop::Active() const
+{
+	return *m_engines[m_activeEngine];
+}
+
 EngineAssembly& Workshop::GetAssembly()
 {
-	return m_assembly;
+	return Active().assembly;
 }
 
 const EngineAssembly& Workshop::GetAssembly() const
 {
-	return m_assembly;
+	return Active().assembly;
 }
 
 void Workshop::AssemblyChanged()
 {
-	m_dynoCurrent = false;
-	for (auto& [label, reading] : m_assemblyReadings)
+	Active().dynoCurrent = false;
+	for (auto& [label, reading] : Active().readings)
 		reading.stale = true;
 }
 
@@ -329,12 +422,24 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 {
 	if (std::find(m_inventory.begin(), m_inventory.end(), part) == m_inventory.end())
 		return false;
+	// A part can only be in one engine at a time.
+	if (int engine = EngineOf(*part); engine >= 0 && engine != m_activeEngine)
+	{
+		Log(std::format("That {} is on engine {}.", part->GetName(), engine + 1));
+		return false;
+	}
 
-	if (m_assembly.Get(slot, index))
-		m_assembly.Remove(slot, index);
+	auto& assembly = GetAssembly();
+	if (auto missing = assembly.MissingPrerequisite(slot, index))
+	{
+		Log(*missing);
+		return false;
+	}
+	if (assembly.Get(slot, index))
+		assembly.Remove(slot, index);
 
 	std::string error;
-	if (!m_assembly.Install(slot, index, part, error))
+	if (!assembly.Install(slot, index, part, error))
 	{
 		Log(error);
 		return false;
@@ -345,10 +450,17 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 	return true;
 }
 
-void Workshop::RemovePart(AssemblySlot slot, int index)
+bool Workshop::RemovePart(AssemblySlot slot, int index)
 {
-	if (m_assembly.Remove(slot, index))
+	// In reverse build order: nothing comes off while something is fitted on top of it.
+	if (auto blocked = GetAssembly().RemovalBlockedBy(slot, index))
+	{
+		Log(*blocked);
+		return false;
+	}
+	if (GetAssembly().Remove(slot, index))
 		AssemblyChanged();
+	return true;
 }
 
 std::string Workshop::AssemblyReadingLabel(AssemblyCheck check, int index, bool rod)
@@ -366,14 +478,15 @@ std::string Workshop::AssemblyReadingLabel(AssemblyCheck check, int index, bool 
 
 bool Workshop::MeasureAssembly(AssemblyCheck check, int index, bool rod, int toolIndex)
 {
+	const auto& assembly = GetAssembly();
 	std::optional<double> trueValue;
 	switch (check)
 	{
-		case AssemblyCheck::OIL_CLEARANCE:		trueValue = rod ? m_assembly.RodClearance(index) : m_assembly.MainClearance(index); break;
-		case AssemblyCheck::CAM_CLEARANCE:		trueValue = m_assembly.CamClearance(index); break;
-		case AssemblyCheck::RING_GAP:			trueValue = m_assembly.RingGap(index); break;
-		case AssemblyCheck::DECK_CLEARANCE:		trueValue = m_assembly.DeckClearance(index); break;
-		case AssemblyCheck::INSTALLED_HEIGHT:	trueValue = m_assembly.InstalledHeight(index / 2, index % 2 == 1); break;
+		case AssemblyCheck::OIL_CLEARANCE:		trueValue = rod ? assembly.RodClearance(index) : assembly.MainClearance(index); break;
+		case AssemblyCheck::CAM_CLEARANCE:		trueValue = assembly.CamClearance(index); break;
+		case AssemblyCheck::RING_GAP:			trueValue = assembly.RingGap(index); break;
+		case AssemblyCheck::DECK_CLEARANCE:		trueValue = assembly.DeckClearance(index); break;
+		case AssemblyCheck::INSTALLED_HEIGHT:	trueValue = assembly.InstalledHeight(index / 2, index % 2 == 1); break;
 		default:								return false;
 	}
 
@@ -398,65 +511,69 @@ bool Workshop::MeasureAssembly(AssemblyCheck check, int index, bool rod, int too
 	if (check != AssemblyCheck::DECK_CLEARANCE)
 		reading = std::max(0.0, reading);
 
-	m_assemblyReadings[label] = { reading, false };
+	Active().readings[label] = { reading, false };
 	m_hours += tool.hoursPerUse;
-	Log(std::format("Checked {} with the {}.", label, tool.name));
+	Log(std::format("Checked {} on engine {} with the {}.", label, m_activeEngine + 1, tool.name));
 	return true;
 }
 
 const AssemblyReading* Workshop::GetAssemblyReading(AssemblyCheck check, int index, bool rod) const
 {
-	auto it = m_assemblyReadings.find(AssemblyReadingLabel(check, index, rod));
-	return it == m_assemblyReadings.end() ? nullptr : &it->second;
+	const auto& readings = Active().readings;
+	auto it = readings.find(AssemblyReadingLabel(check, index, rod));
+	return it == readings.end() ? nullptr : &it->second;
 }
 
 const DynoResult& Workshop::RunDyno()
 {
 	constexpr double DYNO_COST = 50.0;
 
-	if (!m_assembly.IsComplete())
+	auto& engine = Active();
+	if (!engine.assembly.IsComplete())
 	{
 		Log("The engine isn't fully assembled.");
-		return m_lastDyno;
+		return engine.lastDyno;
 	}
 	if (!Spend(DYNO_COST, "dyno fuel and time"))
-		return m_lastDyno;
+		return engine.lastDyno;
 
-	m_lastDyno = Dyno::Run(m_assembly);
-	m_dynoCurrent = true;
+	engine.lastDyno = Dyno::Run(engine.assembly);
+	engine.dynoCurrent = true;
 	m_hours += 1.5;
 
-	if (m_lastDyno.failed)
-		Log(std::format("Dyno pull ended in failure at {:.0f} rpm.", m_lastDyno.failureRpm));
+	const auto& pull = engine.lastDyno;
+	if (pull.failed)
+		Log(std::format("Engine {}: dyno pull ended in failure at {:.0f} rpm.", m_activeEngine + 1, pull.failureRpm));
 	else
-		Log(std::format("Dyno pull: {:.0f} hp at {:.0f} rpm, {:.0f} Nm at {:.0f} rpm.",
-			m_lastDyno.peakPowerKw * 1.341, m_lastDyno.peakPowerRpm, m_lastDyno.peakTorqueNm, m_lastDyno.peakTorqueRpm));
+		Log(std::format("Engine {}: dyno pull, {:.0f} hp at {:.0f} rpm, {:.0f} Nm at {:.0f} rpm.", m_activeEngine + 1,
+			pull.peakPowerKw * 1.341, pull.peakPowerRpm, pull.peakTorqueNm, pull.peakTorqueRpm));
 
-	return m_lastDyno;
+	return engine.lastDyno;
 }
 
 const DynoResult& Workshop::GetLastDynoResult() const
 {
-	return m_lastDyno;
+	return Active().lastDyno;
 }
 
 bool Workshop::IsDynoResultCurrent() const
 {
-	return m_dynoCurrent;
+	return Active().dynoCurrent;
 }
 
 double Workshop::EstimateEngineValue() const
 {
-	if (!m_dynoCurrent || !m_lastDyno.ran || m_lastDyno.failed)
+	const auto& engine = Active();
+	if (!engine.dynoCurrent || !engine.lastDyno.ran || engine.lastDyno.failed)
 		return 0.0;
 
 	double partsValue = 0.0;
-	for (const auto& part : m_assembly.GetAllParts())
+	for (const auto& part : engine.assembly.GetAllParts())
 		partsValue += part->GetValue();
 
 	// Buyers pay for horsepower, but only from an engine they trust.
-	double horsepower = m_lastDyno.peakPowerKw * 1.341;
-	return std::round(partsValue * 0.8 + horsepower * 8.0 * m_lastDyno.healthScore / 100.0);
+	double horsepower = engine.lastDyno.peakPowerKw * 1.341;
+	return std::round(partsValue * 0.8 + horsepower * 8.0 * engine.lastDyno.healthScore / 100.0);
 }
 
 bool Workshop::SellEngine()
@@ -468,13 +585,14 @@ bool Workshop::SellEngine()
 		return false;
 	}
 
-	for (const auto& part : m_assembly.GetAllParts())
+	auto& engine = Active();
+	for (const auto& part : engine.assembly.GetAllParts())
 		m_inventory.erase(std::remove(m_inventory.begin(), m_inventory.end(), part), m_inventory.end());
 
-	m_assembly.Clear();
-	m_assemblyReadings.clear();
-	m_dynoCurrent = false;
+	engine.assembly.Clear();
+	engine.readings.clear();
+	engine.dynoCurrent = false;
 	m_money += value;
-	Log(std::format("Sold the engine for ${:.0f}.", value));
+	Log(std::format("Sold engine {} for ${:.0f}. Its stand is free for the next one.", m_activeEngine + 1, value));
 	return true;
 }

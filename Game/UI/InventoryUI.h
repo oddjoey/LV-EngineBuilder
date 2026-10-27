@@ -32,5 +32,6 @@ private:
 	ItemRef		m_contextItem = {};
 	ItemRef		m_selected = {};		// the last item clicked, shown in the details panel
 	std::string	m_tidyStatus = "";
+	int			m_checklistEngine = 0;	// which engine the checklist shows
 	Units::System m_units = Units::System::METRIC;
 };

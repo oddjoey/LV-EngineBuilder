@@ -136,11 +136,17 @@ void WorkshopUI::Open(WorkshopTab tab)
 {
 	m_open = true;
 	m_requestedTab = tab;
+	m_currentTab = tab;
+	if (tab != WorkshopTab::MACHINE)
+		m_activeMachine = -1;
 }
 
 void WorkshopUI::OpenStore(StoreCategory category)
 {
-	Open(WorkshopTab::STORE);
+	// The parts computer replaces whatever workshop screen was open.
+	m_open = false;
+	m_activeMachine = -1;
+	m_storeOpen = true;
 	m_requestedCategory = category;
 }
 
@@ -155,6 +161,7 @@ void WorkshopUI::OpenMachine(int machineIndex)
 void WorkshopUI::Close()
 {
 	m_open = false;
+	m_storeOpen = false;
 	m_activeMachine = -1;
 }
 
@@ -165,7 +172,7 @@ void WorkshopUI::SetXray(bool xray)
 
 bool WorkshopUI::IsOpen() const
 {
-	return m_open;
+	return m_open || m_storeOpen;
 }
 
 WorkshopTab WorkshopUI::GetCurrentTab() const
@@ -211,6 +218,11 @@ void WorkshopUI::Update(float deltaTime)
 		m_spinDownTime = (std::max)(0.f, m_spinDownTime - deltaTime);
 }
 
+int WorkshopUI::GetPullEngine() const
+{
+	return m_pullEngine;
+}
+
 float WorkshopUI::GetLiveRpm() const
 {
 	if (m_pullActive)
@@ -246,17 +258,11 @@ bool WorkshopUI::IsUsable(const Part& part) const
 	return !m_isUsable || m_isUsable(part.GetId());
 }
 
-bool WorkshopUI::BeginTab(const char* label, WorkshopTab tab)
-{
-	ImGuiTabItemFlags flags = m_requestedTab == tab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-	if (!ImGui::BeginTabItem(label, nullptr, flags))
-		return false;
-	m_currentTab = tab;
-	return true;
-}
-
 void WorkshopUI::Draw(Workshop& workshop)
 {
+	if (m_storeOpen)
+		DrawStoreWindow(workshop);
+
 	if (!m_open)
 	{
 		// Closed with the window's X: the machine tab goes with it.
@@ -274,7 +280,26 @@ void WorkshopUI::Draw(Workshop& workshop)
 		ImGui::SetNextWindowCollapsed(false);
 	}
 
-	if (ImGui::Begin("Engine Builder", &m_open))
+	// One screen at a time: Tab is the inventory, and each station's screen only opens from that
+	// station. The window is named after what it shows.
+	if (m_currentTab == WorkshopTab::BACKPACK)
+	{
+		if (ImGui::Begin("Inventory###Inventory", &m_open) && m_backpackContents)
+			m_backpackContents();
+		ImGui::End();
+		m_requestedTab = std::nullopt;
+		return;
+	}
+
+	std::string title = "Workbench";
+	if (m_currentTab == WorkshopTab::MACHINE && m_activeMachine >= 0)
+		title = MachineCatalog::All()[m_activeMachine].name;
+	else if (m_currentTab == WorkshopTab::ENGINE_STAND)
+		title = "Engine Stand";
+	else if (m_currentTab == WorkshopTab::DYNO)
+		title = "Dyno Cell";
+
+	if (ImGui::Begin(std::format("{}###Workshop", title).c_str(), &m_open))
 	{
 		DrawStatusBar(workshop);
 		ImGui::Separator();
@@ -282,48 +307,19 @@ void WorkshopUI::Draw(Workshop& workshop)
 		float logHeight = ImGui::GetTextLineHeightWithSpacing() * 7.f;
 		if (ImGui::BeginChild("Main", { 0.f, -logHeight }))
 		{
-			if (ImGui::BeginTabBar("Tabs"))
+			switch (m_currentTab)
 			{
-				if (m_backpackContents && BeginTab("Backpack", WorkshopTab::BACKPACK))
-				{
-					m_backpackContents();
-					ImGui::EndTabItem();
-				}
-				if (BeginTab("Bench", WorkshopTab::BENCH))
-				{
-					DrawInventoryTab(workshop);
-					ImGui::EndTabItem();
-				}
-				// Only while working at a machine, named after it.
-				if (m_activeMachine >= 0)
-				{
-					auto label = std::format("{}###Machine", MachineCatalog::All()[m_activeMachine].name);
-					if (BeginTab(label.c_str(), WorkshopTab::MACHINE))
-					{
+				case WorkshopTab::MACHINE:
+					if (m_activeMachine >= 0)
 						DrawMachineTab(workshop);
-						ImGui::EndTabItem();
-					}
-				}
-				if (BeginTab("Engine Stand", WorkshopTab::ENGINE_STAND))
-				{
-					DrawAssemblyTab(workshop);
-					ImGui::EndTabItem();
-				}
-				if (BeginTab("Dyno Cell", WorkshopTab::DYNO))
-				{
-					DrawDynoTab(workshop);
-					ImGui::EndTabItem();
-				}
-				if (BeginTab("Store", WorkshopTab::STORE))
-				{
-					DrawStoreTab(workshop);
-					ImGui::EndTabItem();
-				}
-				ImGui::EndTabBar();
+					break;
+				case WorkshopTab::ENGINE_STAND:	DrawAssemblyTab(workshop);	break;
+				case WorkshopTab::DYNO:			DrawDynoTab(workshop);		break;
+				default:						DrawInventoryTab(workshop);	break;
 			}
-			m_requestedTab = std::nullopt;
 		}
 		ImGui::EndChild();
+		m_requestedTab = std::nullopt;
 
 		DrawLog(workshop);
 	}
@@ -576,7 +572,7 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 		return;
 	}
 
-	bool installed = workshop.GetAssembly().Contains(part);
+	bool installed = workshop.EngineOf(*part) >= 0;
 	ImGui::BeginDisabled(installed);
 	if (ImGui::Button(std::format("Sell for ${:.0f}", std::round(part->GetValue() * 0.5)).c_str()))
 	{
@@ -1144,6 +1140,11 @@ void WorkshopUI::DrawStoreTab(Workshop& workshop)
 		DrawPartsStore(workshop);
 		ImGui::EndTabItem();
 	}
+	if (category("Engines", StoreCategory::ENGINES))
+	{
+		DrawEngineStore(workshop);
+		ImGui::EndTabItem();
+	}
 	if (category("Measuring Tools", StoreCategory::TOOLS))
 	{
 		DrawToolStore(workshop);
@@ -1156,6 +1157,127 @@ void WorkshopUI::DrawStoreTab(Workshop& workshop)
 	}
 	m_requestedCategory = std::nullopt;
 	ImGui::EndTabBar();
+}
+
+void WorkshopUI::DrawStoreWindow(Workshop& workshop)
+{
+	const ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowSize({ 1150.f, 760.f }, ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_FirstUseEver, { 0.5f, 0.5f });
+	if (m_requestedCategory)
+	{
+		ImGui::SetNextWindowFocus();
+		ImGui::SetNextWindowCollapsed(false);
+	}
+
+	if (ImGui::Begin("Parts Computer", &m_storeOpen))
+	{
+		ImGui::TextColored(COLOR_GOOD, "$%.0f", workshop.GetMoney());
+		ImGui::SameLine(0.f, 30.f);
+		ImGui::TextDisabled("Everything is delivered to the roll-up door: open it with E. Machines and stands are set up when their crate is opened.");
+		ImGui::SameLine(0.f, 30.f);
+		ImGui::TextDisabled("Tab / Esc: close");
+		ImGui::Separator();
+
+		float logHeight = ImGui::GetTextLineHeightWithSpacing() * 6.f;
+		if (ImGui::BeginChild("StoreMain", { 0.f, -logHeight }))
+			DrawStoreTab(workshop);
+		ImGui::EndChild();
+		DrawLog(workshop);
+	}
+	ImGui::End();
+}
+
+void WorkshopUI::DrawEngineStore(Workshop& workshop)
+{
+	const auto& spec = workshop.GetSpec();
+	int engines = workshop.GetEngineCount();
+
+	ImGui::PushTextWrapPos(0.f);
+	ImGui::TextDisabled("Build several engines at once: each one needs its own engine stand, and a core to start from.");
+	ImGui::PopTextWrapPos();
+
+	ImGui::SeparatorText("Engine stand");
+	ImGui::Text("You have %d of %d.", engines, Workshop::MAX_ENGINES);
+	ImGui::PushTextWrapPos(0.f);
+	ImGui::TextDisabled("A stand holds one engine while it's built, checked and run on the dyno. It's delivered in a crate by the roll-up door and set up when you open it; press F on it to move it.");
+	ImGui::PopTextWrapPos();
+	bool full = engines >= Workshop::MAX_ENGINES;
+	ImGui::BeginDisabled(full || workshop.GetMoney() < Workshop::ENGINE_STAND_PRICE);
+	if (ImGui::Button(std::format("Buy an engine stand (${:.0f})", Workshop::ENGINE_STAND_PRICE).c_str(), { 280.f, 34.f }))
+		workshop.BuyEngineStand();
+	ImGui::EndDisabled();
+	if (full)
+	{
+		ImGui::SameLine();
+		ImGui::TextDisabled("There's no room for more.");
+	}
+
+	ImGui::SeparatorText(std::format("{} core", spec.name).c_str());
+	ImGui::PushTextWrapPos(0.f);
+	ImGui::TextDisabled("A tired engine to rebuild, as a lot: block, crankshaft, head, camshaft, rods, valves and springs, all used and "
+		"unmeasured. Pistons, rings, bearings and the head gasket are bought on their own (Parts).");
+	ImGui::PopTextWrapPos();
+	double corePrice = workshop.CorePrice();
+	ImGui::BeginDisabled(workshop.GetMoney() < corePrice);
+	if (ImGui::Button(std::format("Buy a core (${:.0f})", corePrice).c_str(), { 280.f, 34.f }))
+		workshop.BuyCore();
+	ImGui::EndDisabled();
+
+	// Where each engine is up to, so it's clear which stand needs what.
+	ImGui::SeparatorText("Your engines");
+	if (ImGui::BeginTable("Engines", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+	{
+		ImGui::TableSetupColumn("Engine");
+		ImGui::TableSetupColumn("Parts fitted");
+		ImGui::TableSetupColumn("Dyno");
+		ImGui::TableHeadersRow();
+		for (int engine = 0; engine < engines; engine++)
+		{
+			const auto& build = workshop.GetEngine(engine);
+			int needed = 0;
+			for (int slot = 0; slot < static_cast<int>(AssemblySlot::COUNT); slot++)
+				needed += build.assembly.SlotCount(static_cast<AssemblySlot>(slot));
+			int fitted = static_cast<int>(build.assembly.GetAllParts().size());
+
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Text("Engine %d (stand %d)", engine + 1, engine + 1);
+			ImGui::TableNextColumn();
+			ImGui::TextColored(fitted == needed ? COLOR_GOOD : fitted > 0 ? COLOR_WARN : COLOR_DIM, "%d / %d", fitted, needed);
+			ImGui::TableNextColumn();
+			if (!build.lastDyno.ran)
+				ImGui::TextDisabled("Not run");
+			else if (build.lastDyno.failed)
+				ImGui::TextColored(COLOR_BAD, "Failed at %.0f rpm", build.lastDyno.failureRpm);
+			else
+				ImGui::TextColored(build.dynoCurrent ? COLOR_GOOD : COLOR_DIM, "%.0f hp%s", build.lastDyno.peakPowerKw * 1.341,
+					build.dynoCurrent ? "" : " (changed since)");
+		}
+		ImGui::EndTable();
+	}
+}
+
+void WorkshopUI::DrawEnginePicker(Workshop& workshop)
+{
+	int engines = workshop.GetEngineCount();
+	if (engines <= 1)
+		return;
+
+	// Switching engines mid-pull would swap the sheet out from under the run.
+	ImGui::BeginDisabled(m_pullActive);
+	int active = workshop.GetActiveEngine();
+	ImGui::TextUnformatted("Engine:");
+	for (int engine = 0; engine < engines; engine++)
+	{
+		ImGui::SameLine();
+		if (ImGui::RadioButton(std::format("{}##Engine{}", engine + 1, engine).c_str(), active == engine))
+			workshop.SetActiveEngine(engine);
+	}
+	ImGui::EndDisabled();
+	ImGui::SameLine(0.f, 20.f);
+	ImGui::TextDisabled("(on engine stand %d; E at a stand also picks its engine)", workshop.GetActiveEngine() + 1);
+	ImGui::Separator();
 }
 
 bool WorkshopUI::StoreCard(const char* id, const char* name, const std::string& price, bool selected, bool owned,
@@ -1233,7 +1355,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 
 	if (ImGui::BeginChild("ToolCatalogue", { ImGui::GetContentRegionAvail().x * 0.55f, 0.f }, ImGuiChildFlags_Borders))
 	{
-		ImGui::TextDisabled("Bought tools hang on the tool board. Take them down and use them on the parts.");
+		ImGui::TextDisabled("Tools are delivered to the roll-up door. Once unpacked, put them away on the tool board or in your backpack.");
 		ImGui::Spacing();
 		for (size_t i = 0; i < tools.size(); i++)
 		{
@@ -1288,7 +1410,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 
 		ImGui::Spacing();
 		if (workshop.OwnsTool(m_selectedTool))
-			ImGui::TextColored(COLOR_GOOD, "Owned. It's on the tool board or in your backpack.");
+			ImGui::TextColored(COLOR_GOOD, "Owned. Unpack it at the door if it hasn't been yet.");
 		else
 		{
 			ImGui::BeginDisabled(tool.price > workshop.GetMoney());
@@ -1307,7 +1429,7 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 
 	if (ImGui::BeginChild("MachineCatalogue", { ImGui::GetContentRegionAvail().x * 0.55f, 0.f }, ImGuiChildFlags_Borders))
 	{
-		ImGui::TextDisabled("Machines are set up in the shop when bought. Press F on one to move it.");
+		ImGui::TextDisabled("Machines are delivered in a crate and set up when it's opened. Press F on one to move it.");
 		ImGui::Spacing();
 		for (size_t i = 0; i < machines.size(); i++)
 		{
@@ -1354,7 +1476,7 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 
 		ImGui::Spacing();
 		if (workshop.OwnsMachine(m_selectedStoreMachine))
-			ImGui::TextColored(COLOR_GOOD, "Owned and set up in the shop.");
+			ImGui::TextColored(COLOR_GOOD, "Owned. If it isn't set up yet, its crate is waiting by the roll-up door.");
 		else
 		{
 			ImGui::BeginDisabled(machine.price > workshop.GetMoney());
@@ -1368,58 +1490,110 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 
 void WorkshopUI::DrawAssemblyTab(Workshop& workshop)
 {
-	auto missing = workshop.GetAssembly().MissingParts();
+	// Read-only, like the workbench: parts are fitted and taken off at the stand itself, by hand.
+	const auto& assembly = workshop.GetAssembly();
+	ImGui::Text("Engine %d", workshop.GetActiveEngine() + 1);
+	ImGui::SameLine(0.f, 20.f);
+	auto missing = assembly.MissingParts();
 	if (missing.empty())
 		ImGui::TextColored(COLOR_GOOD, "Long block complete. Check your clearances, then take it to the dyno.");
 	else
-		ImGui::TextDisabled("%zu positions still empty.", missing.size());
+		ImGui::TextDisabled("%zu positions still empty. Carry a part to the stand and press E to fit it.", missing.size());
 
-	if (ImGui::BeginChild("Slots", { 380.f, 0.f }, ImGuiChildFlags_Borders))
-		DrawAssemblySlots(workshop);
+	// What can go on next, in build order.
+	std::vector<std::string> ready;
+	for (size_t slotIndex = 0; slotIndex < static_cast<size_t>(AssemblySlot::COUNT); slotIndex++)
+	{
+		auto slot = static_cast<AssemblySlot>(slotIndex);
+		int count = 0;
+		for (int index = 0; index < assembly.SlotCount(slot); index++)
+			if (!assembly.Get(slot, index) && !assembly.MissingPrerequisite(slot, index))
+				count++;
+		if (count > 0)
+			ready.push_back(count > 1 ? std::format("{} x{}", AssemblySlotName(slot), count) : AssemblySlotName(slot));
+	}
+	if (!ready.empty())
+	{
+		std::string list;
+		for (const auto& entry : ready)
+			list += (list.empty() ? "" : ", ") + entry;
+		ImGui::TextColored(COLOR_WARN, "Next to fit: %s", list.c_str());
+	}
+	ImGui::Separator();
+
+	pPart selected = nullptr;
+	if (ImGui::BeginChild("Fitted", { 300.f, 0.f }, ImGuiChildFlags_Borders))
+		selected = DrawAssemblySlots(workshop);
 	ImGui::EndChild();
 
 	ImGui::SameLine();
 
-	if (ImGui::BeginChild("Checks", { 0.f, 0.f }, ImGuiChildFlags_Borders))
-		DrawAssemblyChecks(workshop);
+	if (ImGui::BeginChild("Inspector", { 0.f, 0.f }, ImGuiChildFlags_Borders))
+	{
+		// Nothing is machined on the engine.
+		m_selectedPartMachine = -1;
+		if (selected)
+			DrawPartInspector(workshop, selected);
+		else
+			DrawAssemblyChecks(workshop);
+	}
 	ImGui::EndChild();
 }
 
-void WorkshopUI::DrawAssemblySlots(Workshop& workshop)
+pPart WorkshopUI::DrawAssemblySlots(Workshop& workshop)
 {
-	auto& assembly = workshop.GetAssembly();
+	const auto& assembly = workshop.GetAssembly();
+	pPart selected = nullptr;
 
+	if (ImGui::Selectable("Engine checks", m_standPartId == 0))
+	{
+		m_standPartId = 0;
+		m_selectedFeature.clear();
+	}
+
+	bool any = false;
 	for (size_t slotIndex = 0; slotIndex < static_cast<size_t>(AssemblySlot::COUNT); slotIndex++)
 	{
 		auto slot = static_cast<AssemblySlot>(slotIndex);
-		int count = assembly.SlotCount(slot);
-		ImGui::SeparatorText(AssemblySlotName(slot));
-
-		for (int index = 0; index < count; index++)
+		bool header = false;
+		for (int index = 0; index < assembly.SlotCount(slot); index++)
 		{
-			ImGui::PushID(static_cast<int>(slotIndex * 100 + index));
-			auto installed = assembly.Get(slot, index);
-			std::string label = count > 1 ? std::format("{} {}", AssemblySlotName(slot), index + 1) : AssemblySlotName(slot);
-			std::string preview = installed ? std::format("#{} {}", installed->GetId(), installed->GetName()) : "(empty)";
-
-			ImGui::SetNextItemWidth(-130.f);
-			if (ImGui::BeginCombo(label.c_str(), preview.c_str()))
+			auto part = assembly.Get(slot, index);
+			if (!part)
+				continue;
+			if (!header)
 			{
-				if (ImGui::Selectable("(empty)", !installed))
-					workshop.RemovePart(slot, index);
-
-				for (const auto& part : workshop.GetInventory(EngineAssembly::SlotPartType(slot)))
-				{
-					if (part->GetCondition() == PartCondition::DAMAGED || !IsUsable(*part) || (assembly.Contains(part) && part != installed))
-						continue;
-					if (ImGui::Selectable(std::format("#{} {}", part->GetId(), part->GetName()).c_str(), part == installed))
-						workshop.InstallPart(slot, index, part);
-				}
-				ImGui::EndCombo();
+				ImGui::SeparatorText(AssemblySlotName(slot));
+				header = true;
 			}
+			any = true;
+
+			ImGui::PushID(static_cast<int>(part->GetId()));
+			PartIcons::Icon(part->GetType(), ImGui::GetTextLineHeight() * 1.3f);
+			ImGui::SameLine();
+			std::string position = assembly.SlotCount(slot) > 1 ? assembly.PositionName(slot, index) + ": " : "";
+			if (ImGui::Selectable(std::format("{}#{} {}", position, part->GetId(), part->GetName()).c_str(), m_standPartId == part->GetId()))
+			{
+				m_standPartId = part->GetId();
+				m_selectedFeature.clear();
+			}
+			if (m_standPartId == part->GetId())
+				selected = part;
 			ImGui::PopID();
 		}
 	}
+
+	if (!any)
+	{
+		ImGui::Spacing();
+		ImGui::PushTextWrapPos(0.f);
+		ImGui::TextDisabled("Nothing fitted yet. Start with the block: carry it to the stand and press E.");
+		ImGui::PopTextWrapPos();
+	}
+	// The part that was being looked at came off.
+	if (!selected)
+		m_standPartId = 0;
+	return selected;
 }
 
 void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
@@ -1665,15 +1839,24 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 
 void WorkshopUI::DrawDynoTab(Workshop& workshop)
 {
+	// While a pull runs, the sheet is that engine's.
+	if (m_pullActive && m_pullEngine >= 0)
+		workshop.SetActiveEngine(m_pullEngine);
+	DrawEnginePicker(workshop);
+
 	const auto& assembly = workshop.GetAssembly();
 	bool complete = assembly.IsComplete();
 
 	ImGui::BeginDisabled(!complete || workshop.GetMoney() < 50.0 || m_pullActive);
-	if (ImGui::Button("Strap it down and pull to redline ($50)"))
+	std::string pullLabel = workshop.GetEngineCount() > 1
+		? std::format("Strap engine {} down and pull to redline ($50)", workshop.GetActiveEngine() + 1)
+		: "Strap it down and pull to redline ($50)";
+	if (ImGui::Button(pullLabel.c_str()))
 	{
 		const auto& pull = workshop.RunDyno();
 		if (pull.ran && workshop.IsDynoResultCurrent() && !pull.curve.empty())
 		{
+			m_pullEngine = workshop.GetActiveEngine();
 			m_pullActive = true;
 			m_pullTime = 0.f;
 			m_spinDownTime = 0.f;

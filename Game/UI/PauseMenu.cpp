@@ -18,15 +18,14 @@ namespace
 		{ "Left click", "Measure with the tool in your hand (otherwise same as E)" },
 		{ "Right click", "Set what you're holding down where you're aiming" },
 		{ "G", "Drop what you're holding" },
-		{ "Q", "Stow what you're holding in your backpack (or back on its shelf)" },
+		{ "Q", "Stow what you're holding in your backpack (or, when it won't fit, on the parts shelf or tool board)" },
 		{ "1 - 0", "Take a hotbar item in hand / put it back" },
 		{ "Tab", "Open or close your backpack: drag items, R turns them, drag out to drop" },
-		{ "F", "Move equipment: machines, bench, stand, shelves, rack, tool board (R rotates, F cancels)" },
-		{ "R (hold)", "Turn the engine on the stand over by hand" },
-		{ "Z / X (hold)", "Roll the engine on its stand to get at it from underneath" },
+		{ "F", "Move equipment: machines, bench, stands, shelf, tool board (R rotates, F cancels)" },
+		{ "R (hold)", "Turn over the engine you're looking at, by hand" },
+		{ "Z / X (hold)", "Roll the engine you're looking at on its stand" },
 		{ "Esc", "Close screens / this menu" },
-		{ "F3", "Developer menu: x-ray part geometry, bounding boxes" },
-		{ "Home", "Engine debug window" },
+		{ "F3", "Developer menu: x-ray, bounding boxes, time of day, Lordi's debug panels" },
 	};
 }
 

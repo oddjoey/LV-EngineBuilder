@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -49,13 +50,14 @@ struct Station
 	std::string name = "";
 	pObject object = nullptr;
 	int machineIndex = -1;
+	int engineIndex = -1;					// engine stands: which engine (Workshop's numbering) it holds
 	glm::vec3 position = {};
 	float yaw = 0.f;
 	glm::vec3 localAnchor = {};				// where a part set up here rests, in the station's space
 	float partYaw = 0.f;
 	std::vector<ShopBox> localSurfaces = {};	// tops things can be set down on, in the station's space
 	bool movable = false;
-	bool present = true;					// unbought machines aren't in the shop
+	bool present = true;					// unbought machines and stands aren't in the shop
 	glm::vec3 homePosition = {};
 	float homeYaw = 0.f;
 
@@ -66,7 +68,7 @@ struct Station
 // Where an item physically is. The simulation doesn't care; this is purely the 3D world.
 enum class ItemPlace
 {
-	STORAGE,	// parts tidied onto the shelf or pallet rack; tools hung on the tool board
+	STORAGE,	// tools hung on the tool board (a part sent here is set down loose on the shelf instead)
 	BENCH,		// on the workbench, being inspected
 	MACHINE,	// set up in a machine
 	HAND,		// held: the equipped item
@@ -90,16 +92,20 @@ struct ItemVisual
 	pObject object = nullptr;
 	ItemPlace place = ItemPlace::STORAGE;
 	int machineIndex = -1;
+	int engineIndex = -1;		// fitted to this engine (place STAND)
 	Body body = {};
 	float yaw = 0.f;
 	std::vector<std::pair<SurfaceOverlay, pObject>> overlays = {};
 };
 
+// A delivery: parts and tools come out where it's opened; a machine or engine stand inside it is
+// set up in the shop.
 struct Package
 {
 	uint32_t id = 0;
 	pObject object = nullptr;
-	std::vector<uint32_t> partIds = {};
+	std::vector<ItemRef> items = {};
+	std::vector<size_t> stations = {};	// m_stations indices of machines and stands still crated
 	std::string label = "";
 	Body body = {};
 };
@@ -149,7 +155,8 @@ public:
 	bool IsPackaged(uint32_t partId) const;
 	// Deliveries sitting unopened in the shop.
 	int GetUnopenedPackages() const;
-	void SetEngineRpm(float rpm);
+	// The dyno pull in progress, if any, and which engine is on it.
+	void SetEngineRpm(float rpm, int engine);
 	void SetUnits(Units::System units);
 	void SetFieldOfView(float degrees);
 
@@ -194,6 +201,7 @@ private:
 		AssemblyCheck check = AssemblyCheck::NONE;
 		int index = 0;
 		bool rod = false;
+		int engine = 0;
 		glm::vec3 position = {};
 		std::string label = "";
 	};
@@ -211,6 +219,18 @@ private:
 		float originalYaw = 0.f;
 		float yaw = 0.f;
 		bool valid = false;
+		uint32_t packageId = 0;	// a delivery being carried instead of a station (0: none)
+		glm::quat originalRotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+		// Loose parts, tools and deliveries sitting on the station, carried along with it.
+		struct Rider
+		{
+			ItemRef item = {};
+			uint32_t packageId = 0;
+			glm::vec3 localPosition = {};
+			glm::quat localRotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+			float yaw = 0.f;	// the item's own yaw when the move started
+		};
+		std::vector<Rider> riders = {};
 	};
 
 	// Scene
@@ -221,6 +241,8 @@ private:
 	static ShopBox WorldBounds(const pObject& object);
 	static ShopBox TransformBox(const ShopBox& box, const glm::vec3& position, const glm::quat& rotation);
 	const Station* FindStation(StationType type) const;
+	// The stand holding this engine.
+	const Station* FindStand(int engine) const;
 
 	// Outdoors (ShopWorldOutdoors.cpp)
 	void BuildOutdoors();
@@ -234,17 +256,31 @@ private:
 	void SyncItems(Workshop& workshop);
 	ItemVisual& CreateItem(const ItemRef& ref, const pPart& part, uint32_t modelIndex, uint32_t textureIndex);
 	void RemoveItem(const ItemRef& ref);
+	// Bought machines and engine stands appear in the shop.
 	void SyncMachines(const Workshop& workshop);
-	void CreatePackage(const std::vector<uint32_t>& partIds);
+	// Dropped on the pile by the roll-up door.
+	void CreatePackage(const std::vector<ItemRef>& items, const std::vector<size_t>& stations);
+	bool IsCrated(size_t stationIndex) const;
+	// Where the next delivery lands: on top of the shortest pile by the door.
+	glm::vec3 NextDeliverySpot() const;
+	// Sets a part down loose on the parts shelf, in the first gap from the left on the lowest board
+	// it fits (or in front of it when it's full). Where the core starts, in part order, and where
+	// parts that are put away go.
+	void PutOnShelf(ItemVisual& visual);
+	// Little icon labels over the deliveries, showing what's in each.
+	void DrawPackageLabels(const Workshop& workshop, const FirstPersonController& player) const;
 	void OpenPackage(Package& package);
 	void UpdateStations(const Workshop& workshop);
 	void UpdateEngineMotion(float deltaTime, const Workshop& workshop, const InputManager& input, bool playerHasControl);
 	void LayoutItems(const Workshop& workshop, const FirstPersonController& player);
 	void PlaceResting(ItemVisual& visual, const glm::vec3& anchor, float yaw) const;
 	void PlaceOnStand(ItemVisual& visual, AssemblySlot slot, int index) const;
-	// Engine space (relative to the mount) to world, including the stand's roll.
-	glm::vec3 StandToWorld(const glm::vec3& offset) const;
-	glm::quat StandRotation() const;
+	// Engine space (relative to the mount) to world, including the stand's roll. The engine sits
+	// with its flywheel end (cylinder 4) against the stand's mounting plate.
+	glm::vec3 StandToWorld(int engine, const glm::vec3& offset) const;
+	glm::quat StandRotation(int engine) const;
+	// The engine the player is looking at (its stand or a part on it), or -1.
+	int LookedAtEngine() const;
 	void PlaceInHand(ItemVisual& visual, const FirstPersonController& player) const;
 	void UpdateOverlays(ItemVisual& visual) const;
 
@@ -267,7 +303,7 @@ private:
 	ItemVisual* GetHeld();
 	const ItemVisual* GetHeld() const;
 	glm::ivec2 GridSize(const ItemVisual& visual) const;
-	bool EngineTurnsFreely(const Workshop& workshop, std::string& reason) const;
+	bool EngineTurnsFreely(const Workshop& workshop, int engine, std::string& reason) const;
 	void Toast(const std::string& message);
 
 	// Measuring
@@ -279,7 +315,12 @@ private:
 
 	// Moving equipment
 	void StartMove(size_t stationIndex);
+	void StartMovePackage(uint32_t packageId);
+	// Puts everything riding on the station being moved back on it, wherever the station now is.
+	void CarryRiders(const Station& station);
+	bool IsRiding(const ItemRef& item, uint32_t packageId) const;
 	void UpdateMove(const FirstPersonController& player, const InputManager& input);
+	void UpdatePackageMove(const FirstPersonController& player, const InputManager& input);
 	bool StationFits(const Station& station, const glm::vec3& position, float yaw, const FirstPersonController* player) const;
 	void PlaceNewMachine(Station& station);
 
@@ -307,9 +348,11 @@ private:
 	uint32_t										m_nextPackageId = 1;
 	uint32_t										m_deliveries = 0;
 
-	float											m_crankAngle = 0.f;
-	float											m_engineRoll = 0.f;		// the stand's rotation about the crank axis
-	float											m_engineRpm = 0.f;
+	// Per engine stand
+	std::array<float, Workshop::MAX_ENGINES>		m_crankAngles = {};
+	std::array<float, Workshop::MAX_ENGINES>		m_engineRolls = {};	// each stand's rotation about the crank axis
+	float											m_engineRpm = 0.f;		// on the dyno
+	int												m_dynoEngine = -1;
 	float											m_handTurnRpm = 0.f;
 	float											m_time = 0.f;
 
@@ -323,6 +366,7 @@ private:
 	Readout											m_readout = {};
 	std::string										m_prompt = "";
 	std::string										m_secondaryPrompt = "";
+	std::string										m_heldHint = "";	// what the item in hand can do, by the hotbar
 	std::string										m_toast = "";
 	float											m_toastTime = 0.f;
 	size_t											m_seenLogSize = 0;

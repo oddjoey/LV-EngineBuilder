@@ -16,7 +16,7 @@
 
 namespace
 {
-	constexpr int VERSION = 1;
+	constexpr int VERSION = 3;	// 2: several engines, one per engine stand. 3: tools and equipment delivered, no pallet rack
 	constexpr const char* MAGIC = "LVSAVE";
 
 	// Writes whitespace-separated tokens; strings are quoted so they can hold spaces.
@@ -164,7 +164,7 @@ namespace
 	// Everything about the 3D shop, read in full before any of it is applied.
 	struct SavedStation { glm::vec3 position; float yaw; bool present; };
 	struct SavedItem { ItemRef ref; ItemPlace place; int machineIndex; glm::vec3 position; float yaw; };
-	struct SavedPackage { uint32_t id; bool big; glm::vec3 position; float yaw; std::string label; std::vector<uint32_t> partIds; };
+	struct SavedPackage { uint32_t id; bool big; glm::vec3 position; float yaw; std::string label; std::vector<ItemRef> items; std::vector<size_t> stations; };
 	struct SavedWorld
 	{
 		std::vector<SavedStation> stations;
@@ -175,8 +175,8 @@ namespace
 		std::vector<GridItem> grid;
 		std::array<ItemRef, PlayerInventory::HOTBAR_SLOTS> hotbar = {};
 		ItemRef equipped;
-		float engineRoll = 0.f;
-		float crankAngle = 0.f;
+		std::array<float, Workshop::MAX_ENGINES> engineRolls = {};
+		std::array<float, Workshop::MAX_ENGINES> crankAngles = {};
 		bool doorOpen = true;
 		glm::vec3 playerPosition = {};
 		float playerYaw = 0.f;
@@ -258,31 +258,36 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 		}
 	}
 
-	// The engine on the stand, by part id.
-	std::vector<std::array<long long, 3>> installed;
-	for (int slot = 0; slot < static_cast<int>(AssemblySlot::COUNT); slot++)
-		for (int index = 0; index < workshop.m_assembly.SlotCount(static_cast<AssemblySlot>(slot)); index++)
-			if (auto part = workshop.m_assembly.Get(static_cast<AssemblySlot>(slot), index))
-				installed.push_back({ slot, index, part->GetId() });
-	out.Word("assembly").Int(installed.size()).Line();
-	for (const auto& [slot, index, id] : installed)
-		out.Int(slot).Int(index).Int(id).Line();
+	// Each engine on its stand: its parts by id, its assembly checks and its last dyno pull.
+	out.Word("engines").Int(workshop.m_engines.size()).Int(workshop.m_activeEngine).Line();
+	for (const auto& engine : workshop.m_engines)
+	{
+		const auto& assembly = engine->assembly;
+		std::vector<std::array<long long, 3>> installed;
+		for (int slot = 0; slot < static_cast<int>(AssemblySlot::COUNT); slot++)
+			for (int index = 0; index < assembly.SlotCount(static_cast<AssemblySlot>(slot)); index++)
+				if (auto part = assembly.Get(static_cast<AssemblySlot>(slot), index))
+					installed.push_back({ slot, index, part->GetId() });
+		out.Word("assembly").Int(installed.size()).Line();
+		for (const auto& [slot, index, id] : installed)
+			out.Int(slot).Int(index).Int(id).Line();
 
-	out.Word("assembly_readings").Int(workshop.m_assemblyReadings.size()).Line();
-	for (const auto& [label, reading] : workshop.m_assemblyReadings)
-		out.Str(label).Num(reading.value).Int(reading.stale).Line();
+		out.Word("assembly_readings").Int(engine->readings.size()).Line();
+		for (const auto& [label, reading] : engine->readings)
+			out.Str(label).Num(reading.value).Int(reading.stale).Line();
 
-	const auto& dyno = workshop.m_lastDyno;
-	out.Word("dyno").Int(dyno.ran).Int(dyno.failed).Num(dyno.failureRpm).Num(dyno.peakTorqueNm).Num(dyno.peakTorqueRpm)
-		.Num(dyno.peakPowerKw).Num(dyno.peakPowerRpm).Num(dyno.oilPressureBar).Num(dyno.blowbyPercent).Num(dyno.compressionRatio)
-		.Num(dyno.displacementCc).Num(dyno.healthScore).Int(workshop.m_dynoCurrent).Line();
-	out.Word("curve").Int(dyno.curve.size());
-	for (const auto& point : dyno.curve)
-		out.Num(point.rpm).Num(point.torqueNm).Num(point.powerKw);
-	out.Line();
-	out.Word("findings").Int(dyno.findings.size()).Line();
-	for (const auto& finding : dyno.findings)
-		out.Int(static_cast<int>(finding.severity)).Str(finding.message).Line();
+		const auto& dyno = engine->lastDyno;
+		out.Word("dyno").Int(dyno.ran).Int(dyno.failed).Num(dyno.failureRpm).Num(dyno.peakTorqueNm).Num(dyno.peakTorqueRpm)
+			.Num(dyno.peakPowerKw).Num(dyno.peakPowerRpm).Num(dyno.oilPressureBar).Num(dyno.blowbyPercent).Num(dyno.compressionRatio)
+			.Num(dyno.displacementCc).Num(dyno.healthScore).Int(engine->dynoCurrent).Line();
+		out.Word("curve").Int(dyno.curve.size());
+		for (const auto& point : dyno.curve)
+			out.Num(point.rpm).Num(point.torqueNm).Num(point.powerKw);
+		out.Line();
+		out.Word("findings").Int(dyno.findings.size()).Line();
+		for (const auto& finding : dyno.findings)
+			out.Int(static_cast<int>(finding.severity)).Str(finding.message).Line();
+	}
 
 	// The 3D shop
 	out.Word("stations").Int(world.m_stations.size()).Line();
@@ -294,7 +299,9 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	{
 		WriteItemRef(out, ref);
 		glm::vec3 position = visual.object->GetPosition();
-		out.Int(static_cast<int>(visual.place)).Int(visual.machineIndex).Num(position.x).Num(position.y).Num(position.z).Num(visual.yaw).Line();
+		// The index is the machine for a part set up in one, or the engine for a part fitted to one.
+		int placeIndex = visual.place == ItemPlace::STAND ? visual.engineIndex : visual.machineIndex;
+		out.Int(static_cast<int>(visual.place)).Int(placeIndex).Num(position.x).Num(position.y).Num(position.z).Num(visual.yaw).Line();
 	}
 
 	out.Word("packages").Int(world.m_packages.size()).Int(world.m_nextPackageId).Int(world.m_deliveries).Line();
@@ -304,9 +311,12 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 		bool big = package.object->GetModelIndex() == world.m_assets->Model(ShopModels::PACKAGE_CRATE);
 		glm::quat rotation = package.object->GetRotation();
 		float yaw = 2.f * std::atan2(rotation.y, rotation.w);	// packages only ever turn about Y
-		out.Int(id).Int(big).Num(position.x).Num(position.y).Num(position.z).Num(yaw).Str(package.label).Int(package.partIds.size());
-		for (uint32_t partId : package.partIds)
-			out.Int(partId);
+		out.Int(id).Int(big).Num(position.x).Num(position.y).Num(position.z).Num(yaw).Str(package.label).Int(package.items.size());
+		for (const auto& item : package.items)
+			WriteItemRef(out, item);
+		out.Int(package.stations.size());
+		for (size_t station : package.stations)
+			out.Int(station);
 		out.Line();
 	}
 
@@ -325,7 +335,10 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	WriteItemRef(out, world.m_equipped);
 	out.Line();
 
-	out.Word("engine").Num(world.m_engineRoll).Num(world.m_crankAngle).Line();
+	out.Word("engine").Int(world.m_engineRolls.size());
+	for (size_t engine = 0; engine < world.m_engineRolls.size(); engine++)
+		out.Num(world.m_engineRolls[engine]).Num(world.m_crankAngles[engine]);
+	out.Line();
 	out.Word("door").Int(world.m_doorOpen).Line();
 	glm::vec3 feet = player.GetFeetPosition();
 	out.Word("player").Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch()).Line();
@@ -369,8 +382,10 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	buffer << file.rdbuf();
 	Reader in(buffer.str());
 
+	// Version 1 saves predate multiple engines: they hold one engine and one stand.
 	in.Expect(MAGIC);
-	if (in.Int() != VERSION && !in.Failed())
+	long long version = in.Int();
+	if ((version < 1 || version > VERSION) && !in.Failed())
 		in.Fail("it was saved by a different version of the game");
 
 	in.Expect("time");
@@ -488,58 +503,85 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		highestId = (std::max)(highestId, id);
 	}
 
-	std::vector<std::array<long long, 3>> installed;
-	in.Expect("assembly");
-	size_t installedCount = in.Count();
-	for (size_t i = 0; i < installedCount && !in.Failed(); i++)
+	// Each engine: parts fitted by id, assembly checks, last dyno pull.
+	struct SavedEngine
 	{
-		long long slot = in.Int(), index = in.Int(), id = in.Int();
-		if (slot < 0 || slot >= static_cast<long long>(AssemblySlot::COUNT) || !partsById.contains(static_cast<uint32_t>(id)))
-			in.Fail("the engine on the stand refers to a missing part");
-		installed.push_back({ slot, index, id });
-	}
+		std::vector<std::array<long long, 3>> installed;
+		std::map<std::string, AssemblyReading> readings;
+		DynoResult dyno;
+		bool dynoCurrent = false;
+	};
+	auto readEngine = [&](SavedEngine& engine) {
+		in.Expect("assembly");
+		size_t installedCount = in.Count();
+		for (size_t i = 0; i < installedCount && !in.Failed(); i++)
+		{
+			long long slot = in.Int(), index = in.Int(), id = in.Int();
+			if (slot < 0 || slot >= static_cast<long long>(AssemblySlot::COUNT) || !partsById.contains(static_cast<uint32_t>(id)))
+				in.Fail("an engine on a stand refers to a missing part");
+			engine.installed.push_back({ slot, index, id });
+		}
 
-	std::map<std::string, AssemblyReading> assemblyReadings;
-	in.Expect("assembly_readings");
-	size_t assemblyReadingCount = in.Count();
-	for (size_t i = 0; i < assemblyReadingCount && !in.Failed(); i++)
-	{
-		std::string label = in.Next();
-		AssemblyReading reading;
-		reading.value = in.Num();
-		reading.stale = in.Int() != 0;
-		assemblyReadings[label] = reading;
-	}
+		in.Expect("assembly_readings");
+		size_t assemblyReadingCount = in.Count();
+		for (size_t i = 0; i < assemblyReadingCount && !in.Failed(); i++)
+		{
+			std::string label = in.Next();
+			AssemblyReading reading;
+			reading.value = in.Num();
+			reading.stale = in.Int() != 0;
+			engine.readings[label] = reading;
+		}
 
-	DynoResult dyno;
-	in.Expect("dyno");
-	dyno.ran = in.Int() != 0;
-	dyno.failed = in.Int() != 0;
-	dyno.failureRpm = static_cast<float>(in.Num());
-	dyno.peakTorqueNm = in.Num();
-	dyno.peakTorqueRpm = in.Num();
-	dyno.peakPowerKw = in.Num();
-	dyno.peakPowerRpm = in.Num();
-	dyno.oilPressureBar = in.Num();
-	dyno.blowbyPercent = in.Num();
-	dyno.compressionRatio = in.Num();
-	dyno.displacementCc = in.Num();
-	dyno.healthScore = in.Num();
-	bool dynoCurrent = in.Int() != 0;
-	in.Expect("curve");
-	dyno.curve.resize(in.Count());
-	for (auto& point : dyno.curve)
+		auto& dyno = engine.dyno;
+		in.Expect("dyno");
+		dyno.ran = in.Int() != 0;
+		dyno.failed = in.Int() != 0;
+		dyno.failureRpm = static_cast<float>(in.Num());
+		dyno.peakTorqueNm = in.Num();
+		dyno.peakTorqueRpm = in.Num();
+		dyno.peakPowerKw = in.Num();
+		dyno.peakPowerRpm = in.Num();
+		dyno.oilPressureBar = in.Num();
+		dyno.blowbyPercent = in.Num();
+		dyno.compressionRatio = in.Num();
+		dyno.displacementCc = in.Num();
+		dyno.healthScore = in.Num();
+		engine.dynoCurrent = in.Int() != 0;
+		in.Expect("curve");
+		dyno.curve.resize(in.Count());
+		for (auto& point : dyno.curve)
+		{
+			point.rpm = static_cast<float>(in.Num());
+			point.torqueNm = static_cast<float>(in.Num());
+			point.powerKw = static_cast<float>(in.Num());
+		}
+		in.Expect("findings");
+		dyno.findings.resize(in.Count());
+		for (auto& finding : dyno.findings)
+		{
+			finding.severity = in.Enumerated<FindingSeverity>(3);
+			finding.message = in.Next();
+		}
+	};
+
+	std::vector<SavedEngine> engines;
+	int activeEngine = 0;
+	if (version == 1)
 	{
-		point.rpm = static_cast<float>(in.Num());
-		point.torqueNm = static_cast<float>(in.Num());
-		point.powerKw = static_cast<float>(in.Num());
+		engines.resize(1);
+		readEngine(engines[0]);
 	}
-	in.Expect("findings");
-	dyno.findings.resize(in.Count());
-	for (auto& finding : dyno.findings)
+	else
 	{
-		finding.severity = in.Enumerated<FindingSeverity>(3);
-		finding.message = in.Next();
+		in.Expect("engines");
+		size_t engineCount = in.Count();
+		activeEngine = static_cast<int>(in.Int());
+		if (!in.Failed() && (engineCount < 1 || engineCount > static_cast<size_t>(Workshop::MAX_ENGINES)))
+			in.Fail("it has an impossible number of engines");
+		engines.resize((std::min)(engineCount, static_cast<size_t>(Workshop::MAX_ENGINES)));
+		for (auto& engine : engines)
+			readEngine(engine);
 	}
 
 	SavedWorld saved;
@@ -551,7 +593,12 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		station.yaw = static_cast<float>(in.Num());
 		station.present = in.Int() != 0;
 	}
-	if (!in.Failed() && saved.stations.size() != world.m_stations.size())
+	// Before version 3 the pallet rack was the second station; it's gone. Version 1 had no extra
+	// engine stands either, which come last and keep their defaults.
+	if (version < 3 && saved.stations.size() > 1)
+		saved.stations.erase(saved.stations.begin() + 1);
+	size_t expectedStations = version == 1 ? world.m_stations.size() - (Workshop::MAX_ENGINES - 1) : world.m_stations.size();
+	if (!in.Failed() && saved.stations.size() != expectedStations)
 		in.Fail("the shop's equipment list has changed since this was saved");
 
 	in.Expect("items");
@@ -576,9 +623,20 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		package.position = ReadVec3(in);
 		package.yaw = static_cast<float>(in.Num());
 		package.label = in.Next();
-		package.partIds.resize(in.Count());
-		for (auto& partId : package.partIds)
-			partId = static_cast<uint32_t>(in.Int());
+		// Before version 3 packages only ever held parts, listed by id, and no equipment.
+		package.items.resize(in.Count());
+		for (auto& item : package.items)
+			item = version < 3 ? ItemRef::Part(static_cast<uint32_t>(in.Int())) : ReadItemRef(in);
+		if (version >= 3)
+		{
+			package.stations.resize(in.Count());
+			for (auto& station : package.stations)
+			{
+				station = static_cast<size_t>(in.Int());
+				if (station >= world.m_stations.size())
+					in.Fail("a delivery holds equipment the shop doesn't have");
+			}
+		}
 	}
 
 	in.Expect("backpack");
@@ -596,8 +654,17 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	saved.equipped = ReadItemRef(in);
 
 	in.Expect("engine");
-	saved.engineRoll = static_cast<float>(in.Num());
-	saved.crankAngle = static_cast<float>(in.Num());
+	size_t poses = version == 1 ? 1 : in.Count();
+	for (size_t engine = 0; engine < poses && !in.Failed(); engine++)
+	{
+		float roll = static_cast<float>(in.Num());
+		float crank = static_cast<float>(in.Num());
+		if (engine < saved.engineRolls.size())
+		{
+			saved.engineRolls[engine] = roll;
+			saved.crankAngles[engine] = crank;
+		}
+	}
 	in.Expect("door");
 	saved.doorOpen = in.Int() != 0;
 	in.Expect("player");
@@ -619,25 +686,41 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	workshop.m_ownedTools = tools;
 	workshop.m_ownedMachines = machines;
 	workshop.m_inventory = parts;
-	workshop.m_assembly.Clear();
-	for (const auto& [slot, index, id] : installed)
+	workshop.m_engines.clear();
+	for (const auto& saved_engine : engines)
 	{
-		std::string installError;
-		workshop.m_assembly.Install(static_cast<AssemblySlot>(slot), static_cast<int>(index), partsById.at(static_cast<uint32_t>(id)), installError);
+		auto engine = std::make_unique<EngineBuild>(spec);
+		for (const auto& [slot, index, id] : saved_engine.installed)
+		{
+			std::string installError;
+			engine->assembly.Install(static_cast<AssemblySlot>(slot), static_cast<int>(index), partsById.at(static_cast<uint32_t>(id)), installError);
+		}
+		engine->readings = saved_engine.readings;
+		engine->lastDyno = saved_engine.dyno;
+		engine->dynoCurrent = saved_engine.dynoCurrent;
+		workshop.m_engines.push_back(std::move(engine));
 	}
-	workshop.m_assemblyReadings = assemblyReadings;
-	workshop.m_lastDyno = dyno;
-	workshop.m_dynoCurrent = dynoCurrent;
+	workshop.m_activeEngine = std::clamp(activeEngine, 0, workshop.GetEngineCount() - 1);
 	Part::s_nextId = (std::max)(Part::s_nextId, highestId + 1);
 
 	ResetWorld(workshop, world);
 
-	for (size_t i = 0; i < saved.stations.size(); i++)
+	for (size_t i = 0; i < world.m_stations.size(); i++)
 	{
 		auto& station = world.m_stations[i];
-		station.position = saved.stations[i].position;
-		station.yaw = saved.stations[i].yaw;
-		station.present = saved.stations[i].present;
+		if (i < saved.stations.size())
+		{
+			station.position = saved.stations[i].position;
+			station.yaw = saved.stations[i].yaw;
+			station.present = saved.stations[i].present;
+		}
+		else
+		{
+			// Stations the save didn't know about start at home, there only if owned.
+			station.position = station.homePosition;
+			station.yaw = station.homeYaw;
+			station.present = station.type != StationType::ENGINE_STAND || station.engineIndex < workshop.GetEngineCount();
+		}
 		station.object->SetVisible(station.present);
 		station.object->SetPickable(station.present);
 	}
@@ -649,6 +732,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			continue;
 		visual->place = item.place;
 		visual->machineIndex = item.place == ItemPlace::MACHINE ? item.machineIndex : -1;
+		visual->engineIndex = item.place == ItemPlace::STAND ? (std::max)(item.machineIndex, 0) : -1;
 		visual->yaw = item.yaw;
 		if (item.place == ItemPlace::WORLD)
 		{
@@ -657,26 +741,37 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			visual->object->SetRotation(ShopLayout::Yaw(item.yaw));
 			visual->body = { {}, false };
 		}
-		// The engine stand decides what's on it.
-		if (item.place == ItemPlace::STAND && !workshop.m_assembly.Contains(visual->part))
+		// The engines decide what's on the stands.
+		if (item.place == ItemPlace::STAND && (!visual->part || workshop.EngineOf(*visual->part) < 0))
+		{
 			visual->place = ItemPlace::STORAGE;
+			visual->engineIndex = -1;
+		}
 	}
 
 	for (const auto& saved_package : saved.packages)
 	{
-		std::vector<uint32_t> ids;
-		for (uint32_t id : saved_package.partIds)
-			if (auto visual = world.Find(ItemRef::Part(id)))
+		std::vector<ItemRef> items;
+		for (const auto& ref : saved_package.items)
+			if (auto visual = world.Find(ref))
 			{
 				visual->place = ItemPlace::PACKAGED;
-				ids.push_back(id);
+				items.push_back(ref);
 			}
-		if (ids.empty())
+		// Crated equipment stays out of the shop until it's unpacked.
+		for (size_t station : saved_package.stations)
+		{
+			auto& crated = world.m_stations[station];
+			crated.present = false;
+			crated.object->SetVisible(false);
+			crated.object->SetPickable(false);
+		}
+		if (items.empty() && saved_package.stations.empty())
 			continue;
 		auto object = saved_package.big ? world.Spawn(ShopModels::PACKAGE_CRATE, ShopTextures::WOOD, saved_package.position, saved_package.yaw)
 			: world.Spawn(ShopModels::PACKAGE_BOX, ShopTextures::CARDBOARD, saved_package.position, saved_package.yaw);
 		object->SetPickable(true);
-		Package package = { saved_package.id, object, ids, saved_package.label, { {}, false } };
+		Package package = { saved_package.id, object, items, saved_package.stations, saved_package.label, { {}, false } };
 		world.m_targets[object.get()] = { ShopWorld::TargetKind::PACKAGE, {}, package.id, 0 };
 		world.m_packages[package.id] = package;
 	}
@@ -703,8 +798,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		if (visual.place == ItemPlace::HAND && ref != world.m_equipped)
 			visual.place = ItemPlace::INVENTORY;
 
-	world.m_engineRoll = saved.engineRoll;
-	world.m_crankAngle = saved.crankAngle;
+	world.m_engineRolls = saved.engineRolls;
+	world.m_crankAngles = saved.crankAngles;
 	world.SetDoorOpen(saved.doorOpen, true);
 	world.RebuildCollision();
 
@@ -722,12 +817,17 @@ void SaveGame::StartNew(Workshop& workshop, ShopWorld& world, FirstPersonControl
 	{
 		station.position = station.homePosition;
 		station.yaw = station.homeYaw;
-		station.present = station.type != StationType::MACHINE || workshop.OwnsMachine(station.machineIndex);
+		if (station.type == StationType::MACHINE)
+			station.present = workshop.OwnsMachine(station.machineIndex);
+		else if (station.type == StationType::ENGINE_STAND)
+			station.present = station.engineIndex < workshop.GetEngineCount();
+		else
+			station.present = true;
 		station.object->SetVisible(station.present);
 		station.object->SetPickable(station.present);
 	}
-	world.m_engineRoll = 0.f;
-	world.m_crankAngle = 0.f;
+	world.m_engineRolls = {};
+	world.m_crankAngles = {};
 	world.m_deliveries = 0;
 	world.SetDoorOpen(true, true);
 	world.RebuildCollision();

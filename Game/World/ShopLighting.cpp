@@ -30,7 +30,7 @@ namespace
 	const glm::vec3 DAY_GROUND = { 0.20f, 0.19f, 0.15f };
 	const glm::vec3 NIGHT_GROUND = { 0.01f, 0.012f, 0.015f };
 
-	const glm::vec3 SHOP_LAMP = glm::vec3(1.f, 0.96f, 0.88f) * 3.2f;
+	const glm::vec3 SHOP_LAMP = glm::vec3(1.f, 0.96f, 0.88f) * 4.f;
 	const glm::vec3 STREET_LAMP = glm::vec3(1.f, 0.78f, 0.5f) * 14.f;
 	const glm::vec3 PORCH_LAMP = glm::vec3(1.f, 0.85f, 0.6f) * 5.f;
 }
@@ -83,10 +83,17 @@ void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float
 	lighting.hasInterior = true;
 	lighting.interiorMin = { -HALF_WIDTH - MARGIN, -0.5f, -HALF_DEPTH - MARGIN };
 	lighting.interiorMax = { HALF_WIDTH + MARGIN, HEIGHT + MARGIN, HALF_DEPTH + MARGIN };
-	lighting.interiorAmbient = glm::vec3(0.07f, 0.07f, 0.075f) + glm::vec3(0.9f, 0.95f, 1.f) * daylight * (0.10f + 0.08f * doorOpen);
+	// Kept modest so the (shadowed) lamps do most of the lighting and things look grounded.
+	lighting.interiorAmbient = glm::vec3(0.05f, 0.05f, 0.055f) + glm::vec3(0.9f, 0.95f, 1.f) * daylight * (0.06f + 0.05f * doorOpen);
 
+	// The ceiling lamps shine down on everything in the shop, so they cast shadows: machines,
+	// parts and tools sit on the floor and benches instead of floating.
 	for (const auto& lamp : LAMPS)
-		lighting.pointLights.push_back({ lamp - glm::vec3(0.f, 0.1f, 0.f), 9.f, SHOP_LAMP, LightZone::INTERIOR });
+	{
+		PointLight light = { lamp - glm::vec3(0.f, 0.1f, 0.f), 9.f, SHOP_LAMP, LightZone::INTERIOR };
+		light.castsShadows = true;
+		lighting.pointLights.push_back(light);
+	}
 
 	// Street and porch lights come on at dusk.
 	float lampsOn = 1.f - glm::smoothstep(0.25f, 0.55f, daylight);

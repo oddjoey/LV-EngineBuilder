@@ -91,20 +91,30 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 		}
 	}
 
-	// Assembly checks on the engine stand.
+	// Assembly checks on whichever engine stand it's aimed at.
 	if (!tool.assemblyChecks.empty())
 	{
-		for (const auto& anchor : ShopAssets::AssemblyAnchors(workshop.GetSpec()))
+		bool severalEngines = workshop.GetEngineCount() > 1;
+		for (int engine = 0; engine < workshop.GetEngineCount(); engine++)
 		{
-			if (!tool.CanCheck(anchor.check))
+			const Station* stand = FindStand(engine);
+			if (!stand || !stand->present || glm::length(stand->position - eye) > MEASURE_DISTANCE + 1.5f)
 				continue;
-			MeasureTarget target;
-			target.assembly = true;
-			target.check = anchor.check;
-			target.index = anchor.index;
-			target.rod = anchor.rod;
-			target.label = Workshop::AssemblyReadingLabel(anchor.check, anchor.index, anchor.rod);
-			consider(StandToWorld(anchor.position), target);
+			for (const auto& anchor : ShopAssets::AssemblyAnchors(workshop.GetSpec()))
+			{
+				if (!tool.CanCheck(anchor.check))
+					continue;
+				MeasureTarget target;
+				target.assembly = true;
+				target.check = anchor.check;
+				target.index = anchor.index;
+				target.rod = anchor.rod;
+				target.engine = engine;
+				target.label = Workshop::AssemblyReadingLabel(anchor.check, anchor.index, anchor.rod);
+				if (severalEngines)
+					target.label = std::format("Engine {}: {}", engine + 1, target.label);
+				consider(StandToWorld(engine, anchor.position), target);
+			}
 		}
 	}
 
@@ -131,6 +141,7 @@ void ShopWorld::Measure(Workshop& workshop, const MeasureTarget& target, int too
 
 	if (target.assembly)
 	{
+		workshop.SetActiveEngine(target.engine);
 		if (!workshop.MeasureAssembly(target.check, target.index, target.rod, toolIndex))
 			return;
 		auto reading = workshop.GetAssemblyReading(target.check, target.index, target.rod);
@@ -203,15 +214,102 @@ void ShopWorld::StartMove(size_t stationIndex)
 {
 	auto& station = m_stations[stationIndex];
 	m_move = MoveState{ stationIndex, station.position, station.yaw, station.yaw, false };
+
+	// Whatever is sitting on it (or stacked on something that is) goes with it: anything off the
+	// floor whose middle is over the station's footprint.
+	auto bounds = WorldBounds(station.object);
+	glm::quat inverse = glm::inverse(station.Rotation());
+	auto onTop = [&](const pObject& object) {
+		auto box = WorldBounds(object);
+		glm::vec3 middle = (box.min + box.max) * 0.5f;
+		return box.min.y > 0.02f && box.min.y < bounds.max.y + 0.5f && middle.x > bounds.min.x && middle.x < bounds.max.x
+			&& middle.z > bounds.min.z && middle.z < bounds.max.z;
+	};
+	auto ride = [&](const pObject& object, const ItemRef& item, uint32_t packageId, float yaw) {
+		m_move->riders.push_back({ item, packageId, inverse * (object->GetPosition() - station.position), inverse * object->GetRotation(), yaw });
+	};
+	for (const auto& [ref, visual] : m_items)
+		if (visual.place == ItemPlace::WORLD && onTop(visual.object))
+			ride(visual.object, ref, 0, visual.yaw);
+	for (const auto& [id, package] : m_packages)
+		if (onTop(package.object))
+			ride(package.object, {}, id, 0.f);
+}
+
+void ShopWorld::CarryRiders(const Station& station)
+{
+	if (!m_move)
+		return;
+	glm::quat rotation = station.Rotation();
+	float turned = station.yaw - m_move->originalYaw;
+	for (const auto& rider : m_move->riders)
+	{
+		pObject object = nullptr;
+		Body* body = nullptr;
+		if (rider.packageId)
+		{
+			auto package = m_packages.find(rider.packageId);
+			if (package == m_packages.end())
+				continue;
+			object = package->second.object;
+			body = &package->second.body;
+		}
+		else if (auto visual = Find(rider.item); visual && visual->place == ItemPlace::WORLD)
+		{
+			object = visual->object;
+			body = &visual->body;
+			visual->yaw = rider.yaw + turned;
+		}
+		if (!object)
+			continue;
+		object->SetPosition(station.position + rotation * rider.localPosition);
+		object->SetRotation(rotation * rider.localRotation);
+		// Settles again once the station is set down.
+		*body = {};
+		body->resting = false;
+	}
+}
+
+bool ShopWorld::IsRiding(const ItemRef& item, uint32_t packageId) const
+{
+	if (!m_move)
+		return false;
+	return std::any_of(m_move->riders.begin(), m_move->riders.end(), [&](const MoveState::Rider& rider) {
+		return packageId ? rider.packageId == packageId : (!rider.packageId && rider.item == item);
+	});
+}
+
+void ShopWorld::StartMovePackage(uint32_t packageId)
+{
+	auto& package = m_packages.at(packageId);
+	m_move = MoveState{ 0, package.object->GetPosition(), 0.f, 0.f, false, packageId, package.object->GetRotation() };
+	// Anything stacked on it drops once it's lifted off.
+	package.body = {};
+	package.body.resting = false;
 }
 
 void ShopWorld::CancelMove()
 {
 	if (!m_move)
 		return;
+	if (m_move->packageId)
+	{
+		auto& package = m_packages.at(m_move->packageId);
+		package.object->SetPosition(m_move->originalPosition);
+		package.object->SetRotation(m_move->originalRotation);
+		// Whatever was stacked on it has dropped into its place by now, so it goes back on top.
+		auto box = WorldBounds(package.object);
+		float support = SupportHeight(box, box.max.y + 3.f, package.object.get());
+		package.object->SetPosition(m_move->originalPosition + glm::vec3(0.f, (std::max)(0.f, support - box.min.y), 0.f));
+		package.body = {};
+		package.body.resting = false;
+		m_move.reset();
+		return;
+	}
 	auto& station = m_stations[m_move->stationIndex];
 	station.position = m_move->originalPosition;
 	station.yaw = m_move->originalYaw;
+	CarryRiders(station);
 	m_move.reset();
 }
 
@@ -264,8 +362,74 @@ void ShopWorld::PlaceNewMachine(Station& station)
 	station.position = station.homePosition;
 }
 
+void ShopWorld::UpdatePackageMove(const FirstPersonController& player, const InputManager& input)
+{
+	auto& package = m_packages.at(m_move->packageId);
+	auto model = ModelOf(package.object);
+	ShopBox local = { model->GetBoundsMin(), model->GetBoundsMax() };
+	glm::vec3 extent = (local.max - local.min) * 0.5f;
+	float radius = (std::max)(extent.x, extent.z);
+
+	if (input.WasKeyPressed(GLFW_KEY_R))
+		m_move->yaw += glm::half_pi<float>();
+	glm::quat rotation = Yaw(m_move->yaw) * m_move->originalRotation;
+
+	// Out in front, on whatever is under it: the floor, a bench, or the top of another delivery.
+	glm::vec3 forward = player.GetForward();
+	forward.y = 0.f;
+	forward = glm::length(forward) > 0.001f ? glm::normalize(forward) : glm::vec3(0.f, 0.f, -1.f);
+	glm::vec3 target = player.GetFeetPosition() + forward * (radius + 0.7f);
+	target = glm::round(target / 0.05f) * 0.05f;
+	target.y = 0.f;
+	ShopBox box = TransformBox(local, target, rotation);
+	float support = SupportHeight(box, player.GetEyePosition().y, package.object.get());
+	target.y = support - box.min.y;
+	box = TransformBox(local, target, rotation);
+
+	package.object->SetPosition(target);
+	package.object->SetRotation(rotation);
+
+	FloorObstacle lot = GetRoomBounds();
+	bool valid = box.min.x >= lot.min.x && box.max.x <= lot.max.x && box.min.z >= lot.min.y && box.max.z <= lot.max.y && !InsideWalls(box);
+	for (const auto& station : m_stations)
+	{
+		if (!valid)
+			break;
+		if (!station.present || station.type == StationType::DOOR)
+			continue;
+		auto bounds = WorldBounds(station.object);
+		valid = !(box.min.x < bounds.max.x - 0.01f && bounds.min.x < box.max.x - 0.01f && box.min.y < bounds.max.y - 0.01f
+			&& bounds.min.y < box.max.y - 0.01f && box.min.z < bounds.max.z - 0.01f && bounds.min.z < box.max.z - 0.01f);
+	}
+	glm::vec2 feet = { player.GetFeetPosition().x, player.GetFeetPosition().z };
+	glm::vec2 closest = glm::clamp(feet, glm::vec2(box.min.x, box.min.z), glm::vec2(box.max.x, box.max.z));
+	if (box.min.y < player.GetEyePosition().y && glm::length(feet - closest) < player.GetRadius())
+		valid = false;
+	m_move->valid = valid;
+
+	package.object->SetTint(valid ? glm::vec4(0.7f, 1.f, 0.7f, 1.f) : glm::vec4(1.f, 0.45f, 0.45f, 1.f));
+	package.object->SetEmissive(0.25f);
+	m_prompt = valid ? std::format("[LMB] Set the delivery down here: {}", package.label) : "The delivery doesn't fit here";
+	m_secondaryPrompt = "[R] Rotate   [F] Cancel";
+
+	if (valid && (input.WasKeyPressed(GLFW_KEY_E) || input.WasMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)))
+	{
+		// Let it settle onto whatever it was set on.
+		package.body = {};
+		package.body.resting = false;
+		m_move.reset();
+	}
+	else if (input.WasKeyPressed(GLFW_KEY_F))
+		CancelMove();
+}
+
 void ShopWorld::UpdateMove(const FirstPersonController& player, const InputManager& input)
 {
+	if (m_move->packageId)
+	{
+		UpdatePackageMove(player, input);
+		return;
+	}
 	auto& station = m_stations[m_move->stationIndex];
 	auto model = ModelOf(station.object);
 	glm::vec3 extent = (model->GetBoundsMax() - model->GetBoundsMin()) * 0.5f;
@@ -287,6 +451,7 @@ void ShopWorld::UpdateMove(const FirstPersonController& player, const InputManag
 	station.yaw = m_move->yaw;
 	station.object->SetPosition(station.position);
 	station.object->SetRotation(station.Rotation());
+	CarryRiders(station);
 
 	m_move->valid = StationFits(station, target, m_move->yaw, &player);
 	station.object->SetTint(m_move->valid ? glm::vec4(0.7f, 1.f, 0.7f, 1.f) : glm::vec4(1.f, 0.45f, 0.45f, 1.f));
@@ -405,15 +570,125 @@ void ShopWorld::DrawHotbar(const Workshop& workshop) const
 		drawList->AddText({ min.x + 4.f, min.y + 2.f }, IM_COL32(220, 220, 220, 220), std::to_string((slot + 1) % 10).c_str());
 	}
 
+	// The item in hand, with what can be done with it beside it, centred over the hotbar.
 	if (auto held = GetHeld())
 	{
-		auto info = DescribeItem(held->ref, workshop);
-		ShadowText(drawList, { display.x * 0.5f, origin.y - 22.f }, IM_COL32(240, 240, 235, 230), std::format("In hand: {}", info.name), true);
+		auto name = DescribeItem(held->ref, workshop).name;
+		std::string hint = m_heldHint.empty() ? "" : "     " + m_heldHint;
+		float nameWidth = ImGui::CalcTextSize(name.c_str()).x;
+		float lineWidth = nameWidth + ImGui::CalcTextSize(hint.c_str()).x;
+		ImVec2 start = { (display.x - lineWidth) * 0.5f, origin.y - 22.f };
+		ShadowText(drawList, start, IM_COL32(240, 240, 235, 235), name, false);
+		if (!hint.empty())
+			ShadowText(drawList, { start.x + nameWidth, start.y }, IM_COL32(200, 200, 200, 200), hint, false);
+	}
+}
+
+void ShopWorld::DrawPackageLabels(const Workshop& workshop, const FirstPersonController& player) const
+{
+	// Behind the UI, over the 3D view: a little tag over each delivery with an icon per kind of
+	// thing inside it and how many.
+	ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+	glm::vec3 eye = player.GetEyePosition();
+	constexpr float ICON = 30.f;
+	constexpr float PAD = 5.f;
+	constexpr int MAX_ICONS = 5;
+	constexpr float SHOWN_WITHIN = 9.f;
+
+	struct Entry
+	{
+		bool isTool = false;
+		int toolIndex = -1;
+		PartType partType = PartType::BLOCK;
+		int station = -1;
+		int count = 1;
+	};
+
+	for (const auto& [id, package] : m_packages)
+	{
+		// The one being aimed at is named by the prompt instead.
+		if (m_hover && m_hover->kind == TargetKind::PACKAGE && m_hover->packageId == id)
+			continue;
+
+		// On the middle of the package, so the tags on a stack don't overlap.
+		auto box = WorldBounds(package.object);
+		glm::vec3 middle = (box.min + box.max) * 0.5f;
+		float distance = glm::distance(middle, eye);
+		if (distance > SHOWN_WITHIN)
+			continue;
+		// Not through the garage walls.
+		if (auto wall = WallHit(eye, glm::normalize(middle - eye)); wall && *wall < distance)
+			continue;
+		auto screen = ProjectToScreen(middle, player);
+		if (!screen)
+			continue;
+
+		std::vector<Entry> entries;
+		for (const auto& ref : package.items)
+		{
+			auto info = DescribeItem(ref, workshop);
+			auto same = std::find_if(entries.begin(), entries.end(), [&](const Entry& entry) {
+				return entry.station < 0 && entry.isTool == info.isTool && (info.isTool ? entry.toolIndex == info.toolIndex : entry.partType == info.partType);
+			});
+			if (same != entries.end())
+				same->count++;
+			else
+				entries.push_back({ info.isTool, info.toolIndex, info.partType, -1, 1 });
+		}
+		for (size_t station : package.stations)
+			entries.push_back({ false, -1, PartType::BLOCK, static_cast<int>(station), 1 });
+		if (entries.empty())
+			continue;
+
+		int shown = (std::min)(static_cast<int>(entries.size()), MAX_ICONS);
+		int hidden = static_cast<int>(entries.size()) - shown;
+		std::string more = hidden > 0 ? std::format("+{}", hidden) : "";
+		float width = PAD + shown * (ICON + PAD) + (hidden > 0 ? ImGui::CalcTextSize(more.c_str()).x + PAD : 0.f);
+		float alpha = std::clamp((SHOWN_WITHIN - distance) / 2.f, 0.f, 1.f);
+		auto fade = [&](int a) { return static_cast<int>(a * alpha); };
+
+		ImVec2 min = { screen->x - width * 0.5f, screen->y - (ICON + PAD * 2.f) * 0.5f };
+		ImVec2 max = { min.x + width, min.y + ICON + PAD * 2.f };
+		drawList->AddRectFilled(min, max, IM_COL32(20, 22, 26, fade(190)), 5.f);
+		drawList->AddRect(min, max, IM_COL32(230, 190, 120, fade(200)), 5.f);
+		ImU32 iconColor = IM_COL32(225, 225, 220, fade(255));
+		for (int i = 0; i < shown; i++)
+		{
+			const auto& entry = entries[i];
+			ImVec2 at = { min.x + PAD + i * (ICON + PAD), min.y + PAD };
+			if (entry.station >= 0)
+			{
+				const auto& station = m_stations[entry.station];
+				if (station.type == StationType::MACHINE)
+					ItemIcons::DrawMachine(drawList, MachineCatalog::All()[station.machineIndex], at, ICON, iconColor);
+				else
+				{
+					// An engine stand: upright, arm and mounting plate, on its feet.
+					float s = ICON;
+					drawList->AddLine({ at.x + s * 0.3f, at.y + s * 0.9f }, { at.x + s * 0.3f, at.y + s * 0.25f }, iconColor, 2.5f);
+					drawList->AddLine({ at.x + s * 0.3f, at.y + s * 0.3f }, { at.x + s * 0.75f, at.y + s * 0.3f }, iconColor, 2.5f);
+					drawList->AddRectFilled({ at.x + s * 0.72f, at.y + s * 0.12f }, { at.x + s * 0.82f, at.y + s * 0.5f }, iconColor);
+					drawList->AddLine({ at.x + s * 0.1f, at.y + s * 0.9f }, { at.x + s * 0.9f, at.y + s * 0.9f }, iconColor, 2.5f);
+				}
+			}
+			else
+				ItemIcons::DrawItem(drawList, entry.isTool, entry.toolIndex, entry.partType, at, ICON, iconColor);
+			if (entry.count > 1)
+			{
+				std::string count = std::format("{}", entry.count);
+				ImVec2 size = ImGui::CalcTextSize(count.c_str());
+				drawList->AddText({ at.x + ICON - size.x, at.y + ICON - size.y + 3.f }, IM_COL32(255, 220, 140, fade(255)), count.c_str());
+			}
+		}
+		if (hidden > 0)
+			drawList->AddText({ max.x - PAD - ImGui::CalcTextSize(more.c_str()).x, min.y + PAD + ICON * 0.3f }, IM_COL32(220, 220, 220, fade(230)), more.c_str());
 	}
 }
 
 void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& player, bool showControls) const
 {
+	DrawPackageLabels(workshop, player);
+
 	ImDrawList* drawList = ImGui::GetForegroundDrawList();
 	ImVec2 display = ImGui::GetIO().DisplaySize;
 	ImVec2 center = { display.x * 0.5f, display.y * 0.5f };

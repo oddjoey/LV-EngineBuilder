@@ -109,6 +109,101 @@ bool EngineAssembly::Install(AssemblySlot slot, int index, const pPart& part, st
 	return true;
 }
 
+std::vector<std::pair<AssemblySlot, int>> EngineAssembly::Prerequisites(AssemblySlot slot, int index) const
+{
+	std::vector<std::pair<AssemblySlot, int>> needed;
+	auto all = [&](AssemblySlot other) {
+		for (int i = 0; i < SlotCount(other); i++)
+			needed.push_back({ other, i });
+	};
+
+	switch (slot)
+	{
+		case AssemblySlot::BLOCK:
+			break;
+		// Bottom end: bearing shells in the block, then the crank laid in them.
+		case AssemblySlot::MAIN_BEARING:
+			needed.push_back({ AssemblySlot::BLOCK, 0 });
+			break;
+		case AssemblySlot::CRANKSHAFT:
+			all(AssemblySlot::MAIN_BEARING);
+			break;
+		// Each cylinder: the piston down its bore once the crank is in, its ring, then the rod
+		// onto the crank pin and its bearing.
+		case AssemblySlot::PISTON:
+			needed.push_back({ AssemblySlot::CRANKSHAFT, 0 });
+			break;
+		case AssemblySlot::PISTON_RING:
+		case AssemblySlot::CONNECTING_ROD:
+			needed.push_back({ AssemblySlot::PISTON, index });
+			break;
+		case AssemblySlot::ROD_BEARING:
+			needed.push_back({ AssemblySlot::CONNECTING_ROD, index });
+			break;
+		// Top end: the gasket only once the bottom end is finished, then the head on it.
+		case AssemblySlot::HEAD_GASKET:
+			all(AssemblySlot::PISTON);
+			all(AssemblySlot::PISTON_RING);
+			all(AssemblySlot::CONNECTING_ROD);
+			all(AssemblySlot::ROD_BEARING);
+			break;
+		case AssemblySlot::CYLINDER_HEAD:
+			needed.push_back({ AssemblySlot::HEAD_GASKET, 0 });
+			break;
+		// Valves into the head, each spring over its valve, and the cam on top of the lot.
+		case AssemblySlot::INTAKE_VALVE:
+		case AssemblySlot::EXHAUST_VALVE:
+			needed.push_back({ AssemblySlot::CYLINDER_HEAD, 0 });
+			break;
+		case AssemblySlot::VALVE_SPRING:
+			needed.push_back({ index % 2 == 1 ? AssemblySlot::EXHAUST_VALVE : AssemblySlot::INTAKE_VALVE, index / 2 });
+			break;
+		case AssemblySlot::CAMSHAFT:
+			needed.push_back({ AssemblySlot::CYLINDER_HEAD, 0 });
+			all(AssemblySlot::INTAKE_VALVE);
+			all(AssemblySlot::EXHAUST_VALVE);
+			all(AssemblySlot::VALVE_SPRING);
+			break;
+		default:
+			break;
+	}
+	return needed;
+}
+
+std::string EngineAssembly::PositionName(AssemblySlot slot, int index) const
+{
+	if (slot == AssemblySlot::VALVE_SPRING)
+		return std::format("{} Valve Spring {}", index % 2 == 1 ? "Exhaust" : "Intake", index / 2 + 1);
+	if (SlotCount(slot) > 1)
+		return std::format("{} {}", AssemblySlotName(slot), index + 1);
+	return AssemblySlotName(slot);
+}
+
+std::optional<std::string> EngineAssembly::MissingPrerequisite(AssemblySlot slot, int index) const
+{
+	for (const auto& [other, otherIndex] : Prerequisites(slot, index))
+		if (!Get(other, otherIndex))
+			return std::format("The {} has to go on first.", PositionName(other, otherIndex));
+	return std::nullopt;
+}
+
+std::optional<std::string> EngineAssembly::RemovalBlockedBy(AssemblySlot slot, int index) const
+{
+	for (size_t s = 0; s < m_slots.size(); s++)
+	{
+		auto other = static_cast<AssemblySlot>(s);
+		for (int i = 0; i < SlotCount(other); i++)
+		{
+			if (!Get(other, i))
+				continue;
+			for (const auto& needed : Prerequisites(other, i))
+				if (needed.first == slot && needed.second == index)
+					return std::format("The {} has to come off first.", PositionName(other, i));
+		}
+	}
+	return std::nullopt;
+}
+
 pPart EngineAssembly::Remove(AssemblySlot slot, int index)
 {
 	if (index < 0 || index >= SlotCount(slot))

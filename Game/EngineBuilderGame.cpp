@@ -6,6 +6,7 @@
 #include <imgui.h>
 
 #include "LV/Engine/Lordi.h"
+#include "LV/Engine/Graphics/IMGUI/IMGUIManager.h"
 #include "LV/Engine/Objects/CameraManager.h"
 #include "LV/Engine/Utility/InputManager.h"
 #include "Save/SaveGame.h"
@@ -87,6 +88,8 @@ void EngineBuilderGame::OnStart()
 	m_input = InputManager::Get();
 	m_input->SetCursorLocked(true);
 	ApplyVideoSettings(true);
+	// Lordi's debug panels live in the dev menu (F3) instead of their own Home window.
+	IMGUIManager::Get()->SetDebugWindowEnabled(false);
 
 	// Carry on where the last session left off.
 	if (SaveGame::Exists() && !LoadCareer())
@@ -143,7 +146,7 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	m_player.ApplyToCamera(*m_camera);
 
 	m_ui.Update(deltaTime);
-	m_world.SetEngineRpm(m_ui.GetLiveRpm());
+	m_world.SetEngineRpm(m_ui.GetLiveRpm(), m_ui.GetPullEngine());
 
 	if (auto request = m_world.Update(deltaTime, *m_workshop, m_player, *m_input, walking))
 	{
@@ -159,8 +162,12 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	}
 
 	// The sun keeps moving, even with the menus open.
+	// The dev menu can speed it up.
 	if (m_settings.dayNightCycle)
-		m_timeOfDay = std::fmod(m_timeOfDay + (std::min)(deltaTime, 0.1f) * 24.f / (m_settings.dayLengthMinutes * 60.f), 24.f);
+	{
+		float hours = (std::min)(deltaTime, 0.1f) * 24.f / (m_settings.dayLengthMinutes * 60.f) * m_devMenu.GetSettings().timeScale;
+		m_timeOfDay = std::fmod(m_timeOfDay + hours, 24.f);
+	}
 	m_lighting.Update(m_player.GetEyePosition(), m_settings.renderDistance, m_timeOfDay, m_world.GetDoorOpenAmount(),
 		m_settings.brightness, m_world.GetLampHeads());
 }
@@ -240,7 +247,7 @@ void EngineBuilderGame::OnGUI()
 		m_world.DrawDebugBounds(m_player);
 	m_ui.SetXray(dev.xray);
 	m_ui.Draw(*m_workshop);
-	m_devMenu.Draw();
+	m_devMenu.Draw(m_timeOfDay);
 
 	// The workshop window has its own units toggle; keep the setting in step with it.
 	m_settings.imperialUnits = m_ui.GetUnits() == Units::System::IMPERIAL;

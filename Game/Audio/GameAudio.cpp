@@ -309,6 +309,14 @@ namespace
 				s.Ring(0.f, 1600.f, 0.25f, 0.008f);
 				return s.ToClip();
 			}
+			case Sound::PAGE_TURN:
+			{
+				// Paper: a soft swish that rises and falls, and the page settling at the end.
+				Synth s(0.35f);
+				s.Hiss(noise, 0.f, 0.22f, 800.f, 6000.f, 0.35f, 0.08f);
+				s.Burst(noise, 0.2f, 0.03f, 2500.f, 0.15f);
+				return s.ToClip();
+			}
 			case Sound::BIRD:
 			{
 				// A few quick chirps, each a little sweep up.

@@ -353,6 +353,18 @@ void ShopAssets::LoadTools()
 				for (int i = 0; i < 6; i++)
 					Box(builder, { 0.f, 0.019f, -0.055f + i * 0.022f }, { 0.12f + i * 0.02f, 0.004f, 0.012f }, steel);
 				break;
+			case ToolShape::MANUAL:
+			{
+				// A thick workshop book lying shut: navy covers, the page block between them, a spine down
+				// the left edge and a band across the front cover.
+				const glm::vec3 cover = { 0.12f, 0.18f, 0.36f };
+				Box(builder, { 0.f, 0.0015f, 0.f }, { 0.21f, 0.003f, 0.28f }, cover);
+				Box(builder, { 0.004f, 0.0155f, 0.f }, { 0.2f, 0.025f, 0.27f }, { 0.93f, 0.9f, 0.82f });
+				Box(builder, { 0.f, 0.0295f, 0.f }, { 0.21f, 0.003f, 0.28f }, cover);
+				Box(builder, { -0.1035f, 0.0155f, 0.f }, { 0.006f, 0.031f, 0.28f }, cover * 0.8f);
+				Box(builder, { 0.005f, 0.0315f, -0.04f }, { 0.17f, 0.001f, 0.05f }, { 0.85f, 0.65f, 0.2f });
+				break;
+			}
 		}
 		AddModel(ToolModelName(tool), builder);
 	}

@@ -177,6 +177,8 @@ public:
 	std::vector<SoundCue> TakeSoundCues();
 	// The player got into bed this frame: the game decides whether it's late enough to sleep.
 	bool TakeSleepRequest();
+	// The player opened the service manual in their hand this frame.
+	bool TakeReadRequest();
 	// A message along the bottom of the screen, like the shop's own.
 	void Notify(const std::string& message);
 	// What a footstep at feet sounds like: the shop's concrete, upstairs boards, the drive and street, grass.
@@ -502,6 +504,7 @@ private:
 	uint64_t										m_syncedStock = 0;		// the parts and tools last synced (see Update)
 	size_t											m_liftStation = SIZE_MAX;
 	bool											m_sleepRequested = false;
+	bool											m_readRequested = false;
 	pObject											m_liftArms = nullptr;
 	float											m_liftHeight = 0.08f;
 	bool											m_liftRaised = false;

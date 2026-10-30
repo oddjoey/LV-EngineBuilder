@@ -466,6 +466,11 @@ bool ShopWorld::TakeSleepRequest()
 	return std::exchange(m_sleepRequested, false);
 }
 
+bool ShopWorld::TakeReadRequest()
+{
+	return std::exchange(m_readRequested, false);
+}
+
 std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, const FirstPersonController& player,
 	const InputManager& input, bool playerHasControl)
 {
@@ -624,6 +629,9 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	{
 		int toolIndex = static_cast<int>(held->ref.id);
 		m_measureTarget = FindMeasureTarget(workshop, player, toolIndex, m_measurePoints);
+		// The service manual: left click opens it.
+		if (ToolCatalog::All()[toolIndex].manual && input.WasMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
+			m_readRequested = true;
 		if (m_measureTarget)
 		{
 			m_secondaryPrompt = m_prompt;
@@ -637,7 +645,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 			m_secondaryPrompt = m_prompt;
 			m_prompt = m_measureBlocked;
 		}
-		else if (m_prompt.empty() && !ToolCatalog::All()[toolIndex].IsHandTool())
+		else if (m_prompt.empty() && !ToolCatalog::All()[toolIndex].IsHandTool() && !ToolCatalog::All()[toolIndex].manual)
 			m_prompt = std::format("Aim the {} at something it can measure", ToolCatalog::All()[toolIndex].name);
 	}
 
@@ -652,6 +660,8 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	{
 		bool promptHasRightClick = m_prompt.find("[RMB]") != std::string::npos;
 		std::string spanner = held->ref.IsTool() ? SpannerLabel(held->ref.id) : "";
+		if (held->ref.IsTool() && ToolCatalog::All()[held->ref.id].manual)
+			spanner = "[LMB] Read";
 		m_heldHint = std::format("{}{}[G] Drop", spanner.empty() ? "" : spanner + "   ", promptHasRightClick ? "" : "[RMB] Set down   ");
 	}
 

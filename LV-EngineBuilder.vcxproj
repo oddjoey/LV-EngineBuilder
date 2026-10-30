@@ -139,6 +139,7 @@
     <ClCompile Include="Game\UI\SplashScreen.cpp" />
     <ClCompile Include="Game\UI\Console.cpp" />
     <ClCompile Include="Game\UI\PauseMenu.cpp" />
+    <ClCompile Include="Game\UI\ServiceManual.cpp" />
     <ClCompile Include="Game\UI\Ratings.cpp" />
     <ClCompile Include="Game\UI\WorkshopUI.cpp" />
     <ClCompile Include="Game\World\FirstPersonController.cpp" />
@@ -242,6 +243,7 @@
     <ClInclude Include="Game\UI\SplashScreen.h" />
     <ClInclude Include="Game\UI\Console.h" />
     <ClInclude Include="Game\UI\PauseMenu.h" />
+    <ClInclude Include="Game\UI\ServiceManual.h" />
     <ClInclude Include="Game\UI\Ratings.h" />
     <ClInclude Include="Game\UI\WorkshopUI.h" />
     <ClInclude Include="Game\World\FirstPersonController.h" />

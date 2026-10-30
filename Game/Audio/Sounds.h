@@ -24,6 +24,7 @@ enum class Sound
 	CASH,			// money changing hands
 	MACHINE,		// a machining cut
 	CLICK,			// the interface
+	PAGE_TURN,		// a page of the service manual
 	BIRD,
 	COUNT
 };

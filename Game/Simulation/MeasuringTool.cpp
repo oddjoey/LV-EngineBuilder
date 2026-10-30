@@ -219,6 +219,15 @@ namespace ToolCatalog
 			hand("Click Torque Wrench", "Clicks at the set torque. Good to about 4%, up to 210 Nm.", HandToolKind::TORQUE_WRENCH, 160.0, {}, 0.04, 210.0);
 			hand("Digital Torque Wrench", "Beeps at the set torque. Good to about 2%, up to 340 Nm.", HandToolKind::TORQUE_WRENCH, 340.0, {}, 0.02, 340.0);
 
+			// The factory service manual: held and read (left click), not used on anything.
+			MeasuringTool manual;
+			manual.name = "LV-16 Factory Service Manual";
+			manual.description = "The workshop book for the LV-16: every blueprint dimension and clearance, the torque for every bolt, and the "
+				"whole job step by step, from tearing down a worn core to the dyno. Hold it and left click to read.";
+			manual.manual = true;
+			manual.price = 60.0;
+			list.push_back(manual);
+
 			return list;
 		}();
 		return tools;

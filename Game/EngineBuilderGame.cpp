@@ -145,7 +145,9 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	{
 		if (m_input->WasKeyPressed(GLFW_KEY_ESCAPE))
 		{
-			if (m_world.IsMovingStation())
+			if (m_manual.IsOpen())
+				m_manual.Close();
+			else if (m_world.IsMovingStation())
 				m_world.CancelMove();
 			else if (m_devMenu.IsOpen())
 				m_devMenu.Close();
@@ -160,7 +162,9 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		{
 			// Tab is the backpack, and closes whatever workshop screen is open. Stations (the bench,
 			// machines, store) open with E.
-			if (m_ui.IsOpen())
+			if (m_manual.IsOpen())
+				m_manual.Close();
+			else if (m_ui.IsOpen())
 				m_ui.Close();
 			else
 				m_ui.Open(WorkshopTab::BACKPACK);
@@ -180,7 +184,7 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_savedSettings = m_settings;
 	}
 
-	bool walking = !splash && !m_ui.IsOpen() && !m_pauseMenu.IsOpen() && !m_devMenu.IsOpen() && !m_console.IsOpen();
+	bool walking = !splash && !m_ui.IsOpen() && !m_manual.IsOpen() && !m_pauseMenu.IsOpen() && !m_devMenu.IsOpen() && !m_console.IsOpen();
 	m_input->SetCursorLocked(walking);
 	if (walking)
 	{
@@ -208,6 +212,23 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		for (const auto& part : m_workshop->GetInventory())
 			if (part->GetId() == request->partId)
 				m_ui.SelectPart(*part, request->machineIndex);
+	}
+
+	// Turning the pages of the open manual.
+	if (m_manual.IsOpen() && !typing)
+	{
+		int turn = (m_input->WasKeyPressed(GLFW_KEY_RIGHT) || m_input->WasKeyPressed(GLFW_KEY_D) ? 1 : 0)
+			- (m_input->WasKeyPressed(GLFW_KEY_LEFT) || m_input->WasKeyPressed(GLFW_KEY_A) ? 1 : 0);
+		if (turn != 0 && m_manual.Turn(turn))
+			m_audio.PlayInterface(Sound::PAGE_TURN, 0.7f);
+	}
+
+	// The service manual in hand, clicked: open the book.
+	if (m_world.TakeReadRequest())
+	{
+		m_ui.Close();
+		m_manual.Open();
+		m_audio.PlayInterface(Sound::PAGE_TURN, 0.8f);
 	}
 
 	// Bed: in the evening or the small hours, sleep through to seven and save; in the day, not yet.
@@ -314,11 +335,13 @@ void EngineBuilderGame::OnGUI()
 	m_ui.SetXray(dev.xray);
 	m_ui.Draw(*m_workshop);
 	m_devMenu.Draw(m_timeOfDay);
+	if (m_manual.Draw(m_settings.imperialUnits))
+		m_audio.PlayInterface(Sound::PAGE_TURN, 0.7f);
 
 	// The workshop window has its own units toggle; keep the setting in step with it.
 	m_settings.imperialUnits = m_ui.GetUnits() == Units::System::IMPERIAL;
 
-	if (!m_ui.IsOpen() && !m_pauseMenu.IsOpen() && !m_console.IsOpen())
+	if (!m_ui.IsOpen() && !m_manual.IsOpen() && !m_pauseMenu.IsOpen() && !m_console.IsOpen())
 		m_world.DrawHud(*m_workshop, m_player, m_settings.showControls);
 
 	ImDrawList* foreground = ImGui::GetForegroundDrawList();

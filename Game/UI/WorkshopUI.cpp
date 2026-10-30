@@ -1785,8 +1785,11 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 			"Sockets and drives",
 			"Wrenches",
 			"Torque",
+			"Manuals",
 		};
 		auto shelfOf = [](const MeasuringTool& tool) {
+			if (tool.manual)
+				return 8;
 			auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
 			switch (tool.handKind)
 			{
@@ -1828,7 +1831,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 			}
 			if (StoreCard(tool.name.c_str(), tool.name.c_str(), std::format("${:.0f}", tool.price), m_selectedTool == static_cast<int>(i), workshop.OwnsTool(i),
 				[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawTool(drawList, tool, min, size); },
-				{ Ratings::ToolPrecision(tool), Ratings::ToolSpeed(tool) }))
+				tool.manual ? std::vector<float>{} : std::vector<float>{ Ratings::ToolPrecision(tool), Ratings::ToolSpeed(tool) }))
 				m_selectedTool = static_cast<int>(i);
 		}
 	}
@@ -1845,6 +1848,24 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 		ImGui::PopTextWrapPos();
 		ImGui::Separator();
 
+		if (tool.manual)
+		{
+			ImGui::PushTextWrapPos(0.f);
+			ImGui::TextDisabled("Chapters: general information, tools, teardown, the block, crankshaft, rods, pistons and rings, bearings and "
+				"Plastigauge, the head and valves, the camshaft, the assembly sequence, torque specifications, final checks and the dyno, "
+				"and troubleshooting. Dimensions are shown in the units you play in.");
+			ImGui::PopTextWrapPos();
+			ImGui::Spacing();
+			CartLine line;
+			line.kind = CartLine::Kind::TOOL;
+			line.index = static_cast<size_t>(m_selectedTool);
+			if (workshop.OwnsTool(m_selectedTool))
+				ImGui::TextColored(COLOR_GOOD, "Owned.");
+			else
+				AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", tool.price).c_str());
+			ImGui::EndChild();
+			return;
+		}
 		if (tool.IsHandTool())
 		{
 			// What it does for the engine's nuts and bolts.

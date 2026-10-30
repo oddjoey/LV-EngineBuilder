@@ -48,6 +48,8 @@ struct MeasuringTool
 	std::vector<int> sizes = {};	// sockets and wrenches: across-flats sizes in mm
 	double torqueError = 0.0;		// torque wrenches: 1 standard deviation, as a fraction of the setting
 	double maxTorque = 0.0;			// torque wrenches: Nm
+	// A book (the factory service manual): held and read, used on nothing.
+	bool manual = false;
 	bool IsHandTool() const { return handKind != HandToolKind::NONE; }
 
 	bool CanMeasure(const Feature& feature) const;

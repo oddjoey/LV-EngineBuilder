@@ -11,6 +11,7 @@
 #include "UI/DevMenu.h"
 #include "UI/InventoryUI.h"
 #include "UI/PauseMenu.h"
+#include "UI/ServiceManual.h"
 #include "UI/SplashScreen.h"
 #include "UI/WorkshopUI.h"
 #include "World/FirstPersonController.h"
@@ -49,6 +50,7 @@ private:
 	GameSettings					m_settings = {};
 	WorkshopUI						m_ui = {};
 	PauseMenu						m_pauseMenu = {};
+	ServiceManual					m_manual = {};
 	DevMenu							m_devMenu = {};
 	Console							m_console = {};
 	SplashScreen					m_splash = {};

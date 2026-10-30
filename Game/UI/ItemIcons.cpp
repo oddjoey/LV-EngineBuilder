@@ -125,6 +125,14 @@ namespace ItemIcons
 					drawList->AddCircle(p(0.16f, y), size * 0.06f, color, 12, line * 1.3f);
 				}
 				break;
+			case ToolShape::MANUAL:
+				// A book: the cover, its spine, a title band and lines of text.
+				drawList->AddRect(p(0.22f, 0.12f), p(0.82f, 0.9f), color, size * 0.03f, 0, line * 1.6f);
+				drawList->AddRectFilled(p(0.22f, 0.12f), p(0.3f, 0.9f), color);
+				drawList->AddRectFilled(p(0.38f, 0.24f), p(0.74f, 0.36f), color);
+				for (int i = 0; i < 3; i++)
+					drawList->AddLine(p(0.38f, 0.5f + i * 0.1f), p(0.72f, 0.5f + i * 0.1f), color, line);
+				break;
 		}
 	}
 

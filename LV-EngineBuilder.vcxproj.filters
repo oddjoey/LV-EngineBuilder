@@ -155,6 +155,9 @@
     <ClCompile Include="Game\UI\PauseMenu.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Game\UI\ServiceManual.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
     <ClCompile Include="Game\UI\Ratings.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
@@ -373,6 +376,9 @@
       <Filter>Game\UI</Filter>
     </ClInclude>
     <ClInclude Include="Game\UI\PauseMenu.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\ServiceManual.h">
       <Filter>Game\UI</Filter>
     </ClInclude>
     <ClInclude Include="Game\UI\Ratings.h">

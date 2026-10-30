@@ -29,11 +29,14 @@ enum class ToolShape
 	BREAKER_BAR,
 	SOCKET_SET,
 	WRENCH_SET,
-	TORQUE_WRENCH
+	TORQUE_WRENCH,
+	MANUAL			// the factory service manual
 };
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 {
+	if (tool.manual)
+		return ToolShape::MANUAL;
 	switch (tool.handKind)
 	{
 		case HandToolKind::RATCHET:			return ToolShape::RATCHET;
@@ -87,6 +90,7 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::SOCKET_SET:			return { 3, 2 };
 		case ToolShape::WRENCH_SET:			return { 3, 2 };
 		case ToolShape::TORQUE_WRENCH:		return { 1, 5 };
+		case ToolShape::MANUAL:			return { 2, 3 };
 	}
 	return { 1, 1 };
 }

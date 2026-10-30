@@ -6,27 +6,29 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "LV/Engine/Graphics/Models/Model.h"
 #include "../Simulation/EngineSpec.h"
+#include "../Simulation/Furniture.h"
 #include "../Simulation/Machine.h"
 #include "../Simulation/MeasuringTool.h"
 #include "../Simulation/Part.h"
 
 class MeshBuilder;
 
-// Where things sit inside an assembled LV-20, in metres, relative to the centre of the block deck.
+// Where things sit inside an assembled LV-16, in metres, relative to the centre of the block deck.
 // The engine's crank axis runs along X.
 namespace EngineLayout
 {
 	constexpr float BORE_SPACING = 0.095f;
-	constexpr float BORE_RADIUS = 0.043f;
+	constexpr float BORE_RADIUS = 0.0405f;
 	constexpr float BLOCK_LENGTH = 4 * BORE_SPACING + 0.03f;
 	constexpr float BLOCK_WIDTH = 0.20f;
 	constexpr float CYLINDER_DEPTH = 0.16f;
 	constexpr float CRANK_Y = -0.25f;
-	constexpr float CRANK_THROW = 0.043f;
-	constexpr float ROD_LENGTH = 0.144f;
+	constexpr float CRANK_THROW = 0.0385f;
+	constexpr float ROD_LENGTH = 0.14825f;
 	constexpr float PISTON_PIN_DEPTH = 0.03f;	// crown to pin centre
 	constexpr float GASKET_THICKNESS = 0.0015f;
 
@@ -36,7 +38,7 @@ namespace EngineLayout
 	constexpr float HEAD_RAIL_TOP = 0.13f;
 	constexpr float CAM_Y = 0.13f;
 	constexpr float CAM_BASE_RADIUS = 0.016f;
-	constexpr float VALVE_Z = 0.022f;			// intake on +Z, exhaust on -Z
+	constexpr float VALVE_Z = 0.022f;			// intake on -Z, exhaust on +Z
 	constexpr float VALVE_FACE_Y = 0.006f;		// valve face above the head deck when shut
 	constexpr float VALVE_STEM_LENGTH = 0.105f;
 	constexpr float SPRING_FREE_HEIGHT = 0.044f;
@@ -45,11 +47,13 @@ namespace EngineLayout
 
 	inline float BoreX(int cylinder) { return (cylinder - 1.5f) * BORE_SPACING; }
 	inline float MainX(int journal) { return (journal - 2.f) * BORE_SPACING; }
-	inline float ValveZ(bool exhaust) { return exhaust ? -VALVE_Z : VALVE_Z; }
+	// The head's cam towers (and the caps on them) sit over the main journals, pulled in at the ends
+	// to stay on the head.
+	inline float CamTowerX(int journal) { return glm::clamp(MainX(journal), -BLOCK_LENGTH * 0.5f + 0.02f, BLOCK_LENGTH * 0.5f - 0.02f); }
+	inline float ValveZ(bool exhaust) { return exhaust ? VALVE_Z : -VALVE_Z; }
 	// Firing order 1-3-4-2 puts throws 1 and 4 up together, 2 and 3 down.
 	inline float ThrowSign(int cylinder) { return cylinder == 0 || cylinder == 3 ? 1.f : -1.f; }
 	inline float PinY(int cylinder) { return CRANK_Y + ThrowSign(cylinder) * CRANK_THROW; }
-	inline float PistonCrownY(int cylinder) { return PinY(cylinder) + ROD_LENGTH + PISTON_PIN_DEPTH; }
 
 	// Crank angle at which each cylinder is at top dead centre on its firing stroke (1-3-4-2).
 	inline float FiringAngle(int cylinder)
@@ -70,6 +74,29 @@ namespace EngineLayout
 		return glm::pi<float>() - LobePeakCrankAngle(cylinder, exhaust) * 0.5f;
 	}
 	float ValveLift(int cylinder, bool exhaust, float crankAngle);
+
+	// Bolt-on parts. The timing end of the engine is -X, the intake side -Z.
+	constexpr float FRONT_X = -BLOCK_LENGTH * 0.5f;
+	constexpr float PAN_RAIL_Y = CRANK_Y;							// the block's bottom face
+	constexpr float HEAD_TOP_Y = HEAD_DECK_Y + HEAD_RAIL_TOP;		// where the valve cover sits
+	constexpr float OIL_PAN_DEPTH = 0.14f;
+	constexpr float PORT_Y = 0.035f;								// intake and exhaust port centres
+	constexpr float PORT_FACE_Z = 0.1055f;							// the head's port faces, either side
+	constexpr float TIMING_PLANE_X = FRONT_X - 0.023f;				// sprockets and belt
+	constexpr float TIMING_COVER_X = FRONT_X - 0.035f;
+	constexpr float TIMING_COVER_Y = -0.06f;						// the middle of the cover
+	inline float CamAxisY() { return HEAD_DECK_Y + CAM_Y; }
+
+	// Where a bolt-on part's model sits on the assembled engine (its origin, in engine space) and
+	// how it's turned. The models are built around their own origin, lying the way they'd rest on
+	// a bench; this stands them up in place. Moving parts (sprockets, pulley, valvetrain) get
+	// their motion on top of this.
+	struct Mount
+	{
+		glm::vec3 offset = {};
+		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+	};
+	Mount AncillaryMount(PartType type, int index);
 }
 
 namespace ShopTextures
@@ -111,9 +138,43 @@ namespace ShopModels
 	// The garage building
 	inline const std::string GARAGE_SIDING = "Garage Siding";
 	inline const std::string GARAGE_ROOF = "Garage Roof";
+	// The garage walls, siding, frames and glass come in versions for the upgrades: with the opening
+	// into the side bay, and without a roof of their own under the second story.
+	inline std::string GarageVariant(const std::string& base, bool bay, bool upper)
+	{
+		return base + (bay ? " (bay)" : "") + (upper ? " (upper)" : "");
+	}
+	inline const std::string BAY_SHELL = "Side Bay Shell";
+	inline const std::string BAY_EXTERIOR = "Side Bay Exterior";
+	inline const std::string BAY_FLOOR = "Side Bay Floor";
+	inline const std::string BAY_DRIVE = "Side Bay Drive";
+	inline const std::string UPPER_SHELL = "Upper Story Shell";
+	inline const std::string UPPER_EXTERIOR = "Upper Story Exterior";
+	inline const std::string UPPER_ROOF = "Upper Story Roof";
+	inline const std::string UPPER_FRAMES = "Upper Story Frames";
+	inline const std::string UPPER_GLASS = "Upper Story Glass";
+	inline const std::string OUTSIDE_STAIRS = "Outside Stairs";
+	inline const std::string INSIDE_STAIRS = "Inside Stairs";
+	inline const std::string POST_LIFT = "Two-Post Lift";
+	inline const std::string POST_LIFT_ARMS = "Two-Post Lift Arms";
+	// A strip of Plastigauge laid across a journal.
+	inline const std::string PLASTIGAUGE_STRIP = "Plastigauge Strip";
 	inline const std::string GARAGE_FRAMES = "Garage Frames";
 	inline const std::string WINDOW_GLASS = "Window Glass";
 	inline const std::string ROLLUP_DOOR = "Roll-up Door";
+
+	// The house built onto the garage (see HouseLayout), and the yard and park round it.
+	inline const std::string HOME_SHELL = "Home Shell";
+	inline const std::string HOME_BRICK = "Home Brick";
+	inline const std::string HOME_ROOF = "Home Roof";
+	inline const std::string HOME_FRAMES = "Home Frames";
+	inline const std::string HOME_GLASS = "Home Glass";
+	inline const std::string HOME_FLOOR = "Home Floor";
+	inline const std::string HOME_LIGHT = "Home Ceiling Light";
+	inline const std::string HOME_BED = "Home Bed";
+	// One model per HouseLayout::Material.
+	inline std::string HomeFurniture(int material) { return "Home Furniture " + std::to_string(material); }
+	inline std::string YardPieces(int material) { return "Yard " + std::to_string(material); }
 
 	// Outdoors
 	inline const std::string SKY_DOME = "Sky Dome";
@@ -201,10 +262,14 @@ public:
 	glm::vec4 PartTint(MaterialType material) const;
 
 	static MachineFixture FixtureFor(const Machine& machine);
+	// The model a piece of furniture is drawn with (shelving and the workbench share the shop's own).
+	static std::string FurnitureModel(const FurnitureInfo& furniture);
 	static std::vector<SurfaceOverlay> OverlaysFor(PartType type);
-	static std::vector<FeatureAnchor> FeatureAnchorsFor(PartType type);
+	// Built once per part type: the measuring tools look them up for every part in reach, every frame.
+	static const std::vector<FeatureAnchor>& FeatureAnchorsFor(PartType type);
+	static std::vector<FeatureAnchor> BuildFeatureAnchors(PartType type);
 	static std::vector<AssemblyAnchor> AssemblyAnchors(const EngineSpec& spec);
-	// Backpack cells, width x height; {0, 0} for parts too big to carry in it.
+	// Backpack cells, width x height; {0, 0} for parts that can't go in it.
 	static glm::ivec2 PartGridSize(PartType type);
 	// Which finish texture a surface should wear, given how it was last worked and how rough it is.
 	// 0 means the part's own texture already looks right, so the overlay can hide.
@@ -222,10 +287,14 @@ private:
 	void LoadTextures();
 	void LoadEnvironment();
 	void LoadOutdoors();
+	void LoadHouse();
 	void LoadMachines();
 	void LoadParts();
+	// Seals, gaskets and everything bolted around the long block.
+	void LoadAncillaries();
 	void LoadOverlays();
 	void LoadTools();
+	void LoadFurniture();
 
 	std::unordered_map<std::string, uint32_t>		m_models = {};
 	std::unordered_map<std::string, uint32_t>		m_textures = {};

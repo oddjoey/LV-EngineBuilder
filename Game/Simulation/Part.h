@@ -23,10 +23,70 @@ enum class PartType
 	CAMSHAFT,
 	INTAKE_VALVE,
 	EXHAUST_VALVE,
-	VALVE_SPRING
+	VALVE_SPRING,
+
+	// Everything else that makes a running engine. Appended so saved part types keep their numbers;
+	// each one up to MAIN_CAP also has an assembly slot of the same number (see AssemblySlot). PartCatalog
+	// describes them all.
+	CORE_PLUG,
+	REAR_MAIN_SEAL,
+	OIL_PUMP,
+	OIL_PICKUP,
+	OIL_PAN_GASKET,
+	OIL_PAN,
+	OIL_DRAIN_PLUG,
+	OIL_FILTER,
+	VALVE_STEM_SEAL,
+	VALVE_RETAINER,
+	LIFTER,
+	CRANK_SPROCKET,
+	CAM_SPROCKET,
+	TIMING_BELT,
+	BELT_IDLER,
+	BELT_TENSIONER,
+	TIMING_COVER_GASKET,
+	TIMING_COVER,
+	FRONT_CRANK_SEAL,
+	CRANK_PULLEY,
+	VALVE_COVER_GASKET,
+	VALVE_COVER,
+	SPARK_PLUG,
+	IGNITION_COIL,
+	INTAKE_MANIFOLD_GASKET,
+	INTAKE_MANIFOLD,
+	THROTTLE_BODY,
+	FUEL_INJECTOR,
+	FUEL_RAIL,
+	EXHAUST_MANIFOLD_GASKET,
+	EXHAUST_MANIFOLD,
+	WATER_PUMP_GASKET,
+	WATER_PUMP,
+	THERMOSTAT,
+	THERMOSTAT_HOUSING,
+	// The other halves: bearings are fitted as an upper and a lower shell, and the rods and main
+	// journals are closed by caps machined together with their rod or block.
+	MAIN_BEARING_LOWER,
+	ROD_BEARING_LOWER,
+	ROD_CAP,
+	MAIN_CAP,
+	// Nuts and bolts by size. One size fits every hole it threads into; each hole has its own torque
+	// (see PartCatalog::Holes).
+	BOLT_M6,
+	BOLT_M8,
+	NUT_M8,
+	BOLT_M10,
+	BOLT_M12,
+	BOLT_M14,
+	// Bolted over the cam journals, line-bored with their head (appended later, so not with the
+	// other caps).
+	CAM_CAP,
+
+	COUNT
 };
 
 enum class PartQuality { BUDGET, OEM, PERFORMANCE };
+// A nut or bolt: in its hole finger tight, snugged by feel, or done up with a torque wrench.
+enum class FastenerTightness { LOOSE, SNUG, TORQUED };
 enum class PartCondition { NEW, USED, DAMAGED };
 
 const char* PartTypeName(PartType type);
@@ -71,6 +131,23 @@ namespace FeatureNames
 	inline const std::string CLOSED_DIAMETER = "Closed Diameter";
 	inline const std::string WALL_THICKNESS = "Wall Thickness";
 	inline const std::string COMPRESSED_THICKNESS = "Compressed Thickness";
+
+	// Ancillaries
+	inline const std::string ROTOR_TIP_CLEARANCE = "Rotor Tip Clearance";
+	inline const std::string ROTOR_SIDE_CLEARANCE = "Rotor Side Clearance";
+	inline const std::string RAIL_FLATNESS = "Sealing Rail Flatness";
+	inline const std::string FLANGE_FLATNESS = "Flange Flatness";
+	inline const std::string FACE_FLATNESS = "Sealing Face Flatness";
+	inline const std::string BUCKET_DIAMETER = "Bucket Diameter";
+	inline const std::string ROOT_DIAMETER = "Tooth Root Diameter";
+	inline const std::string BELT_TOOTH_HEIGHT = "Tooth Height";
+	inline const std::string IDLER_PLAY = "Bearing Play";
+	inline const std::string TENSIONER_TRAVEL = "Tensioner Travel";
+	inline const std::string RING_RUNOUT = "Damper Ring Runout";
+	inline const std::string ELECTRODE_GAP = "Electrode Gap";
+	inline const std::string THROTTLE_BORE = "Throttle Bore";
+	inline const std::string INJECTOR_FLOW = "Flow in 15 s";
+	inline const std::string SHAFT_PLAY = "Bearing Play";
 }
 
 // What the player has learned about a feature. Kept separate from the true geometry so the
@@ -107,6 +184,20 @@ public:
 	void MarkDamaged(const std::string& reason);
 	const std::string& GetDamageReason() const;
 
+	// Caps are machined in place with their rod or block and only ever fit that one (and a main
+	// cap only its own journal). 0 / -1 when the part isn't one of a matched set.
+	// Fasteners: how tight it was done up (Nm), 0
+	// while it's loose. The player only knows what the wrench said, not this.
+	double GetTorque() const;
+	void SetTorque(double newtonMetres);
+	// How it was done up: finger tight, snugged with a ratchet or wrench, or torqued to spec.
+	FastenerTightness GetTightness() const;
+	void SetTightness(FastenerTightness tightness);
+
+	uint32_t GetMatchedTo() const;
+	int GetMatchedPosition() const;
+	void MatchTo(uint32_t partId, int position = -1);
+
 	std::vector<Feature>& GetFeatures();
 	const std::vector<Feature>& GetFeatures() const;
 	Feature* FindFeature(const std::string& name);
@@ -127,6 +218,10 @@ private:
 	double									m_sizeOffset = 0.0;
 	double									m_value = 0.0;
 	std::string								m_damageReason = "";
+	uint32_t								m_matchedTo = 0;
+	int										m_matchedPosition = -1;
+	double									m_torque = 0.0;
+	FastenerTightness						m_tightness = FastenerTightness::LOOSE;
 	std::vector<Feature>					m_features = {};
 	std::unordered_map<std::string, FeatureReading> m_readings = {};
 };

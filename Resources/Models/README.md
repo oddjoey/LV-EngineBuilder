@@ -18,11 +18,11 @@ engine stand cares about the exact origin.)
 | Model name | Origin | Orientation / size (built-in) |
 |---|---|---|
 | `Block` | Centre of the deck face (top of the block) | Block hangs below the origin; bores along Y at X = -0.1425, -0.0475, 0.0475, 0.1425. 0.41 x 0.25 x 0.24 m |
-| `Cylinder Head` | Centre of the head's deck face (bottom) | Head sits above the origin. Intake ports on +Z, exhaust on -Z. Spring seats at Y = 0.07, cam axis at Y = 0.13 |
+| `Cylinder Head` | Centre of the head's deck face (bottom) | Head sits above the origin. Intake ports on -Z, exhaust on +Z. Spring seats at Y = 0.07, cam axis at Y = 0.13 |
 | `Head Gasket` | Centre of its bottom face | 1.5 mm thick |
-| `Crankshaft` | On the crank axis, centred | Runs along X. Throws 1 and 4 point +Y, 2 and 3 point -Y. Stroke 86 mm (43 mm throw) |
-| `Connecting Rod` | Centre of the small end (piston pin) | Big end hangs 144 mm below in -Y; both eyes' axes along X |
-| `Piston` | Centre of the crown (top face) | Skirt hangs below; pin axis along X, 30 mm below the crown. 86 mm diameter |
+| `Crankshaft` | On the crank axis, centred | Runs along X. Throws 1 and 4 point +Y, 2 and 3 point -Y. Stroke 77 mm (38.5 mm throw) |
+| `Connecting Rod` | Centre of the small end (piston pin) | Big end hangs 148 mm below in -Y; both eyes' axes along X |
+| `Piston` | Centre of the crown (top face) | Skirt hangs below; pin axis along X, 30 mm below the crown. 81 mm diameter |
 | `Piston Ring` | Centre, mid-thickness | Lies flat in the XZ plane |
 | `Main Bearing` / `Rod Bearing` | On the journal axis | Shell pair wrapped around X |
 | `Camshaft` | On the cam axis, centred | Runs along X. Each lobe's nose must point the way it does in the built-in model to stay in time with the valve animation |
@@ -47,7 +47,7 @@ need to match your part's surfaces exactly, so it's usually easier to leave them
   export OBJ. Many are CC licensed.
 - **Poly Haven** (polyhaven.com): CC0 shop props and PBR textures (concrete, metal, wood) that can
   replace the generated ones.
-- **Make your own**: the built-in shapes are dimensioned from the LV-20 spec, so modelling over them
+- **Make your own**: the built-in shapes are dimensioned from the LV-16 spec, so modelling over them
   in Blender keeps everything lined up.
 
 ## Exporting from Blender

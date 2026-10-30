@@ -73,9 +73,9 @@ int PlayerInventory::UsedCells() const
 	return cells;
 }
 
-bool PlayerInventory::Add(const ItemRef& item, glm::ivec2 size)
+bool PlayerInventory::AddToBackpack(const ItemRef& item, glm::ivec2 size)
 {
-	if (item.IsNone() || Contains(item) || !CanEverFit(size))
+	if (item.IsNone() || InBackpack(item) || !CanEverFit(size))
 		return false;
 
 	auto position = FindSpace(size);
@@ -87,40 +87,57 @@ bool PlayerInventory::Add(const ItemRef& item, glm::ivec2 size)
 	if (!position)
 		return false;
 
+	RemoveFromHotbar(item);
 	m_items.push_back({ item, *position, size });
-
-	if (!HotbarSlotOf(item))
-		for (int slot = 0; slot < HOTBAR_SLOTS; slot++)
-			if (m_hotbar[slot].IsNone())
-			{
-				m_hotbar[slot] = item;
-				break;
-			}
 	return true;
 }
 
 bool PlayerInventory::MoveTo(const ItemRef& item, glm::ivec2 position, glm::ivec2 size)
 {
-	auto it = std::find_if(m_items.begin(), m_items.end(), [&](const GridItem& entry) { return entry.item == item; });
-	if (it == m_items.end() || !CanPlace(position, size, item))
+	if (item.IsNone() || !CanPlace(position, size, item))
 		return false;
 
-	it->position = position;
-	it->size = size;
+	auto it = std::find_if(m_items.begin(), m_items.end(), [&](const GridItem& entry) { return entry.item == item; });
+	if (it != m_items.end())
+	{
+		it->position = position;
+		it->size = size;
+		return true;
+	}
+	// Off the hotbar into the backpack.
+	if (!HotbarSlotOf(item) || !CanEverFit(size))
+		return false;
+	RemoveFromHotbar(item);
+	m_items.push_back({ item, position, size });
 	return true;
 }
 
-void PlayerInventory::Remove(const ItemRef& item)
+void PlayerInventory::RemoveFromBackpack(const ItemRef& item)
 {
 	m_items.erase(std::remove_if(m_items.begin(), m_items.end(), [&](const GridItem& entry) { return entry.item == item; }), m_items.end());
+}
+
+void PlayerInventory::RemoveFromHotbar(const ItemRef& item)
+{
 	for (auto& slot : m_hotbar)
 		if (slot == item)
 			slot = {};
 }
 
-bool PlayerInventory::Contains(const ItemRef& item) const
+void PlayerInventory::Remove(const ItemRef& item)
+{
+	RemoveFromBackpack(item);
+	RemoveFromHotbar(item);
+}
+
+bool PlayerInventory::InBackpack(const ItemRef& item) const
 {
 	return Find(item) != nullptr;
+}
+
+bool PlayerInventory::Contains(const ItemRef& item) const
+{
+	return InBackpack(item) || HotbarSlotOf(item).has_value();
 }
 
 const GridItem* PlayerInventory::Find(const ItemRef& item) const
@@ -136,18 +153,59 @@ const std::vector<GridItem>& PlayerInventory::GetItems() const
 	return m_items;
 }
 
-void PlayerInventory::AssignHotbar(int slot, const ItemRef& item)
+bool PlayerInventory::PutInHotbar(int slot, const ItemRef& item)
 {
-	if (slot < 0 || slot >= HOTBAR_SLOTS)
-		return;
-	if (!item.IsNone() && !Contains(item))
-		return;
+	if (slot < 0 || slot >= HOTBAR_SLOTS || item.IsNone())
+		return false;
+	if (!m_hotbar[slot].IsNone() && m_hotbar[slot] != item)
+		return false;
 
-	// An item lives in one slot at a time.
-	for (auto& existing : m_hotbar)
-		if (existing == item)
-			existing = {};
+	// An item lives in one place at a time.
+	RemoveFromBackpack(item);
+	RemoveFromHotbar(item);
 	m_hotbar[slot] = item;
+	return true;
+}
+
+bool PlayerInventory::ExchangeWithBackpack(int slot, const ItemRef& item, glm::ivec2 occupantSize)
+{
+	const GridItem* entry = Find(item);
+	if (slot < 0 || slot >= HOTBAR_SLOTS || !entry)
+		return false;
+	GridItem saved = *entry;
+	ItemRef occupant = m_hotbar[slot];
+	RemoveFromBackpack(item);
+	if (!occupant.IsNone())
+	{
+		bool placed = false;
+		for (glm::ivec2 size : { occupantSize, glm::ivec2(occupantSize.y, occupantSize.x) })
+			if (!placed && CanEverFit(size) && CanPlace(saved.position, size))
+			{
+				m_items.push_back({ occupant, saved.position, size });
+				placed = true;
+			}
+		if (!placed)
+		{
+			m_hotbar[slot] = {};
+			placed = AddToBackpack(occupant, occupantSize);
+			if (!placed)
+				m_hotbar[slot] = occupant;
+		}
+		if (!placed)
+		{
+			m_items.push_back(saved);
+			return false;
+		}
+	}
+	m_hotbar[slot] = item;
+	return true;
+}
+
+void PlayerInventory::SwapHotbar(int a, int b)
+{
+	if (a < 0 || a >= HOTBAR_SLOTS || b < 0 || b >= HOTBAR_SLOTS)
+		return;
+	std::swap(m_hotbar[a], m_hotbar[b]);
 }
 
 ItemRef PlayerInventory::GetHotbar(int slot) const
@@ -165,8 +223,39 @@ std::optional<int> PlayerInventory::HotbarSlotOf(const ItemRef& item) const
 	return std::nullopt;
 }
 
-void PlayerInventory::Restore(const std::vector<GridItem>& items, const std::array<ItemRef, HOTBAR_SLOTS>& hotbar)
+std::optional<int> PlayerInventory::FreeHotbarSlot() const
+{
+	// The selected slot first (into the hand), then the ones after it, wrapping round.
+	for (int step = 0; step < HOTBAR_SLOTS; step++)
+		if (int slot = (m_selected + step) % HOTBAR_SLOTS; m_hotbar[slot].IsNone())
+			return slot;
+	return std::nullopt;
+}
+
+int PlayerInventory::GetSelected() const
+{
+	return m_selected;
+}
+
+void PlayerInventory::SetSelected(int slot)
+{
+	m_selected = ((slot % HOTBAR_SLOTS) + HOTBAR_SLOTS) % HOTBAR_SLOTS;
+}
+
+ItemRef PlayerInventory::GetSelectedItem() const
+{
+	return m_hotbar[m_selected];
+}
+
+void PlayerInventory::Restore(const std::vector<GridItem>& items, const std::array<ItemRef, HOTBAR_SLOTS>& hotbar, int selected)
 {
 	m_items = items;
-	m_hotbar = hotbar;
+	m_hotbar = {};
+	for (int slot = 0; slot < HOTBAR_SLOTS; slot++)
+		if (!hotbar[slot].IsNone() && !HotbarSlotOf(hotbar[slot]))
+		{
+			RemoveFromBackpack(hotbar[slot]);
+			m_hotbar[slot] = hotbar[slot];
+		}
+	SetSelected(selected);
 }

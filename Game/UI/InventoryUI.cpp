@@ -4,12 +4,14 @@
 #include <cmath>
 #include <format>
 #include <map>
+#include <optional>
 #include <unordered_set>
 
 #include <imgui.h>
 
 #include "../Simulation/EngineAssembly.h"
 #include "../Simulation/Material.h"
+#include "../Simulation/PartCatalog.h"
 #include "../Simulation/Workshop.h"
 #include "../World/ShopWorld.h"
 #include "ItemIcons.h"
@@ -46,7 +48,11 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 
 	// Left: the grid and hotbar. Right: details of one item and the engine's parts list.
 	ImGui::BeginGroup();
-	ImGui::TextDisabled("Drag to move   R while dragging: turn   Drag out: drop   Right click: options");
+	// Wrapped to the grid's width: any wider and it pushes the details panel off the window.
+	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + gridWidth);
+	ImGui::TextDisabled("Drag to move   R while dragging: turn   Drag out: drop   Right click: options   "
+		"Shift+click: between hotbar and backpack   1-0 on an item: onto that hotbar slot");
+	ImGui::PopTextWrapPos();
 
 	ImDrawList* drawList = ImGui::GetWindowDrawList();
 	ImVec2 gridMin = ImGui::GetCursorScreenPos();
@@ -73,27 +79,29 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 		ImVec2 max = { min.x + entry.size.x * CELL - 4.f, min.y + entry.size.y * CELL - 4.f };
 
 		drawList->AddRectFilled(min, max, info.isTool ? TOOL_FILL : ITEM_FILL, 4.f);
-		if (entry.item == world.GetEquipped())
-			drawList->AddRect(min, max, EQUIPPED_LINE, 4.f, 0, 2.f);
 
 		float iconSize = (std::min)(max.x - min.x, max.y - min.y) - 6.f;
 		ItemIcons::DrawItem(drawList, info.isTool, info.toolIndex, info.partType,
 			{ (min.x + max.x - iconSize) * 0.5f, (min.y + max.y - iconSize) * 0.5f }, iconSize);
-		if (auto slot = inventory.HotbarSlotOf(entry.item))
-			drawList->AddText({ max.x - 12.f, min.y + 2.f }, IM_COL32(255, 220, 140, 255), std::to_string((*slot + 1) % 10).c_str());
 
 		bool over = mouse.x >= min.x && mouse.x < max.x && mouse.y >= min.y && mouse.y < max.y;
 		if (over && gridHovered)
 			hovered = entry.item;
 	}
 
-	// Start dragging, or open the options for an item.
+	// Start dragging, shift-click it onto the hotbar, or open the options for an item.
 	// The details panel shows the item; the tooltip just names it.
 	if (!hovered.IsNone() && m_dragging.IsNone())
 	{
 		ImGui::SetTooltip("%s", world.DescribeItem(hovered, workshop).name.c_str());
 
-		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyShift)
+		{
+			// Into the selected slot if it's empty, else the first empty one.
+			auto slot = inventory.FreeHotbarSlot();
+			m_status = slot && world.MoveToHotbar(hovered, *slot) ? "" : "The hotbar's full.";
+		}
+		else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 		{
 			const GridItem* entry = inventory.Find(hovered);
 			m_selected = hovered;
@@ -108,12 +116,13 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 		}
 	}
 
-	// Hotbar row
+	// Hotbar row: the items themselves, whatever their size. The selected slot is the one in hand.
 	ImGui::Spacing();
 	ImGui::TextUnformatted("Hotbar");
 	ImVec2 hotbarMin = ImGui::GetCursorScreenPos();
 	float slotStride = HOTBAR_SLOT + 6.f;
-	ImGui::Dummy({ PlayerInventory::HOTBAR_SLOTS * slotStride, HOTBAR_SLOT });
+	// A button, like the grid, so pressing and dragging here moves items rather than the window.
+	ImGui::InvisibleButton("HotbarRow", { PlayerInventory::HOTBAR_SLOTS * slotStride, HOTBAR_SLOT });
 	int hoveredSlot = -1;
 	for (int slot = 0; slot < PlayerInventory::HOTBAR_SLOTS; slot++)
 	{
@@ -124,22 +133,46 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 			hoveredSlot = slot;
 
 		auto item = inventory.GetHotbar(slot);
+		bool selected = slot == inventory.GetSelected() && !world.IsHandEmptied();
 		drawList->AddRectFilled(min, max, over && !m_dragging.IsNone() ? IM_COL32(60, 80, 110, 255) : CELL_COLOR, 4.f);
-		drawList->AddRect(min, max, !item.IsNone() && item == world.GetEquipped() ? EQUIPPED_LINE : CELL_LINE, 4.f);
-		if (!item.IsNone())
+		drawList->AddRect(min, max, selected ? EQUIPPED_LINE : CELL_LINE, 4.f, 0, selected ? 2.f : 1.f);
+		if (!item.IsNone() && item != m_dragging)
 		{
 			auto info = world.DescribeItem(item, workshop);
 			ItemIcons::DrawItem(drawList, info.isTool, info.toolIndex, info.partType, { min.x + 5.f, min.y + 5.f }, HOTBAR_SLOT - 10.f);
 			if (over && m_dragging.IsNone())
 			{
-				ImGui::SetTooltip("%s\nRight click to clear", info.name.c_str());
+				ImGui::SetTooltip("%s", info.name.c_str());
 				hovered = item;
+				if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyShift)
+				{
+					// Shift-click: straight into the backpack, if there's room.
+					m_status = world.MoveToBackpack(item) ? "" : std::format("No room in the backpack for the {}.", info.name);
+					hovered = {};
+				}
+				else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+				{
+					// Picked up by its middle, at the size it takes in the backpack.
+					m_selected = item;
+					m_dragging = item;
+					m_dragSize = glm::max(info.size, glm::ivec2(1));
+					m_grabOffset = glm::vec2(m_dragSize) * 0.5f;
+				}
+				else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+				{
+					m_contextItem = item;
+					ImGui::OpenPopup("ItemOptions");
+				}
 			}
 		}
 		drawList->AddText({ min.x + 3.f, min.y + 1.f }, IM_COL32(200, 200, 200, 220), std::to_string((slot + 1) % 10).c_str());
 	}
-	if (hoveredSlot >= 0 && m_dragging.IsNone() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-		inventory.AssignHotbar(hoveredSlot, {});
+
+	// 1-0 with the cursor on an item puts it on that hotbar slot (swapping with what's there).
+	if (!hovered.IsNone() && m_dragging.IsNone())
+		for (int slot = 0; slot < PlayerInventory::HOTBAR_SLOTS; slot++)
+			if (ImGui::IsKeyPressed(static_cast<ImGuiKey>(ImGuiKey_0 + (slot + 1) % 10), false))
+				world.MoveToHotbar(hovered, slot);
 
 	// Dragging: the item follows the cursor and snaps to the cell under it.
 	if (!m_dragging.IsNone())
@@ -153,7 +186,9 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 		glm::ivec2 cell = { static_cast<int>(std::floor((mouse.x - gridMin.x) / CELL - m_grabOffset.x + 0.5f)),
 			static_cast<int>(std::floor((mouse.y - gridMin.y) / CELL - m_grabOffset.y + 0.5f)) };
 		bool overGrid = mouse.x >= gridMin.x && mouse.x < gridMin.x + gridWidth && mouse.y >= gridMin.y && mouse.y < gridMin.y + gridHeight;
-		bool fits = inventory.CanPlace(cell, m_dragSize, m_dragging);
+		auto info = world.DescribeItem(m_dragging, workshop);
+		// Something that can't go in the backpack can only go between hotbar slots.
+		bool fits = PlayerInventory::CanEverFit(info.size) && inventory.CanPlace(cell, m_dragSize, m_dragging);
 
 		ImDrawList* front = ImGui::GetForegroundDrawList();
 		if (overGrid)
@@ -162,7 +197,6 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 			front->AddRectFilled(min, { min.x + m_dragSize.x * CELL, min.y + m_dragSize.y * CELL },
 				fits ? IM_COL32(80, 200, 100, 70) : IM_COL32(220, 80, 70, 70), 4.f);
 		}
-		auto info = world.DescribeItem(m_dragging, workshop);
 		ImVec2 ghostMin = { mouse.x - m_grabOffset.x * CELL, mouse.y - m_grabOffset.y * CELL };
 		ImVec2 ghostMax = { ghostMin.x + m_dragSize.x * CELL, ghostMin.y + m_dragSize.y * CELL };
 		front->AddRectFilled(ghostMin, ghostMax, IM_COL32(70, 80, 100, 200), 4.f);
@@ -174,11 +208,12 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 		{
 			bool overWindow = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem | ImGuiHoveredFlags_RootAndChildWindows);
 			if (hoveredSlot >= 0)
-				inventory.AssignHotbar(hoveredSlot, m_dragging);
+				world.MoveToHotbar(m_dragging, hoveredSlot);
 			else if (overGrid)
 			{
-				if (fits)
-					inventory.MoveTo(m_dragging, cell, m_dragSize);
+				// Off the hotbar (maybe out of hand) or across the backpack.
+				if (fits && inventory.MoveTo(m_dragging, cell, m_dragSize))
+					world.SyncHand();
 			}
 			else if (!overWindow)
 				world.DropFromInventory(m_dragging, player);
@@ -192,13 +227,21 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 		ImGui::TextDisabled("%s", info.name.c_str());
 		ImGui::Separator();
 		bool equipped = m_contextItem == world.GetEquipped();
-		if (ImGui::MenuItem(equipped ? "Put back" : "Take in hand"))
+		bool onHotbar = inventory.HotbarSlotOf(m_contextItem).has_value();
+		if (ImGui::MenuItem(equipped ? "Put in backpack" : "Take in hand"))
 			world.ToggleEquip(m_contextItem);
-		if (ImGui::BeginMenu("Bind to hotbar"))
+		if (onHotbar && !equipped && ImGui::MenuItem("Put in backpack"))
+			world.MoveToBackpack(m_contextItem);
+		if (ImGui::BeginMenu("Put on hotbar"))
 		{
 			for (int slot = 0; slot < PlayerInventory::HOTBAR_SLOTS; slot++)
-				if (ImGui::MenuItem(std::format("Slot {}", (slot + 1) % 10).c_str()))
-					inventory.AssignHotbar(slot, m_contextItem);
+			{
+				auto there = inventory.GetHotbar(slot);
+				std::string label = there.IsNone() ? std::format("Slot {}", (slot + 1) % 10)
+					: std::format("Slot {} (swap with {})", (slot + 1) % 10, world.DescribeItem(there, workshop).name);
+				if (ImGui::MenuItem(label.c_str(), nullptr, there == m_contextItem))
+					world.MoveToHotbar(m_contextItem, slot);
+			}
 			ImGui::EndMenu();
 		}
 		if (ImGui::MenuItem("Drop"))
@@ -221,7 +264,7 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 	{
 		DrawDetails(world, workshop, player, shown);
 		ImGui::Spacing();
-		DrawEngineChecklist(world, workshop);
+		DrawPlayerStats(world, workshop);
 	}
 	ImGui::EndChild();
 }
@@ -238,10 +281,10 @@ void InventoryUI::DrawSummary(ShopWorld& world, Workshop& workshop, float width)
 	ImGui::SameLine();
 	ImGui::BeginDisabled(inventory.GetItems().empty());
 	if (ImGui::Button("Tidy up", { buttonWidth, 0.f }))
-		m_tidyStatus = inventory.Tidy() ? "" : "Couldn't pack it any tighter.";
+		m_status = inventory.Tidy() ? "" : "Couldn't pack it any tighter.";
 	ImGui::EndDisabled();
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-		ImGui::SetTooltip("Repack everything biggest first, from the top left. Hotbar slots stay.");
+		ImGui::SetTooltip("Repack the backpack biggest first, from the top left. The hotbar is left as it is.");
 
 	int parts = 0, tools = 0;
 	double partsValue = 0.0;
@@ -262,8 +305,8 @@ void InventoryUI::DrawSummary(ShopWorld& world, Workshop& workshop, float width)
 		ImGui::Text("   In hand: %s", world.DescribeItem(equipped, workshop).name.c_str());
 	else
 		ImGui::TextDisabled("   Hands empty");
-	if (!m_tidyStatus.empty())
-		ImGui::TextDisabled("%s", m_tidyStatus.c_str());
+	if (!m_status.empty())
+		ImGui::TextDisabled("%s", m_status.c_str());
 }
 
 void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstPersonController& player, const ItemRef& item)
@@ -292,11 +335,13 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 	ImGui::PopTextWrapPos();
 	ImGui::TextDisabled("Takes %d x %d cells", info.size.x, info.size.y);
 	bool equipped = item == world.GetEquipped();
-	bool inBackpack = inventory.Contains(item);
+	bool carried = inventory.Contains(item);
 	if (equipped)
 		ImGui::TextColored({ 1.f, 0.8f, 0.3f, 1.f }, "In your hand");
 	if (auto slot = inventory.HotbarSlotOf(item))
-		ImGui::TextDisabled("Hotbar key %d", (*slot + 1) % 10);
+		ImGui::TextDisabled("Hotbar slot %d", (*slot + 1) % 10);
+	else if (inventory.InBackpack(item))
+		ImGui::TextDisabled("In your backpack: put it on the hotbar to use it");
 	ImGui::EndGroup();
 
 	ImGui::PushTextWrapPos(0.f);
@@ -361,9 +406,9 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 		ImGui::EndTable();
 	}
 
-	if (inBackpack)
+	if (carried)
 	{
-		if (ImGui::Button(equipped ? "Put back" : "Take in hand"))
+		if (ImGui::Button(equipped ? "Put in backpack" : "Take in hand"))
 			world.ToggleEquip(item);
 		ImGui::SameLine();
 		if (ImGui::Button("Drop"))
@@ -375,90 +420,67 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 	}
 }
 
-void InventoryUI::DrawEngineChecklist(ShopWorld& world, Workshop& workshop)
+void InventoryUI::DrawPlayerStats(ShopWorld& world, Workshop& workshop)
 {
-	// One engine at a time, picked here when there are several.
-	int engines = workshop.GetEngineCount();
-	m_checklistEngine = std::clamp(m_checklistEngine, 0, engines - 1);
-	if (engines > 1)
-	{
-		ImGui::SeparatorText("Engines");
-		for (int engine = 0; engine < engines; engine++)
-		{
-			if (engine > 0)
-				ImGui::SameLine();
-			if (ImGui::RadioButton(std::format("Engine {}##Checklist{}", engine + 1, engine).c_str(), m_checklistEngine == engine))
-				m_checklistEngine = engine;
-		}
-	}
-	else
-		ImGui::SeparatorText("Engine on the stand");
+	const auto& stats = workshop.GetStats();
+	const ImVec4 good = { 0.45f, 0.85f, 0.5f, 1.f };
+	const ImVec4 bad = { 1.f, 0.45f, 0.45f, 1.f };
+	bool imperial = m_units == Units::System::IMPERIAL;
 
-	const auto& assembly = workshop.GetAssembly(m_checklistEngine);
-	// A part fitted to any engine isn't a spare for this one.
-	std::unordered_set<const Part*> fitted;
-	for (int engine = 0; engine < engines; engine++)
-		for (const auto& part : workshop.GetAssembly(engine).GetAllParts())
-			fitted.insert(part.get());
-
-	// Spares: parts of each kind in the shop that aren't in an engine (unopened deliveries included).
-	std::map<PartType, int> spares;
-	for (const auto& part : workshop.GetInventory())
-		if (!fitted.count(part.get()))
-			spares[part->GetType()]++;
-
-	int fittedTotal = 0, neededTotal = 0;
-	std::string shortfall;	// what the shop doesn't have enough of to finish the engine
-	if (ImGui::BeginTable("EngineChecklist", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
-	{
-		ImGui::TableSetupColumn("Part", ImGuiTableColumnFlags_WidthStretch, 2.f);
-		ImGui::TableSetupColumn("Fitted", ImGuiTableColumnFlags_WidthStretch, 1.f);
-		ImGui::TableSetupColumn("Spare", ImGuiTableColumnFlags_WidthStretch, 1.f);
-		ImGui::TableHeadersRow();
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Spare: parts of that kind in the shop that aren't in the engine.");
-
-		for (int index = 0; index < static_cast<int>(AssemblySlot::COUNT); index++)
-		{
-			auto slot = static_cast<AssemblySlot>(index);
-			int needed = assembly.SlotCount(slot);
-			int count = 0;
-			for (int i = 0; i < needed; i++)
-				if (assembly.Get(slot, i))
-					count++;
-			fittedTotal += count;
-			neededTotal += needed;
-
-			ImGui::TableNextRow();
-			ImGui::TableNextColumn();
-			ImGui::TextUnformatted(AssemblySlotName(slot));
-			ImGui::TableNextColumn();
-			ImVec4 color = count == needed ? ImVec4(0.45f, 0.85f, 0.5f, 1.f) : count > 0 ? ImVec4(1.f, 0.8f, 0.35f, 1.f) : ImVec4(0.6f, 0.6f, 0.6f, 1.f);
-			ImGui::TextColored(color, "%d / %d", count, needed);
-			ImGui::TableNextColumn();
-			int spare = spares[EngineAssembly::SlotPartType(slot)];
-			if (int missing = needed - count - spare; missing > 0)
-				shortfall += std::format("{}{} x{}", shortfall.empty() ? "" : ", ", AssemblySlotName(slot), missing);
-			if (spare > 0)
-				ImGui::Text("%d", spare);
-			else
-				ImGui::TextDisabled("-");
-		}
-		ImGui::EndTable();
-	}
-
-	if (fittedTotal == neededTotal)
-		ImGui::TextColored({ 0.45f, 0.85f, 0.5f, 1.f }, "Every part is in. Take it to the dyno cell.");
-	else
-		ImGui::TextDisabled("%d of %d parts fitted", fittedTotal, neededTotal);
-	if (!shortfall.empty())
-	{
+	auto section = [&](const char* title) {
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn();
 		ImGui::Spacing();
-		ImGui::TextColored({ 1.f, 0.8f, 0.35f, 1.f }, "Still to buy (at the parts computer):");
-		ImGui::PushTextWrapPos(0.f);
-		ImGui::TextUnformatted(shortfall.c_str());
-		ImGui::PopTextWrapPos();
-	}
+		ImGui::TextDisabled("%s", title);
+	};
+	auto row = [&](const char* label, const std::string& value, std::optional<ImVec4> color = std::nullopt) {
+		ImGui::TableNextRow();
+		ImGui::TableNextColumn();
+		ImGui::TextUnformatted(label);
+		ImGui::TableNextColumn();
+		if (color)
+			ImGui::TextColored(*color, "%s", value.c_str());
+		else
+			ImGui::TextUnformatted(value.c_str());
+	};
+	auto money = [](double amount) { return std::format("${:.0f}", amount); };
+
+	ImGui::SeparatorText("Player stats");
+	if (!ImGui::BeginTable("PlayerStats", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+		return;
+	ImGui::TableSetupColumn("Stat", ImGuiTableColumnFlags_WidthStretch, 2.f);
+	ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 1.f);
+
+	section("Money");
+	row("In the bank", money(workshop.GetMoney()), good);
+	row("Earned", money(stats.moneyEarned));
+	row("Spent", money(stats.moneySpent));
+	double profit = stats.moneyEarned - stats.moneySpent;
+	row("Profit", std::format("{}{}", profit < 0.0 ? "-" : "", money(std::abs(profit))), profit < 0.0 ? bad : good);
+
+	section("Shop");
+	row("Hours on the clock", std::format("{:.1f} h", workshop.GetHours()));
+	row("Parts bought", std::to_string(stats.partsBought));
+	row("Parts sold", std::to_string(stats.partsSold));
+	row("Parts fitted", std::to_string(stats.partsFitted));
+	row("Measurements taken", std::to_string(stats.measurements));
+	row("Machining cuts", std::to_string(stats.cuts));
 	if (int packages = world.GetUnopenedPackages(); packages > 0)
-		ImGui::TextColored({ 1.f, 0.8f, 0.35f, 1.f }, "%d deliver%s waiting to be opened", packages, packages == 1 ? "y" : "ies");
+		row("Deliveries waiting", std::to_string(packages), ImVec4(1.f, 0.8f, 0.35f, 1.f));
+
+	section("Dyno and sales");
+	row("Dyno pulls", std::to_string(stats.dynoPulls));
+	row("Engines blown up", std::to_string(stats.dynoFailures), stats.dynoFailures > 0 ? std::optional<ImVec4>(bad) : std::nullopt);
+	row("Best power", stats.bestPowerKw > 0.0 ? std::format("{:.0f} hp ({:.0f} kW)", stats.bestPowerKw * 1.341, stats.bestPowerKw) : "-");
+	row("Best torque", stats.bestTorqueNm > 0.0
+		? (imperial ? std::format("{:.0f} lb-ft", stats.bestTorqueNm * 0.7376) : std::format("{:.0f} Nm", stats.bestTorqueNm)) : "-");
+	row("Engines sold", std::to_string(stats.enginesSold));
+	row("Best sale", stats.bestEngineSale > 0.0 ? money(stats.bestEngineSale) : "-");
+
+	section("On foot");
+	double metres = stats.metresWalked;
+	row("Distance walked", imperial ? (metres >= 1609.0 ? std::format("{:.2f} mi", metres / 1609.34) : std::format("{:.0f} ft", metres * 3.2808))
+		: (metres >= 1000.0 ? std::format("{:.2f} km", metres / 1000.0) : std::format("{:.0f} m", metres)));
+
+	ImGui::EndTable();
 }

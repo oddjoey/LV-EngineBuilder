@@ -29,7 +29,8 @@ enum class MachineOperation
 	FILE_RING,
 	REAM,			// valve guides
 	CUT_SEAT,		// valve seats
-	FACE_VALVE		// valve faces
+	FACE_VALVE,		// valve faces
+	LINE_BORE		// the block's main bearing housings, all in one line
 };
 
 namespace FeatureIssue
@@ -85,9 +86,6 @@ struct Feature
 	double MaxSample() const;
 	double Taper() const;
 	double OutOfRound() const;
-
-	void SetUniform(double size);
-	void Offset(double delta);
 
 	// The size class whose tolerance window contains the current size, if any.
 	std::optional<double> MatchSizeClass() const;

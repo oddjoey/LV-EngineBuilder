@@ -24,11 +24,25 @@ enum class ToolShape
 	DIAL_INDICATOR,
 	RUNOUT_GAUGE,
 	SPRING_TESTER,
-	HEIGHT_MICROMETER
+	HEIGHT_MICROMETER,
+	RATCHET,
+	BREAKER_BAR,
+	SOCKET_SET,
+	WRENCH_SET,
+	TORQUE_WRENCH
 };
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 {
+	switch (tool.handKind)
+	{
+		case HandToolKind::RATCHET:			return ToolShape::RATCHET;
+		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
+		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
+		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
+		case HandToolKind::TORQUE_WRENCH:	return ToolShape::TORQUE_WRENCH;
+		default:							break;
+	}
 	const std::string& name = tool.name;
 	auto has = [&](const char* text) { return name.find(text) != std::string::npos; };
 	if (has("Caliper")) return ToolShape::CALIPER;
@@ -68,6 +82,11 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::RUNOUT_GAUGE:		return { 2, 2 };
 		case ToolShape::SPRING_TESTER:		return { 2, 3 };
 		case ToolShape::HEIGHT_MICROMETER:	return { 1, 2 };
+		case ToolShape::RATCHET:			return { 1, 3 };
+		case ToolShape::BREAKER_BAR:		return { 1, 5 };
+		case ToolShape::SOCKET_SET:			return { 3, 2 };
+		case ToolShape::WRENCH_SET:			return { 3, 2 };
+		case ToolShape::TORQUE_WRENCH:		return { 1, 5 };
 	}
 	return { 1, 1 };
 }
@@ -75,4 +94,39 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 inline std::string ToolModelName(const MeasuringTool& tool)
 {
 	return "Tool: " + tool.name;
+}
+
+// Sockets are separate from their set, so one can come out and go on a ratchet. The set's model is
+// just the open case; each socket is the one socket model, scaled to its size.
+inline const std::string SOCKET_MODEL = "Tool: Socket";
+constexpr float SOCKET_MODEL_RADIUS = 0.01f;
+constexpr float SOCKET_HEIGHT = 0.03f;
+
+inline float SocketRadius(int sizeMm)
+{
+	return 0.0035f + sizeMm * 0.0004f;
+}
+
+// The middle of a socket standing in its place in the set, in the set's own space.
+inline glm::vec3 SocketSlot(const MeasuringTool& set, size_t index)
+{
+	int count = static_cast<int>(set.sizes.size());
+	return { -0.11f + index * 0.22f / (count > 1 ? count - 1 : 1), 0.016f + SOCKET_HEIGHT * 0.5f, 0.f };
+}
+
+// The handle's length along X for a ratchet, breaker bar or torque wrench.
+inline float DriveToolLength(const MeasuringTool& tool)
+{
+	return tool.handKind == HandToolKind::RATCHET ? 0.2f : tool.handKind == HandToolKind::BREAKER_BAR ? 0.45f : 0.42f;
+}
+
+// The middle of a socket on a drive tool's square drive, under its head, in the tool's own space.
+inline glm::vec3 DriveSocketPosition(const MeasuringTool& tool)
+{
+	return { DriveToolLength(tool) * 0.5f, -0.008f - SOCKET_HEIGHT * 0.5f, 0.f };
+}
+
+inline bool IsDriveTool(const MeasuringTool& tool)
+{
+	return tool.handKind == HandToolKind::RATCHET || tool.handKind == HandToolKind::BREAKER_BAR || tool.handKind == HandToolKind::TORQUE_WRENCH;
 }

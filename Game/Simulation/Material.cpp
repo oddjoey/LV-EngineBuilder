@@ -16,6 +16,13 @@ const Material& GetMaterial(MaterialType type)
 		{ "Ductile Iron",				7.10, 11.5e-6, 300.0, 0.80 },
 		{ "Aluminium-Tin Bimetal",		3.10, 20.0e-6,  40.0, 1.20 },
 		{ "MLS Stainless Steel",		7.90, 17.3e-6, 350.0, 0.60 },
+		{ "Hardened Steel",				7.85, 11.5e-6, 550.0, 0.40 },
+		{ "Stamped Steel",				7.85, 12.0e-6, 120.0, 1.00 },
+		{ "FKM Rubber",					1.85, 160.0e-6,  0.0, 0.00 },
+		{ "Glass-filled Nylon",			1.40, 30.0e-6,  15.0, 0.00 },
+		{ "Rubber-coated Composite",	1.60, 40.0e-6,  10.0, 0.00 },
+		{ "Nickel Alloy & Ceramic",		4.50, 8.0e-6,  400.0, 0.00 },
+		{ "HNBR Rubber, Glass Cord",	1.30, 120.0e-6,  0.0, 0.00 },
 	};
 
 	auto index = static_cast<size_t>(type);

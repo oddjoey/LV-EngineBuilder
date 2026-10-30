@@ -32,6 +32,9 @@ namespace Ratings
 
 	float ToolPrecision(const MeasuringTool& tool)
 	{
+		// Hand tools: only a torque wrench has a precision worth rating.
+		if (tool.IsHandTool())
+			return tool.handKind == HandToolKind::TORQUE_WRENCH ? LogScore(tool.torqueError, 0.015, 0.15) : 0.5f;
 		// Each kind of measurement has its own idea of good: a micron, a newton, a tenth of a cc.
 		if (tool.measuresFinish)
 			return LogScore(tool.sigma, 0.01, 0.12);

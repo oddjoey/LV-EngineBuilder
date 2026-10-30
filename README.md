@@ -2,7 +2,7 @@
 
 A first-person engine building game, made on **[Lordi](https://github.com/oddjoey/LV)**, a custom C++ / Vulkan game engine. Lordi is included as a git submodule in `LV/`.
 
-You run a small garage. You start with a worn-out **LV-20 Inline-4** core and **$4000**. Measure every part down to the micron, machine what's out of spec, buy what's missing, put the engine together with the right clearances, and run it on the dyno. Nothing is shown to you that you haven't measured yourself: the parts have real (hidden) geometry, and your tools have real resolution and error.
+You run a small garage. You start with a worn-out **LV-16 Inline-4** (1.6 litre) core and **$4000**. Measure every part down to the micron, machine what's out of spec, buy what's missing, put the engine together with the right clearances, and run it on the dyno. Nothing is shown to you that you haven't measured yourself: the parts have real (hidden) geometry, and your tools have real resolution and error.
 
 ---
 
@@ -92,7 +92,7 @@ Engine work (rendering, shaders, DLSS) belongs in the [Lordi repository](https:/
 
 The loop:
 
-1. **Look around the garage.** Your core's parts are laid out in order on the parts shelf: block, crank, head and cam on the bottom board, then the rods, valves and springs. The tool board is bare and there are no machines: everything is bought at the parts computer (E at the desk), so spend the $4000 carefully.
+1. **Look around the garage.** Your core's parts are laid out in order on two parts shelves along the back wall. The left one holds the engine's internals (block, crank, head, cam, rods, valves, springs and the rest of the valvetrain), the right one everything bolted around them (timing drive, oiling, cooling, fuel and air, exhaust and ignition). The tool board is bare and there are no machines: everything is bought at the parts computer (E at the desk), so spend the $4000 carefully.
 2. **Measure.** Take a tool in hand, aim at a part, and left-click. Bores, journals, decks, valves, springs: everything has a spec.
 3. **Inspect on the bench.** Set a part on the workbench and press E there. The Bench screen lists every feature, its spec, your reading and the verdict.
 4. **Machine** what's worn: set the part up in the right machine with E and cut it from that machine's screen. Material only comes off.
@@ -108,20 +108,34 @@ Each engine is built on its own engine stand. You start with one; buy more (up t
 - **E at a stand** makes its engine the one you're working on: the Engine Stand screen shows that stand's engine, and the Dyno screen has an engine picker when you have more than one.
 - Parts are shared: any part can go into any engine, but only one at a time, and a part fitted to one engine isn't offered for another.
 - Assembly checks (Plastigauge, feelers, dial indicator) work on whichever stand you aim at. Each engine keeps its own readings and its own dyno sheet.
-- The **Backpack** checklist has a picker too: per engine, how many of each part are fitted, how many spares are loose in the shop, and what you still need to buy.
 
 ### Build order
 
-Parts go on in the order they would in a real shop, and come off in reverse: nothing can be removed while something is fitted on top of it. Aiming at the stand with a part in hand says where it will go, or what has to go on first ("Not yet: The Main Bearing 1 has to go on first.").
+Parts go on in the order they would in a real shop, and come off in reverse: nothing can be removed while something is fitted on top of it.
 
-1. **Block.**
-2. **Main bearings**, then the **crankshaft** (all the mains first).
-3. Per cylinder, once the crank is in: the **piston**, then its **ring** and **connecting rod**, then the **rod bearing**.
-4. **Head gasket**, once the whole bottom end is done, then the **cylinder head**.
-5. **Valves** into the head, each **valve spring** over its valve.
-6. **Camshaft** last, once the head, every valve and every spring are in.
+A part goes exactly where you put it. Carry one up to an engine and every empty position it can go in is marked with a dot: **green** if it can go on now, **grey** if something else has to go first. Aim at a dot (a ring shows the one you're on) and press E to fit it there; the prompt names the position ("Fit the OEM Main Bearing as Main Bearing 3") or says what's missing ("Crankshaft: not yet. The Main Bearing 1 has to go on first."). Aiming anywhere else on the engine just reminds you to aim at the spot.
 
-Older saves load whatever was fitted, even if out of order.
+1. **Block**, then its three **core plugs**.
+2. The **upper main shells** in the block, then the **crankshaft** (all five shells first), then per journal the **lower main shell** and its **main cap**; once every cap is on, the **rear main seal** over the flange.
+3. The **oil pump** over the crank snout, and the **oil pickup** on the pump.
+4. Per cylinder, once the crank is capped: the **piston**, then its **ring** and **connecting rod**, the **upper rod shell**, the **lower rod shell**, then the **rod cap**.
+
+Bearings are sold as pairs (an upper and a lower shell) and fitted one shell at a time; the oil clearance only exists once the cap is on, and it's worked out from both shells' walls. **Caps are matched**: each rod comes with its own cap and each block with its five numbered main caps, machined together. A cap only goes back on the rod or block it came with, and a main cap only in its own position ("That's main cap 3: it only fits main journal 3.").
+5. **Head gasket**, once the whole bottom end is done, then the **cylinder head** and its **head bolts**.
+6. Valve by valve: the **valve**, its **stem seal**, the **spring**, the **retainer and keepers**, and the **bucket lifter**.
+7. **Camshaft**, once every lifter is in.
+8. Timing drive: **crank sprocket** (in front of the pump), **cam sprocket**, both **belt idlers**, the **timing belt**, then the **tensioner**.
+9. **Timing cover gasket**, **timing cover**, **front crank seal**, **crank pulley**.
+10. **Oil pan gasket** (once the pickup, rear main seal and timing cover are on), **oil pan**, **drain plug**, **oil filter**.
+11. **Valve cover gasket** and **valve cover** (once the timing drive is in).
+12. **Spark plugs** into the head, then each **ignition coil** down through the valve cover onto its plug.
+13. **Intake manifold gasket**, **intake manifold**, then the **throttle body** and **injectors**, then the **fuel rail** over the injectors.
+14. **Exhaust manifold gasket** and **exhaust manifold**.
+15. **Water pump gasket** and **water pump** on the timing cover; **thermostat** and its **housing** on the head.
+
+Gaskets, seals, core plugs, the oil filter and the torque-to-yield head bolts are **single use**: take one off and it's scrap ("damaged"), so a teardown means buying new ones. No flywheel: on a real engine stand that's where the stand bolts on.
+
+Older saves load whatever was fitted, even if out of order; their engines simply have the new positions empty.
 
 ---
 
@@ -156,7 +170,7 @@ One screen at a time, with no tabs to switch between: Tab opens the inventory, a
 
 | Screen | Opened by | What it shows |
 |---|---|---|
-| **Inventory** | Tab | A Tarkov-style grid (10 × 6 cells) and the hotbar. Beside it: details of the item under the cursor (material, quality, condition, size class, value, how much of it you've measured; for tools, precision, speed and resolution), a **Tidy up** button, and the engine checklist with a "still to buy" list. |
+| **Inventory** | Tab | A Tarkov-style grid (10 × 6 cells) and the hotbar. Beside it: details of the item under the cursor (material, quality, condition, size class, value, how much of it you've measured; for tools, precision, speed and resolution), a **Tidy up** button, and your **player stats**: money in the bank, earned, spent and profit; shop hours, parts bought, cores bought, parts sold and fitted, measurements taken, machining cuts and deliveries waiting; dyno pulls, engines blown up, best power and torque, engines sold and the best sale; and how far you've walked. |
 | **Workbench** | E at the workbench | Only parts actually sitting on the bench. Every feature grouped by area, with spec, your reading, finish, verdict and which tool to measure it with. Click a feature for the full spec and readings. |
 | **Machine** (named after it) | E at a machine | The machine (operation, finish it leaves, time), the part set up in it, and only the features that machine can cut, each marked green, red or grey by your last reading. Then the cut itself: target size (with one-click size classes), time estimate from your own reading, and the button. |
 | **Engine Stand** | E at a stand (without a part in hand) | Read-only, like the workbench: that stand's engine, what can be fitted next, and every fitted part by position. Click a part for its features and your readings, or **Engine checks** for the assembled checks: oil clearances, ring gaps, piston-to-wall, deck clearance, compression, valve installed height and spring pressure. Parts are fitted and removed only at the stand itself (see [Build order](#build-order)). |
@@ -172,13 +186,18 @@ E at the computer desk opens the store in a window of its own; it can't be reach
 - **Engines**: engine stands, whole used cores, and a table of where each of your engines is up to.
 - **Measuring Tools** and **Machines**, each with a description and ratings.
 
+Everything goes in a **cart** first ("Add to cart"), shown down the right of the store: each line with its price, quantity buttons for parts, stands and cores, Remove, the total and what you'd have left. **Check out** buys the lot in one go, only if you can pay for all of it (a tool or machine can only be in the cart once, and stands only up to the four the shop has room for).
+
+The order arrives packed: the parts in **one box per engine system** (bottom end, top end, valvetrain, timing drive, lubrication, cooling, fuel and air, exhaust, ignition), labelled with the system and what's inside (a box with a block, crank, head or other big part in it comes as a crate), the measuring tools in a box of their own, and **every machine and engine stand in a crate of its own**.
+
 ### Feature details
 
-Click a feature (on the Workbench or a machine's screen) for two side-by-side panels:
+Every feature row on the Workbench, a machine's screen or a part on the Engine Stand can be clicked: a line above the table says so, the cursor turns into a hand with a tooltip on hover, and each row ends in **Details >** (**Open v** on the one that's open). The details open below the table, and the screen scrolls down to them:
 
 - **Spec**: diameter or size range, each oversize class with its exact size, max taper, max out-of-round, and the finish range.
 - **Your last reading**: diameter (with the size class it falls in), taper, out-of-round, finish, the verdict and the tool used. Each value is green or red against spec, and greyed out if the part has been cut since.
 - **Gauge readings** (round features): every reading by depth (top, middle, bottom) on the thrust and pin axes, with out-of-round at each depth.
+- **Bringing it back into spec**: what to do about it, worked out from your own readings (never the hidden true sizes): which operation, on which machine (and whether you own it or what it costs), what size to cut to, and what to pair it with. A worn bore is bored to the first oversize that cleans up its worst reading, honed to finish, and gets that oversize's piston and ring. A worn crank journal is ground to the first undersize that cleans it up, polished, and gets matching undersize bearings. A worn guide is reamed oversize for an oversize-stem valve. A warped deck or flange is skimmed on the surface grinder, with the knock-on effect on compression spelled out. A seat or valve face with runout is recut or refaced. Anything that can't be machined (springs, shells, bolts, margins, worn bolt-on parts) says to replace it. Unmeasured or out-of-date readings ask you to measure first.
 
 ---
 
@@ -200,6 +219,30 @@ Some clearances only exist once parts are assembled. These are checked on the en
 
 The engine's true clearances are what the **dyno** runs on, whether or not you measured them.
 
+### Everything else on the engine
+
+Besides the long block, an engine is 36 more kinds of part, grouped by system in the store (`Game/Simulation/PartCatalog` describes them all: price, how many per engine, whether a core has them, whether they're single use). The ones worth measuring, and what the dyno does with them:
+
+| Part | Measure | With | Out of spec on the dyno |
+|---|---|---|---|
+| Oil pump | rotor tip and side clearance | micrometer or caliper | low oil pressure when hot |
+| Timing belt | tooth height (wear) | micrometer or caliper | cam timing retarded and power down; far enough gone it **skips a tooth** and the valves hit the pistons |
+| Crank and cam sprockets | tooth root diameter | micrometer or caliper | adds to the chain's effective stretch |
+| Belt idlers | bearing play | runout gauge | a growling idler, and the belt wanders |
+| Belt tensioner | tensioner travel | caliper | no adjustment left for a worn belt |
+| Head bolts | bolt length | micrometer | a stretched bolt can't clamp: the head gasket weeps |
+| Bucket lifters | bucket diameter | micrometer | ticking |
+| Spark plugs | electrode gap | caliper | worn wide: misfires under load and power down |
+| Fuel injectors | flow in 15 s | burette | a clogged one runs its cylinder lean: knock, power down, or a melted piston |
+| Intake manifold | flange flatness | straightedge | vacuum leak leans every cylinder (machinable on the surface grinder) |
+| Exhaust manifold | flange flatness | straightedge | ticks and leaks (machinable) |
+| Throttle body | throttle bore | bore gauges | carboned up: the idle hunts |
+| Oil pan, valve cover, timing cover | sealing rail / face flatness | straightedge | oil leaks (the covers are machinable, the stamped pan isn't) |
+| Water pump | bearing play | runout gauge | weeps coolant and runs hot |
+| Crank pulley | damper ring runout | runout gauge | vibration; badly gone it throws the belt |
+
+A used **core** (the one you start with, and the ones sold at the top of the Parts tab) comes with every hard part: block, crank, head, cam, rods, valves, springs, retainers, lifters, oil pump and pickup, oil pan and drain plug, timing belt, sprockets, idlers and tensioner, timing cover, crank pulley, valve cover, spark plugs, coils, intake manifold, throttle body, injectors and fuel rail, exhaust manifold, water pump and thermostat housing. Pistons, rings, bearings, every gasket and seal, the core plugs, head bolts, oil filter and thermostat are always bought new.
+
 Units can be switched between metric and imperial in the workshop window or in settings.
 
 ---
@@ -220,6 +263,8 @@ Parts are only machined while set up in the right machine: hold the part and pre
 | Valve Guide Reamer Set | $180 | Reams worn guides straight and round for oversize-stem valves |
 | Valve Seat Cutter | $900 | Three-angle cutters; trues the seat but sinks it a little deeper each cut |
 | Valve Refacer | $1400 | Regrinds valve faces true; eats margin and the valve sits deeper |
+| Line Boring Machine | $9000 | Grinds the main caps and bores all five main housings back to size, round and in line, in one setup (it stands along the left wall). Only saves housings up to 0.05 mm oversize |
+| Deck Sanding Beam | $90 | The budget way to deck: a long hardwood beam faced with sandpaper, worked across a block or head deck by hand on its own wooden bench (by the line borer). About five times less flat than the grinder (a deck sometimes ends up just outside the 0.05 mm limit and weeps), a rougher finish, at most 0.10 mm a pass at around 25 h per mm, and you never quite know how much came off: measure the deck height or chamber volumes afterwards |
 
 Hones charge time by the amount of stock removed, so measure first to get a time estimate. The shop starts with no machines. Bought ones arrive crated by the door; opening the crate sets the machine up there, and F moves it.
 
@@ -252,7 +297,7 @@ Tools are rated for **precision** and **speed**. The bench always suggests the b
 ## 🏠 The shop and the world
 
 - **The garage** (`Game/World/GarageLayout.h` holds every dimension): metal siding, a pitched shingle roof, ten windows, six ceiling lamps and a roll-up door (E to open/close; it's open at the start).
-- **Equipment**: workbench, parts shelf (no E action: its boards are surfaces like any other, so any part is set down on them with RMB and stays where it lands; parts that won't fit in the backpack or get bumped off the bench, a machine or a stand go in the first gap from the left on the lowest board they fit), tool board, engine stand, machines, dyno cell and parts computer. All of it can be moved with F, and whatever is sitting on it (parts, tools, deliveries, even things stacked on those) goes along.
+- **Equipment**: workbench, two parts shelves, one for the internals and one for the bolt-ons (no E action: its boards are surfaces like any other, so any part is set down on them with RMB and stays where it lands; parts that won't fit in the backpack or get bumped off the bench, a machine or a stand go in the first gap from the left on the lowest board they fit), tool board, engine stand, machines, dyno cell and parts computer. All of it can be moved with F, and whatever is sitting on it (parts, tools, deliveries, even things stacked on those) goes along.
 - **Shadows**: the sun casts shadows outside and through the windows, and the six ceiling lamps each cast their own, so machines, parts, tools and equipment throw shadows inside the shop too.
 - **Outside**: a fenced yard with trees, a driveway with a parked car, bins and oil drums, a sidewalk, a road with lane markings, street lights and houses across the street.
 - **Physics**: items fall, land and stack, and can be set down anywhere. Walls stop you and anything you throw. You can't reach through walls or windows.
@@ -289,9 +334,9 @@ Esc → **Settings**. Changes apply immediately and are saved to `game_settings.
 
 Pause menu → **Save Game** / **Load Game** / **New Game**, and **Save and Quit** on the quit screen. The game loads your save automatically when it starts.
 
-The save is `savegame.lvsave`, a versioned text file (`LVSAVE 3`; older saves still load: version 1 as one engine, and the pallet rack from versions 1 and 2 is dropped) holding:
+The save is `savegame.lvsave`, a versioned text file (`LVSAVE 13`; older saves still load: version 1 as one engine, the pallet rack from versions 1 and 2 is dropped, stats start from zero before version 4, before version 5 the caps and lower shells that go with your blocks, rods and bearings arrive as a delivery, and before version 6 the second shelf is added and everything on the shelves is shared out between the two; version 7 adds the line borer; version 8 adds nuts and bolts, delivering the used ones a core comes with; version 9 turns job-specific bolts into sizes; version 10 adds the sanding bench; version 11 records how tight each nut and bolt is and the socket on each spanner, and treats nuts and bolts saved before it as torqued; version 12 adds furniture; version 13 adds shop upgrades and the post lift) holding:
 
-- money, shop hours and the log;
+- money, shop hours, the log and your player stats;
 - every part's true geometry, condition, value, name, your readings, and any machining done to it;
 - every engine: what's fitted to it, its assembly checks and its last dyno pull, and which one you were working on;
 - where every part, tool and delivery is, the backpack layout and hotbar;
@@ -308,6 +353,10 @@ The whole file is read and checked before anything is replaced, so a damaged sav
 **Game**
 - **X-ray part geometry**: the workshop screens show each part's true geometry (in blue) next to your readings.
 - **Bounding boxes**: colour-coded wireframes: walls (red), what blocks walking (magenta), surfaces things can be set on (green), equipment (cyan), deliveries (orange), parts and tools (yellow). The menu shows the legend.
+- **Assemble a complete engine**: fills every empty position on the active engine with a new OEM part, fitted in build order, free. Handy for testing the dyno.
+- **Frame profiler (console)**: every 2 seconds, writes how long each part of a frame took to the console: the world update by section (sync, collision, physics, layout, hover), the GUI, and Lordi's command recording and GPU wait. Setting `LV_PROFILE=1` in the environment starts the game with it on.
+
+Performance notes: Debug builds run the Vulkan validation layer, which checks every graphics call, so they're many times slower than Release (a complete engine on the stand: about 220 fps in Debug against 2400 in Release, shadows off). Lordi culls everything outside the view (and outside each shadow map's view), skips parts too small to show in the far sun-shadow cascade, and only redraws a lamp's shadow map when something it lights has moved.
 - **Time of day**: a slider to jump to any time, presets (Dawn, Morning, Noon, Dusk, Night), and a time speed from 0x (clock stopped) to 200x.
 
 **Lordi**: the engine's own debug panels (performance, the world and its objects), which used to be a separate window on Home.
@@ -369,3 +418,79 @@ Files written while playing (both git-ignored): `game_settings.cfg` and `savegam
 ## 🧑‍💻 License
 
 This project is released under the **MIT License**. The NVIDIA DLSS SDK used through Lordi is under NVIDIA's own license (`LV/Libraries/DLSS/LICENSE.txt`).
+
+---
+
+## 🔩 Nuts, bolts and hand tools
+
+Every nut and bolt on the engine is a part of its own, sold and stored by size rather than by job. Any bolt of a size fits any hole of that size, and the torque belongs to the hole:
+
+| Size | Head | Goes in | Torque |
+|---|---|---|---|
+| M6 bolt | 10 mm | oil pan (16), valve cover (10), oil pump (5), pickup (2), throttle body (4), fuel rail (2) | 8-10 Nm |
+| M8 bolt | 12 mm | timing cover (10), water pump (4), thermostat housing (2) | 20-22 Nm |
+| M8 nut | 13 mm | intake and exhaust manifold studs (8 each) | 22 / 25 Nm |
+| M9 nut | 14 mm | rod caps (2 each) | 45 Nm |
+| M10 bolt | 14 mm | main caps (2 each) | 65 Nm |
+| M11 head bolt (TTY) | 15 mm | cylinder head (10) | 40 Nm + 180 deg, single use |
+| M12 bolt | 17 mm | cam sprocket | 60 Nm |
+| M14 bolt | 22 mm | crank pulley | 145 Nm |
+
+A used core comes with all of them except the head bolts; new ones are sold one by one in the **Hardware** tab of the parts computer, and arrive in a box of their own. A bolt's details list every hole it fits; once fitted, they show the hole, its torque and how tight it is.
+
+- **Fitting**: carry a bolt to the engine, aim at its hole (each one is marked) and press E. It goes in **finger tight**, no tools needed. **Shift+E** fits every matching one you're carrying into the remaining holes. A part only counts as fitted once its bolts are in, so the next stage of the build waits for them.
+- **Sockets**: hold a ratchet, breaker bar or torque wrench and look at a socket in a socket set (Metric 8-19 mm or Large 21-36 mm), on the tool board, a bench or the floor; **E** takes that socket out of its set and puts it on the tool (you can see it on the head); look at its empty place in the set to put it back, or at another socket to swap. A socket on one tool isn't in the set for another. The combination wrench set takes one wrench at a time: **C** changes the size. The size in use shows beside the tool's name.
+- **Tightening**: with a spanner in hand, the nuts and bolts its size fits are marked (orange finger tight, yellow snugged, green torqued). Aim at one and press **E**: a ratchet, breaker bar or wrench **snugs it up by feel** (somewhere near spec, and a short ratchet seldom gets a big bolt there), a **torque wrench** big enough for the job **torques it to spec** (beam +/-10%, click +/-4%, digital +/-2%), and the head bolts are torqued evenly to 90 Nm. **Shift+E** does every one on that part. The wrong size says so ("A 10 mm socket doesn't fit a 14 mm nut").
+- **Taking things apart**: E with a ratchet, breaker bar or wrench on a tight bolt loosens it (never with a torque wrench); only a finger-tight bolt comes out by hand, and a part can't come off until its bolts are out.
+- **Torque matters**: each bolt ends up as tight as it was really done up. The dyno finds out: a finger-tight or loose head bolt weeps or blows the gasket, a loose main cap spins its bearing, a loose rod nut throws the rod through the block, loose covers and manifolds leak, and a badly over-tightened bolt snaps. A reused (stretched) head bolt won't clamp.
+
+## 📦 Carrying deliveries
+
+Deliveries are picked up with **E** and carried in both hands (anything in your hands goes back in the backpack first); **RMB** sets one down where you aim, **G** drops it. **F** opens one. The parts computer shows a slowly turning 3D view of whatever item is selected.
+
+## 🖥️ Developer console
+
+Press **`** (the tilde key) to drop down the console; **`** or **Esc** closes it. **Up/Down** step through earlier commands and **Tab** completes a command name. Names can be partial and ignore case and spaces (`give head bolt 10`).
+
+| Command | Does |
+|---|---|
+| `help [command]` | Lists the commands, or explains one |
+| `money <amount>` | Adds money (negative takes it away) |
+| `give <part> [count] [new\|used] [budget\|oem\|performance]` | Delivers parts to the door for free |
+| `tool <name>\|all`, `machine <name>\|all` | Gives tools, or machines crated at the door, for free |
+| `list parts\|tools\|machines [filter]` | Lists the names those commands take |
+| `assemble` | Fits new OEM parts to every empty position on the active engine |
+| `time <hour>`, `timescale <x>` | Sets the time of day, or how fast the day goes |
+| `xray`, `bounds`, `profile` `[on\|off]` | The dev-menu switches: x-ray geometry, bounding boxes, the frame profiler |
+| `pos`, `tp <x> <z> [y]` | Where you are; moves you |
+| `save`, `load`, `clear` | Saves, loads the last save, empties the console |
+
+## 🪑 Furniture
+
+The parts computer's **Furniture** tab sells things for the shop itself: more steel shelving, a second workbench, a rolling tool cart, a stool, an office chair, an oil drum, a trash can, an anti-fatigue mat, a potted plant, a pedestal fan and a vintage gas pump. Buy as many as you like; each arrives in a crate at the door, is set up when it's opened, and moves with **F** like any other equipment. Shelving, benches, the cart, the drum and the stool have tops you can set things down on (and anything on them moves with them).
+
+## 🐒 Splash screen
+
+The game opens on the monkeykobo card (a monkey with a wrench); any key or click skips it.
+
+## 🏗️ Shop upgrades
+
+The parts computer's **Upgrades** tab improves the shop itself:
+
+| Upgrade | Price | What it does |
+|---|---|---|
+| Side Bay Extension | $8,000 | A bigger garage: a 6 x 8 m bay built onto the left wall, with a wide opening knocked through. Equipment and furniture can be set up in it. |
+| Second Story | $15,000 | A room on top of the garage, up steel stairs outside the back wall to a door off the landing. Parts and tools set down up there stay there. |
+| Two-Post Lift | $3,500 | Delivered crated; set up in the side bay if there is one. **E** raises and lowers it, and you can walk between the posts. |
+
+Building work is done the moment it's paid for. Machines and furniture still stand on the ground floor (the bay included).
+
+## 🛒 Part quality
+
+Every part comes in **Budget**, **OEM** and **Performance**, each priced in the store. Hovering one, or picking it, lists what it gets you for that part: budget parts are made to looser tolerances (sizes scatter about 1.6x wider than OEM and some miss the spec), performance ones to tighter (about 40% closer to the middle), and some parts change more than that: forged steel cranks, rods and cams, cast, hypereutectic or forged 2618 pistons, file-fit rings, more cam lift, stiffer valve springs.
+
+## ⚡ Performance
+
+The renderer draws with **GPU instancing**: every object's transform, tint and texture live in one storage buffer, each pass lists the objects it draws, and every object of the same model (all the M6 bolts, all the valve springs) goes in a single instanced draw, in the main pass and in every shadow map. Up to 8192 objects can be drawn (it was 1024, and anything past that simply didn't show).
+
+Shadows are only redrawn when something in them changes: each lamp's map is kept while nothing within its reach moves, and the sun's cascades while the view and the sun stay put (the sun's shadows follow it in steps too small to see). Objects keep their transform matrix until they move, the parts on an engine are only re-posed when the engine is, the world only re-syncs the workshop's parts when they change, and the shelves, physics and the 3D store preview avoid per-frame work that grew with the number of parts. The frame profiler (dev menu, the `profile` console command, or `LV_PROFILE=1`) shows where the time goes.

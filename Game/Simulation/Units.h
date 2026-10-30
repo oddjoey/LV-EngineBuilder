@@ -10,8 +10,6 @@ namespace Units
 	constexpr double MM_PER_INCH = 25.4;
 
 	constexpr double Inches(double inches) { return inches * MM_PER_INCH; }
-	constexpr double Thou(double thou) { return thou * MM_PER_INCH / 1000.0; }
-	constexpr double Microns(double microns) { return microns / 1000.0; }
 
 	constexpr double ToInches(double mm) { return mm / MM_PER_INCH; }
 	constexpr double ToThou(double mm) { return mm / MM_PER_INCH * 1000.0; }

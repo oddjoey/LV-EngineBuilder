@@ -9,6 +9,8 @@
 #include "LV/Engine/Graphics/IMGUI/IMGUIManager.h"
 #include "LV/Engine/Objects/CameraManager.h"
 #include "LV/Engine/Utility/InputManager.h"
+#include "LV/Engine/Utility/PerformanceManager.h"
+#include "FrameProfiler.h"
 #include "Save/SaveGame.h"
 
 EngineBuilderGame::EngineBuilderGame()
@@ -43,6 +45,10 @@ void EngineBuilderGame::OnLoadAssets()
 	m_ui.SetPartAvailability([this](uint32_t partId) { return !m_world.IsPackaged(partId); });
 	m_ui.SetBackpackContents([this] { m_inventoryUI.DrawContents(m_world, *m_workshop, m_player); });
 	m_ui.SetBenchContents([this] { return m_world.GetBenchItems(); });
+	m_ui.SetModelLookup([this](const std::string& name) -> uint32_t {
+		try { return m_assets.Model(name); }
+		catch (const std::exception&) { return 0; }
+	});
 }
 
 void EngineBuilderGame::ApplySettings()
@@ -87,9 +93,20 @@ void EngineBuilderGame::OnStart()
 {
 	m_input = InputManager::Get();
 	m_input->SetCursorLocked(true);
+	// LV_PROFILE=1 in the environment starts with the frame profiler on.
+	char* profile = nullptr;
+	size_t length = 0;
+	if (_dupenv_s(&profile, &length, "LV_PROFILE") == 0 && profile)
+	{
+		FrameProfiler::Get().SetEnabled(profile[0] == '1');
+		free(profile);
+	}
 	ApplyVideoSettings(true);
 	// Lordi's debug panels live in the dev menu (F3) instead of their own Home window.
 	IMGUIManager::Get()->SetDebugWindowEnabled(false);
+	RegisterConsoleCommands();
+	// Every sound is made here, once, before the first frame.
+	m_audio.Init();
 
 	// Carry on where the last session left off.
 	if (SaveGame::Exists() && !LoadCareer())
@@ -98,9 +115,33 @@ void EngineBuilderGame::OnStart()
 
 void EngineBuilderGame::OnUpdate(float deltaTime)
 {
-	// Don't steal Tab/Esc from a text field the player is typing in.
-	bool typing = ImGui::GetIO().WantTextInput;
-	if (!typing)
+	// The renderer's own timings for the frame before, alongside the game's.
+	auto& profiler = FrameProfiler::Get();
+	if (profiler.IsEnabled())
+	{
+		auto performance = PerformanceManager::Get();
+		profiler.Add("render: record", performance->GetGraphicsCommandBufferDuration().count());
+		profiler.Add("render: imgui", performance->GetIMGUICommandBufferDuration().count());
+		profiler.Add("render: wait for GPU", performance->GetCPUWaitForGPUDuration().count());
+	}
+	profiler.EndFrame();
+	PROFILE_SCOPE("game update");
+
+	// The studio card comes first: until it's gone, keys only skip it.
+	bool splash = m_splash.IsShowing();
+	if (splash)
+		m_splash.Update(deltaTime, m_input->WasKeyPressed(GLFW_KEY_ESCAPE) || m_input->WasKeyPressed(GLFW_KEY_SPACE)
+			|| m_input->WasKeyPressed(GLFW_KEY_ENTER) || m_input->WasKeyPressed(GLFW_KEY_E) || m_input->WasMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT));
+
+	// Don't steal Tab/Esc from a text field the player is typing in (and none of it while the
+	// splash is up).
+	bool typing = ImGui::GetIO().WantTextInput || splash;
+	// ` opens and closes the console, even while typing in it; Esc closes it first.
+	if (!splash && m_input->WasKeyPressed(GLFW_KEY_GRAVE_ACCENT) && (!typing || m_console.IsOpen()))
+		m_console.Toggle();
+	else if (m_console.IsOpen() && m_input->WasKeyPressed(GLFW_KEY_ESCAPE))
+		m_console.Close();
+	else if (!typing)
 	{
 		if (m_input->WasKeyPressed(GLFW_KEY_ESCAPE))
 		{
@@ -139,11 +180,19 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_savedSettings = m_settings;
 	}
 
-	bool walking = !m_ui.IsOpen() && !m_pauseMenu.IsOpen() && !m_devMenu.IsOpen();
+	bool walking = !splash && !m_ui.IsOpen() && !m_pauseMenu.IsOpen() && !m_devMenu.IsOpen() && !m_console.IsOpen();
 	m_input->SetCursorLocked(walking);
 	if (walking)
-		m_player.Update(deltaTime, *m_input, m_world.GetObstacles(), m_world.GetRoomBounds());
+	{
+		glm::vec3 before = m_player.GetFeetPosition();
+		m_player.Update(deltaTime, *m_input, m_world.GetObstacles(), m_world.GetRoomBounds(), m_world.GetWalkSurfaces());
+		glm::vec3 step = m_player.GetFeetPosition() - before;
+		m_workshop->AddDistanceWalked(glm::length(glm::vec2(step.x, step.z)));
+	}
 	m_player.ApplyToCamera(*m_camera);
+
+	if (m_devMenu.TakeAssembleRequest())
+		m_workshop->DevAssembleEngine();
 
 	m_ui.Update(deltaTime);
 	m_world.SetEngineRpm(m_ui.GetLiveRpm(), m_ui.GetPullEngine());
@@ -161,15 +210,31 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 				m_ui.SelectPart(*part, request->machineIndex);
 	}
 
+	// Bed: in the evening or the small hours, sleep through to seven and save; in the day, not yet.
+	if (m_world.TakeSleepRequest())
+	{
+		if (m_timeOfDay >= 19.f || m_timeOfDay < 5.f)
+		{
+			m_timeOfDay = 7.f;
+			m_world.Notify(SaveCareer() ? "You slept till 7:00. Game saved." : "You slept till 7:00.");
+		}
+		else
+			m_world.Notify("It's too early to sleep. Come back after 19:00.");
+	}
+
 	// The sun keeps moving, even with the menus open.
-	// The dev menu can speed it up.
-	if (m_settings.dayNightCycle)
+	// The dev menu can speed it up, or stop it.
+	if (m_settings.dayNightCycle && !m_devMenu.GetSettings().timePaused)
 	{
 		float hours = (std::min)(deltaTime, 0.1f) * 24.f / (m_settings.dayLengthMinutes * 60.f) * m_devMenu.GetSettings().timeScale;
 		m_timeOfDay = std::fmod(m_timeOfDay + hours, 24.f);
 	}
 	m_lighting.Update(m_player.GetEyePosition(), m_settings.renderDistance, m_timeOfDay, m_world.GetDoorOpenAmount(),
-		m_settings.brightness, m_world.GetLampHeads());
+		m_settings.brightness, m_world.GetLampHeads(), m_world.GetInterior());
+	{
+		PROFILE_SCOPE("audio");
+		m_audio.Update(deltaTime, m_player, m_world, *m_workshop, m_settings, m_timeOfDay);
+	}
 }
 
 bool EngineBuilderGame::SaveCareer()
@@ -242,6 +307,7 @@ void EngineBuilderGame::HandlePauseAction(PauseMenu::Action action)
 
 void EngineBuilderGame::OnGUI()
 {
+	PROFILE_SCOPE("game GUI");
 	const auto& dev = m_devMenu.GetSettings();
 	if (dev.showBounds)
 		m_world.DrawDebugBounds(m_player);
@@ -252,12 +318,12 @@ void EngineBuilderGame::OnGUI()
 	// The workshop window has its own units toggle; keep the setting in step with it.
 	m_settings.imperialUnits = m_ui.GetUnits() == Units::System::IMPERIAL;
 
-	if (!m_ui.IsOpen() && !m_pauseMenu.IsOpen())
+	if (!m_ui.IsOpen() && !m_pauseMenu.IsOpen() && !m_console.IsOpen())
 		m_world.DrawHud(*m_workshop, m_player, m_settings.showControls);
 
 	ImDrawList* foreground = ImGui::GetForegroundDrawList();
 	float right = ImGui::GetIO().DisplaySize.x;
-	if (!m_ui.IsOpen() && !m_pauseMenu.IsOpen())
+	if (!m_ui.IsOpen() && !m_pauseMenu.IsOpen() && !m_console.IsOpen())
 		foreground->AddText({ right - 60.f, 32.f }, IM_COL32(220, 220, 220, 230), ShopLighting::ClockText(m_timeOfDay).c_str());
 	if (m_settings.showFps)
 		foreground->AddText({ right - 90.f, 12.f }, IM_COL32(200, 200, 200, 220), std::format("{:.0f} fps", ImGui::GetIO().Framerate).c_str());
@@ -282,6 +348,9 @@ void EngineBuilderGame::OnGUI()
 		context.lastSaved = context.hasSave ? SaveGame::LastSavedText() : "";
 	}
 	HandlePauseAction(m_pauseMenu.Draw(m_settings, context));
+	// Over everything else.
+	m_console.Draw();
+	m_splash.Draw();
 }
 
 void EngineBuilderGame::OnShutdown()

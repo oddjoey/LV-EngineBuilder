@@ -21,7 +21,7 @@ struct BenchItem
 	std::string location = "";
 	int machineIndex = -1;
 };
-enum class StoreCategory { PARTS, ENGINES, TOOLS, MACHINES };
+enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, UPGRADES };
 
 // ImGui front end for the workshop. It only ever shows the player what they've measured;
 // the true geometry is visible only with the X-ray developer toggle.
@@ -40,7 +40,6 @@ public:
 	void OpenMachine(int machineIndex);
 	void Close();
 	bool IsOpen() const;
-	WorkshopTab GetCurrentTab() const;
 	// Puts a part on the bench view; with a machine, also picks the first feature that machine can cut.
 	void SelectPart(const Part& part, int machineIndex = -1);
 
@@ -60,6 +59,8 @@ public:
 
 	void SetUnits(Units::System units);
 	Units::System GetUnits() const;
+	// How the store finds an item's 3D model by name, for its turntable preview.
+	void SetModelLookup(const std::function<uint32_t(const std::string&)>& lookup);
 	// Developer x-ray: the parts' true geometry next to the player's readings.
 	void SetXray(bool xray);
 private:
@@ -74,13 +75,29 @@ private:
 	void DrawPartInspector(Workshop& workshop, const pPart& part);
 	void DrawFeatureDetail(Workshop& workshop, Part& part, const Feature& feature);
 	void DrawMachiningPanel(Workshop& workshop, Part& part, const Feature& feature);
+	// What to do about a feature that's out of spec, worked out from the player's own readings:
+	// which operation and machine, what size to cut to and what to pair it with, or replace it.
+	void DrawFixAdvice(Workshop& workshop, const Part& part, const Feature& feature);
 	void DrawStoreTab(Workshop& workshop);
-	void DrawPartsStore(Workshop& workshop);
+	// The Parts tab, or with hardware the Hardware tab: nuts and bolts by size.
+	void DrawPartsStore(Workshop& workshop, bool hardware);
 	void DrawToolStore(Workshop& workshop);
 	void DrawMachineStore(Workshop& workshop);
+	void DrawFurnitureStore(Workshop& workshop);
+	void DrawUpgradeStore(Workshop& workshop);
 	// Engine stands and whole cores, for building more engines at once.
-	void DrawEngineStore(Workshop& workshop);
 	void DrawStoreWindow(Workshop& workshop);
+	// The cart beside the catalogue: every line, its price, the total and the checkout button.
+	void DrawCart(Workshop& workshop);
+	// Adds a line, merging it into one already in the cart for the same thing.
+	void AddToCart(const CartLine& line);
+	// How many of a tool or machine (or stands) are in the cart already.
+	int InCart(CartLine::Kind kind, size_t index = 0) const;
+	// An "Add to cart" button, greyed out with the reason when the line can't be bought.
+	void AddToCartButton(Workshop& workshop, const CartLine& line, const char* label);
+	std::string CartLineName(const CartLine& line) const;
+	// A slowly turning 3D view of an item, by its model's name.
+	void DrawPreview(const std::string& modelName);
 	// Which engine the Engine Stand and Dyno tabs show, when there's more than one.
 	void DrawEnginePicker(Workshop& workshop);
 	// One clickable catalogue card; draws its icon with drawIcon(drawList, min, size).
@@ -112,21 +129,27 @@ private:
 	std::optional<StoreCategory>	m_requestedCategory = std::nullopt;
 	int							m_selectedTool = 0;
 	int							m_selectedStoreMachine = 0;
+	int							m_selectedStoreFurniture = 0;
+	int							m_selectedStoreUpgrade = 0;
 	WorkshopTab					m_currentTab = WorkshopTab::BENCH;
 	Units::System		m_units = Units::System::METRIC;
 	bool				m_xray = false;
 	uint32_t			m_selectedPartId = 0;
 	uint32_t			m_standPartId = 0;		// the fitted part the stand screen shows (0: the engine checks)
 	std::string			m_selectedFeature = "";
+	bool				m_scrollToDetail = false;	// a feature was just opened: bring its details into view
 	int					m_selectedMachine = -1;
 	int					m_activeMachine = -1;		// the machine whose tab is showing, or -1 for none
 	int					m_selectedPartMachine = -1;	// machine the selected part is set up in, or -1 on the bench
 	double				m_machineParameter = 0.0;	// in display units
 	std::string			m_lastMachiningMessage = "";
 	PartOrder			m_order = {};
+	std::vector<CartLine>	m_cart = {};
+	std::string			m_cartMessage = "";
 	size_t				m_lastLogSize = 0;
 
 	std::function<bool(uint32_t)>	m_isUsable = nullptr;
+	std::function<uint32_t(const std::string&)>	m_modelLookup = nullptr;
 	std::function<void()>			m_backpackContents = nullptr;
 	std::function<std::vector<BenchItem>()>	m_benchContents = nullptr;
 	bool				m_pullActive = false;

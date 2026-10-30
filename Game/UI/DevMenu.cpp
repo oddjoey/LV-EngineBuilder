@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include "LV/Engine/Graphics/IMGUI/IMGUIManager.h"
+#include "../FrameProfiler.h"
 #include "../World/ShopLighting.h"
 #include "../World/ShopWorld.h"
 
@@ -30,6 +31,16 @@ const DevSettings& DevMenu::GetSettings() const
 	return m_settings;
 }
 
+DevSettings& DevMenu::EditSettings()
+{
+	return m_settings;
+}
+
+bool DevMenu::TakeAssembleRequest()
+{
+	return std::exchange(m_assembleRequested, false);
+}
+
 void DevMenu::Draw(float& timeOfDay)
 {
 	if (!m_open)
@@ -48,11 +59,12 @@ void DevMenu::Draw(float& timeOfDay)
 				DrawGameTab(timeOfDay);
 				ImGui::EndTabItem();
 			}
-			// Lordi's own debug panels: performance, cameras and every object in the scene.
+			// Lordi's own debug panels: cameras and every object in the scene, and its performance
+			// figures while the frame profiler is on.
 			if (ImGui::BeginTabItem("Lordi"))
 			{
 				if (ImGui::BeginChild("Lordi"))
-					IMGUIManager::Get()->DrawDebugContents();
+					IMGUIManager::Get()->DrawDebugContents(FrameProfiler::Get().IsEnabled());
 				ImGui::EndChild();
 				ImGui::EndTabItem();
 			}
@@ -94,9 +106,23 @@ void DevMenu::DrawGameTab(float& timeOfDay)
 		ImGui::Unindent();
 	}
 
+	bool profiling = FrameProfiler::Get().IsEnabled();
+	if (ImGui::Checkbox("Frame profiler (console)", &profiling))
+		FrameProfiler::Get().SetEnabled(profiling);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("Every 2 seconds, writes how long each part of a frame took to the console window. Also shows Lordi's performance figures in its tab.");
+
+	if (ImGui::Button("Assemble a complete engine"))
+		m_assembleRequested = true;
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("Fills every empty position on the active engine with a new OEM part, fitted in build order. Free.");
+
 	// Jump to any time, or let the day run faster to watch the light change.
 	ImGui::SeparatorText("Time of day");
 	ImGui::Text("It's %s", ShopLighting::ClockText(timeOfDay).c_str());
+	ImGui::Checkbox("Pause time", &m_settings.timePaused);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("Stops the clock where it is: the sun and the light stay put until it's unticked.");
 	ImGui::SliderFloat("Time", &timeOfDay, 0.f, 23.99f, "%.2f h");
 	const std::pair<const char*, float> presets[] = { { "Dawn", 6.f }, { "Morning", 9.f }, { "Noon", 12.f }, { "Dusk", 19.5f }, { "Night", 23.f } };
 	for (size_t i = 0; i < std::size(presets); i++)

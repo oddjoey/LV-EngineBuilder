@@ -11,6 +11,8 @@ namespace PartIcons
 
 	// Draws into the square starting at `min` with side `size`.
 	void Draw(ImDrawList* drawList, PartType type, ImVec2 min, float size, ImU32 color = DEFAULT_COLOR);
+	// The seals, gaskets and bolt-ons; Draw hands them over.
+	void DrawAncillary(ImDrawList* drawList, PartType type, ImVec2 min, float size, ImU32 color = DEFAULT_COLOR);
 	// Takes up a size x size spot in the current window and draws the icon there.
 	void Icon(PartType type, float size, ImU32 color = DEFAULT_COLOR);
 	// A sentence or two for the supplier's catalogue.

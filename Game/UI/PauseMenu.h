@@ -40,6 +40,7 @@ private:
 	bool BigButton(const char* label);
 	void DrawGameSettings(GameSettings& settings);
 	void DrawVideoSettings(GameSettings& settings, const PauseMenuContext& context);
+	void DrawAudioSettings(GameSettings& settings);
 	void DrawTimeSettings(GameSettings& settings, const PauseMenuContext& context);
 
 	bool m_open = false;

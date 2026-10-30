@@ -40,8 +40,10 @@ struct GridItem
 	glm::ivec2 size = {};	// in cells, as currently turned
 };
 
-// A Tarkov-style backpack: items take up a rectangle of cells and can be turned 90 degrees.
-// The hotbar binds number keys to items in the grid.
+// What the player carries: a hotbar of ten slots that each hold one whole item, whatever its size,
+// and a Tarkov-style backpack where items take up a rectangle of cells and can be turned 90
+// degrees. An item is in one or the other. The item in the selected hotbar slot is the one in hand;
+// anything in the backpack has to go on the hotbar before it can be held.
 class PlayerInventory
 {
 public:
@@ -52,31 +54,49 @@ public:
 	// Whether an item of this size could ever go in the backpack, turned or not.
 	static bool CanEverFit(glm::ivec2 size);
 
-	// Puts the item in the first space it fits, turning it if needed, and binds it to the first free
-	// hotbar slot. False if there's no room.
-	bool Add(const ItemRef& item, glm::ivec2 size);
+	// Backpack. AddToBackpack puts the item in the first space it fits, turning it if needed (taking
+	// it off the hotbar); false if there's no room.
+	bool AddToBackpack(const ItemRef& item, glm::ivec2 size);
 	bool CanPlace(glm::ivec2 position, glm::ivec2 size, const ItemRef& ignore = {}) const;
+	// Moves an item to a spot in the backpack, from elsewhere in it or from the hotbar.
 	bool MoveTo(const ItemRef& item, glm::ivec2 position, glm::ivec2 size);
-	// Takes the item out of the grid and off the hotbar.
-	void Remove(const ItemRef& item);
-	// Repacks everything biggest first from the top left. Hotbar bindings stay. False (and nothing
-	// moved) if it wouldn't all fit that way.
+	// Repacks the backpack biggest first from the top left. False (and nothing moved) if it wouldn't
+	// all fit that way.
 	bool Tidy();
 	int UsedCells() const;
-
-	bool Contains(const ItemRef& item) const;
+	bool InBackpack(const ItemRef& item) const;
 	const GridItem* Find(const ItemRef& item) const;
 	const std::vector<GridItem>& GetItems() const;
 
-	void AssignHotbar(int slot, const ItemRef& item);
+	// Hotbar. PutInHotbar needs the slot empty (or holding the item already) and takes the item out
+	// of the backpack or its other slot.
+	bool PutInHotbar(int slot, const ItemRef& item);
+	// An item from the backpack into a hotbar slot, and whatever was in the slot (occupantSize big)
+	// into the backpack: where the item was if it fits there, else anywhere. False (nothing moved) if
+	// it doesn't fit at all.
+	bool ExchangeWithBackpack(int slot, const ItemRef& item, glm::ivec2 occupantSize);
+	void SwapHotbar(int a, int b);
 	ItemRef GetHotbar(int slot) const;
 	std::optional<int> HotbarSlotOf(const ItemRef& item) const;
+	// The selected slot if it's empty, else the next empty one after it (wrapping round).
+	std::optional<int> FreeHotbarSlot() const;
+	int GetSelected() const;
+	void SetSelected(int slot);
+	ItemRef GetSelectedItem() const;
 
-	// Replaces the whole backpack and hotbar, e.g. when loading a save.
-	void Restore(const std::vector<GridItem>& items, const std::array<ItemRef, HOTBAR_SLOTS>& hotbar);
+	// Anywhere: the backpack or the hotbar.
+	bool Contains(const ItemRef& item) const;
+	void Remove(const ItemRef& item);
+
+	// Replaces the whole backpack and hotbar, e.g. when loading a save. An item on the hotbar comes
+	// out of the backpack (older saves had hotbar items in both).
+	void Restore(const std::vector<GridItem>& items, const std::array<ItemRef, HOTBAR_SLOTS>& hotbar, int selected);
 private:
 	std::optional<glm::ivec2> FindSpace(glm::ivec2 size) const;
+	void RemoveFromBackpack(const ItemRef& item);
+	void RemoveFromHotbar(const ItemRef& item);
 
 	std::vector<GridItem>					m_items = {};
 	std::array<ItemRef, HOTBAR_SLOTS>		m_hotbar = {};
+	int										m_selected = 0;
 };

@@ -17,6 +17,9 @@ struct Machine
 	double price = 0.0;
 	double hoursPerUse = 0.0;	// setting up, whatever the cut
 	double hoursPerMm = 0.0;	// on top of setup, for each mm of diameter removed
+	// Hand methods can't hold a depth: how far the stock really taken off strays from what was asked
+	// for, as a fraction (1 standard deviation). 0 for a machine that cuts what it's set to.
+	double removalError = 0.0;
 	bool ownedAtStart = false;
 };
 
@@ -52,4 +55,6 @@ private:
 	static MachiningResult FileRing(const Machine& machine, Feature& feature, double gapIncrease, double sigma);
 	static MachiningResult CutSeat(const Machine& machine, Part& part, Feature& width, double targetWidth, double sigma);
 	static MachiningResult FaceValve(const Machine& machine, Part& part, Feature& faceRunout, double sigma);
+	// Works on every main housing of the block at once, whichever one was picked.
+	static MachiningResult LineBore(const Machine& machine, Part& part, double sigma, const EngineSpec& spec);
 };

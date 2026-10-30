@@ -1,26 +1,12 @@
 #include "Part.h"
 
+#include "PartCatalog.h"
+
 uint32_t Part::s_nextId = 1;
 
 const char* PartTypeName(PartType type)
 {
-	switch (type)
-	{
-		case PartType::BLOCK:			return "Block";
-		case PartType::CRANKSHAFT:		return "Crankshaft";
-		case PartType::CONNECTING_ROD:	return "Connecting Rod";
-		case PartType::PISTON:			return "Piston";
-		case PartType::PISTON_RING:		return "Piston Ring";
-		case PartType::MAIN_BEARING:	return "Main Bearing";
-		case PartType::ROD_BEARING:		return "Rod Bearing";
-		case PartType::CYLINDER_HEAD:	return "Cylinder Head";
-		case PartType::HEAD_GASKET:		return "Head Gasket";
-		case PartType::CAMSHAFT:		return "Camshaft";
-		case PartType::INTAKE_VALVE:	return "Intake Valve";
-		case PartType::EXHAUST_VALVE:	return "Exhaust Valve";
-		case PartType::VALVE_SPRING:	return "Valve Spring";
-	}
-	return "Unknown";
+	return PartCatalog::Get(type).name;
 }
 
 const char* PartQualityName(PartQuality quality)
@@ -103,6 +89,42 @@ void Part::MarkDamaged(const std::string& reason)
 const std::string& Part::GetDamageReason() const
 {
 	return m_damageReason;
+}
+
+double Part::GetTorque() const
+{
+	return m_torque;
+}
+
+void Part::SetTorque(double newtonMetres)
+{
+	m_torque = newtonMetres;
+}
+
+FastenerTightness Part::GetTightness() const
+{
+	return m_tightness;
+}
+
+void Part::SetTightness(FastenerTightness tightness)
+{
+	m_tightness = tightness;
+}
+
+uint32_t Part::GetMatchedTo() const
+{
+	return m_matchedTo;
+}
+
+int Part::GetMatchedPosition() const
+{
+	return m_matchedPosition;
+}
+
+void Part::MatchTo(uint32_t partId, int position)
+{
+	m_matchedTo = partId;
+	m_matchedPosition = position;
 }
 
 std::vector<Feature>& Part::GetFeatures()

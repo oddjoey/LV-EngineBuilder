@@ -4,11 +4,14 @@
 
 #include "LV/Engine/Game.h"
 #include "LV/Engine/Objects/Camera.h"
+#include "Audio/GameAudio.h"
 #include "GameSettings.h"
 #include "Simulation/Workshop.h"
+#include "UI/Console.h"
 #include "UI/DevMenu.h"
 #include "UI/InventoryUI.h"
 #include "UI/PauseMenu.h"
+#include "UI/SplashScreen.h"
 #include "UI/WorkshopUI.h"
 #include "World/FirstPersonController.h"
 #include "World/ShopAssets.h"
@@ -39,16 +42,21 @@ private:
 	bool SaveCareer();
 	bool LoadCareer();
 	void StartNewCareer();
+	// Everything the ` console can do.
+	void RegisterConsoleCommands();
 
 	std::unique_ptr<Workshop>		m_workshop = nullptr;
 	GameSettings					m_settings = {};
 	WorkshopUI						m_ui = {};
 	PauseMenu						m_pauseMenu = {};
 	DevMenu							m_devMenu = {};
+	Console							m_console = {};
+	SplashScreen					m_splash = {};
 	InventoryUI						m_inventoryUI = {};
 	ShopAssets						m_assets = {};
 	ShopWorld						m_world = {};
 	ShopLighting					m_lighting = {};
+	GameAudio						m_audio = {};
 	float							m_timeOfDay = 9.5f;		// hours
 	GameSettings					m_appliedVideo = {};
 	GameSettings					m_savedSettings = {};

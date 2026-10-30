@@ -114,22 +114,6 @@ double Feature::OutOfRound() const
 	return outOfRound;
 }
 
-void Feature::SetUniform(double size)
-{
-	for (auto& station : samples)
-		for (double& sample : station)
-			sample = size;
-	value = size;
-}
-
-void Feature::Offset(double delta)
-{
-	for (auto& station : samples)
-		for (double& sample : station)
-			sample += delta;
-	value += delta;
-}
-
 std::optional<double> Feature::MatchSizeClass() const
 {
 	double size = Size();

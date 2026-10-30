@@ -154,7 +154,7 @@ namespace ToolCatalog
 
 			MeasuringTool plastigauge;
 			plastigauge.name = "Plastigauge";
-			plastigauge.description = "Crushable thread under a torqued bearing cap. Compare the width to the card.";
+			plastigauge.description = "Crushable thread: lay a strip across the bare journal, torque the cap (and lower shell) down over it, then take the cap off and compare the squashed width to the card. Don't turn the crank while it's in.";
 			plastigauge.assemblyChecks = { AssemblyCheck::OIL_CLEARANCE, AssemblyCheck::CAM_CLEARANCE };
 			plastigauge.resolution = 0.0125;
 			plastigauge.sigma = 0.005;
@@ -191,6 +191,33 @@ namespace ToolCatalog
 			heightMic.price = 90.0;
 			heightMic.hoursPerUse = 0.1;
 			list.push_back(heightMic);
+
+			// Hand tools, for every nut and bolt on the engine. (After the measuring tools, so saved
+			// tool lists keep their order.)
+			auto hand = [&](const char* name, const char* description, HandToolKind kind, double price, std::vector<int> sizes = {},
+				double torqueError = 0.0, double maxTorque = 0.0) {
+				MeasuringTool tool;
+				tool.name = name;
+				tool.description = description;
+				tool.handKind = kind;
+				tool.price = price;
+				tool.sizes = std::move(sizes);
+				tool.torqueError = torqueError;
+				tool.maxTorque = maxTorque;
+				list.push_back(tool);
+			};
+			hand("3/8in Ratchet", "Drives the sockets. Quick for running bolts in and out, but it can't tell you how tight they are.",
+				HandToolKind::RATCHET, 35.0);
+			hand("1/2in Breaker Bar", "A long bar for cracking loose the big, tight ones, like the crank pulley bolt.", HandToolKind::BREAKER_BAR, 45.0);
+			hand("Metric Socket Set 8-19 mm", "Six-point sockets: 8, 10, 12, 13, 14, 15, 17 and 19 mm. Most of the engine's nuts and bolts.",
+				HandToolKind::SOCKETS, 90.0, { 8, 10, 12, 13, 14, 15, 17, 19 });
+			hand("Large Socket Set 21-36 mm", "Big sockets: 21, 22, 24, 27, 30, 32 and 36 mm, for the crank pulley bolt and the like.",
+				HandToolKind::SOCKETS, 70.0, { 21, 22, 24, 27, 30, 32, 36 });
+			hand("Combination Wrench Set 8-19 mm", "Open end and ring spanners, 8 to 19 mm. Turns a nut or bolt without a ratchet, but no torque reading.",
+				HandToolKind::WRENCHES, 80.0, { 8, 10, 12, 13, 14, 15, 17, 19 });
+			hand("Beam Torque Wrench", "A needle against a scale. Cheap, but only good to about 10%.", HandToolKind::TORQUE_WRENCH, 45.0, {}, 0.10, 150.0);
+			hand("Click Torque Wrench", "Clicks at the set torque. Good to about 4%, up to 210 Nm.", HandToolKind::TORQUE_WRENCH, 160.0, {}, 0.04, 210.0);
+			hand("Digital Torque Wrench", "Beeps at the set torque. Good to about 2%, up to 340 Nm.", HandToolKind::TORQUE_WRENCH, 340.0, {}, 0.02, 340.0);
 
 			return list;
 		}();

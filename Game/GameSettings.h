@@ -25,6 +25,12 @@ struct GameSettings
 	float brightness = 1.f;
 	int frameLimit = 0;				// frames per second, 0 = unlimited
 
+	// Audio: each from 0 (silent) to 1 (full)
+	float masterVolume = 0.8f;
+	float effectsVolume = 1.f;		// footsteps, tools, parts, machines, the dyno
+	float ambienceVolume = 0.7f;	// wind, birds, the shop's hum
+	float interfaceVolume = 0.8f;	// the till, gauge beeps, menu clicks
+
 	// Time of day
 	bool dayNightCycle = true;
 	float dayLengthMinutes = 30.f;	// real minutes for a full 24 hours

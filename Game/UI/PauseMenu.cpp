@@ -131,6 +131,22 @@ void PauseMenu::DrawVideoSettings(GameSettings& settings, const PauseMenuContext
 	ImGui::SliderFloat("Brightness", &settings.brightness, 0.5f, 2.f, "%.2f");
 }
 
+void PauseMenu::DrawAudioSettings(GameSettings& settings)
+{
+	// Shown as percentages, and heard straight away as they're dragged.
+	auto volume = [](const char* label, float& value, const char* tip) {
+		int percent = static_cast<int>(std::round(value * 100.f));
+		if (ImGui::SliderInt(label, &percent, 0, 100, "%d%%"))
+			value = percent / 100.f;
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", tip);
+	};
+	volume("Master volume", settings.masterVolume, "Everything the game plays.");
+	volume("Effects", settings.effectsVolume, "Footsteps, tools, parts going on and coming off, machines, the dyno.");
+	volume("Ambience", settings.ambienceVolume, "Wind and birds outside, the hum of the shop's lights.");
+	volume("Interface", settings.interfaceVolume, "The till when you buy or sell, gauge beeps, machining cuts.");
+}
+
 void PauseMenu::DrawTimeSettings(GameSettings& settings, const PauseMenuContext& context)
 {
 	if (context.timeOfDay)
@@ -219,6 +235,11 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 					if (ImGui::BeginTabItem("Video"))
 					{
 						DrawVideoSettings(settings, context);
+						ImGui::EndTabItem();
+					}
+					if (ImGui::BeginTabItem("Audio"))
+					{
+						DrawAudioSettings(settings);
 						ImGui::EndTabItem();
 					}
 					if (ImGui::BeginTabItem("Time of day"))

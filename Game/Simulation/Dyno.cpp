@@ -5,6 +5,7 @@
 #include <format>
 #include <numbers>
 
+#include "PartCatalog.h"
 #include "Random.h"
 
 void Dyno::ScoreBore(Part& block, const std::string& boreName)
@@ -230,7 +231,7 @@ DynoResult Dyno::Run(EngineAssembly& assembly)
 		checkBearing(label, *assembly.MainClearance(journal), spec.mainClearance, assembly.Get(AssemblySlot::MAIN_BEARING, journal), FeatureNames::MainJournal(journal));
 
 		if (block->FindFeature(FeatureNames::MainHousing(journal))->Evaluate(false) != FeatureIssue::NONE)
-			report(FindingSeverity::WARNING, std::format("Main housing {} is distorted: it needs a line hone.", journal + 1), 4.0);
+			report(FindingSeverity::WARNING, std::format("Main housing {} is distorted: the block needs line boring.", journal + 1), 4.0);
 	}
 
 	for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
@@ -347,9 +348,208 @@ DynoResult Dyno::Run(EngineAssembly& assembly)
 	// Lift is airflow: a worn cam starves the engine, a hotter one feeds it.
 	double liftFactor = std::clamp(liftSum / (spec.cylinders * 2) / spec.lobeLift.nominal, 0.6, 1.1);
 
+	// Everything bolted around the long block.
+	double powerFactor = 1.0;
+	double pumpFactor = 1.0;
+	auto value = [&](AssemblySlot slot, int index, const std::string& name) {
+		auto part = assembly.Get(slot, index);
+		const Feature* feature = part ? part->FindFeature(name) : nullptr;
+		return feature ? feature->value : 0.0;
+	};
+	auto overLimit = [&](AssemblySlot slot, int index, const std::string& name) {
+		auto part = assembly.Get(slot, index);
+		const Feature* feature = part ? part->FindFeature(name) : nullptr;
+		return feature && feature->value > feature->spec.Max();
+	};
+
+	// Oil pump: worn rotors leak oil back to their own inlet.
+	double tipWear = std::max(0.0, value(AssemblySlot::OIL_PUMP, 0, FeatureNames::ROTOR_TIP_CLEARANCE) - 0.16) / 0.10;
+	double sideWear = std::max(0.0, value(AssemblySlot::OIL_PUMP, 0, FeatureNames::ROTOR_SIDE_CLEARANCE) - 0.09) / 0.05;
+	if (tipWear + sideWear > 0.0)
+	{
+		pumpFactor = std::clamp(1.0 - 0.3 * (tipWear + sideWear), 0.35, 1.0);
+		report(FindingSeverity::WARNING, "The oil pump's rotors are worn: it can't hold pressure when hot.", 6.0);
+	}
+
+	// Timing drive: worn belt teeth let the cam fall behind the crank. Worn sprocket teeth make it
+	// worse, and far enough gone the belt skips a tooth and the valves meet the pistons.
+	double toothHeight = value(AssemblySlot::TIMING_BELT, 0, FeatureNames::BELT_TOOTH_HEIGHT);
+	double crankRoot = value(AssemblySlot::CRANK_SPROCKET, 0, FeatureNames::ROOT_DIAMETER);
+	double camRoot = value(AssemblySlot::CAM_SPROCKET, 0, FeatureNames::ROOT_DIAMETER);
+	double effectiveStretch = std::max(0.0, 1.85 - toothHeight) * 2.0 + std::max(0.0, 38.45 - crankRoot) + std::max(0.0, 79.65 - camRoot) * 0.5;
+	if (effectiveStretch > 0.9)
+	{
+		report(FindingSeverity::FAILURE, "The timing belt skipped a tooth: the cam fell behind and the valves hit the pistons.", 40.0);
+		assembly.Get(AssemblySlot::TIMING_BELT, 0)->MarkDamaged("Skipped a tooth");
+		for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
+		{
+			assembly.Get(AssemblySlot::INTAKE_VALVE, cylinder)->MarkDamaged("Bent by the piston");
+			assembly.Get(AssemblySlot::PISTON, cylinder)->MarkDamaged("Valve strike on the crown");
+		}
+	}
+	else if (effectiveStretch > 0.05)
+	{
+		// Roughly 7 crank degrees of cam retard per millimetre of worn play in the drive.
+		double retard = effectiveStretch * 7.0;
+		powerFactor -= retard * 0.008;
+		report(FindingSeverity::WARNING, std::format("The timing belt's teeth are worn: the cam runs {:.0f} degrees retarded and power is down.", retard), 5.0);
+	}
+	for (int idler = 0; idler < assembly.SlotCount(AssemblySlot::BELT_IDLER); idler++)
+		if (overLimit(AssemblySlot::BELT_IDLER, idler, FeatureNames::IDLER_PLAY))
+			report(FindingSeverity::WARNING, std::format("Belt idler {}'s bearing is worn: it growls, and the belt wanders on it.", idler + 1), 3.0);
+	if (overLimit(AssemblySlot::BELT_TENSIONER, 0, FeatureNames::TENSIONER_TRAVEL))
+		report(FindingSeverity::WARNING, "The belt tensioner is near the end of its travel: it can't take up any more slack.", 3.0);
+
+	// Clamping: every nut and bolt, by how tight it really is against its spec.
+	for (int slotIndex = 0; slotIndex < static_cast<int>(AssemblySlot::COUNT); slotIndex++)
+	{
+		auto slot = static_cast<AssemblySlot>(slotIndex);
+		const auto* holes = EngineAssembly::Holes(slot);
+		if (!holes)
+			continue;
+		double loosest = 10.0, tightest = 0.0;
+		int loosestIndex = 0, tightestIndex = 0;
+		for (int index = 0; index < assembly.SlotCount(slot); index++)
+		{
+			auto bolt = assembly.Get(slot, index);
+			if (!bolt)
+				continue;
+			double ratio = bolt->GetTorque() / holes->torqueNm;
+			if (ratio < loosest) { loosest = ratio; loosestIndex = index; }
+			if (ratio > tightest) { tightest = ratio; tightestIndex = index; }
+		}
+		std::string loosestAt = assembly.PositionName(slot, loosestIndex);
+		bool critical = slot == AssemblySlot::HEAD_BOLT || slot == AssemblySlot::MAIN_CAP_BOLT || slot == AssemblySlot::ROD_NUT;
+
+		// Too tight: a bolt yields and stretches, or snaps.
+		if (tightest > 1.4)
+		{
+			if (slot == AssemblySlot::HEAD_BOLT)
+			{
+				report(FindingSeverity::FAILURE, "A head bolt was done up far too tight and snapped: the head lifted and blew the gasket.", 40.0);
+				gasket->MarkDamaged("Blown when a head bolt snapped");
+			}
+			else
+				report(FindingSeverity::WARNING, std::format("The {} was done up far too tight and snapped.", assembly.PositionName(slot, tightestIndex)), critical ? 15.0 : 3.0);
+			assembly.Get(slot, tightestIndex)->MarkDamaged("Snapped from over-tightening");
+		}
+		else if (tightest > 1.15)
+			report(FindingSeverity::WARNING, std::format("The {} is over-torqued: it's stretched, and the threads may be pulled.", assembly.PositionName(slot, tightestIndex)), 2.0);
+
+		// Too loose: what it holds moves.
+		if (slot == AssemblySlot::HEAD_BOLT && loosest < 0.6)
+		{
+			report(FindingSeverity::FAILURE, std::format("The head isn't clamped ({} was barely done up): the gasket blew between the cylinders.", loosestAt), 40.0);
+			gasket->MarkDamaged("Blown: the head wasn't clamped down");
+		}
+		else if (slot == AssemblySlot::HEAD_BOLT && loosest < 0.85)
+		{
+			report(FindingSeverity::WARNING, "The head bolts are uneven: the gasket weeps.", 8.0);
+			sealingLoss += 0.02 * spec.cylinders;
+		}
+		else if (slot == AssemblySlot::MAIN_CAP_BOLT && loosest < 0.6)
+		{
+			int journal = loosestIndex / holes->perParent;
+			report(FindingSeverity::FAILURE, std::format("Main cap {} walked on its loose bolts and spun its bearing.", journal + 1), 40.0);
+			if (auto bearing = assembly.Get(AssemblySlot::MAIN_BEARING, journal))
+				bearing->MarkDamaged("Spun when its cap came loose");
+			ScoreJournal(*crankshaft, FeatureNames::MainJournal(journal));
+		}
+		else if (slot == AssemblySlot::ROD_NUT && loosest < 0.7)
+		{
+			int cylinder = loosestIndex / holes->perParent;
+			report(FindingSeverity::FAILURE, std::format("Rod {}'s cap came off its loose nuts: the rod went through the side of the block.", cylinder + 1), 60.0);
+			assembly.Get(AssemblySlot::CONNECTING_ROD, cylinder)->MarkDamaged("Broken when its cap came loose");
+			block->MarkDamaged("Holed by a thrown rod");
+		}
+		else if (critical && loosest < 0.85)
+			report(FindingSeverity::WARNING, std::format("The {} is under-torqued: the cap can shift under load.", loosestAt), 6.0);
+		else if (!critical && loosest < 0.8)
+			report(FindingSeverity::WARNING, std::format("The {} is loose: {}.", loosestAt,
+				slot == AssemblySlot::INTAKE_MANIFOLD_NUT ? "unmetered air is leaning the mixture" : slot == AssemblySlot::EXHAUST_MANIFOLD_NUT ? "it ticks and leaks"
+				: "it leaks"), 2.0);
+	}
+
+	for (int valve = 0; valve < assembly.SlotCount(AssemblySlot::LIFTER); valve++)
+	{
+		auto lifter = assembly.Get(AssemblySlot::LIFTER, valve);
+		if (lifter && lifter->FindFeature(FeatureNames::BUCKET_DIAMETER)->Evaluate(false) != FeatureIssue::NONE)
+		{
+			report(FindingSeverity::INFO, "A worn bucket lifter is loose in its bore and ticks.", 1.0);
+			break;
+		}
+	}
+
+	// Fuel and spark, cylinder by cylinder. A leaking intake flange pulls in unmetered air,
+	// leaning every cylinder.
+	double vacuumLeak = 0.0;
+	if (overLimit(AssemblySlot::INTAKE_MANIFOLD, 0, FeatureNames::FLANGE_FLATNESS))
+	{
+		vacuumLeak = 0.05;
+		report(FindingSeverity::WARNING, "The intake manifold flange is warped: a vacuum leak is leaning the engine out.", 5.0);
+	}
+	for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
+	{
+		int number = cylinder + 1;
+		double flow = value(AssemblySlot::FUEL_INJECTOR, cylinder, FeatureNames::INJECTOR_FLOW);
+		double lean = (60.0 - flow) / 60.0 + vacuumLeak;
+		if (lean > 0.16)
+		{
+			report(FindingSeverity::FAILURE, std::format("Cylinder {} ran so lean it melted a hole through the piston.", number), 40.0);
+			assembly.Get(AssemblySlot::PISTON, cylinder)->MarkDamaged("Melted by a lean mixture");
+		}
+		else if (lean > 0.06)
+		{
+			report(FindingSeverity::WARNING, std::format("Cylinder {} is running lean: its injector is clogged. It's knocking and hot.", number), 6.0);
+			powerFactor -= 0.02;
+		}
+		else if (lean < -0.05)
+			report(FindingSeverity::INFO, std::format("Cylinder {}'s injector is over-fuelling it: rich and sooty.", number), 1.0);
+
+		double gap = value(AssemblySlot::SPARK_PLUG, cylinder, FeatureNames::ELECTRODE_GAP);
+		if (gap > 1.1)
+		{
+			report(FindingSeverity::WARNING, std::format("Cylinder {} misfires under load: its spark plug gap is worn to {:.2f} mm.", number, gap), 5.0);
+			powerFactor -= 0.6 / spec.cylinders * std::min(1.0, (gap - 1.1) / 0.3 + 0.3);
+		}
+		else if (gap < 0.7)
+			report(FindingSeverity::INFO, std::format("Cylinder {}'s plug gap is tight: a weak spark at idle.", number), 1.0);
+	}
+	auto throttle = assembly.Get(AssemblySlot::THROTTLE_BODY, 0);
+	if (throttle && value(AssemblySlot::THROTTLE_BODY, 0, FeatureNames::THROTTLE_BORE) < 49.85)
+		report(FindingSeverity::INFO, "The throttle bore is caked with carbon: the idle hunts.", 1.0);
+
+	if (overLimit(AssemblySlot::EXHAUST_MANIFOLD, 0, FeatureNames::FLANGE_FLATNESS))
+	{
+		report(FindingSeverity::WARNING, "The exhaust manifold is warped: it ticks and leaks at the flange.", 3.0);
+		powerFactor -= 0.01;
+	}
+
+	// Oil and coolant leaks.
+	if (overLimit(AssemblySlot::OIL_PAN, 0, FeatureNames::RAIL_FLATNESS))
+		report(FindingSeverity::WARNING, "The oil pan rail is bent: it leaks oil onto the dyno floor.", 3.0);
+	if (overLimit(AssemblySlot::TIMING_COVER, 0, FeatureNames::FACE_FLATNESS))
+		report(FindingSeverity::WARNING, "The timing cover face isn't flat: oil seeps out of the front of the engine.", 3.0);
+	if (overLimit(AssemblySlot::VALVE_COVER, 0, FeatureNames::RAIL_FLATNESS))
+		report(FindingSeverity::WARNING, "The valve cover rail is bent: oil weeps down the side of the head.", 2.0);
+	if (overLimit(AssemblySlot::WATER_PUMP, 0, FeatureNames::SHAFT_PLAY))
+		report(FindingSeverity::WARNING, "Coolant is dripping from the water pump's weep hole: its bearing is shot and it runs hot.", 5.0);
+
+	// The harmonic balancer damps crank twist; with its rubber gone it doesn't.
+	double damperRunout = value(AssemblySlot::CRANK_PULLEY, 0, FeatureNames::RING_RUNOUT);
+	if (damperRunout > 0.6)
+	{
+		report(FindingSeverity::WARNING, "The crank pulley's outer ring has walked off its rubber: it wobbles and threw the belt.", 6.0);
+		friction += 0.01;
+	}
+	else if (damperRunout > 0.25)
+		report(FindingSeverity::WARNING, "The crank pulley's damper rubber is tired: crank vibration near redline.", 3.0);
+
+	powerFactor = std::clamp(powerFactor, 0.4, 1.0);
+
 	// Oil pressure rises steeply as bearing clearance closes up, until the relief valve opens.
 	double averageClearance = std::max(0.005, clearanceSum / bearingCount);
-	result.oilPressureBar = std::min(5.5, 4.2 * std::pow(0.042 / averageClearance, 1.5));
+	result.oilPressureBar = std::min(5.5, 4.2 * std::pow(0.042 / averageClearance, 1.5)) * pumpFactor;
 	if (result.oilPressureBar < 1.5)
 		report(FindingSeverity::WARNING, std::format("Oil pressure is only {:.1f} bar when hot.", result.oilPressureBar), 10.0);
 
@@ -378,7 +578,7 @@ DynoResult Dyno::Run(EngineAssembly& assembly)
 			volumetricEfficiency *= (std::max)(0.3, 1.0 - (rpm - floatRpm) / 1500.0);
 		double rpmFriction = friction + 0.03 * std::pow(static_cast<double>(rpm) / spec.redline, 2.0);
 
-		double torque = torqueScale * volumetricEfficiency * (1.0 - rpmFriction);
+		double torque = torqueScale * volumetricEfficiency * (1.0 - rpmFriction) * powerFactor;
 		double power = torque * rpm * 2.0 * std::numbers::pi / 60.0 / 1000.0;
 		result.curve.push_back({ static_cast<float>(rpm), static_cast<float>(torque), static_cast<float>(power) });
 

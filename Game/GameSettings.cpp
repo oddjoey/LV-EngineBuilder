@@ -36,6 +36,10 @@ GameSettings GameSettings::Load()
 		else if (key == "frame_limit") value >> settings.frameLimit;
 		else if (key == "day_night_cycle") value >> settings.dayNightCycle;
 		else if (key == "day_length_minutes") value >> settings.dayLengthMinutes;
+		else if (key == "master_volume") value >> settings.masterVolume;
+		else if (key == "effects_volume") value >> settings.effectsVolume;
+		else if (key == "ambience_volume") value >> settings.ambienceVolume;
+		else if (key == "interface_volume") value >> settings.interfaceVolume;
 	}
 
 	// A hand-edited file shouldn't be able to break the camera or the window.
@@ -52,6 +56,8 @@ GameSettings GameSettings::Load()
 	settings.brightness = std::clamp(settings.brightness, 0.5f, 2.f);
 	settings.frameLimit = std::clamp(settings.frameLimit, 0, 360);
 	settings.dayLengthMinutes = std::clamp(settings.dayLengthMinutes, 5.f, 240.f);
+	for (float* volume : { &settings.masterVolume, &settings.effectsVolume, &settings.ambienceVolume, &settings.interfaceVolume })
+		*volume = std::clamp(*volume, 0.f, 1.f);
 	return settings;
 }
 
@@ -77,6 +83,10 @@ void GameSettings::Save() const
 	file << "frame_limit=" << frameLimit << "\n";
 	file << "day_night_cycle=" << dayNightCycle << "\n";
 	file << "day_length_minutes=" << dayLengthMinutes << "\n";
+	file << "master_volume=" << masterVolume << "\n";
+	file << "effects_volume=" << effectsVolume << "\n";
+	file << "ambience_volume=" << ambienceVolume << "\n";
+	file << "interface_volume=" << interfaceVolume << "\n";
 }
 
 unsigned int GameSettings::ShadowResolution() const

@@ -16,6 +16,7 @@
 #include "LV/Engine/Objects/Object.h"
 #include "../Simulation/EngineAssembly.h"
 #include "../Simulation/Machine.h"
+#include "../Simulation/PartCatalog.h"
 #include "FirstPersonController.h"
 
 namespace ShopLayout
@@ -36,13 +37,19 @@ namespace ShopLayout
 	inline const FloorObstacle ROOM_BOUNDS = { { -7.f, -5.f }, { 7.f, 5.f } };
 
 	inline const glm::vec3 SHELF_POSITION = { 0.f, 0.f, -4.6f };
+	// The second shelf, for the bolt-on parts, along the back wall to the right of the first.
+	inline const glm::vec3 SECOND_SHELF_POSITION = { 3.45f, 0.f, -4.6f };
+	// The line borer is too long for the machine row; it stands along the left wall.
+	inline const glm::vec3 LINE_BORER_POSITION = { -6.1f, 0.f, -0.6f };
+	inline const glm::vec3 SANDING_BENCH_POSITION = { -6.1f, 0.f, 0.9f };
+	// Where new furniture is set up, or the first free floor from there (see PlaceNewMachine).
+	inline const glm::vec3 FURNITURE_HOME = { 1.5f, 0.f, 1.5f };
+	// The lift goes in the middle of the side bay (or the first free floor, without one).
+	inline const glm::vec3 LIFT_HOME = { -10.f, 0.f, 0.f };
 	inline const float SHELF_BOARDS[] = { 0.35f, 0.85f, 1.35f, 1.85f };
 	constexpr float SHELF_HALF_WIDTH = 1.5f;
 
 	inline const glm::vec3 RACK_POSITION = { -6.3f, 0.f, -0.2f };
-	constexpr float RACK_TOP = 0.145f;
-	constexpr int RACK_SLOTS = 9;
-	constexpr float RACK_SPACING = 0.9f;
 
 	inline const glm::vec3 BENCH_POSITION = { -3.4f, 0.f, -4.45f };
 	inline const glm::vec3 TOOL_BOARD_POSITION = { -3.4f, 1.65f, -4.97f };
@@ -53,10 +60,13 @@ namespace ShopLayout
 	constexpr float STAND_ROLL_PIVOT_Y = -0.13f;	// below the deck, about the block's middle
 	constexpr float STAND_ROLL_SPEED = 1.6f;		// radians per second
 	inline const glm::vec3 DYNO_POSITION = { -4.2f, 0.f, 3.2f };
+	// Where an engine on the dyno sits, in the dyno's space: its crank on the absorber's axis, its
+	// flywheel end (engine +X) towards the absorber.
+	inline const glm::vec3 DYNO_MOUNT = { -0.35f, 0.90f, 0.f };
 	inline const glm::vec3 DESK_POSITION = { 2.6f, 0.f, 4.5f };
 	constexpr float MACHINE_ROW_X = 6.3f;
-	constexpr float MACHINE_ROW_START_Z = -4.4f;
-	constexpr float MACHINE_SPACING = 0.98f;
+	constexpr float MACHINE_ROW_START_Z = -4.72f;	// clear of the door into the house at the front end
+	constexpr float MACHINE_SPACING = 0.94f;
 
 	// Deliveries land inside the roll-up door.
 	inline const glm::vec3 DELIVERY_POINT = { -2.6f, 1.6f, 4.1f };
@@ -75,12 +85,14 @@ namespace ShopLayout
 
 	inline bool IsBigPart(PartType type)
 	{
-		return type == PartType::BLOCK || type == PartType::CRANKSHAFT || type == PartType::CYLINDER_HEAD || type == PartType::CAMSHAFT;
+		return PartCatalog::Get(type).big;
 	}
 
-	inline pModel ModelOf(const pObject& object)
+	// Called for every item every frame: no reference counting, on the manager or the model.
+	inline const Model* ModelOf(const pObject& object)
 	{
-		return ModelManager::Get()->GetModel(object->GetModelIndex());
+		static const auto manager = ModelManager::Get();
+		return manager->PeekModel(object->GetModelIndex());
 	}
 
 	inline std::string StripTimestamp(const std::string& line)
@@ -104,14 +116,7 @@ namespace ShopLayout
 
 	inline std::optional<std::pair<AssemblySlot, int>> FindInstalledSlot(const EngineAssembly& assembly, const pPart& part)
 	{
-		for (size_t slot = 0; slot < static_cast<size_t>(AssemblySlot::COUNT); slot++)
-		{
-			auto slotType = static_cast<AssemblySlot>(slot);
-			for (int index = 0; index < assembly.SlotCount(slotType); index++)
-				if (assembly.Get(slotType, index) == part)
-					return std::make_pair(slotType, index);
-		}
-		return std::nullopt;
+		return assembly.Find(part.get());
 	}
 
 	// Where a part of this type can go on the engine right now: the first empty position whose

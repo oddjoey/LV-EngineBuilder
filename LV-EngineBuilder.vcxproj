@@ -55,6 +55,10 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -75,6 +79,10 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <ForcedIncludeFiles>pch.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -98,8 +106,13 @@
       <Message>Copy the DLSS runtime next to the executable</Message>
     </PostBuildEvent>
   </ItemDefinitionGroup>  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Game\EngineBuilderGame.cpp" />
+    <ClCompile Include="Game\ConsoleCommands.cpp" />
+    <ClCompile Include="Game\FrameProfiler.cpp" />
     <ClCompile Include="Game\GameSettings.cpp" />
     <ClCompile Include="Game\Inventory\PlayerInventory.cpp" />
     <ClCompile Include="Game\Save\SaveGame.cpp" />
@@ -108,10 +121,13 @@
     <ClCompile Include="Game\Simulation\EngineSpec.cpp" />
     <ClCompile Include="Game\Simulation\Feature.cpp" />
     <ClCompile Include="Game\Simulation\Machine.cpp" />
+    <ClCompile Include="Game\Simulation\Furniture.cpp" />
+    <ClCompile Include="Game\Simulation\Upgrades.cpp" />
     <ClCompile Include="Game\Simulation\Material.cpp" />
     <ClCompile Include="Game\Simulation\MeasuringTool.cpp" />
     <ClCompile Include="Game\Simulation\Part.cpp" />
     <ClCompile Include="Game\Simulation\PartFactory.cpp" />
+    <ClCompile Include="Game\Simulation\PartCatalog.cpp" />
     <ClCompile Include="Game\Simulation\Random.cpp" />
     <ClCompile Include="Game\Simulation\Units.cpp" />
     <ClCompile Include="Game\Simulation\Workshop.cpp" />
@@ -119,16 +135,22 @@
     <ClCompile Include="Game\UI\InventoryUI.cpp" />
     <ClCompile Include="Game\UI\ItemIcons.cpp" />
     <ClCompile Include="Game\UI\PartIcons.cpp" />
+    <ClCompile Include="Game\UI\ModelPreview.cpp" />
+    <ClCompile Include="Game\UI\SplashScreen.cpp" />
+    <ClCompile Include="Game\UI\Console.cpp" />
     <ClCompile Include="Game\UI\PauseMenu.cpp" />
     <ClCompile Include="Game\UI\Ratings.cpp" />
     <ClCompile Include="Game\UI\WorkshopUI.cpp" />
     <ClCompile Include="Game\World\FirstPersonController.cpp" />
     <ClCompile Include="Game\World\ProceduralTextures.cpp" />
     <ClCompile Include="Game\World\ShopAssets.cpp" />
+    <ClCompile Include="Game\Audio\GameAudio.cpp" />
     <ClCompile Include="Game\World\ShopLighting.cpp" />
     <ClCompile Include="Game\World\ShopOutdoors.cpp" />
+    <ClCompile Include="Game\World\ShopHouse.cpp" />
     <ClCompile Include="Game\World\ShopWorld.cpp" />
     <ClCompile Include="Game\World\ShopWorldOutdoors.cpp" />
+    <ClCompile Include="Game\World\ShopWorldUpgrades.cpp" />
     <ClCompile Include="Game\World\ShopWorldTools.cpp" />
     <ClCompile Include="LV\Engine\Graphics\DLSS.cpp" />
     <ClCompile Include="LV\Engine\Graphics\Graphics.cpp" />
@@ -148,21 +170,51 @@
     <ClCompile Include="LV\Engine\Objects\Object.cpp" />
     <ClCompile Include="LV\Engine\Objects\ObjectManager.cpp" />
     <ClCompile Include="LV\Engine\Utility\InputManager.cpp" />
+    <ClCompile Include="LV\Engine\Audio\AudioManager.cpp" />
     <ClCompile Include="LV\Engine\Utility\PerformanceManager.cpp" />
     <ClCompile Include="LV\Engine\Utility\Settings.cpp" />
     <ClCompile Include="LV\Engine\Utility\Utility.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_glfw.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_vulkan.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\imgui.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\imgui_demo.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\imgui_draw.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\imgui_tables.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="LV\Libraries\imgui\misc\cpp\imgui_stdlib.cpp" />
-    <ClCompile Include="LV\Libraries\ufbx\ufbx.c" />
+    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_glfw.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_vulkan.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_demo.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_draw.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_tables.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\imgui_widgets.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\imgui\misc\cpp\imgui_stdlib.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\ufbx\ufbx.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="pch.h" />
     <ClInclude Include="Game\EngineBuilderGame.h" />
+    <ClInclude Include="Game\FrameProfiler.h" />
     <ClInclude Include="Game\GameSettings.h" />
     <ClInclude Include="Game\Inventory\PlayerInventory.h" />
     <ClInclude Include="Game\Save\SaveGame.h" />
@@ -171,10 +223,13 @@
     <ClInclude Include="Game\Simulation\EngineSpec.h" />
     <ClInclude Include="Game\Simulation\Feature.h" />
     <ClInclude Include="Game\Simulation\Machine.h" />
+    <ClInclude Include="Game\Simulation\Furniture.h" />
+    <ClInclude Include="Game\Simulation\Upgrades.h" />
     <ClInclude Include="Game\Simulation\Material.h" />
     <ClInclude Include="Game\Simulation\MeasuringTool.h" />
     <ClInclude Include="Game\Simulation\Part.h" />
     <ClInclude Include="Game\Simulation\PartFactory.h" />
+    <ClInclude Include="Game\Simulation\PartCatalog.h" />
     <ClInclude Include="Game\Simulation\Random.h" />
     <ClInclude Include="Game\Simulation\Tolerance.h" />
     <ClInclude Include="Game\Simulation\Units.h" />
@@ -183,13 +238,19 @@
     <ClInclude Include="Game\UI\InventoryUI.h" />
     <ClInclude Include="Game\UI\ItemIcons.h" />
     <ClInclude Include="Game\UI\PartIcons.h" />
+    <ClInclude Include="Game\UI\ModelPreview.h" />
+    <ClInclude Include="Game\UI\SplashScreen.h" />
+    <ClInclude Include="Game\UI\Console.h" />
     <ClInclude Include="Game\UI\PauseMenu.h" />
     <ClInclude Include="Game\UI\Ratings.h" />
     <ClInclude Include="Game\UI\WorkshopUI.h" />
     <ClInclude Include="Game\World\FirstPersonController.h" />
     <ClInclude Include="Game\World\GarageLayout.h" />
+    <ClInclude Include="Game\World\HouseLayout.h" />
     <ClInclude Include="Game\World\ProceduralTextures.h" />
     <ClInclude Include="Game\World\ShopAssets.h" />
+    <ClInclude Include="Game\Audio\GameAudio.h" />
+    <ClInclude Include="Game\Audio\Sounds.h" />
     <ClInclude Include="Game\World\ShopLighting.h" />
     <ClInclude Include="Game\World\ShopWorld.h" />
     <ClInclude Include="Game\World\ShopWorldShared.h" />
@@ -213,6 +274,7 @@
     <ClInclude Include="LV\Engine\Objects\ObjectManager.h" />
     <ClInclude Include="LV\Engine\Objects\ObjectShading.h" />
     <ClInclude Include="LV\Engine\Utility\InputManager.h" />
+    <ClInclude Include="LV\Engine\Audio\AudioManager.h" />
     <ClInclude Include="LV\Engine\Utility\Logger.h" />
     <ClInclude Include="LV\Engine\Utility\PerformanceManager.h" />
     <ClInclude Include="LV\Engine\Utility\Settings.h" />

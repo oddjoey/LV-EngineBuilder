@@ -14,14 +14,15 @@ const EngineSpec& EngineSpec::InlineFour()
 {
 	static const EngineSpec spec = [] {
 		EngineSpec s;
-		s.name = "LV-20 Inline-4";
+		s.name = "LV-16 Inline-4";
 		s.cylinders = 4;
 		s.mainJournals = 5;
 		s.redline = 7000;
 
-		s.bore = Tolerance::Limits(86.000, 86.018);
+		s.bore = Tolerance::Limits(81.000, 81.018);
 		s.mainHousing = Tolerance::Limits(59.000, 59.019);
-		// Crank radius + rod length + compression height = 216.75, leaving the piston 0.20 below deck.
+		// 1.6 litres: an 81 mm bore over a 77 mm stroke. Crank radius + rod length + compression
+		// height = 38.50 + 148.25 + 30.00 = 216.75, leaving the piston 0.20 below deck.
 		s.deckHeight = Tolerance::Bilateral(216.95, 0.05);
 		s.maxBoreTaper = 0.010;
 		s.maxBoreOutOfRound = 0.008;
@@ -30,27 +31,28 @@ const EngineSpec& EngineSpec::InlineFour()
 
 		s.mainJournal = Tolerance::Limits(54.976, 54.994);
 		s.rodJournal = Tolerance::Limits(47.976, 47.992);
-		s.stroke = Tolerance::Bilateral(86.00, 0.05);
+		s.stroke = Tolerance::Bilateral(77.00, 0.05);
 		s.maxJournalTaper = 0.005;
 		s.maxJournalOutOfRound = 0.005;
 		s.maxJournalFinish = 0.25;
 
 		s.rodHousing = Tolerance::Limits(51.000, 51.016);
-		s.rodLength = Tolerance::Bilateral(143.75, 0.03);
+		s.rodLength = Tolerance::Bilateral(148.25, 0.03);
 
-		s.pistonSkirt = Tolerance::Limits(85.966, 85.980);
+		s.pistonSkirt = Tolerance::Limits(80.966, 80.980);
 		s.compressionHeight = Tolerance::Bilateral(30.00, 0.02);
 		s.dishVolume = Tolerance::Bilateral(4.0, 0.2);
 		// Gives roughly a 0.38 mm gap in a mid-tolerance bore.
-		s.ringClosedDiameter = 85.888;
+		s.ringClosedDiameter = 80.888;
 
 		s.mainShell = Tolerance::Limits(1.988, 1.994);
 		s.rodShell = Tolerance::Limits(1.488, 1.494);
 
-		s.chamberVolume = Tolerance::Bilateral(46.0, 0.5);
+		// Smaller than the 2.0 litre's 46 cc, to keep the compression near 10:1 in the smaller cylinders.
+		s.chamberVolume = Tolerance::Bilateral(35.0, 0.5);
 		s.maxHeadFlatness = 0.050;
 		s.gasketThickness = Tolerance::Bilateral(0.70, 0.02);
-		s.gasketBore = 87.5;
+		s.gasketBore = 82.5;
 
 		s.camJournals = 5;
 		s.camBore = Tolerance::Limits(26.000, 26.021);

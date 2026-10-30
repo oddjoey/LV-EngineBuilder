@@ -4,6 +4,7 @@
 #include <format>
 #include <stdexcept>
 
+#include "PartCatalog.h"
 #include "Random.h"
 
 pPart PartFactory::Create(PartType type, const EngineSpec& spec, PartQuality quality, PartCondition condition, double sizeOffset)
@@ -17,13 +18,16 @@ pPart PartFactory::Create(PartType type, const EngineSpec& spec, PartQuality qua
 		case PartType::PISTON:			part = CreatePiston(spec, quality, condition, sizeOffset); break;
 		case PartType::PISTON_RING:		part = CreatePistonRing(spec, quality, condition, sizeOffset); break;
 		case PartType::MAIN_BEARING:
-		case PartType::ROD_BEARING:		part = CreateBearing(type, spec, quality, condition, sizeOffset); break;
+		case PartType::ROD_BEARING:
+		case PartType::MAIN_BEARING_LOWER:
+		case PartType::ROD_BEARING_LOWER:	part = CreateBearing(type, spec, quality, condition, sizeOffset); break;
 		case PartType::CYLINDER_HEAD:	part = CreateCylinderHead(spec, quality, condition); break;
 		case PartType::HEAD_GASKET:		part = CreateHeadGasket(spec, quality, condition); break;
 		case PartType::CAMSHAFT:		part = CreateCamshaft(spec, quality, condition); break;
 		case PartType::INTAKE_VALVE:
 		case PartType::EXHAUST_VALVE:	part = CreateValve(type == PartType::EXHAUST_VALVE, spec, quality, condition, sizeOffset); break;
 		case PartType::VALVE_SPRING:	part = CreateValveSpring(spec, quality, condition); break;
+		default:						part = CreateAncillary(type, spec, quality, condition); break;
 	}
 
 	if (!part)
@@ -34,25 +38,69 @@ pPart PartFactory::Create(PartType type, const EngineSpec& spec, PartQuality qua
 	return part;
 }
 
-double PartFactory::Price(PartType type, PartQuality quality, PartCondition condition)
+std::vector<pPart> PartFactory::CreateCompanions(const pPart& part, const EngineSpec& spec)
 {
-	double base = 0.0;
+	// What comes in the same box: a rod's cap, a block's main caps, a head's cam caps, a bearing's
+	// other shell.
+	std::vector<pPart> companions;
+	auto make = [&](PartType type) {
+		auto companion = Create(type, spec, part->GetQuality(), part->GetCondition() == PartCondition::DAMAGED ? PartCondition::USED : part->GetCondition(),
+			part->GetSizeOffset());
+		companions.push_back(companion);
+		return companion;
+	};
+	switch (part->GetType())
+	{
+		case PartType::BLOCK:
+			for (int journal = 0; journal < spec.mainJournals; journal++)
+			{
+				auto cap = make(PartType::MAIN_CAP);
+				cap->MatchTo(part->GetId(), journal);
+				cap->m_name = std::format("Main Cap {} (block #{})", journal + 1, part->GetId());
+			}
+			break;
+		case PartType::CYLINDER_HEAD:
+			for (int journal = 0; journal < spec.camJournals; journal++)
+			{
+				auto cap = make(PartType::CAM_CAP);
+				cap->MatchTo(part->GetId(), journal);
+				cap->m_material = part->GetMaterial();
+				cap->m_name = std::format("Cam Cap {} (head #{})", journal + 1, part->GetId());
+			}
+			break;
+		case PartType::CONNECTING_ROD:
+		{
+			auto cap = make(PartType::ROD_CAP);
+			cap->MatchTo(part->GetId());
+			cap->m_material = part->GetMaterial();
+			cap->m_name = std::format("Rod Cap (rod #{})", part->GetId());
+			break;
+		}
+		case PartType::MAIN_BEARING:	make(PartType::MAIN_BEARING_LOWER); break;
+		case PartType::ROD_BEARING:		make(PartType::ROD_BEARING_LOWER); break;
+		default:						break;
+	}
+	return companions;
+}
+
+double PartFactory::PriceWithCompanions(PartType type, PartQuality quality, PartCondition condition, const EngineSpec& spec)
+{
+	double price = Price(type, quality, condition);
 	switch (type)
 	{
-		case PartType::BLOCK:			base = 900.0; break;
-		case PartType::CRANKSHAFT:		base = 600.0; break;
-		case PartType::CONNECTING_ROD:	base = 70.0; break;
-		case PartType::PISTON:			base = 70.0; break;
-		case PartType::PISTON_RING:		base = 15.0; break;
-		case PartType::MAIN_BEARING:	base = 12.0; break;
-		case PartType::ROD_BEARING:		base = 10.0; break;
-		case PartType::CYLINDER_HEAD:	base = 800.0; break;
-		case PartType::HEAD_GASKET:		base = 45.0; break;
-		case PartType::CAMSHAFT:		base = 320.0; break;
-		case PartType::INTAKE_VALVE:	base = 22.0; break;
-		case PartType::EXHAUST_VALVE:	base = 26.0; break;
-		case PartType::VALVE_SPRING:	base = 9.0; break;
+		case PartType::BLOCK:			price += Price(PartType::MAIN_CAP, quality, condition) * spec.mainJournals; break;
+		case PartType::CYLINDER_HEAD:	price += Price(PartType::CAM_CAP, quality, condition) * spec.camJournals; break;
+		case PartType::CONNECTING_ROD:	price += Price(PartType::ROD_CAP, quality, condition); break;
+		case PartType::MAIN_BEARING:	price += Price(PartType::MAIN_BEARING_LOWER, quality, condition); break;
+		case PartType::ROD_BEARING:		price += Price(PartType::ROD_BEARING_LOWER, quality, condition); break;
+		default:						break;
 	}
+	return price;
+}
+
+double PartFactory::Price(PartType type, PartQuality quality, PartCondition condition)
+{
+	double base = PartCatalog::Get(type).basePrice;
 
 	static const double qualityMultiplier[] = { 0.6, 1.0, 1.8 };
 	base *= qualityMultiplier[static_cast<size_t>(quality)];
@@ -147,6 +195,7 @@ pPart PartFactory::CreateBlock(const EngineSpec& spec, PartQuality quality, Part
 		auto housing = MakeFeature(FeatureNames::MainHousing(journal), FeatureKind::BORE, spec.mainHousing);
 		housing.maxTaper = 0.008;
 		housing.maxOutOfRound = 0.008;
+		housing.operations = { MachineOperation::LINE_BORE };
 		double outOfRound = used && Random::Chance(0.2) ? Random::Uniform(0.010, 0.020) : SmallDeviation(0.008, quality);
 		ShapeRound(housing, Sample(spec.mainHousing, quality), SmallDeviation(0.008, quality), outOfRound);
 		housing.surfaceRa = Random::Uniform(0.6, 1.2);
@@ -285,7 +334,8 @@ pPart PartFactory::CreatePistonRing(const EngineSpec& spec, PartQuality quality,
 pPart PartFactory::CreateBearing(PartType type, const EngineSpec& spec, PartQuality quality, PartCondition condition, double sizeOffset)
 {
 	// Undersize bearings have thicker walls to make up for the reground journal.
-	auto shellSpec = (type == PartType::MAIN_BEARING ? spec.mainShell : spec.rodShell).Shifted(-sizeOffset * 0.5);
+	bool main = type == PartType::MAIN_BEARING || type == PartType::MAIN_BEARING_LOWER;
+	auto shellSpec = (main ? spec.mainShell : spec.rodShell).Shifted(-sizeOffset * 0.5);
 	auto part = std::make_shared<Part>(type, std::format("{} {} {}", PartQualityName(quality), PartTypeName(type), SizeLabel(sizeOffset)),
 		MaterialType::BIMETAL, quality, condition);
 
@@ -480,4 +530,204 @@ pPart PartFactory::CreateHeadGasket(const EngineSpec& spec, PartQuality quality,
 	part->m_features.push_back(thickness);
 
 	return part;
+}
+
+pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQuality quality, PartCondition condition)
+{
+	(void)spec;
+	bool used = condition == PartCondition::USED;
+
+	MaterialType material = MaterialType::HARDENED_STEEL;
+	switch (type)
+	{
+		case PartType::CORE_PLUG:
+		case PartType::OIL_PICKUP:
+		case PartType::OIL_PAN:
+		case PartType::OIL_FILTER:
+		case PartType::FUEL_RAIL:
+		case PartType::THERMOSTAT:				material = MaterialType::STAMPED_STEEL; break;
+		case PartType::REAR_MAIN_SEAL:
+		case PartType::FRONT_CRANK_SEAL:
+		case PartType::VALVE_STEM_SEAL:
+		case PartType::VALVE_COVER_GASKET:		material = MaterialType::FKM_RUBBER; break;
+		case PartType::TIMING_BELT:				material = MaterialType::HNBR_BELT; break;
+		case PartType::OIL_PAN_GASKET:
+		case PartType::TIMING_COVER_GASKET:
+		case PartType::INTAKE_MANIFOLD_GASKET:
+		case PartType::WATER_PUMP_GASKET:		material = MaterialType::COMPOSITE_GASKET; break;
+		case PartType::EXHAUST_MANIFOLD_GASKET:	material = MaterialType::MLS_STEEL; break;
+		case PartType::OIL_PUMP:
+		case PartType::TIMING_COVER:
+		case PartType::VALVE_COVER:
+		case PartType::INTAKE_MANIFOLD:
+		case PartType::THROTTLE_BODY:
+		case PartType::WATER_PUMP:
+		case PartType::THERMOSTAT_HOUSING:		material = MaterialType::CAST_ALUMINUM; break;
+		case PartType::IGNITION_COIL:			material = MaterialType::NYLON; break;
+		case PartType::CRANK_PULLEY:
+		case PartType::EXHAUST_MANIFOLD:		material = MaterialType::GREY_IRON; break;
+		case PartType::SPARK_PLUG:				material = MaterialType::SPARK_PLUG_ALLOY; break;
+		case PartType::ROD_CAP:					material = MaterialType::POWDER_METAL; break;
+		case PartType::MAIN_CAP:				material = MaterialType::NODULAR_IRON; break;
+		case PartType::CAM_CAP:					material = MaterialType::ALUMINUM_A356; break;
+		default:								break;
+	}
+
+	auto part = std::make_shared<Part>(type, std::format("{} {}", used ? "Used" : PartQualityName(quality), PartTypeName(type)),
+		material, quality, condition);
+
+	// A simple measured size: new parts scatter around the spec, used ones have worn by wear.
+	auto addLength = [&](const std::string& name, FeatureKind kind, const Tolerance& tolerance, double wearMin, double wearMax) -> Feature&
+	{
+		auto feature = MakeFeature(name, kind, tolerance);
+		feature.value = Sample(tolerance, quality) + (used ? Random::Uniform(wearMin, wearMax) : 0.0);
+		part->m_features.push_back(feature);
+		return part->m_features.back();
+	};
+	// A sealing face: flat when new, warped or dented by heat cycles and over-tightened bolts.
+	auto addFlatness = [&](const std::string& name, double limit, double usedMax, bool machinable)
+	{
+		auto feature = MakeFeature(name, FeatureKind::FLATNESS, Tolerance::Limits(0.0, limit));
+		feature.value = used ? Random::Uniform(limit * 0.2, usedMax) : SmallDeviation(limit, quality);
+		feature.surfaceRa = Random::Uniform(0.8, 1.6);
+		if (machinable)
+		{
+			feature.maxRa = 3.2;
+			feature.operations = { MachineOperation::SURFACE };
+		}
+		part->m_features.push_back(feature);
+	};
+	auto addRunout = [&](const std::string& name, double limit, double usedMax)
+	{
+		auto feature = MakeFeature(name, FeatureKind::RUNOUT, Tolerance::Limits(0.0, limit));
+		feature.value = used ? Random::Uniform(limit * 0.2, usedMax) : SmallDeviation(limit, quality);
+		part->m_features.push_back(feature);
+	};
+	auto addRound = [&](const std::string& name, FeatureKind kind, const Tolerance& tolerance, double wearMin, double wearMax)
+	{
+		auto feature = MakeFeature(name, kind, tolerance);
+		double wear = used ? Random::Uniform(wearMin, wearMax) : 0.0;
+		ShapeRound(feature, Sample(tolerance, quality) + wear, std::abs(wear) * 0.3, std::abs(wear) * 0.4 + SmallDeviation(0.004, quality));
+		feature.surfaceRa = Random::Uniform(0.2, 0.6);
+		part->m_features.push_back(feature);
+	};
+
+	switch (type)
+	{
+		case PartType::OIL_PUMP:
+			// Gerotor clearances, checked with the cover off: inner rotor tip to outer rotor, and
+			// rotor face to the housing. Worn pumps leak oil back to their own inlet.
+			addLength(FeatureNames::ROTOR_TIP_CLEARANCE, FeatureKind::THICKNESS, Tolerance::Limits(0.04, 0.16), 0.06, 0.18);
+			addLength(FeatureNames::ROTOR_SIDE_CLEARANCE, FeatureKind::THICKNESS, Tolerance::Limits(0.03, 0.09), 0.03, 0.07);
+			break;
+		case PartType::OIL_PAN:
+			addFlatness(FeatureNames::RAIL_FLATNESS, 0.10, 0.40, false);
+			break;
+		case PartType::LIFTER:
+			addRound(FeatureNames::BUCKET_DIAMETER, FeatureKind::JOURNAL, Tolerance::Bilateral(30.97, 0.008), -0.035, -0.006);
+			break;
+		case PartType::CRANK_SPROCKET:
+			addRound(FeatureNames::ROOT_DIAMETER, FeatureKind::JOURNAL, Tolerance::Bilateral(38.60, 0.05), -0.30, -0.03);
+			break;
+		case PartType::CAM_SPROCKET:
+			addRound(FeatureNames::ROOT_DIAMETER, FeatureKind::JOURNAL, Tolerance::Bilateral(79.80, 0.06), -0.35, -0.03);
+			break;
+		case PartType::TIMING_BELT:
+			// The teeth wear down with the miles: measure one's height off the back of the belt.
+			addLength(FeatureNames::BELT_TOOTH_HEIGHT, FeatureKind::THICKNESS, Tolerance::Limits(1.85, 2.00), -0.45, -0.05);
+			break;
+		case PartType::BELT_IDLER:
+			// Rocked on its bearing: a worn one has play.
+			addLength(FeatureNames::IDLER_PLAY, FeatureKind::RUNOUT, Tolerance::Limits(0.00, 0.05), 0.02, 0.25);
+			break;
+		case PartType::BELT_TENSIONER:
+			addLength(FeatureNames::TENSIONER_TRAVEL, FeatureKind::LENGTH, Tolerance::Limits(4.0, 11.0), 1.5, 9.0);
+			break;
+		case PartType::TIMING_COVER:
+			addFlatness(FeatureNames::FACE_FLATNESS, 0.08, 0.15, true);
+			break;
+		case PartType::CRANK_PULLEY:
+			addRunout(FeatureNames::RING_RUNOUT, 0.25, 0.90);
+			break;
+		case PartType::VALVE_COVER:
+			addFlatness(FeatureNames::RAIL_FLATNESS, 0.15, 0.40, true);
+			break;
+		case PartType::SPARK_PLUG:
+			addLength(FeatureNames::ELECTRODE_GAP, FeatureKind::THICKNESS, Tolerance::Limits(0.80, 0.90), 0.20, 0.60);
+			break;
+		case PartType::INTAKE_MANIFOLD:
+			addFlatness(FeatureNames::FLANGE_FLATNESS, 0.10, 0.25, true);
+			break;
+		case PartType::THROTTLE_BODY:
+			// Carbon from the crankcase breather builds up behind the butterfly.
+			addRound(FeatureNames::THROTTLE_BORE, FeatureKind::BORE, Tolerance::Bilateral(50.00, 0.05), -0.35, -0.03);
+			break;
+		case PartType::FUEL_INJECTOR:
+			// Fired into a burette for 15 seconds at rail pressure; varnish clogs the old ones.
+			addLength(FeatureNames::INJECTOR_FLOW, FeatureKind::VOLUME, Tolerance::Limits(58.5, 61.5), -13.0, -0.5);
+			break;
+		case PartType::EXHAUST_MANIFOLD:
+			addFlatness(FeatureNames::FLANGE_FLATNESS, 0.10, 0.60, true);
+			break;
+		case PartType::WATER_PUMP:
+			addRunout(FeatureNames::SHAFT_PLAY, 0.10, 0.50);
+			break;
+		default:
+			// Seals, gaskets, plugs and the like: nothing to measure, they're simply fitted new.
+			break;
+	}
+
+	return part;
+}
+
+std::vector<std::string> PartFactory::QualityNotes(PartType type, PartQuality quality)
+{
+	std::vector<std::string> notes;
+	// What every part's quality changes: how tightly it's made, and what it costs.
+	switch (quality)
+	{
+		case PartQuality::BUDGET:
+			notes.push_back("Made to looser tolerances: sizes scatter about 1.6x wider than OEM, and some land outside spec. Measure before you fit.");
+			break;
+		case PartQuality::OEM:
+			notes.push_back("The factory part: made to hold its tolerance band.");
+			break;
+		case PartQuality::PERFORMANCE:
+			notes.push_back("Made to tighter tolerances: sizes held about 40% closer to the middle of the band than OEM.");
+			break;
+	}
+
+	// And what it changes for this part in particular.
+	bool performance = quality == PartQuality::PERFORMANCE;
+	switch (type)
+	{
+		case PartType::CRANKSHAFT:
+			notes.push_back(performance ? "Forged 4340 steel: far stronger than the cast nodular iron crank." : "Cast nodular iron.");
+			break;
+		case PartType::CONNECTING_ROD:
+			notes.push_back(performance ? "Forged 4340 steel: stronger than powder-metal rods." : "Powder-metal (sintered) steel.");
+			break;
+		case PartType::CAMSHAFT:
+			notes.push_back(performance ? "Forged steel, ground with about 0.6 mm more lobe lift: more airflow, more power." : "Cast nodular iron, stock lift.");
+			break;
+		case PartType::PISTON:
+			notes.push_back(quality == PartQuality::BUDGET ? "Cast aluminium: the weakest alloy."
+				: quality == PartQuality::OEM ? "Hypereutectic (high-silicon) aluminium: stronger, and grows little with heat."
+				: "Forged 2618 aluminium: the strongest, but it grows more when hot, so it needs more piston-to-wall clearance.");
+			break;
+		case PartType::PISTON_RING:
+			notes.push_back(performance ? "File-fit: left deliberately tight so you gap each ring to its own bore (ring filer needed)."
+				: "Pre-gapped: the end gap lands wherever it lands in your bore.");
+			break;
+		case PartType::INTAKE_VALVE:
+			notes.push_back(performance ? "Forged steel instead of powder metal." : "Powder-metal steel.");
+			break;
+		case PartType::VALVE_SPRING:
+			if (performance)
+				notes.push_back("About 15% stiffer: more seat pressure, so the valves don't float at high rpm.");
+			break;
+		default:
+			break;
+	}
+	return notes;
 }

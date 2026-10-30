@@ -19,6 +19,12 @@
     <Filter Include="Game\World">
       <UniqueIdentifier>{4FCAE0E0-DEAC-402E-B573-8E2DA65CD160}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Game\Audio">
+      <UniqueIdentifier>{6f1d6c2a-3b8e-4c5d-9a71-2e4b0f8c1a01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine\Audio">
+      <UniqueIdentifier>{6f1d6c2a-3b8e-4c5d-9a71-2e4b0f8c1a02}</UniqueIdentifier>
+    </Filter>
     <Filter Include="LV">
       <UniqueIdentifier>{CC6C6A4B-9846-4950-A234-DEA03B3A7FB6}</UniqueIdentifier>
     </Filter>
@@ -60,7 +66,14 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="pch.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Game\ConsoleCommands.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\FrameProfiler.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
     <ClCompile Include="Game\EngineBuilderGame.cpp">
       <Filter>Game</Filter>
     </ClCompile>
@@ -85,6 +98,12 @@
     <ClCompile Include="Game\Simulation\Feature.cpp">
       <Filter>Game\Simulation</Filter>
     </ClCompile>
+    <ClCompile Include="Game\Simulation\Upgrades.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\Furniture.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
     <ClCompile Include="Game\Simulation\Machine.cpp">
       <Filter>Game\Simulation</Filter>
     </ClCompile>
@@ -95,6 +114,9 @@
       <Filter>Game\Simulation</Filter>
     </ClCompile>
     <ClCompile Include="Game\Simulation\Part.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\PartCatalog.cpp">
       <Filter>Game\Simulation</Filter>
     </ClCompile>
     <ClCompile Include="Game\Simulation\PartFactory.cpp">
@@ -118,6 +140,15 @@
     <ClCompile Include="Game\UI\ItemIcons.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Game\UI\Console.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\SplashScreen.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\ModelPreview.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
     <ClCompile Include="Game\UI\PartIcons.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
@@ -136,6 +167,9 @@
     <ClCompile Include="Game\World\ProceduralTextures.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
+    <ClCompile Include="Game\Audio\GameAudio.cpp">
+      <Filter>Game\Audio</Filter>
+    </ClCompile>
     <ClCompile Include="Game\World\ShopAssets.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
@@ -145,10 +179,16 @@
     <ClCompile Include="Game\World\ShopOutdoors.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
+    <ClCompile Include="Game\World\ShopHouse.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
     <ClCompile Include="Game\World\ShopWorld.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
     <ClCompile Include="Game\World\ShopWorldOutdoors.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldUpgrades.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
     <ClCompile Include="Game\World\ShopWorldTools.cpp">
@@ -205,6 +245,9 @@
     <ClCompile Include="LV\Engine\Objects\ObjectManager.cpp">
       <Filter>LV\Engine\Objects</Filter>
     </ClCompile>
+    <ClCompile Include="LV\Engine\Audio\AudioManager.cpp">
+      <Filter>LV\Engine\Audio</Filter>
+    </ClCompile>
     <ClCompile Include="LV\Engine\Utility\InputManager.cpp">
       <Filter>LV\Engine\Utility</Filter>
     </ClCompile>
@@ -244,6 +287,10 @@
     <ClCompile Include="LV\Libraries\ufbx\ufbx.c">
       <Filter>LV\Libraries\ufbx</Filter>
     </ClCompile>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="Game\FrameProfiler.h">
+      <Filter>Game</Filter>
+    </ClInclude>
     <ClInclude Include="Game\EngineBuilderGame.h">
       <Filter>Game</Filter>
     </ClInclude>
@@ -268,6 +315,12 @@
     <ClInclude Include="Game\Simulation\Feature.h">
       <Filter>Game\Simulation</Filter>
     </ClInclude>
+    <ClInclude Include="Game\Simulation\Upgrades.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Furniture.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
     <ClInclude Include="Game\Simulation\Machine.h">
       <Filter>Game\Simulation</Filter>
     </ClInclude>
@@ -278,6 +331,9 @@
       <Filter>Game\Simulation</Filter>
     </ClInclude>
     <ClInclude Include="Game\Simulation\Part.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\PartCatalog.h">
       <Filter>Game\Simulation</Filter>
     </ClInclude>
     <ClInclude Include="Game\Simulation\PartFactory.h">
@@ -304,6 +360,15 @@
     <ClInclude Include="Game\UI\ItemIcons.h">
       <Filter>Game\UI</Filter>
     </ClInclude>
+    <ClInclude Include="Game\UI\Console.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\SplashScreen.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\ModelPreview.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
     <ClInclude Include="Game\UI\PartIcons.h">
       <Filter>Game\UI</Filter>
     </ClInclude>
@@ -322,8 +387,17 @@
     <ClInclude Include="Game\World\GarageLayout.h">
       <Filter>Game\World</Filter>
     </ClInclude>
+    <ClInclude Include="Game\World\HouseLayout.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
     <ClInclude Include="Game\World\ProceduralTextures.h">
       <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Audio\Sounds.h">
+      <Filter>Game\Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Audio\GameAudio.h">
+      <Filter>Game\Audio</Filter>
     </ClInclude>
     <ClInclude Include="Game\World\ShopAssets.h">
       <Filter>Game\World</Filter>
@@ -393,6 +467,9 @@
     </ClInclude>
     <ClInclude Include="LV\Engine\Objects\ObjectShading.h">
       <Filter>LV\Engine\Objects</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Audio\AudioManager.h">
+      <Filter>LV\Engine\Audio</Filter>
     </ClInclude>
     <ClInclude Include="LV\Engine\Utility\InputManager.h">
       <Filter>LV\Engine\Utility</Filter>

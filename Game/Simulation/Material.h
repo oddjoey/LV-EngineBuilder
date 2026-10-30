@@ -12,7 +12,15 @@ enum class MaterialType
 	FORGED_2618,
 	DUCTILE_IRON,
 	BIMETAL,
-	MLS_STEEL
+	MLS_STEEL,
+	// Ancillaries
+	HARDENED_STEEL,
+	STAMPED_STEEL,
+	FKM_RUBBER,
+	NYLON,
+	COMPOSITE_GASKET,
+	SPARK_PLUG_ALLOY,
+	HNBR_BELT,			// timing belts: appended, so saved materials keep their numbers
 };
 
 struct Material

@@ -50,7 +50,7 @@ namespace MachineCatalog
 			powerHone.maxRemoval = 0.0;
 			powerHone.price = 4500.0;
 			powerHone.hoursPerUse = 0.2;
-			powerHone.hoursPerMm = 3.0;
+			powerHone.hoursPerMm = 3.0; 
 			list.push_back(powerHone);
 
 			Machine boringBar;
@@ -128,6 +128,37 @@ namespace MachineCatalog
 			refacer.hoursPerUse = 0.15;
 			list.push_back(refacer);
 
+			// Added later, so saved machine lists keep their order.
+			Machine lineBore;
+			lineBore.name = "Line Boring Machine";
+			lineBore.description = "Grinds the main caps' parting faces, bolts them back on and bores all five main housings back to "
+				"size, round and in line, in one setup. The fix for a distorted or misaligned main saddle.";
+			lineBore.operation = MachineOperation::LINE_BORE;
+			lineBore.sigma = 0.002;
+			lineBore.finishRa = 0.8;
+			// How far over size a housing can be and still be brought back by grinding its cap.
+			lineBore.maxRemoval = 0.05;
+			lineBore.price = 9000.0;
+			lineBore.hoursPerUse = 2.5;
+			list.push_back(lineBore);
+
+			// The budget way to deck, after the line borer for the same reason.
+			Machine sandingBeam;
+			sandingBeam.name = "Deck Sanding Beam";
+			sandingBeam.description = "The budget way to deck: a long, dead-straight hardwood beam faced with 80 then 180 grit, worked "
+				"across a block or head deck by hand in long crossing strokes. Gets a warped deck close to flat for next to nothing, but "
+				"not as flat as a grinder, with a rougher finish and a lot slower. And you never quite know how much came off: measure "
+				"the deck height (or chamber volumes) afterwards.";
+			sandingBeam.operation = MachineOperation::SURFACE;
+			sandingBeam.sigma = 0.022;
+			sandingBeam.finishRa = 1.4;
+			sandingBeam.maxRemoval = 0.10;
+			sandingBeam.price = 90.0;
+			sandingBeam.hoursPerUse = 0.5;
+			sandingBeam.hoursPerMm = 25.0;
+			sandingBeam.removalError = 0.35;
+			list.push_back(sandingBeam);
+
 			return list;
 		}();
 		return machines;
@@ -147,6 +178,7 @@ const char* Machining::OperationName(MachineOperation operation)
 		case MachineOperation::REAM:		return "Ream";
 		case MachineOperation::CUT_SEAT:	return "Cut Seat";
 		case MachineOperation::FACE_VALVE:	return "Reface";
+		case MachineOperation::LINE_BORE:	return "Line Bore";
 	}
 	return "Unknown";
 }
@@ -168,7 +200,7 @@ const char* Machining::ParameterName(MachineOperation operation)
 
 bool Machining::UsesParameter(MachineOperation operation)
 {
-	return operation != MachineOperation::POLISH && operation != MachineOperation::FACE_VALVE;
+	return operation != MachineOperation::POLISH && operation != MachineOperation::FACE_VALVE && operation != MachineOperation::LINE_BORE;
 }
 
 bool Machining::CanMachine(const Machine& machine, const Feature& feature)
@@ -198,6 +230,7 @@ MachiningResult Machining::Apply(const Machine& machine, Part& part, Feature& fe
 		case MachineOperation::FILE_RING:	result = FileRing(machine, feature, parameter, sigma); break;
 		case MachineOperation::CUT_SEAT:	result = CutSeat(machine, part, feature, parameter, sigma); break;
 		case MachineOperation::FACE_VALVE:	result = FaceValve(machine, part, feature, sigma); break;
+		case MachineOperation::LINE_BORE:	result = LineBore(machine, part, sigma, spec); break;
 	}
 
 	if (result.success)
@@ -206,6 +239,40 @@ MachiningResult Machining::Apply(const Machine& machine, Part& part, Feature& fe
 		part.MarkReadingStale(feature.name);
 	}
 	return result;
+}
+
+MachiningResult Machining::LineBore(const Machine& machine, Part& part, double sigma, const EngineSpec& spec)
+{
+	// Every main housing at once: the caps' parting faces are ground down a little so the housings
+	// close up undersize, then one long bar bores them all back to the middle of the spec, round,
+	// straight and on one axis. It can only bring back a housing that isn't too far oversize to begin
+	// with: grinding the cap only closes it up so much.
+	std::vector<Feature*> housings;
+	for (int journal = 0; journal < spec.mainJournals; journal++)
+		if (auto housing = part.FindFeature(FeatureNames::MainHousing(journal)))
+			housings.push_back(housing);
+	if (housings.empty())
+		return { false, "Only a block's main housings can be line bored." };
+
+	for (const auto* housing : housings)
+		if (housing->MaxSample() > housing->spec.Max() + machine.maxRemoval)
+			return { false, std::format("{} is too far oversize to bring back by grinding its cap. The block needs oversize-OD bearings, or replacing.",
+				housing->name) };
+
+	// The bar holds one size along the whole line; each housing is a hair off that.
+	double lineSize = spec.mainHousing.Mid() + Random::Normal(0.0, sigma);
+	for (auto* housing : housings)
+	{
+		for (auto& station : housing->samples)
+			for (double& sample : station)
+				sample = lineSize + Random::Normal(0.0, sigma * GEOMETRY_ERROR);
+		housing->value = housing->Size();
+		housing->surfaceRa = std::max(0.2, Random::Normal(machine.finishRa, 0.1));
+		housing->lastOperation = MachineOperation::LINE_BORE;
+		part.MarkReadingStale(housing->name);
+	}
+	return { true, std::format("Line bored all {} main housings back to size and in line. Measure them again before fitting the bearings.",
+		housings.size()) };
 }
 
 MachiningResult Machining::CutSeat(const Machine& machine, Part& part, Feature& width, double targetWidth, double sigma)
@@ -351,14 +418,16 @@ MachiningResult Machining::Surface(const Machine& machine, Part& part, Feature& 
 	if (depth > machine.maxRemoval)
 		return { false, std::format("Too deep for one pass (max {:.3f} mm).", machine.maxRemoval) };
 
-	bool cleanedUp = depth >= feature.value;
+	// By hand, more or less than asked for comes off; the machine takes off exactly what it's set to.
+	double removed = machine.removalError > 0.0 ? depth * std::clamp(1.0 + Random::Normal(0.0, machine.removalError), 0.3, 2.0) : depth;
+	bool cleanedUp = removed >= feature.value;
 	if (cleanedUp)
 	{
 		feature.value = std::abs(Random::Normal(0.0, sigma));
 		feature.surfaceRa = std::max(0.2, Random::Normal(machine.finishRa, 0.1));
 	}
 	else
-		feature.value -= depth * 0.9;
+		feature.value -= removed * 0.9;
 
 	// Taking material off a deck moves everything above it: the block gets shorter and the
 	// head's chambers get smaller, both of which raise compression.
@@ -366,7 +435,7 @@ MachiningResult Machining::Surface(const Machine& machine, Part& part, Feature& 
 	{
 		if (auto deckHeight = part.FindFeature(FeatureNames::DECK_HEIGHT))
 		{
-			deckHeight->value -= depth;
+			deckHeight->value -= removed;
 			part.MarkReadingStale(deckHeight->name);
 		}
 	}
@@ -376,14 +445,17 @@ MachiningResult Machining::Surface(const Machine& machine, Part& part, Feature& 
 		for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
 			if (auto chamber = part.FindFeature(FeatureNames::Chamber(cylinder)))
 			{
-				chamber->value -= chamberAreaCC * depth;
+				chamber->value -= chamberAreaCC * removed;
 				part.MarkReadingStale(chamber->name);
 			}
 	}
 
+	if (machine.removalError > 0.0)
+		return { true, std::format("Sanded {} by hand, aiming for {:.3f} mm. {}Measure it to see how much really came off.", part.GetName(), depth,
+			cleanedUp ? "" : "It still isn't flat all over. "), removed };
 	if (!cleanedUp)
-		return { true, std::format("Surfaced {}, but the cut wasn't deep enough to clean it up.", part.GetName()) };
-	return { true, std::format("Surfaced {}.", part.GetName()) };
+		return { true, std::format("Surfaced {}, but the cut wasn't deep enough to clean it up.", part.GetName()), removed };
+	return { true, std::format("Surfaced {}.", part.GetName()), removed };
 }
 
 MachiningResult Machining::FileRing(const Machine& machine, Feature& feature, double gapIncrease, double sigma)

@@ -534,7 +534,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 			if (visual.place == ItemPlace::WORLD && !IsRiding(ref, 0))
 				StepBody(visual.object, visual.body, deltaTime);
 		for (auto& [id, package] : m_packages)
-			if (id != m_carriedPackage && !IsRiding({}, id))
+			if (id != m_carriedPackage && !m_remoteCarriedPackages.contains(id) && !IsRiding({}, id))
 				StepBody(package.object, package.body, deltaTime);
 		m_steppingBodies = false;
 	}
@@ -1763,12 +1763,14 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 		}
 		visual.object->SetTint(tint);
 		visual.object->SetEmissive(0.f);
-		bool visible = visual.place != ItemPlace::PACKAGED && visual.place != ItemPlace::INVENTORY;
+		// What another player carries shows only in their hand.
+		bool remoteHeld = visual.place == ItemPlace::CARRIED && visual.carriedInHand && m_remoteHands.contains(visual.carrier);
+		bool visible = visual.place != ItemPlace::PACKAGED && visual.place != ItemPlace::INVENTORY && (visual.place != ItemPlace::CARRIED || remoteHeld);
 		visual.object->SetVisible(visible);
-		visual.object->SetPickable(visible && visual.place != ItemPlace::HAND);
+		visual.object->SetPickable(visible && visual.place != ItemPlace::HAND && visual.place != ItemPlace::CARRIED);
 		// What's in your hand moves with the camera: a shadow from it would make the lamps redraw
 		// their shadow maps every frame.
-		visual.object->SetCastsShadows(visual.place != ItemPlace::HAND);
+		visual.object->SetCastsShadows(visual.place != ItemPlace::HAND && visual.place != ItemPlace::CARRIED);
 
 		switch (visual.place)
 		{
@@ -1814,6 +1816,17 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 			case ItemPlace::WORLD:
 				visual.object->SetRotation(Yaw(visual.yaw));
 				visual.object->SetScale({ 1.f, 1.f, 1.f });
+				break;
+			case ItemPlace::CARRIED:
+				// Held out in front of the other player, centred on their hand, turned with them.
+				if (remoteHeld)
+				{
+					const auto& [hand, yaw] = m_remoteHands.at(visual.carrier);
+					glm::vec3 center = (model->GetBoundsMin() + model->GetBoundsMax()) * 0.5f;
+					visual.object->SetRotation(Yaw(yaw));
+					visual.object->SetPosition(hand - Yaw(yaw) * center);
+					visual.object->SetScale({ 1.f, 1.f, 1.f });
+				}
 				break;
 			case ItemPlace::PACKAGED:
 			case ItemPlace::INVENTORY:
@@ -1882,7 +1895,7 @@ void ShopWorld::ForEachSupport(Visit&& visit) const
 {
 	for (const auto& [ref, visual] : m_items)
 	{
-		if (visual.place == ItemPlace::HAND || visual.place == ItemPlace::PACKAGED || visual.place == ItemPlace::INVENTORY)
+		if (visual.place == ItemPlace::HAND || visual.place == ItemPlace::PACKAGED || visual.place == ItemPlace::INVENTORY || visual.place == ItemPlace::CARRIED)
 			continue;
 		if (visual.place == ItemPlace::WORLD && !visual.body.resting)
 			continue;

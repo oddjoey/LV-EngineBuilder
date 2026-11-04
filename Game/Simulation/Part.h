@@ -189,6 +189,7 @@ class Part
 {
 	friend class PartFactory;
 	friend class SaveGame;
+	friend class NetState;
 public:
 	Part(PartType type, const std::string& name, MaterialType material, PartQuality quality, PartCondition condition);
 	~Part();

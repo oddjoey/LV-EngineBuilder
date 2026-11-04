@@ -307,18 +307,4 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_player.SetPosition({ static_cast<float>(*x), static_cast<float>(*y), static_cast<float>(*z) });
 		m_console.Print(std::format("Moved to {:.2f}, {:.2f}.", *x, *z));
 	});
-
-	m_console.AddCommand("save", "save", "Saves the game.", [this](const Console::Arguments&) {
-		if (SaveCareer())
-			m_console.Print("Saved.");
-		else
-			m_console.Error("Couldn't save.");
-	});
-
-	m_console.AddCommand("load", "load", "Loads the last save, losing anything since.", [this](const Console::Arguments&) {
-		if (LoadCareer())
-			m_console.Print("Loaded.");
-		else
-			m_console.Error("Couldn't load the save.");
-	});
 }

@@ -112,9 +112,10 @@ void EngineBuilderGame::OnStart()
 	// Every sound is made here, once, before the first frame.
 	m_audio.Init();
 
-	// Carry on where the last session left off.
-	if (SaveGame::Exists() && !LoadCareer())
-		m_pauseMenu.Open();
+	// The game is played in a garage on a server: it starts on the server list, with an empty shop
+	// behind it.
+	ResetShop();
+	m_pauseMenu.OpenServers();
 }
 
 void EngineBuilderGame::OnUpdate(float deltaTime)
@@ -158,7 +159,11 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 			else if (m_ui.IsOpen())
 				m_ui.Close();
 			else if (m_pauseMenu.IsOpen())
-				m_pauseMenu.Close();
+			{
+				// Outside a garage the menu is the front screen: there's no shop to go back to.
+				if (m_net.IsPlaying())
+					m_pauseMenu.Close();
+			}
 			else
 				m_pauseMenu.Open();
 		}
@@ -218,6 +223,10 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 				m_ui.SelectPart(*part, request->machineIndex);
 	}
 
+	// After the shop has updated: what was bought or done in the screens last frame has its 3D items and
+	// deliveries by now, so it all goes out together. What the others did is laid out next frame.
+	UpdateNetwork(deltaTime);
+
 	// Turning the pages of the open manual.
 	if (m_manual.IsOpen() && !typing)
 	{
@@ -238,18 +247,19 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	// Bed: in the evening or the small hours, sleep through to seven and save; in the day, not yet.
 	if (m_world.TakeSleepRequest())
 	{
-		if (m_timeOfDay >= 19.f || m_timeOfDay < 5.f)
-		{
-			m_timeOfDay = 7.f;
-			m_world.Notify(SaveCareer() ? "You slept till 7:00. Game saved." : "You slept till 7:00.");
-		}
-		else
-			m_world.Notify("It's too early to sleep. Come back after 19:00.");
+		// The garage's server keeps the clock, the same for everyone in it.
+		m_world.Notify("The garage's clock is the server's: no sleeping the night away here.");
 	}
 
 	// The sun keeps moving, even with the menus open.
-	// The dev menu can speed it up, or stop it.
-	if (m_settings.dayNightCycle && !m_devMenu.GetSettings().timePaused)
+	// The dev menu can speed it up, or stop it. In a garage on a server it goes at the server's pace,
+	// and the server's time is the one that counts.
+	if (m_net.IsPlaying())
+	{
+		if (float dayLength = m_net.GetDayLengthMinutes(); dayLength > 0.f)
+			m_timeOfDay = std::fmod(m_timeOfDay + (std::min)(deltaTime, 0.1f) * 24.f / (dayLength * 60.f), 24.f);
+	}
+	else if (m_settings.dayNightCycle && !m_devMenu.GetSettings().timePaused)
 	{
 		float hours = (std::min)(deltaTime, 0.1f) * 24.f / (m_settings.dayLengthMinutes * 60.f) * m_devMenu.GetSettings().timeScale;
 		m_timeOfDay = std::fmod(m_timeOfDay + hours, 24.f);
@@ -262,38 +272,7 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	}
 }
 
-bool EngineBuilderGame::SaveCareer()
-{
-	std::string error;
-	if (!SaveGame::Save(*m_workshop, m_world, m_player, m_timeOfDay, error))
-	{
-		m_pauseMenu.SetStatus(error);
-		return false;
-	}
-	m_pauseMenu.SetStatus("Game saved.");
-	return true;
-}
-
-bool EngineBuilderGame::LoadCareer()
-{
-	// Load into a fresh workshop and only swap it in if the whole save was read.
-	auto workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
-	std::string error;
-	if (!SaveGame::Load(*workshop, m_world, m_player, m_timeOfDay, error))
-	{
-		m_pauseMenu.SetStatus(error);
-		return false;
-	}
-	m_workshop = std::move(workshop);
-	// The player may now be somewhere else entirely.
-	Renderer::Get()->ResetTemporalHistory();
-	m_inventoryUI.CancelDrag();
-	m_ui.Close();
-	m_pauseMenu.SetStatus("Game loaded.");
-	return true;
-}
-
-void EngineBuilderGame::StartNewCareer()
+void EngineBuilderGame::ResetShop()
 {
 	m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
 	SaveGame::StartNew(*m_workshop, m_world, m_player);
@@ -301,26 +280,115 @@ void EngineBuilderGame::StartNewCareer()
 	Renderer::Get()->ResetTemporalHistory();
 	m_inventoryUI.CancelDrag();
 	m_ui.Close();
+	m_manual.Close();
+}
+
+void EngineBuilderGame::JoinGarage(const std::string& address, int port)
+{
+	m_joinClosest = false;
+	if (m_net.IsOnline() || !CheckLogin())
+		return;
+	std::string error;
+	if (!m_net.Join(address, static_cast<uint16_t>(port), m_settings.username, m_pauseMenu.GetPassword(), m_pauseMenu.IsNewAccount(), error))
+	{
+		m_pauseMenu.SetStatus(error);
+		return;
+	}
+	m_settings.Save();
+	m_pauseMenu.SetStatus(std::format("{} {}:{}...", m_pauseMenu.IsNewAccount() ? "Making your account on" : "Logging in to",
+		address, port));
+}
+
+bool EngineBuilderGame::CheckLogin()
+{
+	// The server checks too; this just says what's wrong without a trip there.
+	std::string problem = NetProtocol::UsernameProblem(m_settings.username);
+	std::string password = m_pauseMenu.GetPassword();
+	if (problem.empty() && password.empty())
+		problem = "Type your password.";
+	else if (problem.empty() && m_pauseMenu.IsNewAccount() && password.size() < NetProtocol::PASSWORD_MIN)
+		problem = std::format("A password is at least {} characters long.", NetProtocol::PASSWORD_MIN);
+	if (!problem.empty())
+		m_pauseMenu.SetStatus(problem);
+	return problem.empty();
+}
+
+void EngineBuilderGame::JoinClosestGarage()
+{
+	if (!CheckLogin())
+		return;
+	// Every server is asked afresh, and the fastest to answer with room is the one.
+	m_servers.Refresh();
+	m_joinClosest = true;
+	m_pauseMenu.SetStatus("Finding the closest garage...");
+}
+
+void EngineBuilderGame::LeaveGarage()
+{
+	bool playing = m_net.IsPlaying();
+	m_net.Leave(m_world);
+	if (playing)
+		ResetShop();
+	m_pauseMenu.OpenServers();
+	m_pauseMenu.SetStatus(playing ? "Left the garage." : "Stopped joining.");
+}
+
+void EngineBuilderGame::UpdateNetwork(float deltaTime)
+{
+	m_servers.Update();
+	if (m_joinClosest && !m_servers.IsRefreshing())
+	{
+		m_joinClosest = false;
+		if (const auto* closest = m_servers.Closest())
+			JoinGarage(closest->address, closest->port);
+		else
+			m_pauseMenu.SetStatus("No garage server with room answered. Check servers.txt, or try again.");
+	}
+
+	m_net.Update(deltaTime, *m_workshop, m_world, m_player, m_timeOfDay);
+
+	// The garage has arrived: our shop is cleared away and the garage laid out in its place.
+	if (m_net.TakeWelcome())
+	{
+		m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
+		SaveGame::StartNew(*m_workshop, m_world, m_player);
+		m_net.ApplyWelcome(*m_workshop, m_world, m_player);
+		// The account exists now: next time is a log in.
+		m_pauseMenu.SetNewAccount(false);
+		Renderer::Get()->ResetTemporalHistory();
+		m_inventoryUI.CancelDrag();
+		m_ui.Close();
+		m_pauseMenu.SetStatus("");
+		m_pauseMenu.Close();
+	}
+	// Out of the garage (or never got in): back to the server list, with why.
+	if (m_net.TakeDisconnected())
+	{
+		ResetShop();
+		m_pauseMenu.OpenServers();
+	}
+	for (const auto& notice : m_net.TakeNotices())
+	{
+		m_world.Notify(notice);
+		m_pauseMenu.SetStatus(notice);
+	}
 }
 
 void EngineBuilderGame::HandlePauseAction(PauseMenu::Action action)
 {
 	switch (action)
 	{
-		case PauseMenu::Action::SAVE:
-			SaveCareer();
+		case PauseMenu::Action::REFRESH_SERVERS:
+			m_servers.Refresh();
 			break;
-		case PauseMenu::Action::LOAD:
-			if (LoadCareer())
-				m_pauseMenu.Close();
+		case PauseMenu::Action::JOIN_CLOSEST:
+			JoinClosestGarage();
 			break;
-		case PauseMenu::Action::NEW_GAME:
-			StartNewCareer();
-			m_pauseMenu.Close();
+		case PauseMenu::Action::JOIN:
+			JoinGarage(m_settings.joinAddress, m_settings.port);
 			break;
-		case PauseMenu::Action::SAVE_AND_QUIT:
-			if (SaveCareer())
-				Lordi::Get()->RequestQuit();
+		case PauseMenu::Action::LEAVE:
+			LeaveGarage();
 			break;
 		case PauseMenu::Action::QUIT:
 			Lordi::Get()->RequestQuit();
@@ -333,12 +401,15 @@ void EngineBuilderGame::HandlePauseAction(PauseMenu::Action action)
 void EngineBuilderGame::OnGUI()
 {
 	PROFILE_SCOPE("game GUI");
+
 	const auto& dev = m_devMenu.GetSettings();
 	if (dev.showBounds)
 		m_world.DrawDebugBounds(m_player);
+
 	m_ui.SetXray(dev.xray);
 	m_ui.Draw(*m_workshop);
 	m_devMenu.Draw(m_timeOfDay);
+
 	if (m_manual.Draw(m_settings.imperialUnits))
 		m_audio.PlayInterface(Sound::PAGE_TURN, 0.7f);
 
@@ -347,9 +418,12 @@ void EngineBuilderGame::OnGUI()
 
 	if (!m_ui.IsOpen() && !m_manual.IsOpen() && !m_pauseMenu.IsOpen() && !m_console.IsOpen())
 		m_world.DrawHud(*m_workshop, m_player, m_settings.showControls);
+	if (!m_pauseMenu.IsOpen())
+		m_net.DrawNameTags(m_world, m_player);
 
 	ImDrawList* foreground = ImGui::GetForegroundDrawList();
 	float right = ImGui::GetIO().DisplaySize.x;
+
 	if (!m_ui.IsOpen() && !m_pauseMenu.IsOpen() && !m_console.IsOpen())
 		foreground->AddText({ right - 60.f, 32.f }, IM_COL32(220, 220, 220, 230), ShopLighting::ClockText(m_timeOfDay).c_str());
 	if (m_settings.showFps)
@@ -361,20 +435,47 @@ void EngineBuilderGame::OnGUI()
 		context.timeOfDay = &m_timeOfDay;
 		context.resolutions = Graphics::Get()->GetDisplayResolutions();
 		context.maxMsaa = (std::min)(8, static_cast<int>(Graphics::Get()->GetMaxMSAA()));
+
 		auto graphics = Graphics::Get();
 		context.dlssAvailable = graphics->IsDLSSAvailable();
 		context.dlssStatus = graphics->GetDLSSStatus();
+
 		if (graphics->IsUpscaling())
 		{
 			auto render = graphics->GetRenderExtent();
 			context.renderSize = { render.width, render.height };
+
 			ImVec2 display = ImGui::GetIO().DisplaySize;
 			context.outputSize = { static_cast<uint32_t>(display.x), static_cast<uint32_t>(display.y) };
 		}
-		context.hasSave = SaveGame::Exists();
-		context.lastSaved = context.hasSave ? SaveGame::LastSavedText() : "";
+
+		context.online = m_net.IsPlaying();
+		context.joining = m_net.IsJoining() || m_joinClosest;
+		context.server = m_net.GetServer();
+		for (const auto& player : m_net.GetPlayers())
+			context.players.push_back(std::format("{}{}", player.name, player.local ? " (you)" : ""));
+
+		// The server list: asked for the first time the menu shows it.
+		if (!m_servers.HasRefreshed() && !m_servers.IsRefreshing())
+			m_servers.Refresh();
+		context.refreshingServers = m_servers.IsRefreshing();
+		for (const auto& server : m_servers.GetServers())
+		{
+			using State = ServerBrowser::Server::State;
+			PauseMenuContext::Server row = { server.name, server.region, server.address, server.port };
+			row.ping = server.state == State::ASKING ? "..."
+				: server.state == State::OFFLINE ? "offline"
+				: server.state == State::INCOMPATIBLE ? "other version"
+				: std::format("{} ms", server.pingMs);
+			if (server.state == State::ONLINE || server.state == State::FULL)
+				row.players = std::format("{} / {}", server.players, server.maxPlayers);
+			row.joinable = server.state == State::ONLINE;
+			context.servers.push_back(row);
+		}
 	}
+
 	HandlePauseAction(m_pauseMenu.Draw(m_settings, context));
+
 	// Over everything else.
 	m_console.Draw();
 	m_splash.Draw();

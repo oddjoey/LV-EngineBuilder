@@ -43,6 +43,7 @@ EngineAssembly::EngineAssembly(const EngineSpec& spec) : m_spec(&spec)
 		m_prerequisites[slot].resize(m_slots[slot].size());
 		m_dependents[slot].resize(m_slots[slot].size());
 	}
+
 	for (size_t slot = 0; slot < m_slots.size(); slot++)
 		for (int index = 0; index < static_cast<int>(m_slots[slot].size()); index++)
 		{
@@ -61,8 +62,10 @@ const std::vector<std::pair<AssemblySlot, int>>& EngineAssembly::Prerequisites(A
 std::optional<std::pair<AssemblySlot, int>> EngineAssembly::Find(const Part* part) const
 {
 	auto it = m_positions.find(part);
+
 	if (it == m_positions.end())
 		return std::nullopt;
+
 	return it->second;
 }
 
@@ -92,7 +95,7 @@ PartType EngineAssembly::SlotPartType(AssemblySlot slot)
 		case AssemblySlot::INTAKE_VALVE:	return PartType::INTAKE_VALVE;
 		case AssemblySlot::EXHAUST_VALVE:	return PartType::EXHAUST_VALVE;
 		case AssemblySlot::VALVE_SPRING:	return PartType::VALVE_SPRING;
-		case AssemblySlot::CAM_CAP:		return PartType::CAM_CAP;
+		case AssemblySlot::CAM_CAP:			return PartType::CAM_CAP;
 		case AssemblySlot::ROCKER_SHAFT:	return PartType::ROCKER_SHAFT;
 		case AssemblySlot::DISTRIBUTOR:		return PartType::DISTRIBUTOR;
 		case AssemblySlot::FLYWHEEL:		return PartType::FLYWHEEL;
@@ -112,17 +115,21 @@ AssemblySlot EngineAssembly::SlotFor(PartType type)
 	for (int slot = 0; slot < static_cast<int>(AssemblySlot::COUNT); slot++)
 		if (SlotPartType(static_cast<AssemblySlot>(slot)) == type)
 			return static_cast<AssemblySlot>(slot);
+
 	return AssemblySlot::COUNT;
 }
 
 const FastenerHoles* EngineAssembly::Holes(AssemblySlot slot)
 {
 	int hole = static_cast<int>(slot) - static_cast<int>(AssemblySlot::HEAD_BOLT);
+
 	if (hole < 0 || hole >= FASTENER_SLOTS)
 		return nullptr;
+
 	const auto& holes = PartCatalog::Holes();
 	if (holes.size() != static_cast<size_t>(FASTENER_SLOTS))
 		throw std::runtime_error("Every fastener slot needs a set of holes in the part catalog!");
+
 	return &holes[hole];
 }
 
@@ -138,7 +145,7 @@ int EngineAssembly::SlotCount(AssemblySlot slot) const
 		case AssemblySlot::INTAKE_VALVE:
 		case AssemblySlot::EXHAUST_VALVE:	return m_spec->cylinders;
 		case AssemblySlot::VALVE_SPRING:	return m_spec->cylinders * 2;
-		case AssemblySlot::CAM_CAP:		return m_spec->camJournals;
+		case AssemblySlot::CAM_CAP:			return m_spec->camJournals;
 		case AssemblySlot::COUNT:			return 0;
 		case AssemblySlot::BLOCK:
 		case AssemblySlot::CRANKSHAFT:
@@ -159,26 +166,31 @@ bool EngineAssembly::Install(AssemblySlot slot, int index, const pPart& part, st
 		error = "No such position.";
 		return false;
 	}
+
 	if (!part)
 	{
 		error = "No part selected.";
 		return false;
 	}
+
 	if (part->GetType() != SlotPartType(slot))
 	{
 		error = std::format("A {} doesn't go there.", PartTypeName(part->GetType()));
 		return false;
 	}
+
 	if (part->GetCondition() == PartCondition::DAMAGED)
 	{
 		error = std::format("{} is damaged: {}", part->GetName(), part->GetDamageReason());
 		return false;
 	}
+
 	if (Contains(part))
 	{
 		error = "That part is already installed.";
 		return false;
 	}
+
 	// Caps only go back on what they were machined with.
 	if (slot == AssemblySlot::ROD_CAP)
 	{
@@ -189,6 +201,7 @@ bool EngineAssembly::Install(AssemblySlot slot, int index, const pPart& part, st
 			return false;
 		}
 	}
+
 	if (slot == AssemblySlot::MAIN_CAP)
 	{
 		auto block = Get(AssemblySlot::BLOCK, 0);
@@ -203,6 +216,7 @@ bool EngineAssembly::Install(AssemblySlot slot, int index, const pPart& part, st
 			return false;
 		}
 	}
+
 	if (slot == AssemblySlot::CAM_CAP)
 	{
 		auto head = Get(AssemblySlot::CYLINDER_HEAD, 0);
@@ -220,20 +234,28 @@ bool EngineAssembly::Install(AssemblySlot slot, int index, const pPart& part, st
 
 	if (auto previous = m_slots[static_cast<size_t>(slot)][index])
 		m_positions.erase(previous.get());
+
 	m_slots[static_cast<size_t>(slot)][index] = part;
 	m_positions[part.get()] = { slot, index };
+
 	return true;
 }
 
 std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(AssemblySlot slot, int index) const
 {
 	std::vector<std::pair<AssemblySlot, int>> needed;
-	auto all = [&](AssemblySlot other) {
+
+	auto all = [&](AssemblySlot other)  
+	{
 		for (int i = 0; i < SlotCount(other); i++)
 			needed.push_back({ other, i });
 	};
 
-	auto one = [&](AssemblySlot other) { needed.push_back({ other, 0 }); };
+	auto one = [&](AssemblySlot other) 
+	{ 
+			needed.push_back({ other, 0 }); 
+	};
+
 	using A = AssemblySlot;
 
 	// A nut or bolt goes in once the part it holds is on.
@@ -242,17 +264,21 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 
 	// Everything else: what has to be there first, worked out below. A part only counts once it's
 	// bolted down, so its nuts and bolts are added afterwards.
-	auto withFasteners = [&]() {
+	auto withFasteners = [&]() 
+	{
 		std::vector<std::pair<AssemblySlot, int>> expanded = needed;
 		for (const auto& [other, otherIndex] : needed)
 			for (int fastener = static_cast<int>(A::HEAD_BOLT); fastener < static_cast<int>(A::COUNT); fastener++)
 			{
 				const auto* holes = Holes(static_cast<A>(fastener));
+
 				if (SlotFor(holes->parent) != other)
 					continue;
+
 				for (int hole = 0; hole < holes->perParent; hole++)
 					expanded.push_back({ static_cast<A>(fastener), otherIndex * holes->perParent + hole });
 			}
+
 		return expanded;
 	};
 
@@ -260,6 +286,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 	{
 		case A::BLOCK:
 			break;
+
 		// Bottom end: core plugs into the water jacket, the upper main shells in the block, the
 		// crank laid in them, then each journal's lower shell and the main cap over it. Once it's
 		// capped, the rear main seal is pressed over the flange.
@@ -279,10 +306,12 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::REAR_MAIN_SEAL:
 			all(A::MAIN_CAP);
 			break;
+
 		// The flywheel bolts to the crank flange behind the seal.
 		case A::FLYWHEEL:
 			one(A::REAR_MAIN_SEAL);
 			break;
+
 		// Each cylinder, once the crank is capped: the piston down its bore, its ring, the rod onto
 		// the crank pin with its upper shell, then the lower shell and the rod cap.
 		case A::PISTON:
@@ -301,6 +330,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::ROD_CAP:
 			needed.push_back({ A::ROD_BEARING_LOWER, index });
 			break;
+
 		// The oil pump slides over the crank snout, the pickup bolts to it.
 		case A::OIL_PUMP:
 			all(A::MAIN_CAP);
@@ -308,6 +338,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::OIL_PICKUP:
 			one(A::OIL_PUMP);
 			break;
+
 		// Top end: the gasket only once the bottom end is finished, the head on it, then the
 		// bolts that clamp it down.
 		case A::HEAD_GASKET:
@@ -321,6 +352,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::CYLINDER_HEAD:
 			one(A::HEAD_GASKET);
 			break;
+
 		// Valvetrain, valve by valve: valve, stem seal over its guide, spring, retainer and
 		// keepers. The cam goes in once every valve is closed up, then its caps, then the rocker
 		// shafts over it and an arm on its shaft for each valve.
@@ -340,6 +372,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::CAMSHAFT:
 			all(A::VALVE_RETAINER);
 			break;
+
 		// Then the caps over its journals, each in its own numbered place.
 		case A::CAM_CAP:
 			one(A::CAMSHAFT);
@@ -350,6 +383,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::ROCKER_ARM:
 			needed.push_back({ A::ROCKER_SHAFT, index % 2 });
 			break;
+
 		// Timing drive: sprockets on the crank (in front of the pump) and the cam, the idlers, the
 		// belt round the lot with the marks lined up, then the tensioner to take up the slack.
 		case A::CRANK_SPROCKET:
@@ -381,6 +415,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::CRANK_PULLEY:
 			one(A::FRONT_CRANK_SEAL);
 			break;
+
 		// The sump closes up the bottom once everything inside it is done, the timing cover
 		// included (the pan seals against its lower edge).
 		case A::OIL_PAN_GASKET:
@@ -396,6 +431,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::OIL_FILTER:
 			one(A::OIL_PAN);
 			break;
+
 		// The valve cover closes up the top once the timing drive and the rockers are in.
 		case A::VALVE_COVER_GASKET:
 			one(A::BELT_TENSIONER);
@@ -404,6 +440,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::VALVE_COVER:
 			one(A::VALVE_COVER_GASKET);
 			break;
+
 		// Ignition: plugs into the head, the distributor into the back of the head on the cam, then
 		// a lead from its cap down through the cover onto each plug.
 		case A::SPARK_PLUG:
@@ -417,6 +454,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			one(A::DISTRIBUTOR);
 			needed.push_back({ A::SPARK_PLUG, index });
 			break;
+
 		// Intake side: gasket, manifold, then what hangs off it.
 		case A::INTAKE_MANIFOLD_GASKET:
 		case A::EXHAUST_MANIFOLD_GASKET:
@@ -429,6 +467,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::CARBURETTOR:
 			one(A::INTAKE_MANIFOLD);
 			break;
+
 		// The fuel pump's arm rides on the cam.
 		case A::FUEL_PUMP:
 			all(A::CAM_CAP);
@@ -439,6 +478,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::EXHAUST_PIPE:
 			one(A::EXHAUST_MANIFOLD);
 			break;
+
 		// Cooling: the water pump bolts to the timing cover; the thermostat sits in the head's
 		// water outlet under its housing.
 		case A::WATER_PUMP_GASKET:
@@ -450,6 +490,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::THERMOSTAT_HOUSING:
 			one(A::THERMOSTAT);
 			break;
+
 		// Accessory drive: the alternator on its bracket at the front, then the V-belt round the crank
 		// pulley, the water pump and the alternator.
 		case A::ALTERNATOR:
@@ -463,6 +504,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		default:
 			break;
 	}
+
 	return withFasteners();
 }
 
@@ -470,16 +512,19 @@ std::string EngineAssembly::PositionName(AssemblySlot slot, int index) const
 {
 	// Nuts and bolts are named for the hole they go in on their part.
 	if (const auto* holes = Holes(slot))
-		{
-			std::string parent = PositionName(SlotFor(holes->parent), index / holes->perParent);
-			return holes->perParent > 1 ? std::format("{} {} on {}", AssemblySlotName(slot), index % holes->perParent + 1, parent)
-				: std::format("{} on {}", AssemblySlotName(slot), parent);
-		}
+	{
+		std::string parent = PositionName(SlotFor(holes->parent), index / holes->perParent);
+		return holes->perParent > 1 ? std::format("{} {} on {}", AssemblySlotName(slot), index % holes->perParent + 1, parent)
+			: std::format("{} on {}", AssemblySlotName(slot), parent);
+	}
+
 	// Per-valve positions are named for the valve they sit on.
 	if (PartCatalog::Get(SlotPartType(slot)).perEngine == PartCount::PER_VALVE && slot != AssemblySlot::COUNT)
 		return std::format("{} {} {}", index % 2 == 1 ? "Exhaust" : "Intake", AssemblySlotName(slot), index / 2 + 1);
+
 	if (SlotCount(slot) > 1)
 		return std::format("{} {}", AssemblySlotName(slot), index + 1);
+
 	return AssemblySlotName(slot);
 }
 
@@ -527,10 +572,12 @@ bool EngineAssembly::Contains(const pPart& part) const
 std::vector<pPart> EngineAssembly::GetAllParts() const
 {
 	std::vector<pPart> parts;
+
 	for (const auto& slot : m_slots)
 		for (const auto& installed : slot)
 			if (installed)
 				parts.push_back(installed);
+
 	return parts;
 }
 

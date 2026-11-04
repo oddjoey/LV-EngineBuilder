@@ -120,6 +120,7 @@ void FirstPersonController::ResolveCollisions(const std::vector<FloorObstacle>& 
 			// nor something they can duck under.
 			if (m_position.y + STEP_UP >= obstacle.top || m_position.y + HeadHeight() <= obstacle.bottom)
 				continue;
+
 			glm::vec2 closest = glm::clamp(position, obstacle.min, obstacle.max);
 			glm::vec2 offset = position - closest;
 			float distance = glm::length(offset);

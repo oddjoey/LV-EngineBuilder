@@ -9,7 +9,8 @@ namespace
 	constexpr float MENU_WIDTH = 420.f;
 	constexpr float BUTTON_HEIGHT = 40.f;
 
-	const char* CONTROLS[][2] = {
+	const char* CONTROLS[][2] = 
+	{
 		{ "W A S D", "Walk" },
 		{ "Shift", "Run" },
 		{ "Space", "Jump" },
@@ -34,6 +35,12 @@ void PauseMenu::Open()
 	m_open = true;
 	m_page = Page::MAIN;
 	m_status.clear();
+}
+
+void PauseMenu::OpenServers()
+{
+	m_open = true;
+	m_page = Page::MULTIPLAYER;
 }
 
 void PauseMenu::Close()
@@ -134,13 +141,15 @@ void PauseMenu::DrawVideoSettings(GameSettings& settings, const PauseMenuContext
 void PauseMenu::DrawAudioSettings(GameSettings& settings)
 {
 	// Shown as percentages, and heard straight away as they're dragged.
-	auto volume = [](const char* label, float& value, const char* tip) {
+	auto volume = [](const char* label, float& value, const char* tip) 
+	{
 		int percent = static_cast<int>(std::round(value * 100.f));
 		if (ImGui::SliderInt(label, &percent, 0, 100, "%d%%"))
 			value = percent / 100.f;
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip("%s", tip);
 	};
+
 	volume("Master volume", settings.masterVolume, "Everything the game plays.");
 	volume("Effects", settings.effectsVolume, "Footsteps, tools, parts going on and coming off, machines, the dyno.");
 	volume("Ambience", settings.ambienceVolume, "Wind and birds outside, the hum of the shop's lights.");
@@ -164,6 +173,128 @@ void PauseMenu::DrawTimeSettings(GameSettings& settings, const PauseMenuContext&
 	ImGui::PopTextWrapPos();
 }
 
+PauseMenu::Action PauseMenu::DrawMultiplayer(GameSettings& settings, const PauseMenuContext& context)
+{
+	Action action = Action::NONE;
+	ImGui::TextUnformatted("Multiplayer");
+	ImGui::Separator();
+	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
+
+	if (!context.online && !context.joining)
+	{
+		ImGui::TextDisabled("The game is played in a garage on a server, together with whoever else is there. The server "
+			"keeps the garage and saves it.");
+		// Accounts are kept by each server: your things and where you were are saved with yours.
+		ImGui::SeparatorText("Account");
+		if (ImGui::RadioButton("Log in", !m_newAccount))
+			m_newAccount = false;
+		ImGui::SameLine();
+		if (ImGui::RadioButton("Create a new account", m_newAccount))
+			m_newAccount = true;
+		char username[32] = {};
+		settings.username.copy(username, sizeof(username) - 1);
+		ImGui::SetNextItemWidth(-90.f);
+		if (ImGui::InputText("Username", username, sizeof(username)))
+			settings.username = username;
+		ImGui::SetNextItemWidth(-90.f);
+		ImGui::InputText("Password", m_password, sizeof(m_password), ImGuiInputTextFlags_Password);
+		if (m_newAccount)
+			ImGui::TextDisabled("A username is 3 to 20 letters, digits, - or _; a password at least 6 characters. "
+				"The account is made on the server you join.");
+
+		ImGui::SeparatorText("Garage servers");
+		if (BigButton(context.refreshingServers ? "Finding the closest garage..." : "Join the closest garage"))
+			action = Action::JOIN_CLOSEST;
+		ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
+		if (ImGui::BeginTable("Servers", 5, flags))
+		{
+			ImGui::TableSetupColumn("Server", ImGuiTableColumnFlags_WidthStretch, 3.f);
+			ImGui::TableSetupColumn("Region", ImGuiTableColumnFlags_WidthStretch, 1.6f);
+			ImGui::TableSetupColumn("Ping", ImGuiTableColumnFlags_WidthStretch, 1.6f);
+			ImGui::TableSetupColumn("Players", ImGuiTableColumnFlags_WidthStretch, 1.f);
+			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 50.f);
+			ImGui::TableHeadersRow();
+			for (size_t i = 0; i < context.servers.size(); i++)
+			{
+				const auto& server = context.servers[i];
+				ImGui::PushID(static_cast<int>(i));
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(server.name.empty() ? server.address.c_str() : server.name.c_str());
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("%s:%d", server.address.c_str(), server.port);
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(server.region.c_str());
+				ImGui::TableNextColumn();
+				if (server.joinable)
+					ImGui::TextUnformatted(server.ping.c_str());
+				else
+					ImGui::TextDisabled("%s", server.ping.c_str());
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(server.players.c_str());
+				ImGui::TableNextColumn();
+				ImGui::BeginDisabled(!server.joinable);
+				if (ImGui::SmallButton("Join"))
+				{
+					settings.joinAddress = server.address;
+					settings.port = server.port;
+					action = Action::JOIN;
+				}
+				ImGui::EndDisabled();
+				ImGui::PopID();
+			}
+			ImGui::EndTable();
+		}
+		if (context.servers.empty())
+			ImGui::TextDisabled("No servers listed. Add them to servers.txt beside the game.");
+		ImGui::BeginDisabled(context.refreshingServers);
+		if (ImGui::Button("Refresh"))
+			action = Action::REFRESH_SERVERS;
+		ImGui::EndDisabled();
+
+		if (ImGui::CollapsingHeader("Join by address"))
+		{
+			char address[128] = {};
+			settings.joinAddress.copy(address, sizeof(address) - 1);
+			ImGui::SetNextItemWidth(-90.f);
+			if (ImGui::InputText("Address", address, sizeof(address)))
+				settings.joinAddress = address;
+			ImGui::SetNextItemWidth(-90.f);
+			ImGui::InputInt("Port", &settings.port, 0);
+			settings.port = std::clamp(settings.port, 1024, 65535);
+			if (BigButton("Join"))
+				action = Action::JOIN;
+		}
+	}
+	else
+	{
+		if (context.joining)
+			ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "Joining %s...", context.server.c_str());
+		else
+			ImGui::Text("In the garage at %s.", context.server.c_str());
+		ImGui::SeparatorText(std::format("In the garage ({})", context.players.size()).c_str());
+		for (const auto& player : context.players)
+			ImGui::BulletText("%s", player.c_str());
+		ImGui::Spacing();
+		if (BigButton(context.joining ? "Cancel" : "Leave the garage"))
+			action = Action::LEAVE;
+	}
+	ImGui::PopTextWrapPos();
+
+	if (!m_status.empty())
+	{
+		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
+		ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "%s", m_status.c_str());
+		ImGui::PopTextWrapPos();
+	}
+	if (BigButton("Back"))
+	{
+		settings.Save();
+		m_page = Page::MAIN;
+	}
+	return action;
+}
+
 PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext& context)
 {
 	if (!m_open)
@@ -172,10 +303,11 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 	// Dim the shop behind the menu.
 	ImGuiIO& io = ImGui::GetIO();
 	ImGui::GetBackgroundDrawList()->AddRectFilled({ 0.f, 0.f }, io.DisplaySize, IM_COL32(0, 0, 0, 140));
-
 	ImGui::SetNextWindowPos({ io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f }, ImGuiCond_Always, { 0.5f, 0.5f });
-	bool wide = m_page == Page::CONTROLS || m_page == Page::SETTINGS;
+
+	bool wide = m_page == Page::CONTROLS || m_page == Page::SETTINGS || m_page == Page::MULTIPLAYER;
 	ImGui::SetNextWindowSize({ wide ? MENU_WIDTH * 1.6f : MENU_WIDTH, 0.f });
+
 	// Keep the menu in front, but not while one of its dropdowns is open: taking focus every frame
 	// would close the dropdown as soon as it opened.
 	if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
@@ -192,22 +324,22 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 		switch (m_page)
 		{
 			case Page::MAIN:
+				// The game is played in a garage on a server: until you're in one, this is the front
+				// screen, and there's nothing to resume.
 				ImGui::SetWindowFontScale(1.5f);
-				ImGui::TextUnformatted("Paused");
+				ImGui::TextUnformatted(context.online ? "Paused" : "LV: Engine Builder");
 				ImGui::SetWindowFontScale(1.f);
 				ImGui::Separator();
-				if (BigButton("Resume"))
-					action = Action::RESUME;
-				if (BigButton("Save Game"))
-					action = Action::SAVE;
-				ImGui::BeginDisabled(!context.hasSave);
-				if (BigButton("Load Game"))
-					m_page = Page::CONFIRM_LOAD;
-				ImGui::EndDisabled();
-				if (context.hasSave && !context.lastSaved.empty())
-					ImGui::TextDisabled("Last saved %s", context.lastSaved.c_str());
-				if (BigButton("New Game"))
-					m_page = Page::CONFIRM_NEW;
+				if (context.online)
+				{
+					if (BigButton("Resume"))
+						action = Action::RESUME;
+					if (BigButton(std::format("Multiplayer ({} in the garage)", context.players.size()).c_str()))
+						m_page = Page::MULTIPLAYER;
+					ImGui::TextDisabled("The garage is saved by its server.");
+				}
+				else if (BigButton(context.joining ? "Joining a garage..." : "Join a garage"))
+					m_page = Page::MULTIPLAYER;
 				if (BigButton("Settings"))
 					m_page = Page::SETTINGS;
 				if (BigButton("Controls"))
@@ -279,45 +411,18 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 			case Page::CONFIRM_QUIT:
 				ImGui::TextUnformatted("Quit to desktop?");
 				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH - 48.f);
-				ImGui::TextDisabled("Anything since your last save will be lost unless you save now.");
+				ImGui::TextDisabled(context.online ? "You'll leave the garage. Its server keeps everything done in it."
+					: "See you next time.");
 				ImGui::PopTextWrapPos();
 				ImGui::Spacing();
-				if (BigButton("Save and Quit"))
-					action = Action::SAVE_AND_QUIT;
-				if (BigButton("Quit Without Saving"))
+				if (BigButton("Quit"))
 					action = Action::QUIT;
 				if (BigButton("Cancel"))
 					m_page = Page::MAIN;
 				break;
 
-			case Page::CONFIRM_LOAD:
-				ImGui::TextUnformatted("Load the saved game?");
-				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH - 48.f);
-				ImGui::TextDisabled("Anything since your last save will be lost.");
-				ImGui::PopTextWrapPos();
-				ImGui::Spacing();
-				if (BigButton("Load"))
-				{
-					action = Action::LOAD;
-					m_page = Page::MAIN;
-				}
-				if (BigButton("Cancel"))
-					m_page = Page::MAIN;
-				break;
-
-			case Page::CONFIRM_NEW:
-				ImGui::TextUnformatted("Start a new career?");
-				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH - 48.f);
-				ImGui::TextDisabled("You start again with a worn-out core and $4000. Your save file is kept until you save over it.");
-				ImGui::PopTextWrapPos();
-				ImGui::Spacing();
-				if (BigButton("Start Over"))
-				{
-					action = Action::NEW_GAME;
-					m_page = Page::MAIN;
-				}
-				if (BigButton("Cancel"))
-					m_page = Page::MAIN;
+			case Page::MULTIPLAYER:
+				action = DrawMultiplayer(settings, context);
 				break;
 		}
 	}

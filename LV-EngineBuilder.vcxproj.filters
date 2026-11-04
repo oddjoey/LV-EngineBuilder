@@ -10,6 +10,9 @@
     <Filter Include="Game\Save">
       <UniqueIdentifier>{148333C9-D048-49D7-8FAB-8E34238AF4D5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Game\Net">
+      <UniqueIdentifier>{6A1E3B52-9C47-4F1D-B2A8-3E5D7C0F9A61}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Game\Simulation">
       <UniqueIdentifier>{30B103BE-FCC0-44DC-98E8-549C4C9204BA}</UniqueIdentifier>
     </Filter>
@@ -21,6 +24,9 @@
     </Filter>
     <Filter Include="Game\Audio">
       <UniqueIdentifier>{6f1d6c2a-3b8e-4c5d-9a71-2e4b0f8c1a01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LV\Engine\Networking">
+      <UniqueIdentifier>{9a3e5c71-2d48-4b6f-8e19-c07d4a2b6f53}</UniqueIdentifier>
     </Filter>
     <Filter Include="LV\Engine\Audio">
       <UniqueIdentifier>{6f1d6c2a-3b8e-4c5d-9a71-2e4b0f8c1a02}</UniqueIdentifier>
@@ -85,6 +91,21 @@
     </ClCompile>
     <ClCompile Include="Game\Save\SaveGame.cpp">
       <Filter>Game\Save</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Net\NetSession.cpp">
+      <Filter>Game\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Net\NetState.cpp">
+      <Filter>Game\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Networking\Socket.cpp">
+      <Filter>LV\Engine\Networking</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Networking\Crypto.cpp">
+      <Filter>LV\Engine\Networking</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Net\ServerBrowser.cpp">
+      <Filter>Game\Net</Filter>
     </ClCompile>
     <ClCompile Include="Game\Simulation\Dyno.cpp">
       <Filter>Game\Simulation</Filter>
@@ -308,6 +329,27 @@
     </ClInclude>
     <ClInclude Include="Game\Save\SaveGame.h">
       <Filter>Game\Save</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Save\SaveText.h">
+      <Filter>Game\Save</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Net\NetSession.h">
+      <Filter>Game\Net</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Net\NetState.h">
+      <Filter>Game\Net</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Networking\Socket.h">
+      <Filter>LV\Engine\Networking</Filter>
+    </ClInclude>
+    <ClInclude Include="LV\Engine\Networking\Crypto.h">
+      <Filter>LV\Engine\Networking</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Net\NetProtocol.h">
+      <Filter>Game\Net</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Net\ServerBrowser.h">
+      <Filter>Game\Net</Filter>
     </ClInclude>
     <ClInclude Include="Game\Simulation\Dyno.h">
       <Filter>Game\Simulation</Filter>

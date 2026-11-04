@@ -811,6 +811,30 @@ void ShopAssets::LoadEnvironment()
 		Box(desk, { 0.f, 0.77f, 0.12f }, { 0.45f, 0.02f, 0.15f }, { 0.12f, 0.12f, 0.13f });
 		add(ShopModels::COMPUTER_DESK, desk);
 	}
+	{
+		// Another player: a mechanic in overalls, feet at the origin, facing -Z. White, so each player's
+		// colour can be tinted on.
+		MeshBuilder player;
+		player.SetUVScale(2.f);
+		const glm::vec3 skin = { 0.85f, 0.68f, 0.55f };
+		for (float x : { -0.1f, 0.1f })
+		{
+			Box(player, { x, 0.42f, 0.f }, { 0.14f, 0.84f, 0.16f });
+			Box(player, { x, 0.04f, -0.04f }, { 0.15f, 0.08f, 0.26f }, DARK);
+		}
+		Box(player, { 0.f, 1.15f, 0.f }, { 0.42f, 0.62f, 0.24f });
+		for (float x : { -0.27f, 0.27f })
+		{
+			Box(player, { x, 1.12f, 0.f }, { 0.11f, 0.58f, 0.12f });
+			Box(player, { x, 0.78f, 0.f }, { 0.09f, 0.1f, 0.1f }, skin);
+		}
+		Box(player, { 0.f, 1.5f, 0.f }, { 0.12f, 0.08f, 0.12f }, skin);
+		Box(player, { 0.f, 1.66f, 0.f }, { 0.22f, 0.26f, 0.24f }, skin);
+		// A cap with its peak to the front, so you can tell which way they're looking.
+		Box(player, { 0.f, 1.8f, 0.01f }, { 0.24f, 0.07f, 0.26f }, DARK);
+		Box(player, { 0.f, 1.775f, -0.16f }, { 0.22f, 0.02f, 0.1f }, DARK);
+		add(ShopModels::PLAYER, player);
+	}
 }
 
 void ShopAssets::LoadMachines()

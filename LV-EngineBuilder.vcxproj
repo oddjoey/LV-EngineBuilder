@@ -154,6 +154,17 @@
     <ClCompile Include="Game\World\ShopWorldOutdoors.cpp" />
     <ClCompile Include="Game\World\ShopWorldUpgrades.cpp" />
     <ClCompile Include="Game\World\ShopWorldTools.cpp" />
+    <ClCompile Include="Game\Net\NetSession.cpp" />
+    <ClCompile Include="Game\Net\NetState.cpp" />
+    <ClCompile Include="Game\Net\ServerBrowser.cpp" />
+    <ClCompile Include="LV\Engine\Networking\Socket.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Networking\Crypto.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles></ForcedIncludeFiles>
+    </ClCompile>
     <ClCompile Include="LV\Engine\Graphics\DLSS.cpp" />
     <ClCompile Include="LV\Engine\Graphics\Graphics.cpp" />
     <ClCompile Include="LV\Engine\Graphics\GraphicsLighting.cpp" />
@@ -218,6 +229,13 @@
     <ClInclude Include="Game\EngineBuilderGame.h" />
     <ClInclude Include="Game\FrameProfiler.h" />
     <ClInclude Include="Game\GameSettings.h" />
+    <ClInclude Include="Game\Net\NetSession.h" />
+    <ClInclude Include="Game\Net\NetState.h" />
+    <ClInclude Include="LV\Engine\Networking\Socket.h" />
+    <ClInclude Include="LV\Engine\Networking\Crypto.h" />
+    <ClInclude Include="Game\Net\NetProtocol.h" />
+    <ClInclude Include="Game\Net\ServerBrowser.h" />
+    <ClInclude Include="Game\Save\SaveText.h" />
     <ClInclude Include="Game\Inventory\PlayerInventory.h" />
     <ClInclude Include="Game\Save\SaveGame.h" />
     <ClInclude Include="Game\Simulation\Dyno.h" />

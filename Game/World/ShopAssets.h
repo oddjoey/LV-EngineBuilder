@@ -216,6 +216,7 @@ namespace ShopModels
 	inline const std::string COMPUTER_DESK = "Computer Desk";
 	inline const std::string PACKAGE_BOX = "Package: Box";
 	inline const std::string PACKAGE_CRATE = "Package: Crate";
+	inline const std::string PLAYER = "Player";	// another player, in a game over the network
 }
 
 // Where a part rests on a machine, relative to the machine's origin, and how it's turned.

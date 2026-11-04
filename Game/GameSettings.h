@@ -35,6 +35,12 @@ struct GameSettings
 	bool dayNightCycle = true;
 	float dayLengthMinutes = 30.f;	// real minutes for a full 24 hours
 
+	// Multiplayer: the account you log in with (the password is never saved), and the last garage
+	// joined by address.
+	std::string username = "";
+	std::string joinAddress = "127.0.0.1";
+	int port = 27616;
+
 	static constexpr const char* FILE_NAME = "game_settings.cfg";
 
 	static GameSettings Load();

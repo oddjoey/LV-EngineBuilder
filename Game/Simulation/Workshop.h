@@ -75,6 +75,7 @@ struct PlayerStats
 class Workshop
 {
 	friend class SaveGame;
+	friend class NetState;
 public:
 	// Engines are built one per engine stand; more stands can be bought, up to this many.
 	static constexpr int MAX_ENGINES = 4;

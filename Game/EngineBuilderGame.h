@@ -6,6 +6,8 @@
 #include "LV/Engine/Objects/Camera.h"
 #include "Audio/GameAudio.h"
 #include "GameSettings.h"
+#include "Net/NetSession.h"
+#include "Net/ServerBrowser.h"
 #include "Simulation/Workshop.h"
 #include "UI/Console.h"
 #include "UI/DevMenu.h"
@@ -40,9 +42,15 @@ private:
 	// Display mode, vsync, shadows and the frame cap: only touched when they change (or forced).
 	void ApplyVideoSettings(bool force);
 	void HandlePauseAction(PauseMenu::Action action);
-	bool SaveCareer();
-	bool LoadCareer();
-	void StartNewCareer();
+	// An empty shop, behind the server list while the player isn't in a garage.
+	void ResetShop();
+	// Finding a garage server, joining and leaving from the pause menu, and what the session reports.
+	void JoinGarage(const std::string& address, int port);
+	// Whether the username and password typed could log in (saying why not on the menu).
+	bool CheckLogin();
+	void JoinClosestGarage();
+	void LeaveGarage();
+	void UpdateNetwork(float deltaTime);
 	// Everything the ` console can do.
 	void RegisterConsoleCommands();
 
@@ -57,6 +65,10 @@ private:
 	InventoryUI						m_inventoryUI = {};
 	ShopAssets						m_assets = {};
 	ShopWorld						m_world = {};
+	NetSession						m_net = {};
+	ServerBrowser					m_servers = {};
+	// Join the closest garage once the servers have all answered.
+	bool							m_joinClosest = false;
 	ShopLighting					m_lighting = {};
 	GameAudio						m_audio = {};
 	float							m_timeOfDay = 9.5f;		// hours

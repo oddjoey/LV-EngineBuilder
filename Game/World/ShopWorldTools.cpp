@@ -329,7 +329,7 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 
 	for (const auto& [ref, visual] : m_items)
 	{
-		if (!visual.part || !visual.object->IsVisible() || visual.place == ItemPlace::HAND)
+		if (!visual.part || !visual.object->IsVisible() || visual.place == ItemPlace::HAND || visual.place == ItemPlace::CARRIED)
 			continue;
 		if (glm::length(visual.object->GetPosition() - eye) > MEASURE_DISTANCE + 0.5f)
 			continue;
@@ -1274,7 +1274,7 @@ std::optional<ShopWorld::SocketTarget> ShopWorld::FindSocketTarget(const FirstPe
 	{
 		if (!ref.IsTool() || tools[ref.id].handKind != HandToolKind::SOCKETS)
 			continue;
-		if (visual.place == ItemPlace::HAND || visual.place == ItemPlace::INVENTORY || visual.place == ItemPlace::PACKAGED)
+		if (visual.place == ItemPlace::HAND || visual.place == ItemPlace::INVENTORY || visual.place == ItemPlace::PACKAGED || visual.place == ItemPlace::CARRIED)
 			continue;
 		const auto& sizes = tools[ref.id].sizes;
 		int count = static_cast<int>(sizes.size());

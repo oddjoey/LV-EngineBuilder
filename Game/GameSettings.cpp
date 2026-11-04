@@ -1,5 +1,7 @@
 #include "GameSettings.h"
 
+#include "Net/NetProtocol.h"
+
 #include <algorithm>
 #include <fstream>
 #include <sstream>
@@ -40,6 +42,9 @@ GameSettings GameSettings::Load()
 		else if (key == "effects_volume") value >> settings.effectsVolume;
 		else if (key == "ambience_volume") value >> settings.ambienceVolume;
 		else if (key == "interface_volume") value >> settings.interfaceVolume;
+		else if (key == "username") settings.username = line.substr(equals + 1);
+		else if (key == "join_address") settings.joinAddress = line.substr(equals + 1);
+		else if (key == "port") value >> settings.port;
 	}
 
 	// A hand-edited file shouldn't be able to break the camera or the window.
@@ -56,6 +61,8 @@ GameSettings GameSettings::Load()
 	settings.brightness = std::clamp(settings.brightness, 0.5f, 2.f);
 	settings.frameLimit = std::clamp(settings.frameLimit, 0, 360);
 	settings.dayLengthMinutes = std::clamp(settings.dayLengthMinutes, 5.f, 240.f);
+	settings.port = std::clamp(settings.port, 1024, 65535);
+	settings.username = settings.username.substr(0, NetProtocol::USERNAME_MAX);
 	for (float* volume : { &settings.masterVolume, &settings.effectsVolume, &settings.ambienceVolume, &settings.interfaceVolume })
 		*volume = std::clamp(*volume, 0.f, 1.f);
 	return settings;
@@ -87,6 +94,9 @@ void GameSettings::Save() const
 	file << "effects_volume=" << effectsVolume << "\n";
 	file << "ambience_volume=" << ambienceVolume << "\n";
 	file << "interface_volume=" << interfaceVolume << "\n";
+	file << "username=" << username << "\n";
+	file << "join_address=" << joinAddress << "\n";
+	file << "port=" << port << "\n";
 }
 
 unsigned int GameSettings::ShadowResolution() const

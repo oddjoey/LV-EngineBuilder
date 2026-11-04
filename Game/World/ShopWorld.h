@@ -82,7 +82,8 @@ enum class ItemPlace
 	STAND,		// fitted to the engine
 	WORLD,		// put down or dropped somewhere, under physics
 	PACKAGED,	// still in its delivery box
-	INVENTORY	// in the backpack and not in hand
+	INVENTORY,	// in the backpack and not in hand
+	CARRIED		// another player has it, in a game over the network (never saved)
 };
 
 // Just enough physics for things to fall, land and stack: no tumbling, no friction model.
@@ -108,6 +109,9 @@ struct ItemVisual
 	// Fitted to an engine: the position it was last laid out in, so it's only re-posed when that or the
 	// engine moves.
 	std::pair<AssemblySlot, int> standSlot = { AssemblySlot::COUNT, -1 };
+	// CARRIED: which player has it (see NetSession), and whether it's in their hand.
+	int carrier = -1;
+	bool carriedInHand = false;
 };
 
 // A delivery: parts and tools come out where it's opened; a machine or engine stand inside it is
@@ -149,6 +153,8 @@ struct ItemInfo
 class ShopWorld
 {
 	friend class SaveGame;
+	friend class NetState;
+	friend class NetSession;
 public:
 	// Creates the static scene. Call from Game::OnLoadAssets after the assets are loaded.
 	void Build(const ShopAssets& assets);
@@ -626,6 +632,10 @@ private:
 	bool											m_steppingBodies = false;
 	bool											m_wasMoving = false;		// carrying equipment or a delivery last frame
 	uint32_t										m_carriedPackage = 0;		// the delivery in your arms, or 0
+	// In a game over the network: where each other player's hand is (what they hold is drawn there), and
+	// the deliveries they're carrying (moved by them, not by physics here). Kept by NetSession.
+	std::map<int, std::pair<glm::vec3, float>>		m_remoteHands = {};		// player: hand point and yaw
+	std::unordered_map<uint32_t, int>				m_remoteCarriedPackages = {};	// package: player
 	bool											m_handEmpty = false;		// the selected slot's item put away with its number
 	int												m_engineOnDyno = -1;		// the Workshop's, kept here for posing it
 	bool											m_fillAllHoles = false;		// Shift held: fit every matching nut or bolt carried

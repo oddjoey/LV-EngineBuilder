@@ -1,0 +1,4 @@
+# Garage servers the game can join, one per line:
+#   address[:port] | region | name
+# "Join the closest garage" pings every one and joins the fastest with room.
+localhost:33333 | US West | Monkey Komo Server

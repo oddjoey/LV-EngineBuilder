@@ -16,7 +16,9 @@ enum class FeatureKind
 	THICKNESS,
 	VOLUME,			// cc
 	RUNOUT,			// total indicated runout of a face or seat
-	FORCE			// newtons
+	FORCE,			// newtons
+	SQUARENESS,		// how far a spring's top leans off true, stood against a steel square
+	ALIGNMENT		// a rod's bend or twist on the rod aligner, per 100 mm of length
 };
 
 enum class MachineOperation

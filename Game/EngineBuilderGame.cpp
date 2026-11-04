@@ -45,10 +45,14 @@ void EngineBuilderGame::OnLoadAssets()
 	m_ui.SetPartAvailability([this](uint32_t partId) { return !m_world.IsPackaged(partId); });
 	m_ui.SetBackpackContents([this] { m_inventoryUI.DrawContents(m_world, *m_workshop, m_player); });
 	m_ui.SetBenchContents([this] { return m_world.GetBenchItems(); });
-	m_ui.SetModelLookup([this](const std::string& name) -> uint32_t {
+	auto modelLookup = [this](const std::string& name) -> uint32_t 
+	{
 		try { return m_assets.Model(name); }
 		catch (const std::exception&) { return 0; }
-	});
+	};
+
+	m_ui.SetModelLookup(modelLookup);
+	m_manual.SetModelLookup(modelLookup);
 }
 
 void EngineBuilderGame::ApplySettings()

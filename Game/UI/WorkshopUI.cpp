@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <numbers>
 #include <optional>
 
 #include <imgui.h>
@@ -79,7 +80,9 @@ std::string WorkshopUI::FeatureValue(const Feature& feature, double value) const
 	switch (feature.kind)
 	{
 		case FeatureKind::FLATNESS:
-		case FeatureKind::RUNOUT:	return Deviation(value);
+		case FeatureKind::RUNOUT:
+		case FeatureKind::SQUARENESS:
+		case FeatureKind::ALIGNMENT:	return Deviation(value);
 		case FeatureKind::VOLUME:	return Units::FormatVolume(value);
 		case FeatureKind::FORCE:	return Units::FormatForce(value);
 		default:					return Size(value);
@@ -91,7 +94,9 @@ std::string WorkshopUI::SpecText(const Feature& feature) const
 	switch (feature.kind)
 	{
 		case FeatureKind::FLATNESS:
-		case FeatureKind::RUNOUT:	return "<= " + Deviation(feature.spec.Max());
+		case FeatureKind::RUNOUT:
+		case FeatureKind::SQUARENESS:	return "<= " + Deviation(feature.spec.Max());
+		case FeatureKind::ALIGNMENT:	return "<= " + Deviation(feature.spec.Max()) + " per 100 mm";
 		case FeatureKind::VOLUME:	return std::format("{:.1f} - {:.1f} cc", feature.spec.Min(), feature.spec.Max());
 		case FeatureKind::FORCE:	return std::format("{:.0f} - {:.0f} N", feature.spec.Min(), feature.spec.Max());
 		default:
@@ -641,7 +646,7 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 		ImGui::TableSetupColumn("Measured");
 		ImGui::TableSetupColumn("Finish");
 		ImGui::TableSetupColumn("Verdict");
-		ImGui::TableSetupColumn("Measure with", ImGuiTableColumnFlags_WidthFixed, 170.f);
+		ImGui::TableSetupColumn("Measure with", ImGuiTableColumnFlags_WidthFixed, 230.f);
 		if (m_xray)
 			ImGui::TableSetupColumn("True");
 		ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 64.f);
@@ -732,13 +737,9 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 			// Measuring happens in the shop: these say which tool to pick up.
 			ImGui::TableSetColumnIndex(5);
 			if (feature.directlyMeasurable)
-			{
-				ImGui::TextDisabled("%s", ToolHint(workshop, workshop.BestToolFor(feature)).c_str());
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("Hold the tool and aim at this feature in the shop.");
-			}
+				DrawToolCell(workshop, [&](const MeasuringTool& tool) { return tool.CanMeasure(feature); });
 			if (feature.HasFinishSpec())
-				ImGui::TextDisabled("Ra: %s", ToolHint(workshop, workshop.FinishTool()).c_str());
+				DrawToolCell(workshop, [](const MeasuringTool& tool) { return tool.measuresFinish; }, "Ra: ");
 
 			if (m_xray)
 			{
@@ -847,7 +848,9 @@ void WorkshopUI::DrawFeatureDetail(Workshop& workshop, Part& part, const Feature
 		if (!hasReading)
 		{
 			ImGui::PushTextWrapPos(0.f);
-			if (feature.directlyMeasurable)
+			if (feature.directlyMeasurable && workshop.BestToolFor(feature) < 0)
+				ImGui::TextDisabled("Not measured yet, and none of your tools can measure it: the Measure with column says which to buy.");
+			else if (feature.directlyMeasurable)
 				ImGui::TextDisabled("Not measured yet. Use the %s on it.", ToolHint(workshop, workshop.BestToolFor(feature)).c_str());
 			else
 				ImGui::TextDisabled("Not measured yet. This one is checked with the part on the engine stand.");
@@ -1764,6 +1767,47 @@ std::string WorkshopUI::ToolHint(Workshop& workshop, int toolIndex) const
 	return ToolCatalog::All()[toolIndex].name;
 }
 
+void WorkshopUI::DrawToolCell(Workshop& workshop, const std::function<bool(const MeasuringTool&)>& canDo, const char* prefix) const
+{
+	const auto& tools = ToolCatalog::All();
+	std::vector<size_t> able;
+	for (size_t i = 0; i < tools.size(); i++)
+		if (canDo(tools[i]))
+			able.push_back(i);
+	if (able.empty())
+	{
+		ImGui::TextDisabled("%s-", prefix);
+		return;
+	}
+	// The ones you own first, most precise first (the one measuring uses), then the rest cheapest first.
+	std::stable_sort(able.begin(), able.end(), [&](size_t a, size_t b) {
+		bool ownsA = workshop.OwnsTool(a);
+		if (ownsA != workshop.OwnsTool(b))
+			return ownsA;
+		return ownsA ? tools[a].sigma < tools[b].sigma : tools[a].price < tools[b].price;
+	});
+
+	const auto& first = tools[able.front()];
+	if (workshop.OwnsTool(able.front()))
+		ImGui::Text("%s%s", prefix, first.name.c_str());
+	else
+		ImGui::TextColored(COLOR_WARN, "%s%s (not owned)", prefix, first.name.c_str());
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::BeginTooltip();
+		ImGui::TextUnformatted("Can be measured with:");
+		for (size_t i : able)
+		{
+			if (workshop.OwnsTool(i))
+				ImGui::TextColored(COLOR_GOOD, "  %s (owned)", tools[i].name.c_str());
+			else
+				ImGui::TextDisabled("  %s ($%.0f at the parts computer)", tools[i].name.c_str(), tools[i].price);
+		}
+		ImGui::TextDisabled("Hold the tool and aim at it in the shop.");
+		ImGui::EndTooltip();
+	}
+}
+
 void WorkshopUI::DrawToolStore(Workshop& workshop)
 {
 	const auto& tools = ToolCatalog::All();
@@ -1806,7 +1850,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 				return 4;
 			if (measures(FeatureKind::BORE))
 				return 1;
-			if (measures(FeatureKind::FLATNESS) || measures(FeatureKind::RUNOUT))
+			if (measures(FeatureKind::FLATNESS) || measures(FeatureKind::RUNOUT) || measures(FeatureKind::SQUARENESS) || measures(FeatureKind::ALIGNMENT))
 				return 2;
 			return 0;
 		};
@@ -2327,7 +2371,7 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 
 		ImGui::TableSetColumnIndex(3);
 		if (truth)
-			ImGui::TextDisabled("%s", ToolHint(workshop, workshop.BestToolFor(check)).c_str());
+			DrawToolCell(workshop, [&](const MeasuringTool& tool) { return tool.CanCheck(check); });
 		else
 			ImGui::TextDisabled("fit parts first");
 
@@ -2348,7 +2392,7 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 		ImGui::TableSetupColumn("Check");
 		ImGui::TableSetupColumn("Target");
 		ImGui::TableSetupColumn("Reading");
-		ImGui::TableSetupColumn("Measure with", ImGuiTableColumnFlags_WidthFixed, 170.f);
+		ImGui::TableSetupColumn("Measure with", ImGuiTableColumnFlags_WidthFixed, 230.f);
 		if (m_xray)
 			ImGui::TableSetupColumn("True");
 		HeadersRow({
@@ -2375,6 +2419,15 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 	{
 		for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
 			checkRow(std::format("Cylinder {}", cylinder + 1), AssemblyCheck::RING_GAP, cylinder, false, spec.ringGap, assembly.RingGap(cylinder));
+		ImGui::EndTable();
+	}
+
+	ImGui::SeparatorText("Rod side clearance (feelers)");
+	if (beginTable("RodSide"))
+	{
+		for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
+			checkRow(std::format("Rod {}", cylinder + 1), AssemblyCheck::ROD_SIDE_CLEARANCE, cylinder, true, spec.rodSideClearance,
+				assembly.RodSideClearance(cylinder));
 		ImGui::EndTable();
 	}
 
@@ -2774,29 +2827,94 @@ void WorkshopUI::DrawDynoTab(Workshop& workshop)
 		{
 			// The numbers off the sheet.
 			double litres = result.displacementCc / 1000.0;
-			if (ImGui::BeginTable("DynoNumbers", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchSame))
+			double horsepower = result.peakPowerKw * 1.341;
+			double stockCc = spec.cylinders * std::numbers::pi / 4.0 * spec.bore.Mid() * spec.bore.Mid() * spec.stroke.Mid() / 1000.0;
+			// Each spec's name in its own colour, red to violet down the sheet.
+			const ImVec4 RAINBOW[] = {
+				{ 1.00f, 0.38f, 0.38f, 1.f },	// red
+				{ 1.00f, 0.60f, 0.25f, 1.f },	// orange
+				{ 1.00f, 0.88f, 0.30f, 1.f },	// yellow
+				{ 0.45f, 0.90f, 0.40f, 1.f },	// green
+				{ 0.35f, 0.85f, 0.85f, 1.f },	// teal
+				{ 0.40f, 0.62f, 1.00f, 1.f },	// blue
+				{ 0.60f, 0.50f, 1.00f, 1.f },	// indigo
+				{ 0.85f, 0.50f, 1.00f, 1.f },	// violet
+			};
+			constexpr ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp;
+			if (ImGui::BeginTable("DynoNumbers", 3, flags))
 			{
-				auto cell = [](const char* label, const std::string& value, std::optional<ImVec4> color = std::nullopt) {
+				ImGui::TableSetupColumn("Spec", ImGuiTableColumnFlags_WidthStretch, 0.8f);
+				ImGui::TableSetupColumn("This pull", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+				ImGui::TableSetupColumn("Stock", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+				ImGui::TableHeadersRow();
+				size_t rowIndex = 0;
+				// The spec's name explains itself when hovered, and so does the rest of its row.
+				// A value given as a fraction (0 to 1) is drawn as a bar.
+				auto row = [&](const char* label, const char* tooltip, const std::string& value, const std::string& stock,
+					std::optional<ImVec4> color = std::nullopt, std::optional<float> fraction = std::nullopt) {
+					ImGui::TableNextRow();
 					ImGui::TableNextColumn();
-					ImGui::TextDisabled("%s", label);
+					ImGui::TextColored(RAINBOW[rowIndex++ % std::size(RAINBOW)], "%s", label);
+					bool hovered = ImGui::IsItemHovered();
 					ImGui::TableNextColumn();
-					if (color)
+					if (fraction)
+						ImGui::ProgressBar(*fraction, { -1.f, 0.f }, value.c_str());
+					else if (color)
 						ImGui::TextColored(*color, "%s", value.c_str());
 					else
 						ImGui::TextUnformatted(value.c_str());
+					hovered |= ImGui::IsItemHovered();
+					ImGui::TableNextColumn();
+					ImGui::TextDisabled("%s", stock.c_str());
+					hovered |= ImGui::IsItemHovered();
+					if (hovered)
+						ImGui::SetTooltip("%s", tooltip);
 				};
-				cell("Peak power", std::format("{:.1f} hp ({:.1f} kW) @ {:.0f}", result.peakPowerKw * 1.341, result.peakPowerKw, result.peakPowerRpm));
-				cell("Peak torque", std::format("{:.1f} Nm ({:.1f} lb-ft) @ {:.0f}", result.peakTorqueNm, result.peakTorqueNm * 0.7376, result.peakTorqueRpm));
-				cell("Specific output", litres > 0.0 ? std::format("{:.1f} hp per litre", result.peakPowerKw * 1.341 / litres) : "-");
-				cell("Displacement", std::format("{:.0f} cc ({:.1f} L)", result.displacementCc, litres));
-				cell("Compression", std::format("{:.2f}:1", result.compressionRatio),
+				row("Peak power",
+					"The most power the engine made anywhere in the pull, and the rpm it made it at. Power is torque times\n"
+					"rpm: how fast the engine can do work, and what decides top speed. Worn or out-of-spec parts, low\n"
+					"compression and poor sealing all take it away.",
+					std::format("{:.1f} hp ({:.1f} kW) @ {:.0f}", horsepower, result.peakPowerKw, result.peakPowerRpm),
+					std::format("{:.0f} hp @ {}", spec.ratedPowerHp, spec.ratedPowerRpm),
+					horsepower >= spec.ratedPowerHp * 0.95 ? COLOR_GOOD : COLOR_WARN);
+				row("Peak torque",
+					"The hardest the crank twisted, and the rpm it did it at. Torque is the pull you feel pulling away and\n"
+					"climbing hills. It peaks where the engine breathes best, well below redline.",
+					std::format("{:.1f} Nm ({:.1f} lb-ft) @ {:.0f}", result.peakTorqueNm, result.peakTorqueNm * 0.7376, result.peakTorqueRpm),
+					std::format("{:.0f} Nm ({:.0f} lb-ft) @ {}", spec.ratedTorqueNm, spec.ratedTorqueNm * 0.7376, spec.ratedTorqueRpm),
+					result.peakTorqueNm >= spec.ratedTorqueNm * 0.95 ? COLOR_GOOD : COLOR_WARN);
+				row("Specific output",
+					"Peak power per litre of displacement: how hard the engine works each litre, so engines of different\n"
+					"sizes can be compared.",
+					litres > 0.0 ? std::format("{:.1f} hp per litre", horsepower / litres) : "-",
+					std::format("{:.1f} hp per litre", spec.ratedPowerHp / (stockCc / 1000.0)));
+				row("Displacement",
+					"The volume the pistons sweep from bottom to top, all cylinders together. Boring the block oversize\n"
+					"or changing the stroke changes it.",
+					std::format("{:.0f} cc ({:.2f} L)", result.displacementCc, litres),
+					std::format("{:.0f} cc ({:.2f} L)", stockCc, stockCc / 1000.0));
+				row("Compression",
+					"How far the mixture is squeezed: the cylinder's volume with the piston at the bottom over its volume at\n"
+					"the top. Higher burns more efficiently and makes more power, but too high knocks. Set by the chamber,\n"
+					"the piston dish, the deck clearance and the head gasket.",
+					std::format("{:.2f}:1", result.compressionRatio),
+					std::format("{:.1f} - {:.1f}:1", spec.compressionRatio.min, spec.compressionRatio.max),
 					spec.compressionRatio.Contains(result.compressionRatio) ? COLOR_GOOD : COLOR_WARN);
-				cell("Oil pressure", std::format("{:.1f} bar", result.oilPressureBar));
-				cell("Blow-by", std::format("{:.1f}%", result.blowbyPercent));
-				ImGui::TableNextColumn();
-				ImGui::TextDisabled("Health");
-				ImGui::TableNextColumn();
-				ImGui::ProgressBar(static_cast<float>(result.healthScore / 100.0), { -1.f, 0.f }, std::format("{:.0f}%", result.healthScore).c_str());
+				row("Oil pressure",
+					"Hot oil pressure in the main gallery. It's set by the pump and how tight the bearings are: worn or loose\n"
+					"bearings let the oil out and pressure drops. Below 1.5 bar the bearings run short of oil.",
+					std::format("{:.1f} bar", result.oilPressureBar), "1.5 bar or more",
+					result.oilPressureBar >= 1.5 ? COLOR_GOOD : COLOR_BAD);
+				row("Blow-by",
+					"Combustion gas that leaks past the rings into the crankcase, as a share of what's in the cylinder.\n"
+					"Every engine has a little. More means worn rings, a bad ring gap, scored bores or leaking valves,\n"
+					"and it costs power and pressurises the crankcase.",
+					std::format("{:.1f}%", result.blowbyPercent), "about 1%",
+					result.blowbyPercent <= 2.0 ? COLOR_GOOD : COLOR_WARN);
+				row("Health",
+					"An overall score from everything on the dyno sheet below. Each problem found takes some off, worse ones\n"
+					"more. A buyer pays more for a healthier engine.",
+					std::format("{:.0f}%", result.healthScore), "100%", std::nullopt, static_cast<float>(result.healthScore / 100.0));
 				ImGui::EndTable();
 			}
 

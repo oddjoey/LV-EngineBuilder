@@ -133,6 +133,18 @@ namespace ItemIcons
 				for (int i = 0; i < 3; i++)
 					drawList->AddLine(p(0.38f, 0.5f + i * 0.1f), p(0.72f, 0.5f + i * 0.1f), color, line);
 				break;
+			case ToolShape::STEEL_SQUARE:
+				// The stock up the left, the blade along the bottom.
+				drawList->AddRectFilled(p(0.18f, 0.10f), p(0.32f, 0.86f), color);
+				drawList->AddRectFilled(p(0.32f, 0.78f), p(0.90f, 0.86f), color);
+				break;
+			case ToolShape::ROD_ALIGNER:
+				// The base, the upright plate, and the mandrel out from it.
+				drawList->AddRectFilled(p(0.10f, 0.80f), p(0.90f, 0.90f), color);
+				drawList->AddRectFilled(p(0.14f, 0.12f), p(0.24f, 0.80f), color);
+				drawList->AddLine(p(0.24f, 0.50f), p(0.80f, 0.50f), color, line * 3.f);
+				drawList->AddCircle(p(0.66f, 0.50f), size * 0.12f, color, 20, line);
+				break;
 		}
 	}
 

@@ -13,7 +13,8 @@ enum class AssemblyCheck
 	CAM_CLEARANCE,		// Plastigauge across a cam journal, under its cam cap
 	RING_GAP,			// ring squared in its bore, feeler gauge across the ends
 	DECK_CLEARANCE,		// dial indicator over the piston at TDC
-	INSTALLED_HEIGHT	// spring seat to retainer, valve held closed
+	INSTALLED_HEIGHT,	// spring seat to retainer, valve held closed
+	ROD_SIDE_CLEARANCE	// rod on its crank pin, feeler gauge between the big end and the crank cheek
 };
 
 // Spanners and the like: what turns a nut or bolt, and what says how tight it is.

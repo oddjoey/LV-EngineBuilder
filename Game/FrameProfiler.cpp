@@ -32,18 +32,24 @@ void FrameProfiler::EndFrame()
 {
 	if (!m_enabled)
 		return;
+
 	m_frames++;
+
 	auto now = std::chrono::steady_clock::now();
 	float elapsed = std::chrono::duration<float>(now - m_lastReport).count();
+
 	if (elapsed < 2.f)
 		return;
 
 	std::string report = std::format("[profile] {:.0f} fps, per frame:", m_frames / elapsed);
+
 	for (const auto& [section, total] : m_totals)
 		report += std::format("  {} {:.3f} ms", section, total / m_frames);
+
 	std::cout << report << std::endl;
 
 	m_totals.clear();
+
 	m_frames = 0;
 	m_lastReport = now;
 }

@@ -346,6 +346,9 @@ private:
 	bool IsCrated(size_t stationIndex) const;
 	// Where the next delivery lands: on top of the shortest pile by the door.
 	glm::vec3 NextDeliverySpot() const;
+	// Where each tool hangs on the tool board, in the board's own space: worked out once from the
+	// tool models, the long ones first, with the manual in the bottom right corner.
+	void LayOutToolBoard();
 	// Sets a part down loose on the parts shelf, in the first gap from the left on the lowest board
 	// it fits (or in front of it when it's full). Where the core starts, in part order, and where
 	// parts that are put away go.
@@ -535,6 +538,13 @@ private:
 		float crank = 0.f;
 	};
 	std::array<StandLayout, Workshop::MAX_ENGINES>	m_laidOutStands = {};
+	// One per tool in the catalogue: the model's position and turn on the board (see LayOutToolBoard).
+	struct ToolHook
+	{
+		glm::vec3 position = {};
+		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+	};
+	std::vector<ToolHook>							m_toolHooks = {};
 	std::array<bool, Workshop::MAX_ENGINES>			m_standMoved = {};
 	float											m_engineRpm = 0.f;		// on the dyno
 	std::vector<SoundCue>							m_soundCues = {};

@@ -132,7 +132,7 @@ uint32_t Feature::Evaluate(bool includeFinish) const
 		if (value > spec.Max())
 			issues |= FeatureIssue::WARPED;
 	}
-	else if (kind == FeatureKind::RUNOUT)
+	else if (kind == FeatureKind::RUNOUT || kind == FeatureKind::SQUARENESS || kind == FeatureKind::ALIGNMENT)
 	{
 		if (value > spec.Max())
 			issues |= FeatureIssue::RUNOUT;

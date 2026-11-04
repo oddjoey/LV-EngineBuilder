@@ -38,7 +38,7 @@ enum class PartType
 	OIL_FILTER,
 	VALVE_STEM_SEAL,
 	VALVE_RETAINER,
-	LIFTER,
+	ROCKER_ARM,				// was the bucket lifter, before the 4A-C's rockers
 	CRANK_SPROCKET,
 	CAM_SPROCKET,
 	TIMING_BELT,
@@ -51,12 +51,12 @@ enum class PartType
 	VALVE_COVER_GASKET,
 	VALVE_COVER,
 	SPARK_PLUG,
-	IGNITION_COIL,
+	PLUG_LEAD,				// was the coil-on-plug, before the distributor
 	INTAKE_MANIFOLD_GASKET,
 	INTAKE_MANIFOLD,
-	THROTTLE_BODY,
-	FUEL_INJECTOR,
-	FUEL_RAIL,
+	CARBURETTOR,			// was the throttle body, before the carburettor
+	FUEL_INJECTOR,			// retired with the carburettor: no engine takes one
+	FUEL_PUMP,				// was the fuel rail; now the cam-driven pump that feeds the carburettor
 	EXHAUST_MANIFOLD_GASKET,
 	EXHAUST_MANIFOLD,
 	WATER_PUMP_GASKET,
@@ -80,6 +80,15 @@ enum class PartType
 	// Bolted over the cam journals, line-bored with their head (appended later, so not with the
 	// other caps).
 	CAM_CAP,
+	// The rest of the 4A-C (appended later): the rocker shafts the rocker arms pivot on, the
+	// distributor that sparks the plugs through their leads, the flywheel, the exhaust downpipe, and the
+	// alternator and the V-belt that drives it and the water pump off the crank.
+	ROCKER_SHAFT,
+	DISTRIBUTOR,
+	FLYWHEEL,
+	EXHAUST_PIPE,
+	ALTERNATOR,
+	DRIVE_BELT,
 
 	COUNT
 };
@@ -99,6 +108,7 @@ namespace FeatureNames
 	inline std::string MainHousing(int journal) { return "Main Housing " + std::to_string(journal + 1); }
 	inline std::string MainJournal(int journal) { return "Main Journal " + std::to_string(journal + 1); }
 	inline std::string RodJournal(int cylinder) { return "Rod Journal " + std::to_string(cylinder + 1); }
+	inline std::string RodJournalWidth(int cylinder) { return "Rod Journal " + std::to_string(cylinder + 1) + " Width"; }
 	inline std::string Chamber(int cylinder) { return "Chamber " + std::to_string(cylinder + 1) + " Volume"; }
 
 	// Valvetrain: one intake and one exhaust valve per cylinder.
@@ -109,7 +119,10 @@ namespace FeatureNames
 	inline std::string SeatRecession(int cylinder, bool exhaust) { return ValveSide(exhaust) + " Seat " + std::to_string(cylinder + 1) + " Recession"; }
 	inline std::string CamBore(int journal) { return "Cam Bore " + std::to_string(journal + 1); }
 	inline std::string CamJournal(int journal) { return "Cam Journal " + std::to_string(journal + 1); }
-	inline std::string LobeLift(int cylinder, bool exhaust) { return ValveSide(exhaust) + " Lobe " + std::to_string(cylinder + 1) + " Lift"; }
+	inline std::string LobeHeight(int cylinder, bool exhaust) { return ValveSide(exhaust) + " Lobe " + std::to_string(cylinder + 1) + " Height"; }
+	// Before version 21 lobes were measured by their lift.
+	inline std::string OldLobeLift(int cylinder, bool exhaust) { return ValveSide(exhaust) + " Lobe " + std::to_string(cylinder + 1) + " Lift"; }
+	inline std::string PortFace(bool exhaust) { return ValveSide(exhaust) + " Face Flatness"; }
 
 	inline const std::string STEM = "Stem Diameter";
 	inline const std::string MARGIN = "Margin";
@@ -119,12 +132,19 @@ namespace FeatureNames
 	inline const std::string FREE_LENGTH = "Free Length";
 	inline const std::string SEAT_PRESSURE = "Seat Pressure";
 	inline const std::string SPRING_RATE = "Spring Rate";
+	inline const std::string SPRING_SQUARENESS = "Out of Square";
 
 	inline const std::string DECK_FLATNESS = "Deck Flatness";
+	inline const std::string CAM_END_PLAY = "End Play";
+	inline const std::string CAM_RUNOUT = "Runout";
+	inline const std::string FUEL_PUMP_ECCENTRIC = "Fuel Pump Eccentric Height";
 	inline const std::string DECK_HEIGHT = "Deck Height";
 	inline const std::string STROKE = "Stroke";
 	inline const std::string BIG_END = "Big End Bore";
 	inline const std::string CENTER_LENGTH = "Center Length";
+	inline const std::string BIG_END_WIDTH = "Big End Width";
+	inline const std::string ROD_BEND = "Bend";
+	inline const std::string ROD_TWIST = "Twist";
 	inline const std::string SKIRT = "Skirt Diameter";
 	inline const std::string COMPRESSION_HEIGHT = "Compression Height";
 	inline const std::string DISH_VOLUME = "Dish Volume";
@@ -138,15 +158,18 @@ namespace FeatureNames
 	inline const std::string RAIL_FLATNESS = "Sealing Rail Flatness";
 	inline const std::string FLANGE_FLATNESS = "Flange Flatness";
 	inline const std::string FACE_FLATNESS = "Sealing Face Flatness";
-	inline const std::string BUCKET_DIAMETER = "Bucket Diameter";
+	inline const std::string ROCKER_BORE = "Rocker Bore";
+	inline const std::string ROCKER_SHAFT_DIAMETER = "Shaft Diameter";
 	inline const std::string ROOT_DIAMETER = "Tooth Root Diameter";
 	inline const std::string BELT_TOOTH_HEIGHT = "Tooth Height";
 	inline const std::string IDLER_PLAY = "Bearing Play";
 	inline const std::string TENSIONER_TRAVEL = "Tensioner Travel";
 	inline const std::string RING_RUNOUT = "Damper Ring Runout";
 	inline const std::string ELECTRODE_GAP = "Electrode Gap";
-	inline const std::string THROTTLE_BORE = "Throttle Bore";
+	inline const std::string THROTTLE_BORE = "Primary Bore";
 	inline const std::string INJECTOR_FLOW = "Flow in 15 s";
+	inline const std::string JET_FLOW = "Main Jet Flow in 15 s";
+	inline const std::string FLYWHEEL_RUNOUT = "Clutch Face Runout";
 	inline const std::string SHAFT_PLAY = "Bearing Play";
 }
 
@@ -193,6 +216,9 @@ public:
 	// How it was done up: finger tight, snugged with a ratchet or wrench, or torqued to spec.
 	FastenerTightness GetTightness() const;
 	void SetTightness(FastenerTightness tightness);
+	// Blocks and heads: how much has been surfaced off the deck in all, against the resurfacing limit.
+	double GetResurfaced() const;
+	void AddResurfaced(double mm);
 
 	uint32_t GetMatchedTo() const;
 	int GetMatchedPosition() const;
@@ -222,6 +248,7 @@ private:
 	int										m_matchedPosition = -1;
 	double									m_torque = 0.0;
 	FastenerTightness						m_tightness = FastenerTightness::LOOSE;
+	double									m_resurfaced = 0.0;
 	std::vector<Feature>					m_features = {};
 	std::unordered_map<std::string, FeatureReading> m_readings = {};
 };

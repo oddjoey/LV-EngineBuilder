@@ -289,10 +289,17 @@ namespace PartIcons
 				drawList->AddEllipse(p(0.50f, 0.42f), { size * 0.30f, size * 0.10f }, color, 0.f, 24, line);
 				drawList->AddTriangleFilled(p(0.40f, 0.48f), p(0.60f, 0.48f), p(0.50f, 0.78f), color);
 				break;
-			case PartType::LIFTER:
-				drawList->AddRectFilled(p(0.24f, 0.24f), p(0.76f, 0.76f), dim, size * 0.04f);
-				drawList->AddRect(p(0.24f, 0.24f), p(0.76f, 0.76f), color, size * 0.04f, 0, line);
-				drawList->AddLine(p(0.24f, 0.34f), p(0.76f, 0.34f), color, line * 1.5f);
+			case PartType::ROCKER_ARM:
+				drawList->AddLine(p(0.14f, 0.40f), p(0.86f, 0.62f), color, line * 3.f);
+				drawList->AddCircleFilled(p(0.62f, 0.55f), size * 0.10f, dim, 20);
+				drawList->AddCircle(p(0.62f, 0.55f), size * 0.10f, color, 20, line);
+				drawList->AddLine(p(0.20f, 0.42f), p(0.20f, 0.20f), color, line * 1.4f);
+				break;
+			case PartType::ROCKER_SHAFT:
+				drawList->AddRectFilled(p(0.04f, 0.44f), p(0.96f, 0.56f), dim, size * 0.06f);
+				drawList->AddRect(p(0.04f, 0.44f), p(0.96f, 0.56f), color, size * 0.06f, 0, line);
+				for (int i = 0; i < 4; i++)
+					drawList->AddLine(p(0.18f + i * 0.21f, 0.40f), p(0.18f + i * 0.21f, 0.60f), color, line);
 				break;
 			case PartType::CRANK_SPROCKET:
 				gear(0.50f, 0.50f, 0.26f, 14);
@@ -346,10 +353,27 @@ namespace PartIcons
 				bolt(0.50f, 0.54f, 0.84f);
 				drawList->AddLine(p(0.50f, 0.84f), p(0.60f, 0.92f), color, line * 1.5f);
 				break;
-			case PartType::IGNITION_COIL:
-				drawList->AddRectFilled(p(0.28f, 0.08f), p(0.72f, 0.28f), color, size * 0.04f);
-				drawList->AddRectFilled(p(0.40f, 0.28f), p(0.60f, 0.88f), dim, size * 0.04f);
-				drawList->AddRect(p(0.40f, 0.28f), p(0.60f, 0.88f), color, size * 0.04f, 0, line);
+			case PartType::PLUG_LEAD:
+				drawList->AddRectFilled(p(0.18f, 0.50f), p(0.32f, 0.92f), color, size * 0.04f);
+				drawList->AddBezierCubic(p(0.25f, 0.50f), p(0.25f, 0.10f), p(0.80f, 0.40f), p(0.82f, 0.12f), color, line * 1.6f);
+				drawList->AddRectFilled(p(0.76f, 0.06f), p(0.88f, 0.16f), color, size * 0.03f);
+				break;
+			case PartType::DISTRIBUTOR:
+				drawList->AddRectFilled(p(0.38f, 0.46f), p(0.62f, 0.92f), dim, size * 0.04f);
+				drawList->AddRect(p(0.38f, 0.46f), p(0.62f, 0.92f), color, size * 0.04f, 0, line);
+				drawList->AddRectFilled(p(0.22f, 0.24f), p(0.78f, 0.46f), color, size * 0.06f);
+				for (int i = 0; i < 4; i++)
+					drawList->AddRectFilled(p(0.26f + i * 0.14f, 0.10f), p(0.32f + i * 0.14f, 0.24f), color);
+				break;
+			case PartType::FLYWHEEL:
+				drawList->AddCircleFilled(p(0.50f, 0.50f), size * 0.40f, dim, 40);
+				gear(0.50f, 0.50f, 0.40f, 28);
+				drawList->AddCircle(p(0.50f, 0.50f), size * 0.12f, color, 20, line);
+				for (int i = 0; i < 6; i++)
+				{
+					float a = i * 2.f * pi / 6.f;
+					drawList->AddCircleFilled(p(0.50f + std::cos(a) * 0.08f, 0.50f + std::sin(a) * 0.08f), size * 0.018f, color, 8);
+				}
 				break;
 			case PartType::INTAKE_MANIFOLD:
 				drawList->AddRectFilled(p(0.06f, 0.14f), p(0.94f, 0.42f), dim, size * 0.10f);
@@ -361,10 +385,12 @@ namespace PartIcons
 				}
 				drawList->AddLine(p(0.06f, 0.86f), p(0.94f, 0.86f), color, line * 1.5f);
 				break;
-			case PartType::THROTTLE_BODY:
-				drawList->AddCircleFilled(p(0.50f, 0.50f), size * 0.34f, dim, 32);
-				drawList->AddCircle(p(0.50f, 0.50f), size * 0.34f, color, 32, line * 1.5f);
-				drawList->AddLine(p(0.30f, 0.66f), p(0.70f, 0.34f), color, line * 1.6f);
+			case PartType::CARBURETTOR:
+				drawList->AddRectFilled(p(0.16f, 0.30f), p(0.84f, 0.84f), dim, size * 0.05f);
+				drawList->AddRect(p(0.16f, 0.30f), p(0.84f, 0.84f), color, size * 0.05f, 0, line);
+				for (float x : { 0.36f, 0.64f })
+					drawList->AddCircle(p(x, 0.20f), size * 0.10f, color, 20, line * 1.4f);
+				drawList->AddLine(p(0.10f, 0.86f), p(0.90f, 0.86f), color, line * 1.6f);
 				break;
 			case PartType::FUEL_INJECTOR:
 				drawList->AddRectFilled(p(0.36f, 0.08f), p(0.64f, 0.24f), color, size * 0.03f);
@@ -372,11 +398,28 @@ namespace PartIcons
 				drawList->AddRect(p(0.40f, 0.24f), p(0.60f, 0.74f), color, size * 0.03f, 0, line);
 				drawList->AddTriangleFilled(p(0.44f, 0.74f), p(0.56f, 0.74f), p(0.50f, 0.90f), color);
 				break;
-			case PartType::FUEL_RAIL:
-				drawList->AddRectFilled(p(0.04f, 0.38f), p(0.96f, 0.52f), dim, size * 0.06f);
-				drawList->AddRect(p(0.04f, 0.38f), p(0.96f, 0.52f), color, size * 0.06f, 0, line);
-				for (int i = 0; i < 4; i++)
-					drawList->AddRectFilled(p(0.13f + i * 0.22f, 0.52f), p(0.21f + i * 0.22f, 0.64f), color);
+			case PartType::FUEL_PUMP:
+				drawList->AddCircleFilled(p(0.50f, 0.50f), size * 0.26f, dim, 28);
+				drawList->AddCircle(p(0.50f, 0.50f), size * 0.26f, color, 28, line * 1.4f);
+				drawList->AddLine(p(0.10f, 0.32f), p(0.90f, 0.32f), color, line * 2.f);
+				drawList->AddLine(p(0.20f, 0.84f), p(0.80f, 0.84f), color, line * 2.f);
+				break;
+			case PartType::ALTERNATOR:
+				drawList->AddCircleFilled(p(0.56f, 0.52f), size * 0.32f, dim, 32);
+				drawList->AddCircle(p(0.56f, 0.52f), size * 0.32f, color, 32, line * 1.4f);
+				for (int i = 0; i < 5; i++)
+					drawList->AddLine(p(0.40f + i * 0.08f, 0.32f), p(0.40f + i * 0.08f, 0.72f), color, line);
+				drawList->AddCircleFilled(p(0.18f, 0.52f), size * 0.12f, color, 20);
+				break;
+			case PartType::DRIVE_BELT:
+				drawList->AddCircle(p(0.36f, 0.68f), size * 0.20f, color, 28, line * 2.2f);
+				drawList->AddCircle(p(0.72f, 0.28f), size * 0.13f, color, 24, line * 2.2f);
+				drawList->AddLine(p(0.20f, 0.56f), p(0.62f, 0.18f), color, line * 2.2f);
+				drawList->AddLine(p(0.52f, 0.80f), p(0.84f, 0.38f), color, line * 2.2f);
+				break;
+			case PartType::EXHAUST_PIPE:
+				drawList->AddLine(p(0.20f, 0.10f), p(0.80f, 0.10f), color, line * 2.f);
+				drawList->AddBezierQuadratic(p(0.50f, 0.12f), p(0.50f, 0.80f), p(0.90f, 0.86f), IM_COL32(190, 120, 80, 255), line * 4.f);
 				break;
 			case PartType::EXHAUST_MANIFOLD:
 				for (int i = 0; i < 4; i++)

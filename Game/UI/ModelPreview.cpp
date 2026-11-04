@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <map>
+#include <tuple>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -29,31 +31,41 @@ namespace ModelPreview
 			ImU32 color;
 		};
 
-		struct Cache
+		// A model's triangles, prepared once.
+		struct Shape
 		{
-			uint32_t modelIndex = 0;
 			std::vector<Facet> facets = {};
 			float radius = 1.f;
-			// The last picture, kept until it's time to turn the model again.
+			double usedAt = 0.0;
+		};
+
+		// One view of a model at one size: the last picture, kept until it's time to turn the model again.
+		struct Picture
+		{
 			std::vector<Span> spans = {};
 			double renderedAt = -1.0;
-			ImVec2 renderedSize = {};
 			ImVec4 renderedTint = {};
+			double usedAt = 0.0;
 		};
 
 		// Turning it 30 times a second looks the same as every frame, at a fraction of the cost.
 		constexpr double TURN_INTERVAL = 1.0 / 30.0;
 		// Samples per pixel along each axis: 2 x 2 smooths the edges.
 		constexpr int SUPERSAMPLE = 2;
+		// Shapes and pictures not drawn for this long are let go.
+		constexpr double PICTURE_LIFETIME = 2.0;
+		constexpr double SHAPE_LIFETIME = 10.0;
 
-		Cache& Prepare(uint32_t modelIndex, const Model& model)
+		std::map<uint32_t, Shape> shapes;
+		std::map<std::tuple<uint32_t, int, int>, Picture> pictures;	// by model, width and height
+
+		Shape& Prepare(uint32_t modelIndex, const Model& model)
 		{
-			static Cache cache;
-			if (cache.modelIndex == modelIndex && !cache.facets.empty())
+			auto [it, added] = shapes.try_emplace(modelIndex);
+			Shape& cache = it->second;
+			if (!added)
 				return cache;
 
-			cache = {};
-			cache.modelIndex = modelIndex;
 			const auto& vertices = model.GetVertices();
 			const auto& indices = model.GetIndices();
 			glm::vec3 boundsMin = model.GetBoundsMin(), boundsMax = model.GetBoundsMax();
@@ -76,7 +88,7 @@ namespace ModelPreview
 
 		// Draws the model into a depth-tested picture (so nothing behind shows through, however the
 		// triangles overlap), then turns each row into runs of one colour for ImGui to fill.
-		void Render(Cache& cache, int width, int height, ImVec4 tint, double time)
+		void Render(const Shape& cache, Picture& picture, int width, int height, ImVec4 tint, double time)
 		{
 			int sampleWidth = width * SUPERSAMPLE, sampleHeight = height * SUPERSAMPLE;
 			static std::vector<float> depth;
@@ -141,7 +153,7 @@ namespace ModelPreview
 
 			// Each pixel is the average of its samples; partly covered ones (the edges) let the
 			// background through in proportion.
-			cache.spans.clear();
+			picture.spans.clear();
 			constexpr int SAMPLES = SUPERSAMPLE * SUPERSAMPLE;
 			for (int y = 0; y < height; y++)
 			{
@@ -167,12 +179,23 @@ namespace ModelPreview
 						continue;
 					}
 					if (run.color && run.x1 >= run.x0)
-						cache.spans.push_back(run);
+						picture.spans.push_back(run);
 					run = { x, x, y, pixel };
 				}
 				if (run.color && run.x1 >= run.x0)
-					cache.spans.push_back(run);
+					picture.spans.push_back(run);
 			}
+		}
+
+		// Lets go of what hasn't been drawn lately (the shop window closed, the book turned on), at most once a second.
+		void Forget(double time)
+		{
+			static double sweptAt = 0.0;
+			if (time - sweptAt < 1.0 && time >= sweptAt)
+				return;
+			sweptAt = time;
+			std::erase_if(pictures, [&](const auto& entry) { return time - entry.second.usedAt > PICTURE_LIFETIME; });
+			std::erase_if(shapes, [&](const auto& entry) { return time - entry.second.usedAt > SHAPE_LIFETIME; });
 		}
 	}
 
@@ -183,35 +206,41 @@ namespace ModelPreview
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 		ImVec2 max = { min.x + width, min.y + height };
 		drawList->AddRectFilledMultiColor(min, max, IM_COL32(52, 56, 64, 255), IM_COL32(52, 56, 64, 255), IM_COL32(28, 30, 34, 255), IM_COL32(28, 30, 34, 255));
+		DrawAt(drawList, min, max, modelIndex, tint);
+	}
 
+	void DrawAt(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, uint32_t modelIndex, ImVec4 tint)
+	{
 		auto model = ModelManager::Get()->GetModel(modelIndex);
 		if (!model || model->GetVertices().empty() || model->GetIndices().size() < 3)
 			return;
 
-		auto& cache = Prepare(modelIndex, *model);
-		int pixelsWide = (std::max)(1, static_cast<int>(width)), pixelsHigh = (std::max)(1, static_cast<int>(height));
 		double time = ImGui::GetTime();
-		bool resized = cache.renderedSize.x != pixelsWide || cache.renderedSize.y != pixelsHigh;
-		bool retinted = cache.renderedTint.x != tint.x || cache.renderedTint.y != tint.y || cache.renderedTint.z != tint.z;
-		if (resized || retinted || time - cache.renderedAt >= TURN_INTERVAL || time < cache.renderedAt)
+		Forget(time);
+		auto& shape = Prepare(modelIndex, *model);
+		shape.usedAt = time;
+		int pixelsWide = (std::max)(1, static_cast<int>(max.x - min.x)), pixelsHigh = (std::max)(1, static_cast<int>(max.y - min.y));
+		auto& picture = pictures[{ modelIndex, pixelsWide, pixelsHigh }];
+		picture.usedAt = time;
+		bool retinted = picture.renderedTint.x != tint.x || picture.renderedTint.y != tint.y || picture.renderedTint.z != tint.z;
+		if (retinted || time - picture.renderedAt >= TURN_INTERVAL || time < picture.renderedAt)
 		{
-			Render(cache, pixelsWide, pixelsHigh, tint, time);
-			cache.renderedAt = time;
-			cache.renderedSize = { static_cast<float>(pixelsWide), static_cast<float>(pixelsHigh) };
-			cache.renderedTint = tint;
+			Render(shape, picture, pixelsWide, pixelsHigh, tint, time);
+			picture.renderedAt = time;
+			picture.renderedTint = tint;
 		}
 
 		// One flat rectangle per run, straight into the draw list.
 		ImVec2 origin = { std::floor(min.x), std::floor(min.y) };
 		drawList->PushClipRect(min, max, true);
 		constexpr size_t BATCH = 4096;
-		for (size_t first = 0; first < cache.spans.size(); first += BATCH)
+		for (size_t first = 0; first < picture.spans.size(); first += BATCH)
 		{
-			size_t count = (std::min)(BATCH, cache.spans.size() - first);
+			size_t count = (std::min)(BATCH, picture.spans.size() - first);
 			drawList->PrimReserve(static_cast<int>(count * 6), static_cast<int>(count * 4));
 			for (size_t i = first; i < first + count; i++)
 			{
-				const auto& span = cache.spans[i];
+				const auto& span = picture.spans[i];
 				drawList->PrimRect({ origin.x + span.x0, origin.y + span.y }, { origin.x + span.x1 + 1, origin.y + span.y + 1 }, span.color);
 			}
 		}

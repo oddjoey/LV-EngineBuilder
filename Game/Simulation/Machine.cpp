@@ -417,9 +417,21 @@ MachiningResult Machining::Surface(const Machine& machine, Part& part, Feature& 
 		return { false, "Cut depth must be greater than zero." };
 	if (depth > machine.maxRemoval)
 		return { false, std::format("Too deep for one pass (max {:.3f} mm).", machine.maxRemoval) };
+	// A block or head deck can only be surfaced so far in all; past that the part is replaced.
+	bool deck = feature.name == FeatureNames::DECK_FLATNESS && (part.GetType() == PartType::BLOCK || part.GetType() == PartType::CYLINDER_HEAD);
+	if (deck && part.GetResurfaced() + depth > spec.maxResurface + 1e-9)
+	{
+		double left = std::max(0.0, spec.maxResurface - part.GetResurfaced());
+		return { false, left > 0.0
+			? std::format("Only {:.3f} mm more can come off this deck before the {:.2f} mm resurfacing limit.", left, spec.maxResurface)
+			: std::format("This deck has had the full {:.2f} mm resurfacing limit taken off: if it's still warped, replace the {}.", spec.maxResurface,
+				part.GetType() == PartType::BLOCK ? "block" : "head") };
+	}
 
 	// By hand, more or less than asked for comes off; the machine takes off exactly what it's set to.
 	double removed = machine.removalError > 0.0 ? depth * std::clamp(1.0 + Random::Normal(0.0, machine.removalError), 0.3, 2.0) : depth;
+	if (deck)
+		part.AddResurfaced(removed);
 	bool cleanedUp = removed >= feature.value;
 	if (cleanedUp)
 	{
@@ -430,8 +442,8 @@ MachiningResult Machining::Surface(const Machine& machine, Part& part, Feature& 
 		feature.value -= removed * 0.9;
 
 	// Taking material off a deck moves everything above it: the block gets shorter and the
-	// head's chambers get smaller, both of which raise compression.
-	if (part.GetType() == PartType::BLOCK)
+	// head's chambers get smaller, both of which raise compression. (A head's manifold faces don't.)
+	if (deck && part.GetType() == PartType::BLOCK)
 	{
 		if (auto deckHeight = part.FindFeature(FeatureNames::DECK_HEIGHT))
 		{
@@ -439,7 +451,7 @@ MachiningResult Machining::Surface(const Machine& machine, Part& part, Feature& 
 			part.MarkReadingStale(deckHeight->name);
 		}
 	}
-	else if (part.GetType() == PartType::CYLINDER_HEAD)
+	else if (deck && part.GetType() == PartType::CYLINDER_HEAD)
 	{
 		double chamberAreaCC = std::numbers::pi / 4.0 * spec.bore.nominal * spec.bore.nominal / 1000.0;
 		for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)

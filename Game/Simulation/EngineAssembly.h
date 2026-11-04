@@ -38,7 +38,7 @@ enum class AssemblySlot
 	OIL_FILTER,
 	VALVE_STEM_SEAL,
 	VALVE_RETAINER,
-	LIFTER,
+	ROCKER_ARM,
 	CRANK_SPROCKET,
 	CAM_SPROCKET,
 	TIMING_BELT,
@@ -51,12 +51,12 @@ enum class AssemblySlot
 	VALVE_COVER_GASKET,
 	VALVE_COVER,
 	SPARK_PLUG,
-	IGNITION_COIL,
+	PLUG_LEAD,
 	INTAKE_MANIFOLD_GASKET,
 	INTAKE_MANIFOLD,
-	THROTTLE_BODY,
+	CARBURETTOR,
 	FUEL_INJECTOR,
-	FUEL_RAIL,
+	FUEL_PUMP,
 	EXHAUST_MANIFOLD_GASKET,
 	EXHAUST_MANIFOLD,
 	WATER_PUMP_GASKET,
@@ -68,6 +68,12 @@ enum class AssemblySlot
 	ROD_CAP,
 	MAIN_CAP,
 	CAM_CAP,		// added later: its PartType is at the end of that list, not this number
+	ROCKER_SHAFT,	// so were these: 0 intake, 1 exhaust
+	DISTRIBUTOR,
+	FLYWHEEL,
+	EXHAUST_PIPE,
+	ALTERNATOR,
+	DRIVE_BELT,
 	// Nuts and bolts: one slot per set of holes (PartCatalog::Holes), taking that set's size. A
 	// hole's index / perParent is the index of the part it holds on.
 	HEAD_BOLT,
@@ -84,9 +90,15 @@ enum class AssemblySlot
 	OIL_PICKUP_BOLT,
 	CRANK_PULLEY_BOLT,
 	CAM_SPROCKET_BOLT,
-	THROTTLE_BODY_BOLT,
-	FUEL_RAIL_BOLT,
+	CARBURETTOR_BOLT,
+	FUEL_PUMP_BOLT,
 	CAM_CAP_BOLT,
+	ROCKER_SHAFT_BOLT,
+	DISTRIBUTOR_BOLT,
+	FLYWHEEL_BOLT,
+	BELT_IDLER_BOLT,
+	EXHAUST_PIPE_BOLT,
+	ALTERNATOR_BOLT,
 	COUNT
 };
 static_assert(static_cast<int>(AssemblySlot::CORE_PLUG) == static_cast<int>(PartType::CORE_PLUG)
@@ -139,6 +151,7 @@ public:
 
 	std::optional<double> MainClearance(int journal) const;
 	std::optional<double> RodClearance(int cylinder) const;
+	std::optional<double> RodSideClearance(int cylinder) const;
 	std::optional<double> PistonToWall(int cylinder) const;
 	std::optional<double> RingGap(int cylinder) const;
 	std::optional<double> DeckClearance(int cylinder) const;	// positive = piston below deck at TDC

@@ -2,7 +2,7 @@
 #include "Game/EngineBuilderGame.h"
 #include "Game/GameSettings.h"
 
-int main() 
+int main()
 {
 	auto lordi = Lordi::Get();
 	auto settings = lordi->GetSettings();
@@ -12,8 +12,8 @@ int main()
 	auto video = GameSettings::Load();
 	bool windowed = video.displayMode == static_cast<int>(DisplayMode::WINDOWED);
 
-	GraphicsSettings graphicsSettings {};
-	graphicsSettings.sWindowName = "LV: Engine Builder";
+	GraphicsSettings graphicsSettings{};
+	graphicsSettings.sWindowName = "MonkeyKobo Motor Works";
 	// Lordi is the LV submodule; its compiled shaders are loaded from there.
 	graphicsSettings.sEngineRoot = "LV/";
 	graphicsSettings.uiWindowWidth = windowed ? video.resolutionWidth : 1280;
@@ -27,6 +27,6 @@ int main()
 	lordi->SetGame(std::make_shared<EngineBuilderGame>());
 
 	lordi->Start();
-	
+
 	return 0;
 }

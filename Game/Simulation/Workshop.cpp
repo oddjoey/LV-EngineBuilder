@@ -101,6 +101,32 @@ int Workshop::AddMissingHalves()
 	return added;
 }
 
+int Workshop::AddMissing4ACParts()
+{
+	// Saves from before the LV-16 took the 4A-C's hardware: every block comes with the used rocker
+	// shafts, distributor, flywheel, downpipe, alternator and V-belt a core would have, and their bolts.
+	int blocks = static_cast<int>(std::count_if(m_inventory.begin(), m_inventory.end(), [](const pPart& part) { return part->GetType() == PartType::BLOCK; }));
+	int added = 0;
+	auto add = [&](PartType type, int count) {
+		for (int i = 0; i < count; i++, added++)
+			m_inventory.push_back(PartFactory::Create(type, *m_spec, PartQuality::OEM, PartCondition::USED));
+	};
+	for (int block = 0; block < blocks; block++)
+	{
+		for (auto type : { PartType::ROCKER_SHAFT, PartType::DISTRIBUTOR, PartType::FLYWHEEL, PartType::EXHAUST_PIPE, PartType::ALTERNATOR, PartType::DRIVE_BELT })
+			add(type, PartCatalog::CountPerEngine(type, *m_spec));
+		for (auto slot : { AssemblySlot::ROCKER_SHAFT_BOLT, AssemblySlot::DISTRIBUTOR_BOLT, AssemblySlot::FLYWHEEL_BOLT,
+			AssemblySlot::BELT_IDLER_BOLT, AssemblySlot::EXHAUST_PIPE_BOLT, AssemblySlot::ALTERNATOR_BOLT })
+		{
+			const auto* holes = EngineAssembly::Holes(slot);
+			add(holes->size, holes->perParent * PartCatalog::CountPerEngine(holes->parent, *m_spec));
+		}
+	}
+	if (added > 0)
+		Log(std::format("Your engines now take a flywheel, rocker shafts, a distributor, a downpipe, an alternator and a V-belt: {} parts and bolts for them are in a delivery by the door.", added));
+	return added;
+}
+
 int Workshop::AddMissingCamCaps()
 {
 	std::vector<pPart> heads;
@@ -537,7 +563,7 @@ bool Workshop::MeasureSize(Part& part, const std::string& featureName, int toolI
 		for (int axis = 0; axis < Feature::AXES; axis++)
 			reading.samples[station][axis] = tool.Read(feature->samples[station][axis]);
 	reading.value = tool.Read(feature->value);
-	if (feature->kind == FeatureKind::FLATNESS)
+	if (feature->kind == FeatureKind::FLATNESS || feature->kind == FeatureKind::SQUARENESS || feature->kind == FeatureKind::ALIGNMENT)
 		reading.value = std::max(0.0, reading.value);
 
 	part.RecordReading(featureName, reading);
@@ -857,6 +883,7 @@ std::string Workshop::AssemblyReadingLabel(AssemblyCheck check, int index, bool 
 		case AssemblyCheck::RING_GAP:			return std::format("Cylinder {} ring gap", index + 1);
 		case AssemblyCheck::DECK_CLEARANCE:		return std::format("Cylinder {} deck clearance", index + 1);
 		case AssemblyCheck::INSTALLED_HEIGHT:	return std::format("{} {} installed height", FeatureNames::ValveSide(index % 2 == 1), index / 2 + 1);
+		case AssemblyCheck::ROD_SIDE_CLEARANCE:	return std::format("Rod {} side clearance", index + 1);
 		default:								return "";
 	}
 }
@@ -872,6 +899,7 @@ bool Workshop::MeasureAssembly(AssemblyCheck check, int index, bool rod, int too
 		case AssemblyCheck::RING_GAP:			trueValue = assembly.RingGap(index); break;
 		case AssemblyCheck::DECK_CLEARANCE:		trueValue = assembly.DeckClearance(index); break;
 		case AssemblyCheck::INSTALLED_HEIGHT:	trueValue = assembly.InstalledHeight(index / 2, index % 2 == 1); break;
+		case AssemblyCheck::ROD_SIDE_CLEARANCE:	trueValue = assembly.RodSideClearance(index); break;
 		default:								return false;
 	}
 	return RecordAssemblyReading(check, index, rod, toolIndex, trueValue);

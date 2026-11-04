@@ -42,6 +42,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 	glm::vec3 forward = { -std::sin(m_yaw), 0.f, -std::cos(m_yaw) };
 	glm::vec3 right = { std::cos(m_yaw), 0.f, -std::sin(m_yaw) };
 	glm::vec3 move = {};
+
 	if (input.IsKeyPressed(GLFW_KEY_W)) move += forward;
 	if (input.IsKeyPressed(GLFW_KEY_S)) move -= forward;
 	if (input.IsKeyPressed(GLFW_KEY_D)) move += right;
@@ -53,6 +54,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 		m_crouching = true;
 	else if (m_crouching && HasHeadroom(obstacles))
 		m_crouching = false;
+
 	float targetEye = m_crouching ? CROUCH_EYE_HEIGHT : STAND_EYE_HEIGHT;
 	float easing = 1.f - std::exp(-CROUCH_EASE * deltaTime);
 	m_eyeHeight += (targetEye - m_eyeHeight) * easing;
@@ -70,6 +72,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 		if (m_position.x >= surface.min.x && m_position.x <= surface.max.x && m_position.z >= surface.min.y && m_position.z <= surface.max.y
 			&& surface.height <= m_position.y + STEP_UP && surface.height > ground)
 			ground = surface.height;
+
 	// The top of anything solid is somewhere to stand too (a bench, a crate, a table jumped onto), as
 	// long as enough of the player is over it; walls and trees have no top to reach.
 	glm::vec2 feet = { m_position.x, m_position.z };

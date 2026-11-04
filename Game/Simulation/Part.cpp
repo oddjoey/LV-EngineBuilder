@@ -96,6 +96,16 @@ double Part::GetTorque() const
 	return m_torque;
 }
 
+double Part::GetResurfaced() const
+{
+	return m_resurfaced;
+}
+
+void Part::AddResurfaced(double mm)
+{
+	m_resurfaced += mm;
+}
+
 void Part::SetTorque(double newtonMetres)
 {
 	m_torque = newtonMetres;

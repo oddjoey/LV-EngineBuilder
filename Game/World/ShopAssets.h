@@ -44,6 +44,9 @@ namespace EngineLayout
 	constexpr float SPRING_FREE_HEIGHT = 0.044f;
 	constexpr float SPRING_INSTALLED_HEIGHT = 0.038f;
 	constexpr float MAX_VALVE_LIFT = 0.0088f;
+	// A rocker arm's pivot on its shaft, from the valve tip it pushes on: up a little and out to the side.
+	constexpr float ROCKER_PIVOT_Y = 0.006f;
+	constexpr float ROCKER_PIVOT_Z = 0.025f;
 
 	inline float BoreX(int cylinder) { return (cylinder - 1.5f) * BORE_SPACING; }
 	inline float MainX(int journal) { return (journal - 2.f) * BORE_SPACING; }
@@ -85,6 +88,14 @@ namespace EngineLayout
 	constexpr float TIMING_PLANE_X = FRONT_X - 0.023f;				// sprockets and belt
 	constexpr float TIMING_COVER_X = FRONT_X - 0.035f;
 	constexpr float TIMING_COVER_Y = -0.06f;						// the middle of the cover
+	// Along the cam, between the first cylinder's lobes and the second journal: the fuel pump's eccentric,
+	// and the pump on the side of the head beside it.
+	constexpr float FUEL_PUMP_X = -0.112f;
+	// The accessory drive's V-belt runs in one plane in front of the timing cover, round the crank pulley,
+	// the water pump and the alternator.
+	constexpr float ACCESSORY_BELT_X = TIMING_COVER_X - 0.06f;
+	constexpr float ALTERNATOR_Y = -0.12f;
+	constexpr float ALTERNATOR_Z = 0.17f;
 	inline float CamAxisY() { return HEAD_DECK_Y + CAM_Y; }
 
 	// Where a bolt-on part's model sits on the assembled engine (its origin, in engine space) and

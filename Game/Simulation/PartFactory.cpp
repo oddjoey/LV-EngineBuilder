@@ -249,6 +249,13 @@ pPart PartFactory::CreateCrankshaft(const EngineSpec& spec, PartQuality quality,
 		addJournal(FeatureNames::MainJournal(journal), spec.mainJournal);
 	for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
 		addJournal(FeatureNames::RodJournal(cylinder), spec.rodJournal);
+	// Each crank pin's width between its cheeks: the rod's side play is this less the big end's width.
+	for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
+	{
+		auto width = MakeFeature(FeatureNames::RodJournalWidth(cylinder), FeatureKind::LENGTH, spec.rodJournalWidth);
+		width.value = Sample(spec.rodJournalWidth, quality) + (used ? Random::Uniform(0.0, 0.04) : 0.0);
+		part->m_features.push_back(width);
+	}
 
 	auto stroke = MakeFeature(FeatureNames::STROKE, FeatureKind::LENGTH, spec.stroke);
 	stroke.value = Sample(spec.stroke, quality);
@@ -276,6 +283,21 @@ pPart PartFactory::CreateConnectingRod(const EngineSpec& spec, PartQuality quali
 	auto length = MakeFeature(FeatureNames::CENTER_LENGTH, FeatureKind::LENGTH, spec.rodLength);
 	length.value = Sample(spec.rodLength, quality);
 	part->m_features.push_back(length);
+
+	// The big end's thrust faces wear thin against the crank cheeks.
+	auto width = MakeFeature(FeatureNames::BIG_END_WIDTH, FeatureKind::LENGTH, spec.rodBigEndWidth);
+	width.value = Sample(spec.rodBigEndWidth, quality) - (used ? Random::Uniform(0.0, 0.08) : 0.0);
+	part->m_features.push_back(width);
+
+	// Bend and twist on the rod aligner. Most used rods are straight enough; the odd one has been
+	// bent by a hydraulic lock or an over-rev.
+	for (const auto& [name, limit] : { std::pair{ FeatureNames::ROD_BEND, spec.maxRodBend }, std::pair{ FeatureNames::ROD_TWIST, spec.maxRodTwist } })
+	{
+		auto alignment = MakeFeature(name, FeatureKind::ALIGNMENT, Tolerance::Limits(0.0, limit));
+		alignment.value = used ? (Random::Chance(0.1) ? Random::Uniform(limit * 1.2, limit * 3.0) : Random::Uniform(0.005, limit * 0.8))
+			: SmallDeviation(limit * 0.4, quality);
+		part->m_features.push_back(alignment);
+	}
 
 	return part;
 }
@@ -360,6 +382,17 @@ pPart PartFactory::CreateCylinderHead(const EngineSpec& spec, PartQuality qualit
 	flatness.surfaceRa = Random::Uniform(0.6, 1.2);
 	part->m_features.push_back(flatness);
 
+	// The faces the manifolds bolt to: a warped intake face is a vacuum leak, a warped exhaust face blows.
+	for (bool exhaust : { false, true })
+	{
+		auto face = MakeFeature(FeatureNames::PortFace(exhaust), FeatureKind::FLATNESS, Tolerance::Limits(0.0, spec.maxPortFaceFlatness));
+		face.maxRa = 3.2;
+		face.operations = { MachineOperation::SURFACE };
+		face.value = used ? Random::Uniform(0.02, exhaust ? 0.18 : 0.12) : SmallDeviation(spec.maxPortFaceFlatness, quality);
+		face.surfaceRa = Random::Uniform(0.8, 1.6);
+		part->m_features.push_back(face);
+	}
+
 	for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
 	{
 		auto chamber = MakeFeature(FeatureNames::Chamber(cylinder), FeatureKind::VOLUME, spec.chamberVolume);
@@ -438,17 +471,34 @@ pPart PartFactory::CreateCamshaft(const EngineSpec& spec, PartQuality quality, P
 		part->m_features.push_back(feature);
 	}
 
-	// Performance cams grind a little more lift; worn lobes lose it, and the odd one goes flat.
-	auto liftSpec = quality == PartQuality::PERFORMANCE ? spec.lobeLift.Shifted(0.6) : spec.lobeLift;
+	// Lobe heights, miked across the nose. Performance cams grind a little more lift; worn lobes lose
+	// height, and the odd one goes flat (below the minimum, the cam is replaced).
+	auto heightSpec = quality == PartQuality::PERFORMANCE ? spec.lobeHeight.Shifted(0.6) : spec.lobeHeight;
 	for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
 		for (bool exhaust : { false, true })
 		{
-			auto lobe = MakeFeature(FeatureNames::LobeLift(cylinder, exhaust), FeatureKind::LENGTH, liftSpec);
-			lobe.value = Sample(liftSpec, quality);
+			auto lobe = MakeFeature(FeatureNames::LobeHeight(cylinder, exhaust), FeatureKind::LENGTH, heightSpec);
+			lobe.value = Sample(heightSpec, quality);
 			if (used)
 				lobe.value -= Random::Chance(0.1) ? Random::Uniform(0.5, 1.5) : Random::Uniform(0.01, 0.12);
 			part->m_features.push_back(lobe);
 		}
+
+	// The eccentric between the first cylinder's lobes and the second journal: it works the mechanical
+	// fuel pump's arm, and wears down like a lobe.
+	auto eccentric = MakeFeature(FeatureNames::FUEL_PUMP_ECCENTRIC, FeatureKind::LENGTH, spec.fuelPumpEccentric);
+	eccentric.value = Sample(spec.fuelPumpEccentric, quality) - (used ? (Random::Chance(0.08) ? Random::Uniform(0.3, 0.8) : Random::Uniform(0.01, 0.1)) : 0.0);
+	part->m_features.push_back(eccentric);
+
+	// End play: how far it slides along its axis against the thrust faces. Read with a dial indicator.
+	auto endPlay = MakeFeature(FeatureNames::CAM_END_PLAY, FeatureKind::RUNOUT, Tolerance::Limits(0.0, spec.maxCamEndPlay));
+	endPlay.value = Random::Uniform(spec.camEndPlay.min, spec.camEndPlay.max) + (used ? Random::Uniform(0.01, 0.12) : 0.0);
+	part->m_features.push_back(endPlay);
+
+	// Bend: in V-blocks, the pointer on the centre journal, turned a full revolution.
+	auto runout = MakeFeature(FeatureNames::CAM_RUNOUT, FeatureKind::RUNOUT, Tolerance::Limits(0.0, spec.maxCamRunout));
+	runout.value = used ? (Random::Chance(0.1) ? Random::Uniform(0.10, 0.20) : Random::Uniform(0.01, 0.06)) : SmallDeviation(spec.maxCamRunout * 0.3, quality);
+	part->m_features.push_back(runout);
 
 	return part;
 }
@@ -517,6 +567,11 @@ pPart PartFactory::CreateValveSpring(const EngineSpec& spec, PartQuality quality
 	pressure.value = rate.value * (freeLength.value - spec.installedHeight);
 	part->m_features.push_back(pressure);
 
+	// Stood on the bench against a steel square: a tired or overheated spring leans over.
+	auto square = MakeFeature(FeatureNames::SPRING_SQUARENESS, FeatureKind::SQUARENESS, Tolerance::Limits(0.0, spec.maxSpringSquareness));
+	square.value = used ? Random::Uniform(0.2, 2.8) : SmallDeviation(spec.maxSpringSquareness * 0.4, quality);
+	part->m_features.push_back(square);
+
 	return part;
 }
 
@@ -544,13 +599,14 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::OIL_PICKUP:
 		case PartType::OIL_PAN:
 		case PartType::OIL_FILTER:
-		case PartType::FUEL_RAIL:
+		case PartType::EXHAUST_PIPE:
 		case PartType::THERMOSTAT:				material = MaterialType::STAMPED_STEEL; break;
 		case PartType::REAR_MAIN_SEAL:
 		case PartType::FRONT_CRANK_SEAL:
 		case PartType::VALVE_STEM_SEAL:
 		case PartType::VALVE_COVER_GASKET:		material = MaterialType::FKM_RUBBER; break;
-		case PartType::TIMING_BELT:				material = MaterialType::HNBR_BELT; break;
+		case PartType::TIMING_BELT:
+		case PartType::DRIVE_BELT:				material = MaterialType::HNBR_BELT; break;
 		case PartType::OIL_PAN_GASKET:
 		case PartType::TIMING_COVER_GASKET:
 		case PartType::INTAKE_MANIFOLD_GASKET:
@@ -560,11 +616,15 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::TIMING_COVER:
 		case PartType::VALVE_COVER:
 		case PartType::INTAKE_MANIFOLD:
-		case PartType::THROTTLE_BODY:
+		case PartType::CARBURETTOR:
+		case PartType::FUEL_PUMP:
+		case PartType::DISTRIBUTOR:
+		case PartType::ALTERNATOR:
 		case PartType::WATER_PUMP:
 		case PartType::THERMOSTAT_HOUSING:		material = MaterialType::CAST_ALUMINUM; break;
-		case PartType::IGNITION_COIL:			material = MaterialType::NYLON; break;
+		case PartType::PLUG_LEAD:				material = MaterialType::NYLON; break;
 		case PartType::CRANK_PULLEY:
+		case PartType::FLYWHEEL:
 		case PartType::EXHAUST_MANIFOLD:		material = MaterialType::GREY_IRON; break;
 		case PartType::SPARK_PLUG:				material = MaterialType::SPARK_PLUG_ALLOY; break;
 		case PartType::ROD_CAP:					material = MaterialType::POWDER_METAL; break;
@@ -623,8 +683,32 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::OIL_PAN:
 			addFlatness(FeatureNames::RAIL_FLATNESS, 0.10, 0.40, false);
 			break;
-		case PartType::LIFTER:
-			addRound(FeatureNames::BUCKET_DIAMETER, FeatureKind::JOURNAL, Tolerance::Bilateral(30.97, 0.008), -0.035, -0.006);
+		// An arm wears its bore oval on the shaft, and the shaft wears thin under each arm: the clearance
+		// between the two is what ticks.
+		case PartType::ROCKER_ARM:
+			addRound(FeatureNames::ROCKER_BORE, FeatureKind::BORE, spec.rockerBore, 0.004, 0.035);
+			break;
+		case PartType::ROCKER_SHAFT:
+			addRound(FeatureNames::ROCKER_SHAFT_DIAMETER, FeatureKind::JOURNAL, spec.rockerShaft, -0.025, -0.003);
+			break;
+		// Both spin on a bearing: rocked by hand, a worn one has play.
+		case PartType::DISTRIBUTOR:
+		case PartType::ALTERNATOR:
+			addRunout(FeatureNames::SHAFT_PLAY, 0.05, 0.30);
+			break;
+		case PartType::FLYWHEEL:
+		{
+			// Hot spots from a slipping clutch warp the face; it can be skimmed back flat.
+			auto feature = MakeFeature(FeatureNames::FLYWHEEL_RUNOUT, FeatureKind::RUNOUT, Tolerance::Limits(0.0, 0.10));
+			feature.value = used ? Random::Uniform(0.02, 0.30) : SmallDeviation(0.10, quality);
+			feature.surfaceRa = Random::Uniform(0.8, 1.6);
+			feature.maxRa = 3.2;
+			feature.operations = { MachineOperation::SURFACE };
+			part->m_features.push_back(feature);
+			break;
+		}
+		case PartType::EXHAUST_PIPE:
+			addFlatness(FeatureNames::FLANGE_FLATNESS, 0.10, 0.50, false);
 			break;
 		case PartType::CRANK_SPROCKET:
 			addRound(FeatureNames::ROOT_DIAMETER, FeatureKind::JOURNAL, Tolerance::Bilateral(38.60, 0.05), -0.30, -0.03);
@@ -656,11 +740,13 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 			addLength(FeatureNames::ELECTRODE_GAP, FeatureKind::THICKNESS, Tolerance::Limits(0.80, 0.90), 0.20, 0.60);
 			break;
 		case PartType::INTAKE_MANIFOLD:
-			addFlatness(FeatureNames::FLANGE_FLATNESS, 0.10, 0.25, true);
+			addFlatness(FeatureNames::FLANGE_FLATNESS, spec.maxIntakeManifoldFlatness, 0.35, true);
 			break;
-		case PartType::THROTTLE_BODY:
-			// Carbon from the crankcase breather builds up behind the butterfly.
-			addRound(FeatureNames::THROTTLE_BORE, FeatureKind::BORE, Tolerance::Bilateral(50.00, 0.05), -0.35, -0.03);
+		case PartType::CARBURETTOR:
+			// Carbon from the crankcase breather builds up behind the primary butterfly; varnish from
+			// stale fuel narrows the main jet. The jet is flowed into a burette for 15 seconds.
+			addRound(FeatureNames::THROTTLE_BORE, FeatureKind::BORE, Tolerance::Bilateral(28.00, 0.05), -0.30, -0.03);
+			addLength(FeatureNames::JET_FLOW, FeatureKind::VOLUME, Tolerance::Limits(58.5, 61.5), -13.0, -0.5);
 			break;
 		case PartType::FUEL_INJECTOR:
 			// Fired into a burette for 15 seconds at rail pressure; varnish clogs the old ones.

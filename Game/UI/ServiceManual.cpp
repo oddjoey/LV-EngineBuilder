@@ -7,11 +7,14 @@
 
 #include <imgui.h>
 
+#include "ModelPreview.h"
 #include "../Simulation/EngineSpec.h"
 #include "../Simulation/Machine.h"
 #include "../Simulation/MeasuringTool.h"
 #include "../Simulation/PartCatalog.h"
 #include "../Simulation/Units.h"
+#include "../World/ShopAssets.h"
+#include "../World/ToolShapes.h"
 
 namespace
 {
@@ -36,6 +39,11 @@ namespace
 	// Text sizes as multiples of the interface font.
 	constexpr float HEADING_SCALE = 1.35f;
 	constexpr float BODY_SCALE = 1.f;
+	constexpr float ITEM_NAME_SCALE = 1.1f;
+	constexpr float CAPTION_SCALE = 0.75f;
+	// 3D views, square, in multiples of the text size: a tool's beside its description, a part's under its step.
+	constexpr float ITEM_VIEW = 5.5f;
+	constexpr float STEP_VIEW = 4.2f;
 }
 
 void ServiceManual::Open()
@@ -60,6 +68,12 @@ bool ServiceManual::IsOpen() const
 	return m_open;
 }
 
+void ServiceManual::SetModelLookup(const std::function<uint32_t(const std::string&)>& lookup)
+{
+	m_modelLookup = lookup;
+	m_models.clear();
+}
+
 void ServiceManual::Build(bool imperial)
 {
 	const EngineSpec& spec = EngineSpec::InlineFour();
@@ -76,17 +90,36 @@ void ServiceManual::Build(bool imperial)
 	m_chapters.clear();
 	Chapter* chapter = nullptr;
 	int stepNumber = 0;
+	int figureNumber = 0;
 	auto begin = [&](const std::string& title) {
 		m_chapters.push_back({ title, {} });
 		chapter = &m_chapters.back();
 		stepNumber = 0;
+		figureNumber = 0;
 	};
 	auto heading = [&](const std::string& text) { chapter->lines.push_back({ Kind::HEADING, text }); stepNumber = 0; };
 	auto text = [&](const std::string& text) { chapter->lines.push_back({ Kind::TEXT, text }); };
-	auto step = [&](const std::string& text) { chapter->lines.push_back({ Kind::STEP, text, std::to_string(++stepNumber) }); };
-	auto bullet = [&](const std::string& text) { chapter->lines.push_back({ Kind::BULLET, text }); };
+	// A step that brings parts in shows each of them under it.
+	auto step = [&](const std::string& text, const std::vector<PartType>& parts = {}) {
+		Line line = { Kind::STEP, text, std::to_string(++stepNumber) };
+		for (PartType part : parts)
+			line.views.push_back({ PartTypeName(part), PartTypeName(part) });
+		chapter->lines.push_back(std::move(line));
+	};
+	// A tool or machine: its 3D view beside its name, description and figures.
+	auto item = [&](const std::string& name, const std::string& description, const std::string& model,
+		std::vector<std::pair<std::string, std::string>> specs) {
+		Line line = { Kind::ITEM, name, description };
+		line.views.push_back({ model, "" });
+		line.specs = std::move(specs);
+		chapter->lines.push_back(std::move(line));
+	};
 	auto figure = [&](const std::string& name, const std::string& value) { chapter->lines.push_back({ Kind::SPEC, name, value }); };
 	auto note = [&](const std::string& text) { chapter->lines.push_back({ Kind::NOTE, text }); };
+	// Figures are numbered within their chapter: Fig. 7.2 is the second in chapter 7.
+	auto illustrate = [&](Figure figure, const std::string& caption) {
+		chapter->lines.push_back({ Kind::FIGURE, std::format("Fig. {}.{}  {}", m_chapters.size() - 1, ++figureNumber, caption), std::to_string(static_cast<int>(figure)) });
+	};
 
 	// The contents are filled in once every chapter exists.
 	begin("Contents");
@@ -94,8 +127,9 @@ void ServiceManual::Build(bool imperial)
 	begin("1. General Information");
 	heading("The LV-16");
 	text(std::format("The LV-16 is a {:.1f} litre ({:.0f} cc) inline four: a grey iron block with {} main bearings, an aluminium head with a "
-		"single overhead camshaft working one intake and one exhaust valve per cylinder through bucket lifters, and a toothed timing belt "
-		"driving the cam from the crank. It revs to {} rpm.", displacement / 1000.0, displacement, spec.mainJournals, spec.redline));
+		"single overhead camshaft working one intake and one exhaust valve per cylinder through rocker arms, and a toothed timing belt "
+		"driving the cam from the crank. A two-barrel carburettor feeds it and a distributor on the back of the cam sparks it. It makes "
+		"70 hp at 4800 rpm and 85 ft-lb at 2800, and revs to {} rpm.", displacement / 1000.0, displacement, spec.mainJournals, spec.redline));
 	heading("Engine Data");
 	figure("Cylinders", std::to_string(spec.cylinders) + ", in line");
 	figure("Bore x stroke", std::format("{:.0f} x {:.0f} mm", spec.bore.nominal, spec.stroke.nominal));
@@ -104,7 +138,11 @@ void ServiceManual::Build(bool imperial)
 	figure("Main bearings", std::to_string(spec.mainJournals));
 	figure("Camshaft", std::format("SOHC, {} journals", spec.camJournals));
 	figure("Valves", std::format("{} per cylinder", 2));
+	figure("Valvetrain", "Rocker arms on two shafts");
 	figure("Timing drive", "Toothed belt");
+	figure("Fuel system", "Two-barrel carburettor");
+	figure("Ignition", "Distributor");
+	figure("Rated output", "70 hp @ 4800 rpm, 85 ft-lb @ 2800 rpm");
 	figure("Redline", std::format("{} rpm", spec.redline));
 	heading("Using This Manual");
 	text("Every dimension here is the blueprint the engine was built to. The job is always the same: measure a part, compare it with "
@@ -129,23 +167,54 @@ void ServiceManual::Build(bool imperial)
 	heading("Measuring Tools");
 	text("Each tool reads only what it fits, and no better than its resolution. Cheap tools are quick; precise tools are slow but "
 		"repeatable. Buy the tool the tolerance needs: a caliper is no use for a clearance measured in hundredths.");
+	illustrate(Figure::TOOL_RESOLUTION, "How finely each tool reads. Green bars read finer than the bore tolerance; red ones can't tell a good bore from a bad one.");
 	for (const auto& tool : ToolCatalog::All())
-		if (!tool.IsHandTool() && !tool.manual)
-			figure(tool.name, tool.resolution > 0.0 ? deviation(tool.resolution) : "");
-	heading("What Each Is For");
-	for (const auto& tool : ToolCatalog::All())
-		if (!tool.IsHandTool() && !tool.manual)
-			bullet(tool.name + ": " + tool.description);
+	{
+		if (tool.IsHandTool() || tool.manual)
+			continue;
+		std::vector<std::pair<std::string, std::string>> specs;
+		if (tool.resolution > 0.0)
+			specs.push_back({ "Reads to", deviation(tool.resolution) });
+		if (tool.sigma > 0.0)
+			specs.push_back({ "Repeatability", "+/- " + deviation(tool.sigma) });
+		if (tool.maxSize > 0.0)
+			specs.push_back({ "Fits", size(tool.minSize) + " - " + size(tool.maxSize) });
+		item(tool.name, tool.description, ToolModelName(tool), std::move(specs));
+	}
 	heading("Hand Tools");
 	for (const auto& tool : ToolCatalog::All())
-		if (tool.IsHandTool())
-			bullet(tool.name + ": " + tool.description);
+	{
+		if (!tool.IsHandTool())
+			continue;
+		std::vector<std::pair<std::string, std::string>> specs;
+		if (!tool.sizes.empty())
+		{
+			std::string sizes;
+			for (int mm : tool.sizes)
+				sizes += (sizes.empty() ? "" : ", ") + std::to_string(mm);
+			specs.push_back({ "Sizes", sizes + " mm" });
+		}
+		if (tool.torqueError > 0.0)
+			specs.push_back({ "Accuracy", std::format("+/- {:.0f}%", tool.torqueError * 100.0) });
+		if (tool.maxTorque > 0.0)
+			specs.push_back({ "Up to", torque(tool.maxTorque) });
+		item(tool.name, tool.description, ToolModelName(tool), std::move(specs));
+	}
 	note("Every nut and bolt needs a socket or wrench of its size. Only a torque wrench does one up to spec; anything else leaves it "
 		"snug and no more.");
 	heading("Machines");
 	text("Machining only ever removes metal. Every cut is final, so measure twice and take less than you think.");
 	for (const auto& machine : MachineCatalog::All())
-		bullet(machine.name + ": " + machine.description);
+	{
+		std::vector<std::pair<std::string, std::string>> specs;
+		if (machine.sigma > 0.0)
+			specs.push_back({ "Holds size to", "+/- " + deviation(machine.sigma) });
+		if (machine.finishRa > 0.0)
+			specs.push_back({ "Finish", std::format("{:.2f} um Ra", machine.finishRa) });
+		if (machine.maxRemoval > 0.0)
+			specs.push_back({ "Most per setup", deviation(machine.maxRemoval) });
+		item(machine.name, machine.description, ShopAssets::FixtureFor(machine).model, std::move(specs));
+	}
 
 	begin("3. Getting Started");
 	heading("The Job, Start to Finish");
@@ -180,19 +249,21 @@ void ServiceManual::Build(bool imperial)
 	figure("Main housing bore", tolerance(spec.mainHousing));
 	figure("Deck height", tolerance(spec.deckHeight));
 	figure("Deck flatness", most(spec.maxDeckFlatness));
+	figure("Resurfacing limit", most(spec.maxResurface));
 	heading("Measuring the Bores");
 	step("Use a dial bore gauge (or a telescoping gauge and micrometer for a rough check).");
 	step("Measure each bore at the top, middle and bottom of the ring travel, across and along the block.");
 	step("Taper is the biggest difference top to bottom; out of round, the biggest difference across. Wear is always worst at the top.");
+	illustrate(Figure::BORE_POINTS, "Where to measure a bore: three heights, two directions at each.");
 	step("Check the finish with the profilometer: too smooth and the rings never seat, too rough and they wear out.");
 	heading("Machining the Bores");
 	text("A bore that is only glazed or slightly out of round can be honed back to a fresh finish. Past that, bore it oversize on the "
 		"boring bar and fit oversize pistons, then hone to finish. Bore every cylinder to the same oversize.");
 	note("Leave honing stock: bore a few hundredths under the final size and hone the rest.");
 	heading("Deck and Main Housings");
-	text("Lay the straightedge across the deck in several directions and slip feelers under it. A warped deck is surfaced flat on the "
-		"surface grinder, which also lowers the deck height and raises compression. Main housings that are out of line or oversize are "
-		"line bored.");
+	text(std::format("Lay the straightedge across the deck in several directions and slip feelers under it. A warped deck is surfaced flat "
+		"on the surface grinder, which also lowers the deck height and raises compression. No more than {} may come off in all: a deck "
+		"still warped past that means a new block. Main housings that are out of line or oversize are line bored.", deviation(spec.maxResurface)));
 
 	begin("5. Crankshaft");
 	heading("Specifications");
@@ -205,6 +276,7 @@ void ServiceManual::Build(bool imperial)
 	heading("Inspection");
 	step("Measure every journal with the outside micrometer at both ends and at two angles 90 degrees apart.");
 	step("Taper is the difference end to end; out of round, the difference between the two angles.");
+	illustrate(Figure::JOURNAL_POINTS, "Measuring a journal: both ends, two angles 90 degrees apart.");
 	step("Check the finish: scored journals chew up bearings.");
 	heading("Machining");
 	text("A journal that is just rough can be polished. A worn, tapered or scored journal is ground undersize on the crankshaft "
@@ -216,8 +288,16 @@ void ServiceManual::Build(bool imperial)
 	heading("Connecting Rods");
 	figure("Big end bore (housing)", tolerance(spec.rodHousing));
 	figure("Centre to centre length", tolerance(spec.rodLength));
+	figure("Bend, per 100 mm", most(spec.maxRodBend));
+	figure("Twist, per 100 mm", most(spec.maxRodTwist));
+	figure("Side clearance on the crank pin", clearance(spec.rodSideClearance));
+	figure("Side clearance limit", most(spec.maxRodSideClearance));
 	text("Big ends stretch oval with miles. Measure the housing with the cap torqued on at two angles. Rod length moves the piston at "
 		"top dead centre, which changes deck clearance and compression.");
+	step("Hang each rod on the rod aligner and check it for bend, then twist. Past the limit, replace the rod: it holds its piston "
+		"crooked in the bore.", { PartType::CONNECTING_ROD });
+	step("Fit the rod, with its bearings and cap, on its crank pin. Slip feelers between the big end and the crank cheek: that's the "
+		"side clearance. Past the limit, replace the rod.");
 	heading("Pistons");
 	figure("Skirt diameter (standard)", tolerance(spec.pistonSkirt));
 	figure("Compression height", tolerance(spec.compressionHeight));
@@ -227,10 +307,12 @@ void ServiceManual::Build(bool imperial)
 	figure("Cast", clearance(spec.PistonToWallFor(MaterialType::CAST_ALUMINUM)));
 	figure("Hypereutectic", clearance(spec.PistonToWallFor(MaterialType::HYPEREUTECTIC_ALUMINUM)));
 	figure("Forged 2618", clearance(spec.PistonToWallFor(MaterialType::FORGED_2618)));
+	illustrate(Figure::PISTON_CLEARANCE, "Piston to wall clearance: bore diameter minus skirt diameter (gap exaggerated).");
 	note("Too tight and the piston scuffs or seizes when hot. Too loose and it rocks and slaps, and the rings never seal.");
 	heading("Ring End Gap");
 	figure("Top ring end gap", clearance(spec.ringGap));
-	step("Push the ring squarely into its own bore with a piston, about a third of the way down.");
+	illustrate(Figure::RING_GAP, "Checking a ring's end gap, the ring squared in its own bore.");
+	step("Push the ring squarely into its own bore with a piston, about a third of the way down.", { PartType::PISTON_RING, PartType::PISTON });
 	step("Measure the gap between the ends with the feeler gauge set.");
 	step("Too tight: file it open on the ring filer, a little at a time, and measure again. Too wide: fit a new ring.");
 	note("Gap each ring to the bore it goes in. Ends that butt when hot break the ring land.");
@@ -243,14 +325,16 @@ void ServiceManual::Build(bool imperial)
 	figure("Rod oil clearance", clearance(spec.rodClearance));
 	text("Oil clearance is the housing bore, minus the journal, minus both shells. Too tight and the bearing runs dry and spins; too "
 		"loose and oil pressure falls away and the bearing knocks.");
+	illustrate(Figure::OIL_CLEARANCE, "A main bearing end on (oil clearance exaggerated).");
 	heading("Checking With Plastigauge");
 	text("Plastigauge is a soft thread that squashes flat between the journal and the bearing. How wide it spreads is the clearance.");
-	step("Fit the upper shells in the block and lay the crankshaft in them.");
+	step("Fit the upper shells in the block and lay the crankshaft in them.", { PartType::MAIN_BEARING, PartType::CRANKSHAFT });
 	step("Hold the Plastigauge and lay a strip across the journal, along its length.");
-	step("Fit the lower shell and the main cap over it.");
-	step("Torque the cap bolts to spec. Do not turn the crank while the strip is in.");
+	step("Fit the lower shell and the main cap over it.", { PartType::MAIN_BEARING_LOWER, PartType::MAIN_CAP });
+	step("Torque the cap bolts to spec. Do not turn the crank while the strip is in.", { PartType::BOLT_M10 });
 	step("Undo the bolts and take the cap off. The flattened strip stays on the journal.");
 	step("Read its width against the scale on the packet: that is the oil clearance.");
+	illustrate(Figure::PLASTIGAUGE_SCALE, "The Plastigauge scale. Readings in red are outside the oil clearance spec.");
 	text("Rod bearings are checked the same way: the rod and its upper shell on the crank pin, a strip across the journal, then the lower "
 		"shell and rod cap, torqued and removed again.");
 	note("Out of spec? Undersize shells close up a ground journal; a worn journal is ground and fitted with them.");
@@ -261,10 +345,14 @@ void ServiceManual::Build(bool imperial)
 	heading("Head");
 	figure("Combustion chamber volume", std::format("{:.1f} - {:.1f} cc", spec.chamberVolume.Min(), spec.chamberVolume.Max()));
 	figure("Head gasket face flatness", most(spec.maxHeadFlatness));
+	figure("Manifold face flatness", most(spec.maxPortFaceFlatness));
+	figure("Resurfacing limit (gasket face)", most(spec.maxResurface));
+	figure("Intake manifold flange flatness", most(spec.maxIntakeManifoldFlatness));
 	figure("Head gasket thickness (compressed)", tolerance(spec.gasketThickness));
 	figure("Head gasket bore", size(spec.gasketBore));
-	text("Check the head face with the straightedge and feelers; surface it if warped (it raises compression). The chambers are "
-		"measured with the burette and cc plate.");
+	text(std::format("Check the gasket face and both manifold faces with the straightedge and feelers, and the intake manifold's flange "
+		"too. Surface what's warped. Surfacing the gasket face raises compression, and no more than {} may come off it in all: past "
+		"that, replace the head. The chambers are measured with the burette and cc plate.", deviation(spec.maxResurface)));
 	heading("Valve Guides and Stems");
 	figure("Guide bore", tolerance(spec.guideBore));
 	figure("Guide taper (bellmouth)", most(spec.maxGuideTaper));
@@ -273,8 +361,10 @@ void ServiceManual::Build(bool imperial)
 	figure("Exhaust stem diameter", tolerance(spec.exhaustStem));
 	figure("Intake stem to guide", clearance(spec.intakeStemClearance));
 	figure("Exhaust stem to guide", clearance(spec.exhaustStemClearance));
-	text("Measure guides with the small hole gauge or small-bore gauge; stems with the micrometer. Worn guides are reamed oversize "
-		"and fitted with oversize-stem valves.");
+	figure("Intake stem to guide, limit", most(spec.maxIntakeStemClearance));
+	figure("Exhaust stem to guide, limit", most(spec.maxExhaustStemClearance));
+	text("Measure guides with the small hole gauge or small-bore gauge; stems with the micrometer. A guide worn a little past new is "
+		"still serviceable; past the limit, ream it oversize and fit an oversize-stem valve.");
 	heading("Valves and Seats");
 	figure("Seat width", std::format("{} - {}", deviation(spec.seatWidth.min), deviation(spec.seatWidth.max)));
 	figure("Seat runout", most(spec.maxSeatRunout));
@@ -284,63 +374,106 @@ void ServiceManual::Build(bool imperial)
 	figure("Overall length", tolerance(spec.valveLength));
 	text("Recut worn seats with the seat cutter and reface valves on the refacer. Refacing thins the margin: below the minimum the "
 		"valve burns, so replace it.");
+	illustrate(Figure::VALVE_DIMENSIONS, "A valve installed in the head, and what is measured.");
 	heading("Springs");
 	figure("Free length", tolerance(spec.springFreeLength));
-	figure("Seat pressure at installed height", std::format("{:.0f} - {:.0f} N", spec.springSeatPressure.Min(), spec.springSeatPressure.Max()));
+	figure("Out of square", most(spec.maxSpringSquareness));
+	figure("Installed height", size(spec.installedHeight));
+	figure("Tension at installed height", std::format("{:.0f} N ({:.1f} kg)", spec.springRate * (spec.springFreeLength.nominal - spec.installedHeight),
+		spec.springRate * (spec.springFreeLength.nominal - spec.installedHeight) / 9.80665));
+	figure("Minimum tension", std::format("{:.0f} N ({:.0f} kg)", spec.springSeatPressure.Min(), spec.springSeatPressure.Min() / 9.80665));
 	figure("Spring rate", std::format("{:.0f} N/mm", spec.springRate));
-	figure("Installed height", std::format("{} - {}", size(spec.installedHeightRange.min), size(spec.installedHeightRange.max)));
-	figure("Seat pressure, installed", std::format("{:.0f} - {:.0f} N", spec.seatPressure.min, spec.seatPressure.max));
-	text("Test springs on the valve spring tester. With the valve, seal, spring and retainer fitted, measure the installed height with "
-		"the installed height micrometer: cutting seats and refacing valves sinks the valve and raises it, which weakens the spring. "
-		"Weak springs let the valves float at high rpm.");
+	figure("Installed height, in the head", std::format("{} - {}", size(spec.installedHeightRange.min), size(spec.installedHeightRange.max)));
+	step("Stand each spring on the bench against the steel square and turn it: the widest gap at the top is how far out of square it is.",
+		{ PartType::VALVE_SPRING });
+	step("Measure its free length with the caliper.");
+	step("Squeeze it to the installed height on the valve spring tester and read the tension.");
+	step("Replace any spring out of square, short, or under the minimum tension.");
+	text("With the valve, seal, spring and retainer fitted, measure the installed height with the installed height micrometer: cutting "
+		"seats and refacing valves sinks the valve and raises it, which weakens the spring. Weak springs let the valves float at high rpm; "
+		"an out-of-square one pushes the stem sideways and wears its guide.");
+	illustrate(Figure::SPRING_CURVE, "Spring force against height. A good spring passes through the green box at its installed height.");
 
 	begin("9. Camshaft");
 	heading("Specifications");
 	figure("Cam bearing bore (head)", tolerance(spec.camBore));
 	figure("Cam journal diameter", tolerance(spec.camJournal));
-	figure("Lobe lift", tolerance(spec.lobeLift));
+	figure("Lobe height", tolerance(spec.lobeHeight));
+	figure("Lobe height minimum", size(spec.minLobeHeight));
 	figure("Cam oil clearance", clearance(spec.camClearance));
-	text("Lobe lift is airflow: a worn, flat lobe costs power on that cylinder. Measure every lobe.");
+	figure("Cam oil clearance limit", most(spec.maxCamClearance));
+	figure("End play", clearance(spec.camEndPlay));
+	figure("End play limit", most(spec.maxCamEndPlay));
+	figure("Bend (runout)", most(spec.maxCamRunout));
+	figure("Fuel pump eccentric height", tolerance(spec.fuelPumpEccentric));
+	figure("Fuel pump eccentric minimum", size(spec.minFuelPumpEccentric));
+	text("Lobe height is airflow: a worn lobe costs power on that cylinder. Mic every lobe across its nose; below the minimum, replace "
+		"the cam.");
+	illustrate(Figure::CAM_PROFILE, "Valve lift through one turn of the cam, new and worn.");
+	heading("Checking the Camshaft");
+	step("End play: with the cam in the head and its caps torqued, set a dial indicator on its nose and push it back and forth. Past the "
+		"limit, replace the cam and/or the head.", { PartType::CAMSHAFT });
+	step("Bend: lay the cam in the V-blocks, set the pointer on the centre journal and turn it once. Past the limit, replace it.");
+	step("Lobes: mic each lobe's height, and the fuel pump eccentric between the first lobes and the second journal. Below "
+		"either minimum, replace the cam: a worn eccentric short-strokes the fuel pump and starves the engine at high rpm.");
 	heading("Checking Cam Clearance");
-	step("Fit the buckets, then lay the camshaft in the head.");
+	step("Lay the camshaft in the head, the rocker shafts off.", { PartType::CAMSHAFT });
 	step("Lay a Plastigauge strip across each journal.");
-	step("Fit each cam cap in its own numbered place and torque its bolts.");
-	step("Undo the caps, lift them off and read the strips.");
+	step("Fit each cam cap in its own numbered place and torque its bolts. Do not turn the cam while the strips are in.",
+		{ PartType::CAM_CAP, PartType::BOLT_M6 });
+	step("Undo the caps, lift them off and read the strips. Past the limit, replace the cam and the head.");
+	heading("Rocker Arms and Shafts");
+	figure("Rocker arm bore", tolerance(spec.rockerBore));
+	figure("Rocker shaft diameter", tolerance(spec.rockerShaft));
+	figure("Arm to shaft clearance", clearance(spec.rockerClearance));
+	figure("Arm to shaft clearance, limit", most(spec.maxRockerClearance));
+	text("Measure each arm's bore with the small-bore gauge and the shaft under each arm with the micrometer: the shafts wear "
+		"where the arms ride. Past the limit, replace the arm, the shaft or both: the arm rocks on its shaft and ticks.");
 
 	begin("10. Assembly Sequence");
 	text("The engine goes together in this order. A part can only be fitted once everything it depends on is in place and done up; the "
 		"stand tells you what is missing.");
+	illustrate(Figure::ASSEMBLY_FLOW, "The build at a glance.");
 	heading("Bottom End");
-	step("Block on the stand. Core plugs.");
-	step("Upper main shells in the block, oiled.");
-	step("Crankshaft into the shells.");
-	step("Lower main shells and main caps, each to its own journal. Torque the main cap bolts.");
-	step("Rear main seal over the crank flange.");
-	step("Oil pump over the crank snout, then the pickup.");
+	step("Block on the stand. Core plugs.", { PartType::BLOCK, PartType::CORE_PLUG });
+	step("Upper main shells in the block, oiled.", { PartType::MAIN_BEARING });
+	step("Crankshaft into the shells.", { PartType::CRANKSHAFT });
+	step("Lower main shells and main caps, each to its own journal. Torque the main cap bolts.", { PartType::MAIN_BEARING_LOWER, PartType::MAIN_CAP, PartType::BOLT_M10 });
+	step("Rear main seal over the crank flange, then the flywheel on the flange, its bolts torqued.", { PartType::REAR_MAIN_SEAL, PartType::FLYWHEEL, PartType::BOLT_M10 });
+	step("Oil pump over the crank snout, then the pickup.", { PartType::OIL_PUMP, PartType::OIL_PICKUP });
 	heading("Pistons and Rods, Each Cylinder");
-	step("Piston down its bore, top ring gapped and fitted.");
-	step("Connecting rod onto the crank pin with its upper shell.");
-	step("Lower rod shell and rod cap. Torque the rod nuts.");
+	step("Piston down its bore, top ring gapped and fitted.", { PartType::PISTON, PartType::PISTON_RING });
+	step("Connecting rod onto the crank pin with its upper shell.", { PartType::CONNECTING_ROD, PartType::ROD_BEARING });
+	step("Lower rod shell and rod cap. Torque the rod nuts.", { PartType::ROD_BEARING_LOWER, PartType::ROD_CAP, PartType::NUT_M8 });
 	heading("Top End");
-	step("Head gasket, once every piston and rod is in.");
-	step("Cylinder head. Torque the head bolts.");
-	step("Each valve: valve, stem seal, spring, retainer and keepers, bucket.");
-	step("Camshaft on the buckets, then the cam caps, torqued.");
+	step("Head gasket, once every piston and rod is in.", { PartType::HEAD_GASKET });
+	step("Cylinder head. Torque the head bolts.", { PartType::CYLINDER_HEAD, PartType::BOLT_M12 });
+	step("Each valve: valve, stem seal, spring, retainer and keepers.", { PartType::INTAKE_VALVE, PartType::EXHAUST_VALVE, PartType::VALVE_STEM_SEAL, PartType::VALVE_SPRING, PartType::VALVE_RETAINER });
+	step("Camshaft into the head, then the cam caps, torqued.", { PartType::CAMSHAFT, PartType::CAM_CAP });
+	step("Rocker shafts over the cam, intake side and exhaust side, bolts torqued. Then a rocker arm onto its shaft over each valve.", { PartType::ROCKER_SHAFT, PartType::ROCKER_ARM, PartType::BOLT_M8 });
 	heading("Timing Belt");
-	step("Crank sprocket (in front of the pump) and cam sprocket; belt idlers.");
-	step("Timing belt round the lot with the marks lined up, then the tensioner.");
-	step("Timing cover gasket and cover, front crank seal, crank pulley (its bolt to full torque).");
+	step("Crank sprocket (in front of the pump) and cam sprocket; belt idlers, their bolts torqued.", { PartType::CRANK_SPROCKET, PartType::CAM_SPROCKET, PartType::BELT_IDLER, PartType::BOLT_M10 });
+	step("Timing belt round the lot with the marks lined up, then the tensioner.", { PartType::TIMING_BELT, PartType::BELT_TENSIONER });
+	illustrate(Figure::BELT_ROUTING, "Timing belt routing, from the front, with the timing marks at TDC.");
+	step("Timing cover gasket and cover, front crank seal, crank pulley (its bolt to full torque).", { PartType::TIMING_COVER_GASKET, PartType::TIMING_COVER, PartType::FRONT_CRANK_SEAL, PartType::CRANK_PULLEY, PartType::BOLT_M14 });
 	heading("Closing Up and Ancillaries");
-	step("Oil pan gasket and pan, once the pickup, rear seal, timing cover and rod caps are on. Drain plug and oil filter.");
-	step("Valve cover gasket and cover. Spark plugs, then the coils through the cover.");
-	step("Intake manifold and gasket, throttle body, injectors and fuel rail.");
-	step("Exhaust manifold and gasket.");
-	step("Water pump and gasket on the timing cover; thermostat and its housing.");
+	step("Oil pan gasket and pan, once the pickup, rear seal, timing cover and rod caps are on. Drain plug and oil filter.", { PartType::OIL_PAN_GASKET, PartType::OIL_PAN, PartType::OIL_DRAIN_PLUG, PartType::OIL_FILTER });
+	step("Valve cover gasket and cover, once the rockers are in. Spark plugs; the distributor into the back of the head on the cam; then a lead from its cap down through the cover onto each plug.", { PartType::VALVE_COVER_GASKET, PartType::VALVE_COVER, PartType::SPARK_PLUG, PartType::DISTRIBUTOR, PartType::PLUG_LEAD });
+	step("Intake manifold and gasket, then the carburettor on top of the plenum. The mechanical fuel pump on the side of the head at the cam, its arm in on the cam's eccentric.", { PartType::INTAKE_MANIFOLD_GASKET, PartType::INTAKE_MANIFOLD, PartType::CARBURETTOR, PartType::FUEL_PUMP });
+	step("Exhaust manifold and gasket, then the downpipe on its collector.", { PartType::EXHAUST_MANIFOLD_GASKET, PartType::EXHAUST_MANIFOLD, PartType::EXHAUST_PIPE });
+	step("Water pump and gasket on the timing cover; thermostat and its housing.", { PartType::WATER_PUMP_GASKET, PartType::WATER_PUMP, PartType::THERMOSTAT, PartType::THERMOSTAT_HOUSING });
+	step("Alternator on its bracket at the front, bolts torqued. Then the V-belt round the crank pulley, the water pump and the "
+		"alternator.", { PartType::ALTERNATOR, PartType::DRIVE_BELT, PartType::BOLT_M10 });
 	note("Hold Shift while fitting a nut or bolt to run in every empty hole of that size on the part at once.");
 
 	begin("11. Torque Specifications");
 	text("Torque with a torque wrench driving the right socket. The engine's real clamping force is only as good as the wrench: a "
 		"beam wrench is good to about 10%, a click wrench about 4%, a digital one about 2%.");
+	illustrate(Figure::TORQUE_ACCURACY, "Where a head bolt really ends up with each torque wrench.");
+	heading("Tightening Sequences");
+	text("Head bolts and main cap bolts are tightened from the middle outward, a little at a time, so the part is pulled down evenly.");
+	illustrate(Figure::HEAD_BOLT_SEQUENCE, "Head bolt sequence.");
+	illustrate(Figure::MAIN_CAP_SEQUENCE, "Main cap bolt sequence, cap 1 at the front.");
 	heading("Fasteners");
 	for (const auto& holes : PartCatalog::Holes())
 	{
@@ -362,6 +495,7 @@ void ServiceManual::Build(bool imperial)
 	figure("Target", std::format("{:.1f} - {:.1f} : 1", spec.compressionRatio.min, spec.compressionRatio.max));
 	text("The ratio comes from the bore, stroke, chamber volume, piston dish, deck clearance and gasket. Surfacing the head or block "
 		"raises it; too high and the engine detonates.");
+	illustrate(Figure::COMPRESSION_GRAPH, "Compression ratio against metal taken off the block deck.");
 	heading("Dyno");
 	step("With the engine complete on its stand, open the dyno (E at the dyno cell) and move the engine onto it.");
 	step("Run a pull. The chart shows power and torque against rpm; the readout lists anything the engine is unhappy about.");
@@ -403,10 +537,20 @@ float ServiceManual::Measure(const Line& line, float width, float fontSize) cons
 	switch (line.kind)
 	{
 		case Kind::HEADING:		return fontSize * 0.6f + wrapped(line.text, HEADING_SCALE, width) + fontSize * 0.5f;
-		case Kind::STEP:		return wrapped(line.text, BODY_SCALE, width - fontSize * 2.f) + gap;
+		case Kind::STEP:
+			return wrapped(line.text, BODY_SCALE, width - fontSize * 2.f) + (line.views.empty() ? 0.f : LayoutViews(line.views, width, fontSize)) + gap;
+		case Kind::ITEM:
+		{
+			float textWidth = width - fontSize * (ITEM_VIEW + 0.8f);
+			float text = wrapped(line.text, ITEM_NAME_SCALE, textWidth) + fontSize * 0.25f + wrapped(line.value, BODY_SCALE, textWidth) +
+				fontSize * 0.35f + fontSize * 1.15f * line.specs.size();
+			return (std::max)(fontSize * ITEM_VIEW, text) + fontSize * 1.2f;
+		}
 		case Kind::BULLET:		return wrapped(line.text, BODY_SCALE, width - fontSize * 1.4f) + gap;
 		case Kind::NOTE:		return wrapped(line.text, BODY_SCALE, width - fontSize * 1.6f) + fontSize * 1.2f + gap;
 		case Kind::CONTENTS:	return fontSize * 1.6f;
+		case Kind::FIGURE:
+			return fontSize * 0.4f + fontSize * FigureLines(static_cast<Figure>(std::stoi(line.value))) + fontSize * 0.5f + wrapped(line.text, 0.9f, width) + gap * 2.f;
 		case Kind::SPEC:
 		{
 			float valueWidth = font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, line.value.c_str()).x;
@@ -445,6 +589,43 @@ void ServiceManual::Paginate(float width, float height, float fontSize)
 	m_spread = std::clamp(m_spread, 0, SpreadCount() - 1);
 }
 
+float ServiceManual::LayoutViews(const std::vector<View>& views, float width, float fontSize,
+	const std::function<void(size_t, float, float)>& place) const
+{
+	// Indented with the step's text, as many to a row as fit; each row as tall as its longest caption.
+	ImFont* font = ImGui::GetFont();
+	float indent = fontSize * 2.f, size = fontSize * STEP_VIEW, spacing = fontSize * 0.5f;
+	size_t perRow = static_cast<size_t>((std::max)(1.f, std::floor((width - indent + spacing) / (size + spacing))));
+	float y = fontSize * 0.3f;
+	for (size_t first = 0; first < views.size(); first += perRow)
+	{
+		size_t last = (std::min)(first + perRow, views.size());
+		float captionHeight = 0.f;
+		for (size_t i = first; i < last; i++)
+		{
+			captionHeight = (std::max)(captionHeight, font->CalcTextSizeA(fontSize * CAPTION_SCALE, FLT_MAX, size, views[i].caption.c_str()).y);
+			if (place)
+				place(i, indent + (i - first) * (size + spacing), y);
+		}
+		y += size + fontSize * 0.2f + captionHeight + fontSize * 0.3f;
+	}
+	return y;
+}
+
+void ServiceManual::DrawView(ImDrawList* drawList, const std::string& model, const ImVec2& min, const ImVec2& max)
+{
+	// The same backdrop as the parts computer's previews, so a part looks the same in the book as in the shop.
+	drawList->AddRectFilledMultiColor(min, max, IM_COL32(52, 56, 64, 255), IM_COL32(52, 56, 64, 255), IM_COL32(28, 30, 34, 255), IM_COL32(28, 30, 34, 255));
+	drawList->AddRect(min, max, PAPER_SHADE);
+	if (!m_modelLookup)
+		return;
+	auto it = m_models.find(model);
+	if (it == m_models.end())
+		it = m_models.emplace(model, m_modelLookup(model)).first;
+	if (it->second)
+		ModelPreview::DrawAt(drawList, { min.x + 2.f, min.y + 2.f }, { max.x - 2.f, max.y - 2.f }, it->second);
+}
+
 int ServiceManual::SpreadCount() const
 {
 	return static_cast<int>((m_pages.size() + 1) / 2);
@@ -461,7 +642,7 @@ void ServiceManual::DrawCover(ImDrawList* drawList, const ImVec2& min, const ImV
 		drawList->AddText(font, size, { min.x + (width - extent.x) * 0.5f, y }, color, text);
 	};
 	drawList->AddRectFilled({ min.x, min.y + height * 0.08f }, { max.x, min.y + height * 0.16f }, ACCENT);
-	centred("LV MOTOR WORKS", 1.3f, min.y + height * 0.12f - fontSize * 0.65f, GOLD);
+	centred("MONKEY KOBO MOTOR WORKS", 1.3f, min.y + height * 0.12f - fontSize * 0.65f, GOLD);
 	centred("LV-16", 4.f, min.y + height * 0.22f, ACCENT);
 	centred("1.6 LITRE SOHC INLINE FOUR", 1.2f, min.y + height * 0.22f + fontSize * 4.6f, INK);
 
@@ -533,6 +714,45 @@ bool ServiceManual::DrawPage(ImDrawList* drawList, int page, const ImVec2& min, 
 				std::string label = line.value + ".";
 				drawList->AddText(font, fontSize, { min.x, y }, ACCENT, label.c_str());
 				drawList->AddText(font, fontSize, { min.x + fontSize * 2.f, y }, INK, line.text.c_str(), nullptr, width - fontSize * 2.f);
+				// The parts it brings in, in rows under it, each captioned.
+				if (!line.views.empty())
+				{
+					float top = y + font->CalcTextSizeA(fontSize, FLT_MAX, width - fontSize * 2.f, line.text.c_str()).y;
+					float viewSize = fontSize * STEP_VIEW;
+					LayoutViews(line.views, width, fontSize, [&](size_t i, float x, float viewY) {
+						ImVec2 viewMin = { min.x + x, top + viewY }, viewMax = { viewMin.x + viewSize, viewMin.y + viewSize };
+						DrawView(drawList, line.views[i].model, viewMin, viewMax);
+						const char* caption = line.views[i].caption.c_str();
+						ImVec2 extent = font->CalcTextSizeA(fontSize * CAPTION_SCALE, FLT_MAX, viewSize, caption);
+						drawList->AddText(font, fontSize * CAPTION_SCALE, { viewMin.x + (std::max)((viewSize - extent.x) * 0.5f, 0.f), viewMax.y + fontSize * 0.2f },
+							INK_FAINT, caption, nullptr, viewSize);
+					});
+				}
+				break;
+			}
+			case Kind::ITEM:
+			{
+				// The 3D view on the left; name, description and figures beside it; a hairline under the lot.
+				float viewSize = fontSize * ITEM_VIEW, textX = min.x + viewSize + fontSize * 0.8f, textWidth = max.x - textX;
+				if (!line.views.empty())
+					DrawView(drawList, line.views[0].model, { min.x, y }, { min.x + viewSize, y + viewSize });
+				float textY = y;
+				drawList->AddText(font, fontSize * ITEM_NAME_SCALE, { textX, textY }, ACCENT, line.text.c_str(), nullptr, textWidth);
+				textY += font->CalcTextSizeA(fontSize * ITEM_NAME_SCALE, FLT_MAX, textWidth, line.text.c_str()).y + fontSize * 0.25f;
+				drawList->AddText(font, fontSize, { textX, textY }, INK, line.value.c_str(), nullptr, textWidth);
+				textY += font->CalcTextSizeA(fontSize, FLT_MAX, textWidth, line.value.c_str()).y + fontSize * 0.35f;
+				for (const auto& [name, figure] : line.specs)
+				{
+					ImVec2 nameSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, name.c_str());
+					ImVec2 figureSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, figure.c_str());
+					drawList->AddText(font, fontSize, { textX, textY }, INK_FAINT, name.c_str());
+					drawList->AddText(font, fontSize, { max.x - figureSize.x, textY }, ACCENT, figure.c_str());
+					for (float x = textX + nameSize.x + fontSize * 0.5f; x < max.x - figureSize.x - fontSize * 0.5f; x += fontSize * 0.5f)
+						drawList->AddCircleFilled({ x, textY + fontSize * 0.75f }, 1.f, PAPER_SHADE);
+					textY += fontSize * 1.15f;
+				}
+				float rule = y + height - fontSize * 0.5f;
+				drawList->AddLine({ min.x, rule }, { max.x, rule }, PAPER_SHADE, 1.f);
 				break;
 			}
 			case Kind::BULLET:
@@ -579,6 +799,15 @@ bool ServiceManual::DrawPage(ImDrawList* drawList, int page, const ImVec2& min, 
 					m_spread = m_chapterPage[target] / 2;
 					jumped = true;
 				}
+				break;
+			}
+			case Kind::FIGURE:
+			{
+				// The drawing, then its caption under it.
+				float top = y + fontSize * 0.4f;
+				float bottom = top + fontSize * FigureLines(static_cast<Figure>(std::stoi(line.value)));
+				DrawFigure(drawList, static_cast<Figure>(std::stoi(line.value)), { min.x, top }, { max.x, bottom }, fontSize);
+				drawList->AddText(font, fontSize * 0.9f, { min.x, bottom + fontSize * 0.5f }, INK_FAINT, line.text.c_str(), nullptr, width);
 				break;
 			}
 			default:

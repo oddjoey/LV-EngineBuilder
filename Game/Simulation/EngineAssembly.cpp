@@ -93,6 +93,12 @@ PartType EngineAssembly::SlotPartType(AssemblySlot slot)
 		case AssemblySlot::EXHAUST_VALVE:	return PartType::EXHAUST_VALVE;
 		case AssemblySlot::VALVE_SPRING:	return PartType::VALVE_SPRING;
 		case AssemblySlot::CAM_CAP:		return PartType::CAM_CAP;
+		case AssemblySlot::ROCKER_SHAFT:	return PartType::ROCKER_SHAFT;
+		case AssemblySlot::DISTRIBUTOR:		return PartType::DISTRIBUTOR;
+		case AssemblySlot::FLYWHEEL:		return PartType::FLYWHEEL;
+		case AssemblySlot::EXHAUST_PIPE:	return PartType::EXHAUST_PIPE;
+		case AssemblySlot::ALTERNATOR:		return PartType::ALTERNATOR;
+		case AssemblySlot::DRIVE_BELT:		return PartType::DRIVE_BELT;
 		case AssemblySlot::COUNT:			return PartType::BLOCK;
 		default:
 			if (const auto* holes = Holes(slot))
@@ -273,6 +279,10 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::REAR_MAIN_SEAL:
 			all(A::MAIN_CAP);
 			break;
+		// The flywheel bolts to the crank flange behind the seal.
+		case A::FLYWHEEL:
+			one(A::REAR_MAIN_SEAL);
+			break;
 		// Each cylinder, once the crank is capped: the piston down its bore, its ring, the rod onto
 		// the crank pin with its upper shell, then the lower shell and the rod cap.
 		case A::PISTON:
@@ -312,7 +322,8 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			one(A::HEAD_GASKET);
 			break;
 		// Valvetrain, valve by valve: valve, stem seal over its guide, spring, retainer and
-		// keepers, and the bucket on top. The cam goes on the buckets once they're all in.
+		// keepers. The cam goes in once every valve is closed up, then its caps, then the rocker
+		// shafts over it and an arm on its shaft for each valve.
 		case A::INTAKE_VALVE:
 		case A::EXHAUST_VALVE:
 			one(A::HEAD_BOLT);
@@ -326,15 +337,18 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::VALVE_RETAINER:
 			needed.push_back({ A::VALVE_SPRING, index });
 			break;
-		case A::LIFTER:
-			needed.push_back({ A::VALVE_RETAINER, index });
-			break;
 		case A::CAMSHAFT:
-			all(A::LIFTER);
+			all(A::VALVE_RETAINER);
 			break;
 		// Then the caps over its journals, each in its own numbered place.
 		case A::CAM_CAP:
 			one(A::CAMSHAFT);
+			break;
+		case A::ROCKER_SHAFT:
+			all(A::CAM_CAP);
+			break;
+		case A::ROCKER_ARM:
+			needed.push_back({ A::ROCKER_SHAFT, index % 2 });
 			break;
 		// Timing drive: sprockets on the crank (in front of the pump) and the cam, the idlers, the
 		// belt round the lot with the marks lined up, then the tensioner to take up the slack.
@@ -382,19 +396,25 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::OIL_FILTER:
 			one(A::OIL_PAN);
 			break;
-		// The valve cover closes up the top once the timing drive is in.
+		// The valve cover closes up the top once the timing drive and the rockers are in.
 		case A::VALVE_COVER_GASKET:
 			one(A::BELT_TENSIONER);
+			all(A::ROCKER_ARM);
 			break;
 		case A::VALVE_COVER:
 			one(A::VALVE_COVER_GASKET);
 			break;
-		// Ignition: plugs into the head, coils down through the cover onto them.
+		// Ignition: plugs into the head, the distributor into the back of the head on the cam, then
+		// a lead from its cap down through the cover onto each plug.
 		case A::SPARK_PLUG:
 			one(A::HEAD_BOLT);
 			break;
-		case A::IGNITION_COIL:
+		case A::DISTRIBUTOR:
+			all(A::CAM_CAP);
+			break;
+		case A::PLUG_LEAD:
 			one(A::VALVE_COVER);
+			one(A::DISTRIBUTOR);
 			needed.push_back({ A::SPARK_PLUG, index });
 			break;
 		// Intake side: gasket, manifold, then what hangs off it.
@@ -406,15 +426,18 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 		case A::INTAKE_MANIFOLD:
 			one(A::INTAKE_MANIFOLD_GASKET);
 			break;
-		case A::THROTTLE_BODY:
-		case A::FUEL_INJECTOR:
+		case A::CARBURETTOR:
 			one(A::INTAKE_MANIFOLD);
 			break;
-		case A::FUEL_RAIL:
-			all(A::FUEL_INJECTOR);
+		// The fuel pump's arm rides on the cam.
+		case A::FUEL_PUMP:
+			all(A::CAM_CAP);
 			break;
 		case A::EXHAUST_MANIFOLD:
 			one(A::EXHAUST_MANIFOLD_GASKET);
+			break;
+		case A::EXHAUST_PIPE:
+			one(A::EXHAUST_MANIFOLD);
 			break;
 		// Cooling: the water pump bolts to the timing cover; the thermostat sits in the head's
 		// water outlet under its housing.
@@ -426,6 +449,16 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			break;
 		case A::THERMOSTAT_HOUSING:
 			one(A::THERMOSTAT);
+			break;
+		// Accessory drive: the alternator on its bracket at the front, then the V-belt round the crank
+		// pulley, the water pump and the alternator.
+		case A::ALTERNATOR:
+			one(A::TIMING_COVER);
+			break;
+		case A::DRIVE_BELT:
+			one(A::CRANK_PULLEY);
+			one(A::WATER_PUMP);
+			one(A::ALTERNATOR);
 			break;
 		default:
 			break;
@@ -557,6 +590,16 @@ std::optional<double> EngineAssembly::RodClearance(int cylinder) const
 	if (!bigEnd || !upper || !lower || !crankJournal || !Get(AssemblySlot::ROD_CAP, cylinder))
 		return std::nullopt;
 	return bigEnd->Size() - upper->Size() - lower->Size() - crankJournal->Size();
+}
+
+std::optional<double> EngineAssembly::RodSideClearance(int cylinder) const
+{
+	// The rod, with its bearings and cap, on its crank pin: the pin's width less the big end's.
+	auto width = FindFeature(AssemblySlot::CONNECTING_ROD, cylinder, FeatureNames::BIG_END_WIDTH);
+	auto pin = FindFeature(AssemblySlot::CRANKSHAFT, 0, FeatureNames::RodJournalWidth(cylinder));
+	if (!width || !pin || !Get(AssemblySlot::ROD_CAP, cylinder))
+		return std::nullopt;
+	return pin->Size() - width->Size();
 }
 
 std::optional<double> EngineAssembly::PistonToWall(int cylinder) const

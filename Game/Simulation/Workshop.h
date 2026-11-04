@@ -124,6 +124,9 @@ public:
 	// Loading a save from before cam caps were parts: each head gets its set, and an engine with its
 	// cam in has them fitted and bolted down to spec, so it's no less built than it was.
 	int AddMissingCamCaps();
+	// Loading a save from before the 4A-C's hardware: a used flywheel, rocker shafts, distributor and
+	// downpipe for each block, with their bolts.
+	int AddMissing4ACParts();
 
 	// Inventory
 	const std::vector<pPart>& GetInventory() const;

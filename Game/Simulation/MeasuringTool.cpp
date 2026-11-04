@@ -164,8 +164,8 @@ namespace ToolCatalog
 
 			MeasuringTool feeler;
 			feeler.name = "Feeler Gauge Set";
-			feeler.description = "Square the ring in its bore and find the blade that just slides.";
-			feeler.assemblyChecks = { AssemblyCheck::RING_GAP };
+			feeler.description = "Square the ring in its bore and find the blade that just slides. Also slips between a rod's big end and the crank cheek for its side clearance.";
+			feeler.assemblyChecks = { AssemblyCheck::RING_GAP, AssemblyCheck::ROD_SIDE_CLEARANCE };
 			feeler.resolution = 0.025;
 			feeler.sigma = 0.004;
 			feeler.price = 25.0;
@@ -227,6 +227,36 @@ namespace ToolCatalog
 			manual.manual = true;
 			manual.price = 60.0;
 			list.push_back(manual);
+
+			// Added after the manual, so saved tool lists keep their order.
+			MeasuringTool square;
+			square.name = "Steel Square";
+			square.description = "Stand a valve spring against it on the bench, turn it, and measure the widest gap at the top: no more than 2 mm out of square.";
+			square.kinds = { FeatureKind::SQUARENESS };
+			square.resolution = 0.1;
+			square.sigma = 0.05;
+			square.price = 25.0;
+			square.hoursPerUse = 0.05;
+			list.push_back(square);
+
+			MeasuringTool aligner;
+			aligner.name = "Connecting Rod Aligner";
+			aligner.description = "Hangs a rod on a mandrel through its big end, with a V-block on the small end's pin: feelers under the V-block read bend, then twist, per 100 mm of length.";
+			aligner.kinds = { FeatureKind::ALIGNMENT };
+			aligner.resolution = 0.01;
+			aligner.sigma = 0.005;
+			aligner.price = 180.0;
+			aligner.hoursPerUse = 0.15;
+			list.push_back(aligner);
+
+			// A new shop starts with the bare minimum to strip and rebuild an engine: a ratchet and sockets for
+			// every nut and bolt (the crank pulley bolt is 22 mm), the cheapest torque wrench that reaches the
+			// crank pulley bolt's torque, a caliper, and the service manual (hung on the tool board with the rest).
+			for (auto& tool : list)
+				for (const char* starter : { "3/8in Ratchet", "Metric Socket Set 8-19 mm", "Large Socket Set 21-36 mm", "Beam Torque Wrench",
+					"Digital Caliper", "LV-16 Factory Service Manual" })
+					if (tool.name == starter)
+						tool.ownedAtStart = true;
 
 			return list;
 		}();

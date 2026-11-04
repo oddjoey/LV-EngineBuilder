@@ -128,11 +128,16 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 				add(FeatureNames::MainJournal(journal), { MainX(journal), 0.f, 0.f });
 			for (int cylinder = 0; cylinder < 4; cylinder++)
 				add(FeatureNames::RodJournal(cylinder), { BoreX(cylinder), ThrowSign(cylinder) * CRANK_THROW, 0.f });
+			for (int cylinder = 0; cylinder < 4; cylinder++)
+				add(FeatureNames::RodJournalWidth(cylinder), { BoreX(cylinder) + 0.011f, ThrowSign(cylinder) * CRANK_THROW, 0.02f });
 			add(FeatureNames::STROKE, { -0.23f, 0.f, 0.f });
 			break;
 		case PartType::CONNECTING_ROD:
 			add(FeatureNames::BIG_END, { 0.f, -ROD_LENGTH, 0.f });
 			add(FeatureNames::CENTER_LENGTH, { 0.f, -ROD_LENGTH * 0.5f, 0.f });
+			add(FeatureNames::BIG_END_WIDTH, { 0.011f, -ROD_LENGTH, 0.025f });
+			add(FeatureNames::ROD_BEND, { 0.f, -ROD_LENGTH * 0.3f, 0.008f });
+			add(FeatureNames::ROD_TWIST, { 0.008f, -ROD_LENGTH * 0.7f, 0.f });
 			break;
 		case PartType::PISTON:
 			add(FeatureNames::SKIRT, { 0.f, -0.045f, 0.0395f });
@@ -157,6 +162,8 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 			}
 			for (int journal = 0; journal < 5; journal++)
 				add(FeatureNames::CamBore(journal), { MainX(journal), CAM_Y, 0.f });
+			for (bool exhaust : { false, true })
+				add(FeatureNames::PortFace(exhaust), { 0.12f, PORT_Y, exhaust ? PORT_FACE_Z : -PORT_FACE_Z });
 			break;
 		case PartType::HEAD_GASKET:
 			add(FeatureNames::COMPRESSED_THICKNESS, { BLOCK_LENGTH * 0.45f, 0.001f, 0.09f });
@@ -166,7 +173,10 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 				add(FeatureNames::CamJournal(journal), { MainX(journal), 0.f, 0.f });
 			for (int cylinder = 0; cylinder < 4; cylinder++)
 				for (bool exhaust : { false, true })
-					add(FeatureNames::LobeLift(cylinder, exhaust), { BoreX(cylinder) + (exhaust ? 0.016f : -0.016f), 0.f, 0.f });
+					add(FeatureNames::LobeHeight(cylinder, exhaust), { BoreX(cylinder) + (exhaust ? 0.016f : -0.016f), 0.f, 0.f });
+			add(FeatureNames::CAM_END_PLAY, { FRONT_X + 0.01f, 0.f, 0.f });
+			add(FeatureNames::CAM_RUNOUT, { MainX(2), 0.f, 0.015f });
+			add(FeatureNames::FUEL_PUMP_ECCENTRIC, { FUEL_PUMP_X, 0.f, 0.02f });
 			break;
 		case PartType::INTAKE_VALVE:
 		case PartType::EXHAUST_VALVE:
@@ -178,13 +188,18 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 		case PartType::VALVE_SPRING:
 			add(FeatureNames::FREE_LENGTH, { 0.f, 0.022f, 0.012f });
 			add(FeatureNames::SEAT_PRESSURE, { 0.f, 0.022f, 0.f });
+			add(FeatureNames::SPRING_SQUARENESS, { 0.012f, 0.042f, 0.f });
 			break;
 		case PartType::OIL_PUMP:
 			add(FeatureNames::ROTOR_TIP_CLEARANCE, { 0.f, 0.016f, 0.026f });
 			add(FeatureNames::ROTOR_SIDE_CLEARANCE, { 0.026f, 0.016f, 0.f });
 			break;
 		case PartType::OIL_PAN:				add(FeatureNames::RAIL_FLATNESS, { 0.15f, 0.f, 0.112f }); break;
-		case PartType::LIFTER:				add(FeatureNames::BUCKET_DIAMETER, { 0.f, -0.006f, 0.0135f }); break;
+		case PartType::ROCKER_ARM:			add(FeatureNames::ROCKER_BORE, { 0.f, 0.006f, 0.025f }); break;
+		case PartType::ROCKER_SHAFT:		add(FeatureNames::ROCKER_SHAFT_DIAMETER, { BoreX(0), 0.f, 0.f }); break;
+		case PartType::DISTRIBUTOR:			add(FeatureNames::SHAFT_PLAY, { 0.f, 0.01f, 0.022f }); break;
+		case PartType::FLYWHEEL:			add(FeatureNames::FLYWHEEL_RUNOUT, { 0.09f, 0.014f, 0.f }); break;
+		case PartType::EXHAUST_PIPE:		add(FeatureNames::FLANGE_FLATNESS, { 0.06f, -0.12f, -0.09f }); break;
 		case PartType::CRANK_SPROCKET:		add(FeatureNames::ROOT_DIAMETER, { 0.f, 0.022f, 0.f }); break;
 		case PartType::CAM_SPROCKET:		add(FeatureNames::ROOT_DIAMETER, { 0.f, 0.044f, 0.f }); break;
 		case PartType::TIMING_BELT:		add(FeatureNames::BELT_TOOTH_HEIGHT, { 0.f, 0.004f, 0.0355f }); break;
@@ -195,10 +210,14 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 		case PartType::VALVE_COVER:			add(FeatureNames::RAIL_FLATNESS, { 0.18f, 0.f, 0.1f }); break;
 		case PartType::SPARK_PLUG:			add(FeatureNames::ELECTRODE_GAP, { 0.003f, -0.001f, 0.f }); break;
 		case PartType::INTAKE_MANIFOLD:		add(FeatureNames::FLANGE_FLATNESS, { 0.15f, 0.f, 0.f }); break;
-		case PartType::THROTTLE_BODY:		add(FeatureNames::THROTTLE_BORE, { -0.02f, 0.f, 0.f }); break;
+		case PartType::CARBURETTOR:
+			add(FeatureNames::THROTTLE_BORE, { 0.f, 0.076f, -0.015f });
+			add(FeatureNames::JET_FLOW, { 0.045f, 0.03f, 0.f });
+			break;
 		case PartType::FUEL_INJECTOR:		add(FeatureNames::INJECTOR_FLOW, { 0.f, 0.003f, 0.f }); break;
 		case PartType::EXHAUST_MANIFOLD:	add(FeatureNames::FLANGE_FLATNESS, { 0.15f, 0.f, 0.f }); break;
 		case PartType::WATER_PUMP:			add(FeatureNames::SHAFT_PLAY, { -0.045f, 0.012f, 0.f }); break;
+		case PartType::ALTERNATOR:			add(FeatureNames::SHAFT_PLAY, { 0.f, 0.032f, 0.f }); break;
 		default:
 			break;
 	}
@@ -215,6 +234,8 @@ std::vector<AssemblyAnchor> ShopAssets::AssemblyAnchors(const EngineSpec& spec)
 	{
 		anchors.push_back({ AssemblyCheck::OIL_CLEARANCE, cylinder, true, { BoreX(cylinder), PinY(cylinder), 0.f } });
 		anchors.push_back({ AssemblyCheck::RING_GAP, cylinder, false, { BoreX(cylinder), -0.02f, 0.f } });
+		// Between the big end and the crank cheek beside it.
+		anchors.push_back({ AssemblyCheck::ROD_SIDE_CLEARANCE, cylinder, true, { BoreX(cylinder) + 0.011f, PinY(cylinder), 0.f } });
 		anchors.push_back({ AssemblyCheck::DECK_CLEARANCE, cylinder, false, { BoreX(cylinder), 0.f, 0.03f } });
 		for (bool exhaust : { false, true })
 			anchors.push_back({ AssemblyCheck::INSTALLED_HEIGHT, EngineAssembly::SpringIndex(cylinder, exhaust), false,
@@ -365,6 +386,18 @@ void ShopAssets::LoadTools()
 				Box(builder, { 0.005f, 0.0315f, -0.04f }, { 0.17f, 0.001f, 0.05f }, { 0.85f, 0.65f, 0.2f });
 				break;
 			}
+			case ToolShape::STEEL_SQUARE:
+				// An engineer's square lying flat: the thick stock and the thin blade at right angles.
+				Box(builder, { -0.05f, 0.006f, 0.f }, { 0.016f, 0.012f, 0.12f }, dark);
+				Box(builder, { 0.02f, 0.0015f, -0.052f }, { 0.13f, 0.003f, 0.016f }, steel);
+				break;
+			case ToolShape::ROD_ALIGNER:
+				// A base, the upright plate the V-block reads against, and the mandrel the big end hangs on.
+				Box(builder, { 0.f, 0.006f, 0.f }, { 0.20f, 0.012f, 0.12f }, dark);
+				Box(builder, { -0.08f, 0.09f, 0.f }, { 0.012f, 0.16f, 0.12f }, steel);
+				Cylinder(builder, AlongX({ 0.f, 0.05f, 0.f }), 0.02f, 0.14f, steel);
+				Box(builder, { 0.06f, 0.05f, 0.f }, { 0.03f, 0.05f, 0.05f }, dark);
+				break;
 		}
 		AddModel(ToolModelName(tool), builder);
 	}
@@ -1076,6 +1109,8 @@ void ShopAssets::LoadParts()
 				cam.AddBox({ x, CAM_BASE_RADIUS * 0.6f, 0.f }, { 0.012f, (CAM_BASE_RADIUS + MAX_VALVE_LIFT) * 1.2f, 0.022f });
 				cam.ResetTransform();
 			}
+		// The fuel pump's eccentric, off-centre so it rocks the pump's arm once a turn.
+		Cylinder(cam, AlongX({ FUEL_PUMP_X, 0.003f, 0.f }), 0.017f, 0.008f, { 0.85f, 0.85f, 0.88f }, 24);
 		// The nose the cam sprocket bolts to.
 		Cylinder(cam, AlongX({ -0.218f, 0.f, 0.f }), 0.011f, 0.022f, { 0.45f, 0.45f, 0.48f }, 20);
 		add(PartType::CAMSHAFT, cam);
@@ -1260,7 +1295,10 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::OIL_FILTER:				return crossOver({ { 0.12f, -0.2f, -0.145f }, FACING_EXHAUST });
 		case PartType::VALVE_STEM_SEAL:			return { { BoreX(cylinder), HEAD_DECK_Y + HEAD_FLOOR_Y, ValveZ(exhaust) } };
 		case PartType::VALVE_RETAINER:			return { { BoreX(cylinder), HEAD_DECK_Y + HEAD_FLOOR_Y + SPRING_INSTALLED_HEIGHT, ValveZ(exhaust) } };
-		case PartType::LIFTER:					return { { BoreX(cylinder), HEAD_DECK_Y + VALVE_FACE_Y + VALVE_STEM_LENGTH, ValveZ(exhaust) } };
+		// Each rocker arm sits on its valve tip, its pivot out on the shaft to the side: the intakes' shaft
+		// on the intake side, the exhausts' on the exhaust side.
+		case PartType::ROCKER_ARM:				return { { BoreX(cylinder), HEAD_DECK_Y + VALVE_FACE_Y + VALVE_STEM_LENGTH, ValveZ(exhaust) }, exhaust ? glm::quat(1.f, 0.f, 0.f, 0.f) : END_FOR_END };
+		case PartType::ROCKER_SHAFT:			return { { 0.f, HEAD_DECK_Y + VALVE_FACE_Y + VALVE_STEM_LENGTH + ROCKER_PIVOT_Y, index == 1 ? VALVE_Z + ROCKER_PIVOT_Z : -VALVE_Z - ROCKER_PIVOT_Z } };
 		case PartType::CRANK_SPROCKET:			return { { TIMING_PLANE_X, CRANK_Y, 0.f } };
 		case PartType::CAM_SPROCKET:			return { { TIMING_PLANE_X, CamAxisY(), 0.f } };
 		case PartType::TIMING_BELT:			return { { TIMING_PLANE_X, (CRANK_Y + CamAxisY()) * 0.5f, 0.f }, FACING_FRONT };
@@ -1273,14 +1311,23 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::VALVE_COVER_GASKET:		return { { 0.f, HEAD_TOP_Y, 0.f } };
 		case PartType::VALVE_COVER:				return { { 0.f, HEAD_TOP_Y + 0.003f, 0.f } };
 		case PartType::SPARK_PLUG:				return { { BoreX(index), HEAD_DECK_Y + 0.012f, 0.f } };
-		case PartType::IGNITION_COIL:			return { { BoreX(index), HEAD_DECK_Y + 0.088f, 0.f } };
+		case PartType::PLUG_LEAD:				return { { BoreX(index), HEAD_DECK_Y + 0.093f, 0.f } };
+		// Gear-driven off the back of the cam, sticking out of the back of the head.
+		case PartType::DISTRIBUTOR:				return { { -FRONT_X + 0.001f, CamAxisY(), 0.f }, FACING_REAR };
+		case PartType::FLYWHEEL:				return { { -FRONT_X + 0.002f, CRANK_Y, 0.f }, FACING_REAR };
 		case PartType::INTAKE_MANIFOLD_GASKET:	return otherSide({ { 0.f, PORT_Y, PORT_FACE_Z + 0.001f }, FACING_INTAKE });
 		case PartType::INTAKE_MANIFOLD:			return otherSide({ { 0.f, PORT_Y, PORT_FACE_Z + 0.002f } });
-		case PartType::THROTTLE_BODY:			return otherSide({ { -0.212f, PORT_Y + 0.03f, PORT_FACE_Z + 0.137f } });
+		// On top of the plenum.
+		case PartType::CARBURETTOR:				return otherSide({ { 0.f, PORT_Y + 0.08f, PORT_FACE_Z + 0.137f } });
 		case PartType::FUEL_INJECTOR:			return crossOver({ { BoreX(index), PORT_Y + 0.012f, PORT_FACE_Z + 0.04f } });
-		case PartType::FUEL_RAIL:				return otherSide({ { 0.f, PORT_Y + 0.073f, PORT_FACE_Z + 0.04f } });
+		// On the intake side of the head at the cam's height, its arm in through the head onto the eccentric.
+		case PartType::FUEL_PUMP:				return { { FUEL_PUMP_X, CamAxisY(), -PORT_FACE_Z - 0.001f }, FACING_EXHAUST };
+		// At the front, beside the water pump, its pulley in the belt's plane.
+		case PartType::ALTERNATOR:				return { { ACCESSORY_BELT_X, ALTERNATOR_Y, ALTERNATOR_Z } };
+		case PartType::DRIVE_BELT:				return { { ACCESSORY_BELT_X, 0.f, 0.f } };
 		case PartType::EXHAUST_MANIFOLD_GASKET:	return otherSide({ { 0.f, PORT_Y, -PORT_FACE_Z - 0.001f }, FACING_EXHAUST });
-		case PartType::EXHAUST_MANIFOLD:		return otherSide({ { 0.f, PORT_Y, -PORT_FACE_Z - 0.002f } });
+		case PartType::EXHAUST_MANIFOLD:
+		case PartType::EXHAUST_PIPE:			return otherSide({ { 0.f, PORT_Y, -PORT_FACE_Z - 0.002f } });
 		case PartType::WATER_PUMP_GASKET:		return { { TIMING_COVER_X - 0.0125f, -0.04f, 0.06f }, FACING_FRONT };
 		case PartType::WATER_PUMP:				return { { TIMING_COVER_X - 0.014f, -0.04f, 0.06f } };
 		case PartType::THERMOSTAT:				return crossOver({ { -0.17f, 0.10f, PORT_FACE_Z + 0.001f }, FACING_INTAKE });
@@ -1426,12 +1473,25 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::VALVE_RETAINER, retainer);
 	}
 	{
-		// Origin under the crown, where the valve tip pushes; the skirt hangs down round the spring.
-		MeshBuilder lifter;
-		lifter.SetUVScale(10.f);
-		Cylinder(lifter, At({ 0.f, 0.0015f, 0.f }), 0.0135f, 0.003f, WHITE, 24);
-		Tube(lifter, At({ 0.f, -0.007f, 0.f }), 0.0135f, 0.0125f, 0.014f, WHITE, 0.f, glm::two_pi<float>(), 24);
-		add(PartType::LIFTER, lifter);
+		// Origin at the pad on the valve tip. The arm runs in under the cam lobe one way and out to its
+		// pivot boss on the shaft the other (+Z), with the lash adjuster screw over the valve.
+		MeshBuilder rocker;
+		rocker.SetUVScale(10.f);
+		Box(rocker, { 0.f, 0.006f, 0.0065f }, { 0.009f, 0.006f, 0.037f }, WHITE);
+		Box(rocker, { 0.f, 0.002f, 0.f }, { 0.007f, 0.004f, 0.007f }, STEEL_GREY);
+		Box(rocker, { 0.f, 0.0095f, -0.009f }, { 0.009f, 0.003f, 0.01f }, STEEL_GREY);
+		Cylinder(rocker, AlongX({ 0.f, ROCKER_PIVOT_Y, ROCKER_PIVOT_Z }), 0.0085f, 0.012f, WHITE, 16);
+		Cylinder(rocker, At({ 0.f, 0.012f, 0.f }), 0.0025f, 0.008f, STEEL_GREY, 8);
+		add(PartType::ROCKER_ARM, rocker);
+	}
+	{
+		// Along X, on its own axis; plugged at both ends.
+		MeshBuilder shaft;
+		shaft.SetUVScale(10.f);
+		Cylinder(shaft, AlongX({}), 0.008f, BLOCK_LENGTH - 0.04f, WHITE, 16);
+		for (float end : { -1.f, 1.f })
+			Cylinder(shaft, AlongX({ end * (BLOCK_LENGTH * 0.5f - 0.02f), 0.f, 0.f }), 0.0085f, 0.003f, DARK, 16);
+		add(PartType::ROCKER_SHAFT, shaft);
 	}
 	{
 		MeshBuilder crank;
@@ -1522,6 +1582,9 @@ void ShopAssets::LoadAncillaries()
 		Tube(pulley, AlongX({ -0.008f, 0.f, 0.f }), 0.066f, 0.055f, 0.018f, WHITE, 0.f, glm::two_pi<float>(), 32);
 		for (float x : { -0.004f, -0.008f, -0.012f })
 			Tube(pulley, AlongX({ x, 0.f, 0.f }), 0.0665f, 0.062f, 0.0015f, DARK, 0.f, glm::two_pi<float>(), 32);
+		// The V-belt groove out in front, in the accessory belt's plane.
+		Cylinder(pulley, AlongX({ -0.022f, 0.f, 0.f }), 0.02f, 0.01f, STEEL_GREY, 20);
+		Tube(pulley, AlongX({ ACCESSORY_BELT_X - (TIMING_COVER_X - 0.03f), 0.f, 0.f }), 0.058f, 0.02f, 0.01f, STEEL_GREY, 0.f, glm::two_pi<float>(), 32);
 		add(PartType::CRANK_PULLEY, pulley);
 	}
 	{
@@ -1554,11 +1617,39 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::SPARK_PLUG, plug);
 	}
 	{
-		MeshBuilder coil;
-		Cylinder(coil, At({ 0.f, 0.0425f, 0.f }), 0.012f, 0.085f, BLACK, 16);
-		Box(coil, { 0.f, 0.096f, 0.008f }, { 0.036f, 0.022f, 0.05f }, BLACK);
-		Box(coil, { 0.f, 0.098f, 0.04f }, { 0.016f, 0.012f, 0.016f }, { 0.6f, 0.6f, 0.62f });
-		add(PartType::IGNITION_COIL, coil);
+		// Origin on the plug's terminal: a long boot up its well through the cover, then the lead off
+		// towards the distributor at the back.
+		MeshBuilder lead;
+		Cylinder(lead, At({ 0.f, 0.05f, 0.f }), 0.008f, 0.1f, BLACK, 12);
+		Box(lead, { 0.05f, 0.103f, 0.f }, { 0.1f, 0.005f, 0.005f }, BLACK);
+		add(PartType::PLUG_LEAD, lead);
+	}
+	{
+		// Built standing up from its drive flange (+Y out of the back of the head): the aluminium body,
+		// then the cap with a tower for the coil and one for each lead.
+		MeshBuilder distributor;
+		distributor.SetUVScale(6.f);
+		Cylinder(distributor, At({ 0.f, 0.002f, 0.f }), 0.03f, 0.004f, WHITE, 20);
+		Cylinder(distributor, At({ 0.f, 0.032f, 0.f }), 0.022f, 0.056f, WHITE, 20);
+		Cylinder(distributor, At({ 0.f, 0.075f, 0.f }), 0.032f, 0.03f, BLACK, 24);
+		for (int tower = 0; tower < 5; tower++)
+		{
+			float angle = tower * glm::two_pi<float>() / 4.f;
+			glm::vec3 at = tower == 4 ? glm::vec3(0.f, 0.094f, 0.f) : glm::vec3(std::cos(angle) * 0.02f, 0.094f, std::sin(angle) * 0.02f);
+			Cylinder(distributor, At(at), 0.005f, 0.008f, BLACK, 8);
+		}
+		add(PartType::DISTRIBUTOR, distributor);
+	}
+	{
+		// Lying flat, crank side down (+Y faces back, away from the crank), the ring gear round its rim and
+		// the hub its bolts go through.
+		MeshBuilder flywheel;
+		flywheel.SetUVScale(4.f);
+		Cylinder(flywheel, At({ 0.f, 0.007f, 0.f }), 0.13f, 0.014f, WHITE, 40);
+		Tube(flywheel, At({ 0.f, 0.007f, 0.f }), 0.136f, 0.129f, 0.012f, STEEL_GREY, 0.f, glm::two_pi<float>(), 40);
+		// Kept thin: the stand's mounting plate is only a couple of millimetres behind it.
+		Cylinder(flywheel, At({ 0.f, 0.0155f, 0.f }), 0.035f, 0.003f, STEEL_GREY, 20);
+		add(PartType::FLYWHEEL, flywheel);
 	}
 	{
 		MeshBuilder gasket;
@@ -1581,14 +1672,17 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::INTAKE_MANIFOLD, manifold);
 	}
 	{
-		// Bolts to the front of the plenum, bore along -X.
-		MeshBuilder throttle;
-		throttle.SetUVScale(6.f);
-		Box(throttle, { -0.002f, 0.f, 0.f }, { 0.004f, 0.075f, 0.075f });
-		Tube(throttle, AlongX({ -0.02f, 0.f, 0.f }), 0.033f, 0.025f, 0.035f, WHITE, 0.f, glm::two_pi<float>(), 28);
-		Box(throttle, { -0.02f, 0.f, 0.f }, { 0.002f, 0.048f, 0.002f }, STEEL_GREY);
-		Box(throttle, { -0.02f, 0.038f, 0.02f }, { 0.012f, 0.012f, 0.03f }, BLACK);
-		add(PartType::THROTTLE_BODY, throttle);
+		// Origin under its base flange, sitting on the plenum: the body, the float bowl on the side, and
+		// the two barrels opening up through the air horn.
+		MeshBuilder carburettor;
+		carburettor.SetUVScale(6.f);
+		Box(carburettor, { 0.f, 0.003f, 0.f }, { 0.08f, 0.006f, 0.07f });
+		Box(carburettor, { 0.f, 0.036f, 0.f }, { 0.066f, 0.06f, 0.06f }, WHITE);
+		Box(carburettor, { 0.045f, 0.03f, 0.f }, { 0.024f, 0.04f, 0.05f }, WHITE);
+		for (float z : { -0.015f, 0.015f })
+			Tube(carburettor, At({ 0.f, 0.07f, z }), 0.013f, 0.011f, 0.012f, STEEL_GREY, 0.f, glm::two_pi<float>(), 16);
+		Box(carburettor, { -0.036f, 0.04f, 0.02f }, { 0.006f, 0.012f, 0.02f }, STEEL_GREY);
+		add(PartType::CARBURETTOR, carburettor);
 	}
 	{
 		// Origin at the nozzle.
@@ -1599,12 +1693,16 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::FUEL_INJECTOR, injector);
 	}
 	{
-		MeshBuilder rail;
-		Cylinder(rail, AlongX({ 0.f, 0.f, 0.f }), 0.009f, 0.37f, STEEL_GREY, 14);
-		for (int cylinder = 0; cylinder < 4; cylinder++)
-			Cylinder(rail, At({ BoreX(cylinder), -0.01f, 0.f }), 0.009f, 0.012f, STEEL_GREY, 12);
-		Cylinder(rail, AlongX({ -0.195f, 0.f, 0.f }), 0.006f, 0.02f, { 0.7f, 0.6f, 0.3f }, 10);
-		add(PartType::FUEL_RAIL, rail);
+		// Built standing up from its mounting flange (+Y out from the head): the diaphragm housing,
+		// with the inlet and outlet pipes across its top.
+		MeshBuilder pump;
+		pump.SetUVScale(6.f);
+		Box(pump, { 0.f, 0.002f, 0.f }, { 0.06f, 0.004f, 0.025f });
+		Cylinder(pump, At({ 0.f, 0.016f, 0.f }), 0.022f, 0.024f, WHITE, 20);
+		Cylinder(pump, AlongX({ 0.f, 0.022f, 0.f }), 0.004f, 0.064f, STEEL_GREY, 8);
+		// The rocker arm, reaching in through the head to ride on the cam's eccentric.
+		Box(pump, { 0.f, -(PORT_FACE_Z - 0.017f) * 0.5f, 0.f }, { 0.006f, PORT_FACE_Z - 0.017f, 0.008f }, STEEL_GREY);
+		add(PartType::FUEL_PUMP, pump);
 	}
 	{
 		// Origin at the middle of the head flange; the primaries run out along -Z into a collector.
@@ -1618,6 +1716,15 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::EXHAUST_MANIFOLD, manifold);
 	}
 	{
+		// In the manifold's own space (they share a mount): the flange under its collector, and the
+		// pipe on down from it.
+		MeshBuilder pipe;
+		pipe.SetUVScale(3.f);
+		Cylinder(pipe, At({ 0.06f, -0.123f, -0.09f }), 0.035f, 0.006f, RUST, 20);
+		Cylinder(pipe, At({ 0.06f, -0.226f, -0.09f }), 0.022f, 0.2f, STEEL_GREY, 18);
+		add(PartType::EXHAUST_PIPE, pipe);
+	}
+	{
 		MeshBuilder gasket;
 		Tube(gasket, At({ 0.f, 0.00075f, 0.f }), 0.044f, 0.022f, 0.0015f, GASKET, 0.f, glm::two_pi<float>(), 28);
 		add(PartType::WATER_PUMP_GASKET, gasket);
@@ -1627,10 +1734,57 @@ void ShopAssets::LoadAncillaries()
 		MeshBuilder pump;
 		pump.SetUVScale(6.f);
 		Cylinder(pump, AlongX({ -0.015f, 0.f, 0.f }), 0.04f, 0.03f, WHITE, 24);
-		Cylinder(pump, AlongX({ -0.045f, 0.f, 0.f }), 0.012f, 0.03f, STEEL_GREY, 14);
-		Tube(pump, AlongX({ -0.06f, 0.f, 0.f }), 0.05f, 0.012f, 0.012f, { 0.6f, 0.6f, 0.62f }, 0.f, glm::two_pi<float>(), 28);
+		// The pulley in the accessory belt's plane.
+		constexpr float PULLEY_X = ACCESSORY_BELT_X - (TIMING_COVER_X - 0.014f);
+		Cylinder(pump, AlongX({ (PULLEY_X - 0.03f) * 0.5f, 0.f, 0.f }), 0.012f, -0.03f - PULLEY_X, STEEL_GREY, 14);
+		Tube(pump, AlongX({ PULLEY_X, 0.f, 0.f }), 0.05f, 0.012f, 0.012f, { 0.6f, 0.6f, 0.62f }, 0.f, glm::two_pi<float>(), 28);
 		Cylinder(pump, At({ -0.012f, 0.045f, 0.f }), 0.012f, 0.03f, WHITE, 14);
 		add(PartType::WATER_PUMP, pump);
+	}
+	{
+		// Origin at its pulley, the body running back along +X towards the block, the mounting ear under it.
+		MeshBuilder alternator;
+		alternator.SetUVScale(6.f);
+		Tube(alternator, AlongX({}), 0.032f, 0.01f, 0.01f, DARK, 0.f, glm::two_pi<float>(), 24);
+		Cylinder(alternator, AlongX({ 0.011f, 0.f, 0.f }), 0.04f, 0.006f, STEEL_GREY, 20);
+		Cylinder(alternator, AlongX({ 0.05f, 0.f, 0.f }), 0.055f, 0.07f, WHITE, 28);
+		Box(alternator, { 0.05f, -0.06f, 0.f }, { 0.024f, 0.02f, 0.03f }, WHITE);
+		add(PartType::ALTERNATOR, alternator);
+	}
+	{
+		// In the belt's plane (X = 0), in engine Y and Z: a band round each pulley and a straight run
+		// between each pair, on the outside of the triangle they make.
+		MeshBuilder belt;
+		belt.SetUVScale(20.f);
+		const glm::vec3 BELT = { 0.09f, 0.09f, 0.10f };
+		constexpr float WIDTH = 0.01f, THICK = 0.006f;
+		struct Pulley { glm::vec2 centre; float radius; };
+		const Pulley pulleys[] = {
+			{ { CRANK_Y, 0.f }, 0.058f },			// crank
+			{ { -0.04f, 0.06f }, 0.05f },			// water pump
+			{ { ALTERNATOR_Y, ALTERNATOR_Z }, 0.032f },	// alternator
+		};
+		glm::vec2 middle = (pulleys[0].centre + pulleys[1].centre + pulleys[2].centre) / 3.f;
+		for (const auto& pulley : pulleys)
+			Tube(belt, AlongX({ 0.f, pulley.centre.x, pulley.centre.y }), pulley.radius + THICK, pulley.radius, WIDTH, BELT, 0.f, glm::two_pi<float>(), 32);
+		for (int i = 0; i < 3; i++)
+		{
+			const Pulley& a = pulleys[i];
+			const Pulley& b = pulleys[(i + 1) % 3];
+			glm::vec2 along = glm::normalize(b.centre - a.centre);
+			glm::vec2 out = { -along.y, along.x };
+			if (glm::dot(out, (a.centre + b.centre) * 0.5f - middle) < 0.f)
+				out = -out;
+			glm::vec2 from = a.centre + out * (a.radius + THICK * 0.5f), to = b.centre + out * (b.radius + THICK * 0.5f);
+			glm::vec2 run = to - from;
+			// A box along Z, turned about X onto the run.
+			float angle = std::atan2(-run.x, run.y);
+			glm::vec2 centre = (from + to) * 0.5f;
+			belt.SetTransform(glm::rotate(At({ 0.f, centre.x, centre.y }), angle, { 1.f, 0.f, 0.f })).SetColor(BELT);
+			belt.AddBox({}, { WIDTH, THICK, glm::length(run) });
+			belt.ResetTransform();
+		}
+		add(PartType::DRIVE_BELT, belt);
 	}
 	{
 		MeshBuilder thermostat;

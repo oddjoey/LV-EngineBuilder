@@ -1072,6 +1072,84 @@ void ShopWorld::ReorganizeShelves()
 	m_supportChanged = true;
 }
 
+void ShopWorld::LayOutToolBoard()
+{
+	const auto& tools = ToolCatalog::All();
+	if (m_toolHooks.size() == tools.size())
+		return;
+	static const auto manager = ModelManager::Get();
+	// The board is 1.8 m wide and 1.25 m tall about its middle. Tools hang inside a margin, just
+	// clear of its face.
+	constexpr float LEFT = -0.84f;
+	constexpr float RIGHT = 0.84f;
+	constexpr float TOP = 0.57f;
+	constexpr float BOTTOM = -0.57f;
+	constexpr float GAP = 0.035f;
+	constexpr float FACE = 0.017f;
+
+	struct Hung
+	{
+		size_t tool = 0;
+		ShopBox box = {};	// in the board's space, before it's moved to its spot
+		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+		float Width() const { return box.max.x - box.min.x; }
+		float Height() const { return box.max.y - box.min.y; }
+	};
+	std::vector<Hung> hung;
+	for (size_t i = 0; i < tools.size(); i++)
+	{
+		const Model* model = manager->PeekModel(m_assets->Model(ToolModelName(tools[i])));
+		ShopBox bounds = { model->GetBoundsMin(), model->GetBoundsMax() };
+		// Tools are made lying flat. Stood against the board their top faces out, and they're turned
+		// so their long side runs up and down.
+		glm::quat rotation = AboutX(glm::half_pi<float>());
+		if (bounds.max.x - bounds.min.x > bounds.max.z - bounds.min.z)
+			rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.f, 0.f, 1.f)) * rotation;
+		hung.push_back({ i, TransformBox(bounds, glm::vec3(0.f), rotation), rotation });
+	}
+
+	m_toolHooks.assign(tools.size(), {});
+	auto place = [&](const Hung& tool, float left, float top)
+	{
+		m_toolHooks[tool.tool] = { { left - tool.box.min.x, top - tool.box.max.y, FACE - tool.box.min.z }, tool.rotation };
+	};
+
+	// The manual has the bottom right corner to itself, so it's always in the same place.
+	float manualLeft = RIGHT;
+	float manualTop = BOTTOM - 1.f;
+	auto manual = std::find_if(hung.begin(), hung.end(), [&](const Hung& tool) { return tools[tool.tool].manual; });
+	if (manual != hung.end())
+	{
+		manualLeft = RIGHT - manual->Width();
+		manualTop = BOTTOM + manual->Height();
+		place(*manual, manualLeft, manualTop);
+		manualLeft -= GAP;
+		manualTop += GAP;
+		hung.erase(manual);
+	}
+
+	// Everything else in rows from the top left, the longest first, so each row's tools are about
+	// the same length.
+	std::stable_sort(hung.begin(), hung.end(), [](const Hung& a, const Hung& b) { return a.Height() > b.Height(); });
+	float x = LEFT;
+	float top = TOP;
+	float rowHeight = 0.f;
+	for (const auto& tool : hung)
+	{
+		// A row low enough to reach the manual's corner stops short of it.
+		auto rightEdge = [&] { return top - std::max(rowHeight, tool.Height()) < manualTop ? manualLeft : RIGHT; };
+		if (x > LEFT && x + tool.Width() > rightEdge())
+		{
+			top -= rowHeight + GAP;
+			x = LEFT;
+			rowHeight = 0.f;
+		}
+		place(tool, x, top);
+		x += tool.Width() + GAP;
+		rowHeight = std::max(rowHeight, tool.Height());
+	}
+}
+
 void ShopWorld::PutOnShelf(ItemVisual& visual)
 {
 	// In order: the first gap from the left on the lowest board with headroom for it, lengthways
@@ -1310,7 +1388,7 @@ void ShopWorld::PlaceOnStand(ItemVisual& visual, AssemblySlot slot, int index) c
 	// A running engine shakes on its stand.
 	if (engine == m_dynoEngine && m_engineRpm > 0.f)
 	{
-		float amount = 0.0015f * (std::min)(m_engineRpm / 7000.f, 1.f);
+		float amount = 0.0015f * (std::min)(m_engineRpm / 5500.f, 1.f);
 		pose.offset += glm::vec3(std::sin(m_time * 91.f), std::sin(m_time * 67.f), std::sin(m_time * 83.f)) * amount;
 	}
 
@@ -1435,9 +1513,11 @@ ShopWorld::StandPose ShopWorld::PoseOnStand(int engine, AssemblySlot slot, int i
 			rotation = mount.rotation;
 			if (slot == AssemblySlot::CRANK_SPROCKET || slot == AssemblySlot::CRANK_PULLEY)
 				rotation = AboutX(crankAngle);
+			else if (slot == AssemblySlot::FLYWHEEL)
+				rotation = AboutX(crankAngle) * mount.rotation;
 			else if (slot == AssemblySlot::CAM_SPROCKET)
 				rotation = AboutX(crankAngle * 0.5f);
-			else if (slot == AssemblySlot::VALVE_RETAINER || slot == AssemblySlot::LIFTER)
+			else if (slot == AssemblySlot::VALVE_RETAINER || slot == AssemblySlot::ROCKER_ARM)
 				offset.y -= ValveLift(index / 2, index % 2 == 1, crankAngle);
 			break;
 		}
@@ -1474,6 +1554,24 @@ ShopWorld::StandPose ShopWorld::FastenerPose(int engine, AssemblySlot slot, int 
 		case AssemblySlot::HEAD_BOLT:
 			// Either side of each cam tower.
 			local = { std::clamp(MainX(hole / 2), -0.19f, 0.19f), 0.08f, hole % 2 == 0 ? -0.085f : 0.085f };
+			break;
+		case AssemblySlot::FLYWHEEL_BOLT:
+		{
+			// A ring round the hub, into the crank flange.
+			float angle = hole * glm::two_pi<float>() / holes.perParent;
+			local = { std::cos(angle) * 0.024f, 0.017f, std::sin(angle) * 0.024f };
+			break;
+		}
+		case AssemblySlot::CARBURETTOR_BOLT:
+			// The corners of its base flange.
+			local = { hole % 2 == 0 ? -0.036f : 0.036f, 0.006f, hole / 2 == 0 ? -0.03f : 0.03f };
+			break;
+		case AssemblySlot::DISTRIBUTOR_BOLT:
+			local = { 0.025f, 0.004f, 0.f };
+			break;
+		case AssemblySlot::ROCKER_SHAFT_BOLT:
+			// Down through the shaft between the cylinders.
+			local = { MainX(hole + 1), 0.008f, 0.f };
 			break;
 		default:
 		{
@@ -1651,6 +1749,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 	}
 	const Station* bench = FindStation(StationType::WORKBENCH);
 	const Station* toolBoard = FindStation(StationType::TOOL_BOARD);
+	LayOutToolBoard();
 
 	auto layout = [&](ItemVisual& visual)
 	{
@@ -1678,15 +1777,10 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 				// moved to.
 				if (visual.ref.IsTool())
 				{
-					// Hung flat on the tool board, each tool on its own hook.
-					int slot = static_cast<int>(visual.ref.id);
-					// Six hooks to a row, four rows.
-					glm::vec3 hook = toolBoard->position + toolBoard->Rotation() * glm::vec3(-0.725f + (slot % 6) * 0.29f, 0.42f - (slot / 6) * 0.29f, 0.035f);
-					auto bounds = ShopBox{ model->GetBoundsMin(), model->GetBoundsMax() };
-					glm::vec3 center = (bounds.min + bounds.max) * 0.5f;
-					glm::quat rotation = toolBoard->Rotation() * AboutX(glm::half_pi<float>());
-					visual.object->SetRotation(rotation);
-					visual.object->SetPosition(hook - rotation * glm::vec3(center.x, bounds.min.y, center.z));
+					// Hung upright on the tool board, each tool in its own spot.
+					const ToolHook& hook = m_toolHooks[visual.ref.id];
+					visual.object->SetRotation(toolBoard->Rotation() * hook.rotation);
+					visual.object->SetPosition(toolBoard->position + toolBoard->Rotation() * hook.position);
 					visual.object->SetScale({ 1.f, 1.f, 1.f });
 				}
 				else

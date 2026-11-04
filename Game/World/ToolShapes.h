@@ -30,7 +30,9 @@ enum class ToolShape
 	SOCKET_SET,
 	WRENCH_SET,
 	TORQUE_WRENCH,
-	MANUAL			// the factory service manual
+	MANUAL,			// the factory service manual
+	STEEL_SQUARE,
+	ROD_ALIGNER
 };
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
@@ -49,6 +51,8 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 	const std::string& name = tool.name;
 	auto has = [&](const char* text) { return name.find(text) != std::string::npos; };
 	if (has("Caliper")) return ToolShape::CALIPER;
+	if (has("Steel Square")) return ToolShape::STEEL_SQUARE;
+	if (has("Rod Aligner")) return ToolShape::ROD_ALIGNER;
 	if (has("Installed Height")) return ToolShape::HEIGHT_MICROMETER;
 	if (has("Micrometer")) return ToolShape::MICROMETER;
 	if (has("Telescoping")) return ToolShape::TELESCOPING_GAUGE;
@@ -91,6 +95,8 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::WRENCH_SET:			return { 3, 2 };
 		case ToolShape::TORQUE_WRENCH:		return { 1, 5 };
 		case ToolShape::MANUAL:			return { 2, 3 };
+		case ToolShape::STEEL_SQUARE:		return { 2, 2 };
+		case ToolShape::ROD_ALIGNER:		return { 2, 3 };
 	}
 	return { 1, 1 };
 }

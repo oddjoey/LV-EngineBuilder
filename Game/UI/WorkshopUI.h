@@ -106,6 +106,9 @@ private:
 	std::string ToolPrecision(const MeasuringTool& tool, double value) const;
 	// Which tool to go and get for a measurement, for the hints that replaced the measure buttons.
 	std::string ToolHint(Workshop& workshop, int toolIndex) const;
+	// The "Measure with" cell: the best tool you own for the job, or the cheapest to buy if you own
+	// none, with every tool that can do it listed when hovered.
+	void DrawToolCell(Workshop& workshop, const std::function<bool(const MeasuringTool&)>& canDo, const char* prefix = "") const;
 	void DrawAssemblyTab(Workshop& workshop);
 	// The parts fitted to the engine, by position; picks the one the stand screen inspects.
 	pPart DrawAssemblySlots(Workshop& workshop);

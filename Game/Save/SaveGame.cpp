@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <utility>
 #include <sstream>
@@ -28,8 +29,11 @@ namespace
 	// bolts M12). 17: the 1.6 litre LV-16 (shorter stroke, longer rods, smaller chambers), and which
 	// engine is on the dyno. 18: the LV-16 is 81 x 77 mm (bores, pistons, rings, stroke and rods resized),
 	// and its timing drive is a belt. 19: the house, and its bed (a station after the lift). 20: the
-	// extension's roll-up door (a station after the bed).
-	constexpr int VERSION = 20;
+	// extension's roll-up door (a station after the bed). 21: the LV-16's figures are the Toyota 4A-C's
+	// (crank, cam, chambers, pistons, rings, guides, stems and springs resized) and its hardware: rockers, a
+	// distributor and a carburettor, plus a flywheel, downpipe, alternator and V-belt (six part slots before the nuts and bolts); cam
+	// lobes measured by height, not lift; and each part keeps count of what has been surfaced off its deck.
+	constexpr int VERSION = 21;
 	constexpr const char* MAGIC = "LVSAVE";
 
 	// Writes whitespace-separated tokens; strings are quoted so they can hold spaces.
@@ -202,6 +206,11 @@ namespace
 	// The head bolts' spec went from 40 Nm (and an angle) to 90 Nm with them: what was done up keeps
 	// its share of the spec.
 	constexpr double OLD_HEAD_BOLT_NM = 40.0;
+	// The torques that changed in version 21, as they were before.
+	const std::map<std::string, double> OLD_TORQUES_NM = {
+		{ "Head Bolt", 90.0 }, { "Main Cap Bolt", 65.0 }, { "Rod Nut", 45.0 }, { "Intake Manifold Nut", 22.0 },
+		{ "Oil Pump Bolt", 10.0 }, { "Crank Pulley Bolt", 145.0 }, { "Cam Sprocket Bolt", 60.0 }, { "Cam Cap Bolt", 10.0 },
+	};
 
 	// Old fastener slots kept their numbers; only the head bolts moved, from among the ancillaries
 	// to the first fastener slot. Numbered as they were before version 15.
@@ -319,7 +328,7 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 			.Int(static_cast<int>(part->m_condition)).Int(static_cast<int>(part->m_material))
 			.Num(part->m_sizeOffset).Num(part->m_value).Str(part->m_name).Str(part->m_damageReason)
 			.Int(part->m_matchedTo).Int(part->m_matchedPosition).Num(part->m_torque)
-			.Int(static_cast<int>(part->m_tightness)).Line();
+			.Int(static_cast<int>(part->m_tightness)).Num(part->m_resurfaced).Line();
 
 		out.Word("features").Int(part->m_features.size()).Line();
 		for (const auto& feature : part->m_features)
@@ -594,6 +603,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		double torque = version >= 8 ? in.Num() : 0.0;
 		// Before version 11 a nut or bolt was always torqued as it went on.
 		auto tightness = version >= 11 ? in.Enumerated<FastenerTightness>(3) : torque > 0.0 ? FastenerTightness::TORQUED : FastenerTightness::LOOSE;
+		// Before version 21 nothing kept count of what had been surfaced off a deck.
+		double resurfaced = version >= 21 ? in.Num() : 0.0;
 		if (in.Failed())
 			break;
 
@@ -609,8 +620,25 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		part->m_damageReason = damage;
 		part->m_matchedTo = matchedTo;
 		part->m_matchedPosition = matchedPosition;
-		part->m_torque = oldHeadBolt ? torque / OLD_HEAD_BOLT_NM * EngineAssembly::Holes(AssemblySlot::HEAD_BOLT)->torqueNm : torque;
+		// (To the 90 Nm spec of the time: version 21 scales it on to today's once it's on its engine.)
+		part->m_torque = oldHeadBolt ? torque / OLD_HEAD_BOLT_NM * OLD_TORQUES_NM.at("Head Bolt") : torque;
 		part->m_tightness = tightness;
+		part->m_resurfaced = resurfaced;
+
+		// Before version 21 a cam's lobes were measured by their lift; now it's their height, which is the
+		// lift on top of the base circle. Renames the feature (true if it did); the value wants the base adding.
+		auto lobeLiftToHeight = [&](std::string& featureName) {
+			if (version >= 21 || type != PartType::CAMSHAFT)
+				return false;
+			for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
+				for (bool exhaust : { false, true })
+					if (featureName == FeatureNames::OldLobeLift(cylinder, exhaust))
+					{
+						featureName = FeatureNames::LobeHeight(cylinder, exhaust);
+						return true;
+					}
+			return false;
+		};
 
 		in.Expect("features");
 		size_t featureCount = in.Count();
@@ -626,6 +654,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			auto lastOperation = in.Int();
 			if (lastOperation < -1 || lastOperation >= MACHINE_OPERATIONS)
 				in.Fail("a machining operation is out of range");
+			if (lobeLiftToHeight(featureName))
+				featureValue += spec.CamBaseCircle();
 
 			// A feature the game no longer has is skipped rather than failing the whole load.
 			if (auto feature = part->FindFeature(featureName))
@@ -654,34 +684,40 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			if (hasFinish)
 				reading.finishRa = finish;
 			reading.stale = in.Int() != 0;
+			if (lobeLiftToHeight(featureName))
+				reading.value += spec.CamBaseCircle();
 			part->m_readings[featureName] = reading;
 		}
 
+		// Resizing a feature to a new spec: what was made for the old size keeps how far off spec it was,
+		// readings included. map takes the old size (or sample, or reading) to the new one.
+		auto resize = [&](const std::string& featureName, const std::function<double(double)>& map) {
+			if (auto feature = part->FindFeature(featureName))
+			{
+				feature->value = map(feature->value);
+				// A round feature's size is its samples.
+				if (feature->IsRound())
+					for (auto& station : feature->samples)
+						for (double& sample : station)
+							sample = map(sample);
+			}
+			if (auto reading = part->m_readings.find(featureName); reading != part->m_readings.end())
+			{
+				reading->second.value = map(reading->second.value);
+				for (auto& station : reading->second.samples)
+					for (double& sample : station)
+						if (sample != 0.0)
+							sample = map(sample);
+			}
+		};
+		auto shift = [&](const std::string& featureName, double change) { resize(featureName, [=](double size) { return size + change; }); };
+		auto scale = [&](const std::string& featureName, double factor) { resize(featureName, [=](double size) { return size * factor; }); };
+
 		// The engine has changed size. Before version 17 it was the 2.0 litre LV-20 (86 x 86 mm, 143.75 mm
 		// rods, 46 cc chambers); version 17 had an 86 x 68.9 mm 1.6 (152.30 mm rods, 35 cc). It's now an
-		// 81 x 77 mm 1.6 with 148.25 mm rods. What was made for the old sizes keeps how far off spec it
-		// was, readings included.
+		// 81 x 77 mm 1.6 with 148.25 mm rods.
 		if (version < 18)
 		{
-			auto shift = [&](const std::string& featureName, double change) {
-				if (auto feature = part->FindFeature(featureName))
-				{
-					feature->value += change;
-					// A round feature's size is its samples.
-					if (feature->IsRound())
-						for (auto& station : feature->samples)
-							for (double& sample : station)
-								sample += change;
-				}
-				if (auto reading = part->m_readings.find(featureName); reading != part->m_readings.end())
-				{
-					reading->second.value += change;
-					for (auto& station : reading->second.samples)
-						for (double& sample : station)
-							if (sample != 0.0)
-								sample += change;
-				}
-			};
 			bool lv20 = version < 17;
 			shift(FeatureNames::STROKE, 77.00 - (lv20 ? 86.00 : 68.90));
 			shift(FeatureNames::CENTER_LENGTH, 148.25 - (lv20 ? 143.75 : 152.30));
@@ -702,6 +738,49 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 					part->m_name.replace(at, std::string(from).size(), to);
 			if (type == PartType::TIMING_BELT)
 				part->m_material = MaterialType::HNBR_BELT;
+		}
+
+		// Version 21 took the LV-16's figures from the Toyota 4A-C: a lower deck and shorter rods, smaller
+		// crank journals and housings, a bigger cam, bigger chambers for 9.0:1, looser pistons, a tighter ring
+		// gap, and softer springs. Each shift is the new mid-spec size less the old one.
+		if (version < 21)
+		{
+			shift(FeatureNames::DECK_HEIGHT, 191.00 - 216.95);
+			shift(FeatureNames::CENTER_LENGTH, 122.00 - 148.25);
+			shift(FeatureNames::COMPRESSION_HEIGHT, 30.25 - 30.00);
+			for (int journal = 0; journal < spec.mainJournals; journal++)
+			{
+				shift(FeatureNames::MainJournal(journal), 47.9925 - 54.985);
+				shift(FeatureNames::MainHousing(journal), 52.008 - 59.0095);
+			}
+			for (int journal = 0; journal < spec.camJournals; journal++)
+			{
+				shift(FeatureNames::CamJournal(journal), 28.940 - 25.9695);
+				shift(FeatureNames::CamBore(journal), 28.9955 - 26.0105);
+			}
+			for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
+			{
+				shift(FeatureNames::RodJournal(cylinder), 39.9925 - 47.984);
+				shift(FeatureNames::Chamber(cylinder), 40.6 - 35.0);
+				for (bool exhaust : { false, true })
+					shift(FeatureNames::Guide(cylinder, exhaust), 7.020 - 7.0075);
+			}
+			shift(FeatureNames::BIG_END, 43.008 - 51.008);
+			shift(FeatureNames::SKIRT, 80.899 - 80.973);
+			shift(FeatureNames::CLOSED_DIAMETER, 80.914 - 80.888);
+			if (type == PartType::INTAKE_VALVE)
+				shift(FeatureNames::STEM, 6.9775 - 6.9825);
+			else if (type == PartType::EXHAUST_VALVE)
+				shift(FeatureNames::STEM, 6.9725 - 6.9625);
+			shift(FeatureNames::FREE_LENGTH, 44.60 - 44.0);
+			scale(FeatureNames::SPRING_RATE, 38.5 / 45.0);
+			scale(FeatureNames::SEAT_PRESSURE, 231.0 / 270.0);
+			// And its hardware: buckets became rocker arms, coils plug leads, the throttle body a
+			// carburettor and the fuel rail a fuel pump (each measured fresh: what was measured was the old part).
+			for (auto [from, to] : { std::pair{ "Bucket Lifter", "Rocker Arm" }, std::pair{ "Ignition Coil", "Spark Plug Lead" },
+				std::pair{ "Throttle Body", "Carburettor" }, std::pair{ "Fuel Rail", "Fuel Pump" } })
+				if (auto at = part->m_name.find(from); at != std::string::npos)
+					part->m_name.replace(at, std::string(from).size(), to);
 		}
 
 		if (partsById.contains(id))
@@ -730,9 +809,21 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			// Cam caps took the slot before the first nut or bolt.
 			if (version < 15 && slot >= static_cast<long long>(AssemblySlot::CAM_CAP))
 				slot++;
+			// The rocker shafts, distributor, flywheel, downpipe, alternator and V-belt took the six slots
+			// before the first nut or bolt in version 21.
+			if (version < 21 && slot >= static_cast<long long>(AssemblySlot::ROCKER_SHAFT))
+				slot += 6;
 			if (slot < 0 || slot >= static_cast<long long>(AssemblySlot::COUNT) || !partsById.contains(static_cast<uint32_t>(id)))
 				in.Fail("an engine on a stand refers to a missing part");
 			engine.installed.push_back({ slot, index, id });
+			// Version 21 took the torques from the 4A-C: what was done up keeps its share of the spec.
+			if (version < 21 && !in.Failed())
+				if (const auto* holes = EngineAssembly::Holes(static_cast<AssemblySlot>(slot)))
+					if (auto old = OLD_TORQUES_NM.find(holes->name); old != OLD_TORQUES_NM.end())
+					{
+						auto& fastener = partsById[static_cast<uint32_t>(id)];
+						fastener->m_torque *= holes->torqueNm / old->second;
+					}
 		}
 
 		in.Expect("assembly_readings");
@@ -1112,6 +1203,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		workshop.AddMissingFasteners();
 	if (version < 15)
 		workshop.AddMissingCamCaps();
+	if (version < 21)
+		workshop.AddMissing4ACParts();
 	return true;
 }
 

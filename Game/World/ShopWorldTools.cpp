@@ -22,7 +22,9 @@ namespace
 		switch (feature.kind)
 		{
 			case FeatureKind::FLATNESS:
-			case FeatureKind::RUNOUT:	return Units::FormatDeviation(value, units);
+			case FeatureKind::RUNOUT:
+			case FeatureKind::SQUARENESS:
+			case FeatureKind::ALIGNMENT:	return Units::FormatDeviation(value, units);
 			case FeatureKind::VOLUME:	return Units::FormatVolume(value);
 			case FeatureKind::FORCE:	return Units::FormatForce(value);
 			default:					return Units::FormatSize(value, units);
@@ -421,6 +423,7 @@ Range ShopWorld::AssemblyTarget(const EngineSpec& spec, AssemblyCheck check, boo
 		case AssemblyCheck::RING_GAP:			return spec.ringGap;
 		case AssemblyCheck::DECK_CLEARANCE:		return { spec.quench.min - spec.gasketThickness.nominal, spec.quench.max - spec.gasketThickness.nominal };
 		case AssemblyCheck::INSTALLED_HEIGHT:	return spec.installedHeightRange;
+		case AssemblyCheck::ROD_SIDE_CLEARANCE:	return spec.rodSideClearance;
 		default:								return {};
 	}
 }

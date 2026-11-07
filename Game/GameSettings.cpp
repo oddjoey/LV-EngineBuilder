@@ -1,5 +1,6 @@
 #include "GameSettings.h"
 
+#include "LV/Engine/Utility/InputManager.h"
 #include "Net/NetProtocol.h"
 
 #include <algorithm>
@@ -22,9 +23,19 @@ GameSettings GameSettings::Load()
 		if (key == "mouse_sensitivity") value >> settings.mouseSensitivity;
 		else if (key == "invert_y") value >> settings.invertY;
 		else if (key == "field_of_view") value >> settings.fieldOfView;
-		else if (key == "show_controls") value >> settings.showControls;
 		else if (key == "show_fps") value >> settings.showFps;
 		else if (key == "imperial_units") value >> settings.imperialUnits;
+		else if (key == "dark_mode") value >> settings.darkMode;
+		else if (key == "monkey_fur") value >> std::hex >> settings.monkey.fur;
+		else if (key == "monkey_skin") value >> std::hex >> settings.monkey.skin;
+		else if (key == "monkey_cap") value >> std::hex >> settings.monkey.cap;
+		else if (key == "monkey_tail") value >> settings.monkey.tail;
+		else if (key == "view_arm") value >> settings.viewArm;
+		else if (key == "view_body") value >> settings.viewBody;
+		else if (key == "view_hand_right") value >> settings.viewHandRight;
+		else if (key == "view_hand_up") value >> settings.viewHandUp;
+		else if (key == "view_hand_forward") value >> settings.viewHandForward;
+		else if (key == "view_body_back") value >> settings.viewBodyBack;
 		else if (key == "display_mode") value >> settings.displayMode;
 		else if (key == "resolution_width") value >> settings.resolutionWidth;
 		else if (key == "resolution_height") value >> settings.resolutionHeight;
@@ -43,8 +54,12 @@ GameSettings GameSettings::Load()
 		else if (key == "ambience_volume") value >> settings.ambienceVolume;
 		else if (key == "interface_volume") value >> settings.interfaceVolume;
 		else if (key == "username") settings.username = line.substr(equals + 1);
-		else if (key == "join_address") settings.joinAddress = line.substr(equals + 1);
-		else if (key == "port") value >> settings.port;
+		else if (key.starts_with("control_"))
+		{
+			for (size_t i = 0; i < Controls::COUNT; i++)
+				if (key.substr(8) == Controls::InfoOf(static_cast<Control>(i)).id)
+					value >> settings.controls[i];
+		}
 	}
 
 	// A hand-edited file shouldn't be able to break the camera or the window.
@@ -61,8 +76,20 @@ GameSettings GameSettings::Load()
 	settings.brightness = std::clamp(settings.brightness, 0.5f, 2.f);
 	settings.frameLimit = std::clamp(settings.frameLimit, 0, 360);
 	settings.dayLengthMinutes = std::clamp(settings.dayLengthMinutes, 5.f, 240.f);
-	settings.port = std::clamp(settings.port, 1024, 65535);
+	settings.viewHandRight = std::clamp(settings.viewHandRight, -VIEW_HAND_REACH, VIEW_HAND_REACH);
+	settings.viewHandUp = std::clamp(settings.viewHandUp, -VIEW_HAND_REACH, VIEW_HAND_REACH);
+	settings.viewHandForward = std::clamp(settings.viewHandForward, -VIEW_HAND_REACH, VIEW_HAND_REACH);
+	settings.viewBodyBack = std::clamp(settings.viewBodyBack, VIEW_BODY_BACK_MIN, VIEW_BODY_BACK_MAX);
 	settings.username = settings.username.substr(0, NetProtocol::USERNAME_MAX);
+	// Something that isn't a key or a mouse button (or is kept for something else) goes back to its default.
+	for (size_t i = 0; i < Controls::COUNT; i++)
+	{
+		int& binding = settings.controls[i];
+		bool key = binding >= GLFW_KEY_SPACE && binding <= GLFW_KEY_LAST;
+		bool mouse = binding >= Controls::MOUSE && binding <= Controls::MOUSE + GLFW_MOUSE_BUTTON_LAST;
+		if ((!key && !mouse) || !Controls::Reserved(binding).empty())
+			binding = Controls::InfoOf(static_cast<Control>(i)).binding;
+	}
 	for (float* volume : { &settings.masterVolume, &settings.effectsVolume, &settings.ambienceVolume, &settings.interfaceVolume })
 		*volume = std::clamp(*volume, 0.f, 1.f);
 	return settings;
@@ -74,9 +101,19 @@ void GameSettings::Save() const
 	file << "mouse_sensitivity=" << mouseSensitivity << "\n";
 	file << "invert_y=" << invertY << "\n";
 	file << "field_of_view=" << fieldOfView << "\n";
-	file << "show_controls=" << showControls << "\n";
 	file << "show_fps=" << showFps << "\n";
 	file << "imperial_units=" << imperialUnits << "\n";
+	file << "dark_mode=" << darkMode << "\n";
+	file << "monkey_fur=" << std::hex << monkey.fur << "\n";
+	file << "monkey_skin=" << monkey.skin << "\n";
+	file << "monkey_cap=" << monkey.cap << std::dec << "\n";
+	file << "monkey_tail=" << monkey.tail << "\n";
+	file << "view_arm=" << viewArm << "\n";
+	file << "view_body=" << viewBody << "\n";
+	file << "view_hand_right=" << viewHandRight << "\n";
+	file << "view_hand_up=" << viewHandUp << "\n";
+	file << "view_hand_forward=" << viewHandForward << "\n";
+	file << "view_body_back=" << viewBodyBack << "\n";
 	file << "display_mode=" << displayMode << "\n";
 	file << "resolution_width=" << resolutionWidth << "\n";
 	file << "resolution_height=" << resolutionHeight << "\n";
@@ -95,8 +132,8 @@ void GameSettings::Save() const
 	file << "ambience_volume=" << ambienceVolume << "\n";
 	file << "interface_volume=" << interfaceVolume << "\n";
 	file << "username=" << username << "\n";
-	file << "join_address=" << joinAddress << "\n";
-	file << "port=" << port << "\n";
+	for (size_t i = 0; i < Controls::COUNT; i++)
+		file << "control_" << Controls::InfoOf(static_cast<Control>(i)).id << "=" << controls[i] << "\n";
 }
 
 unsigned int GameSettings::ShadowResolution() const

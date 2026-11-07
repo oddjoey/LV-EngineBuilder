@@ -34,7 +34,9 @@ namespace
 	// (crank, cam, chambers, pistons, rings, guides, stems and springs resized) and its hardware: rockers, a
 	// distributor and a carburettor, plus a flywheel, downpipe, alternator and V-belt (six part slots before the nuts and bolts); cam
 	// lobes measured by height, not lift; and each part keeps count of what has been surfaced off its deck.
-	constexpr int VERSION = 21;
+	// 22: battery packs for the cordless tools. 23: a serpentine belt tensioner (since retired), a part slot
+	// before the nuts and bolts (which moved up one), and its bolt after them.
+	constexpr int VERSION = 23;
 	constexpr const char* MAGIC = "LVSAVE";
 
 	constexpr int PART_TYPES = static_cast<int>(PartType::COUNT);
@@ -130,6 +132,7 @@ namespace
 		ItemRef equipped;
 		int selectedSlot = 0;
 		std::map<size_t, int> toolSizes;
+		std::map<size_t, BatteryPack> batteries;
 		std::array<float, Workshop::MAX_ENGINES> engineRolls = {};
 		std::array<float, Workshop::MAX_ENGINES> crankAngles = {};
 		bool doorOpen = true;
@@ -179,9 +182,10 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	for (const auto& line : workshop.m_log)
 		out.Str(line).Line();
 
-	out.Word("tools").Int(workshop.m_ownedTools.size());
-	for (bool owned : workshop.m_ownedTools)
-		out.Int(owned);
+	// How many of each tool (saves before copies wrote 0 or 1, which reads the same).
+	out.Word("tools").Int(workshop.m_toolCounts.size());
+	for (int count : workshop.m_toolCounts)
+		out.Int(count);
 	out.Line();
 	out.Word("machines").Int(workshop.m_ownedMachines.size());
 	for (bool owned : workshop.m_ownedMachines)
@@ -312,6 +316,11 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	for (const auto& [tool, size] : world.m_toolSizes)
 		out.Int(tool).Int(size);
 	out.Line();
+	// Each battery pack: how full, and the cordless tool or charger it's on (or -1).
+	out.Word("batteries").Int(world.m_batteries.size());
+	for (const auto& [tool, battery] : world.m_batteries)
+		out.Int(tool).Num(battery.charge).Int(battery.on);
+	out.Line();
 
 	out.Word("engine").Int(world.m_engineRolls.size());
 	for (size_t engine = 0; engine < world.m_engineRolls.size(); engine++)
@@ -399,14 +408,14 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	for (auto& line : log)
 		line = in.Next();
 
-	std::vector<bool> tools(ToolCatalog::All().size(), false);
+	std::vector<int> tools(ToolCatalog::All().size(), 0);
 	in.Expect("tools");
 	size_t toolCount = in.Count();
 	for (size_t i = 0; i < toolCount; i++)
 	{
-		bool owned = in.Int() != 0;
+		int count = std::clamp(static_cast<int>(in.Int()), 0, Workshop::MAX_TOOL_COPIES);
 		if (i < tools.size())
-			tools[i] = owned;
+			tools[i] = count;
 	}
 	std::vector<bool> machines(MachineCatalog::All().size(), false);
 	in.Expect("machines");
@@ -691,6 +700,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			// before the first nut or bolt in version 21.
 			if (version < 21 && slot >= static_cast<long long>(AssemblySlot::ROCKER_SHAFT))
 				slot += 6;
+			// And the serpentine belt's tensioner the one before them in version 23.
+			if (version < 23 && slot >= static_cast<long long>(AssemblySlot::DRIVE_BELT_TENSIONER))
+				slot++;
 			if (slot < 0 || slot >= static_cast<long long>(AssemblySlot::COUNT) || !partsById.contains(static_cast<uint32_t>(id)))
 				in.Fail("an engine on a stand refers to a missing part");
 			engine.installed.push_back({ slot, index, id });
@@ -883,6 +895,18 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			saved.toolSizes[tool] = static_cast<int>(in.Int());
 		}
 	}
+	if (version >= 22)
+	{
+		in.Expect("batteries");
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			auto tool = static_cast<size_t>(in.Int());
+			auto& battery = saved.batteries[tool];
+			battery.charge = std::clamp(static_cast<float>(in.Num()), 0.f, 1.f);
+			battery.on = static_cast<int>(in.Int());
+		}
+	}
 
 	in.Expect("engine");
 	size_t poses = version == 1 ? 1 : in.Count();
@@ -915,7 +939,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	workshop.m_hours = hours;
 	workshop.m_stats = stats;
 	workshop.m_log = log;
-	workshop.m_ownedTools = tools;
+	workshop.m_toolCounts = tools;
 	workshop.m_ownedMachines = machines;
 	workshop.m_furniture = furniture;
 	workshop.m_upgrades = upgrades;
@@ -1060,6 +1084,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	world.SyncHand();
 
 	world.m_toolSizes = saved.toolSizes;
+	world.m_batteries = saved.batteries;
 	world.m_engineRolls = saved.engineRolls;
 	world.m_crankAngles = saved.crankAngles;
 	world.SetDoorOpen(saved.doorOpen, true);
@@ -1140,6 +1165,7 @@ void SaveGame::ResetWorld(Workshop& workshop, ShopWorld& world)
 	world.m_handEmpty = false;
 	world.m_engineOnDyno = -1;
 	world.m_toolSizes.clear();
+	world.m_batteries.clear();
 	world.m_move.reset();
 	world.m_carriedPackage = 0;
 	world.m_nextPackageId = 1;

@@ -17,7 +17,8 @@ enum class FurnitureKind
 	FLOOR_MAT,
 	POTTED_PLANT,
 	SHOP_FAN,
-	GAS_PUMP
+	GAS_PUMP,
+	MONCHU			// a statue for show, its model from Resources/Models/monchu.fbx
 };
 
 struct FurnitureInfo

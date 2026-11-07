@@ -440,11 +440,22 @@ DynoResult Dyno::Run(EngineAssembly& assembly)
 		powerFactor -= retard * 0.008;
 		report(FindingSeverity::WARNING, std::format("The timing belt's teeth are worn: the cam runs {:.0f} degrees retarded and power is down.", retard), 5.0);
 	}
-	for (int idler = 0; idler < assembly.SlotCount(AssemblySlot::BELT_IDLER); idler++)
-		if (overLimit(AssemblySlot::BELT_IDLER, idler, FeatureNames::IDLER_PLAY))
-			report(FindingSeverity::WARNING, std::format("Belt idler {}'s bearing is worn: it growls, and the belt wanders on it.", idler + 1), 3.0);
 	if (overLimit(AssemblySlot::BELT_TENSIONER, 0, FeatureNames::TENSIONER_TRAVEL))
-		report(FindingSeverity::WARNING, "The belt tensioner is near the end of its travel: it can't take up any more slack.", 3.0);
+		report(FindingSeverity::WARNING, "The timing idler pulley's spring is near the end of its travel: it can't take up any more slack.", 3.0);
+	// Belt tension (EngineAssembly::BeltDeflection against the manual's figures): a slack timing belt
+	// flaps and can jump a tooth; a tight one wears out the idler's and the pump's bearings.
+	if (auto deflection = assembly.BeltDeflection(false))
+	{
+		if (*deflection > spec.timingBeltDeflection.max + 1.5)
+		{
+			report(FindingSeverity::WARNING, std::format("The timing belt is slack ({:.1f} mm deflection): it flaps, and the cam wanders behind the crank.", *deflection), 5.0);
+			powerFactor -= 0.02;
+		}
+		else if (*deflection > spec.timingBeltDeflection.max)
+			report(FindingSeverity::INFO, std::format("The timing belt is a little slack ({:.1f} mm deflection).", *deflection), 1.0);
+		else if (*deflection < spec.timingBeltDeflection.min - 1.0)
+			report(FindingSeverity::INFO, std::format("The timing belt is tight ({:.1f} mm deflection): it whines, and it's hard on the idler's bearing.", *deflection), 1.0);
+	}
 
 	// Clamping: every nut and bolt, by how tight it really is against its spec.
 	for (int slotIndex = 0; slotIndex < static_cast<int>(AssemblySlot::COUNT); slotIndex++)
@@ -565,9 +576,24 @@ DynoResult Dyno::Run(EngineAssembly& assembly)
 		powerFactor -= 0.05;
 	}
 
-	// The alternator rides on the V-belt: a worn bearing whines.
+	// The alternator rides on the fan belt: a worn bearing whines.
 	if (overLimit(AssemblySlot::ALTERNATOR, 0, FeatureNames::SHAFT_PLAY))
 		report(FindingSeverity::INFO, "The alternator bearing is worn: it whines on the belt.", 1.0);
+	// A slack fan belt slips on the crank pulley: it squeals, and the water pump and alternator lag.
+	if (auto deflection = assembly.BeltDeflection(true))
+	{
+		auto belt = assembly.Get(AssemblySlot::DRIVE_BELT, 0);
+		const Range& limits = belt && belt->GetCondition() != PartCondition::NEW ? spec.fanBeltDeflectionUsed : spec.fanBeltDeflectionNew;
+		if (*deflection > limits.max + 2.0)
+		{
+			report(FindingSeverity::WARNING, std::format("The fan belt slips ({:.1f} mm deflection): it squeals under load, the water pump lags and it runs hot.", *deflection), 4.0);
+			powerFactor -= 0.01;
+		}
+		else if (*deflection > limits.max)
+			report(FindingSeverity::INFO, std::format("The fan belt is a little slack ({:.1f} mm deflection): it chirps at idle.", *deflection), 1.0);
+		else if (*deflection < limits.min - 1.0)
+			report(FindingSeverity::INFO, std::format("The fan belt is over-tight ({:.1f} mm deflection): it loads the water pump and alternator bearings.", *deflection), 1.0);
+	}
 
 	// Spark: a worn distributor shaft lets the rotor wobble, so the timing wanders under load.
 	if (overLimit(AssemblySlot::DISTRIBUTOR, 0, FeatureNames::SHAFT_PLAY))

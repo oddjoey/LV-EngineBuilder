@@ -22,8 +22,9 @@ public:
 	// Forward (positive) or back a pair of pages; true if it moved.
 	bool Turn(int spreads);
 	bool IsOpen() const;
-	// Draws the open book; true when a page was turned this frame (for the sound).
-	bool Draw(bool imperial);
+	// Draws the open book, on cream pages or (dark) charcoal ones; true when a page was turned this frame
+	// (for the sound).
+	bool Draw(bool imperial, bool dark);
 	// Finds a shop model by name (0 if there's none), for the book's 3D views of tools and parts.
 	void SetModelLookup(const std::function<uint32_t(const std::string&)>& lookup);
 private:
@@ -54,6 +55,7 @@ private:
 		CAM_PROFILE,
 		ASSEMBLY_FLOW,
 		BELT_ROUTING,
+		DRIVE_BELT_ROUTING,	// the serpentine belt
 		TORQUE_ACCURACY,
 		HEAD_BOLT_SEQUENCE,
 		MAIN_CAP_SEQUENCE,
@@ -72,6 +74,7 @@ private:
 		std::string value = "";
 		std::vector<View> views = {};
 		std::vector<std::pair<std::string, std::string>> specs = {};	// name, figure
+		std::string tip = "";	// a SPEC's explanation, shown when it's hovered (SpecTip, unless given)
 	};
 	struct Chapter
 	{
@@ -91,6 +94,8 @@ private:
 	bool DrawPage(ImDrawList* drawList, int page, const ImVec2& min, const ImVec2& max, float fontSize);
 	void DrawCover(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, float fontSize) const;
 	void DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2& min, const ImVec2& max, float fontSize) const;
+	// The figures' inks, to go with the page (see ServiceManualFigures.cpp).
+	static void SetFigureInks(bool dark);
 	// How tall a figure is, in lines of text.
 	static float FigureLines(Figure figure);
 	// Lays a step's views out in rows under it; place (if given) is called with each view's index
@@ -100,6 +105,11 @@ private:
 	// A view on its plate, the model turning inside it.
 	void DrawView(ImDrawList* drawList, const std::string& model, const ImVec2& min, const ImVec2& max);
 	int SpreadCount() const;
+	// What a figure means, by the name the book gives it; nullptr for one with nothing to explain (see
+	// ServiceManualTips.cpp).
+	static const char* SpecTip(const std::string& name);
+	// A figure's row: shaded while the mouse is over it, which pops up its explanation.
+	void HoverSpec(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, const std::string& name, const std::string& tip, float fontSize) const;
 
 	bool					m_open = false;
 	int						m_spread = 0;			// the open pair of pages: 2n on the left, 2n + 1 on the right

@@ -36,8 +36,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup>
-    <!-- Beside the game's executable. Run from this folder: the config and the garage are kept here. -->
-    <OutDir>$(ProjectDir)..\x64\$(Configuration)\</OutDir>
+    <!-- In a Server folder beside the game's executable, with the account server. Run from this folder:
+         the config and the garage are kept here. -->
+    <OutDir>$(ProjectDir)..\x64\$(Configuration)\Server\</OutDir>
     <IntDir>$(ProjectDir)x64\$(Configuration)\</IntDir>
     <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
@@ -77,13 +78,13 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="GarageServer.cpp" />
-    <ClCompile Include="Accounts.cpp" />
+    <ClCompile Include="Profiles.cpp" />
     <ClCompile Include="..\LV\Engine\Networking\Socket.cpp" />
     <ClCompile Include="..\LV\Engine\Networking\Crypto.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GarageServer.h" />
-    <ClInclude Include="Accounts.h" />
+    <ClInclude Include="Profiles.h" />
     <ClInclude Include="..\Game\Net\NetProtocol.h" />
     <ClInclude Include="..\LV\Engine\Networking\Socket.h" />
     <ClInclude Include="..\LV\Engine\Networking\Crypto.h" />

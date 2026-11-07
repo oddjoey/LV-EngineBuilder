@@ -87,10 +87,10 @@ namespace
 			"Twice the teeth of the crank sprocket, so the cam turns at half crank speed." },
 		{ PartType::TIMING_BELT,			"Timing Belt",				S::TIMING,		45.0,	1,				true,	true,	false,	false,	2, 2,
 			"Toothed rubber belt with glass-fibre cords. Its teeth wear down with the miles, letting the cam fall behind; worn far enough it skips a tooth, and the valves meet the pistons." },
-		{ PartType::BELT_IDLER,			"Belt Idler",				S::TIMING,		25.0,	2,				true,	true,	false,	false,	1, 1,
-			"Smooth pulley on a sealed bearing that routes the belt. A worn bearing has play and growls, and a seized one shreds the belt." },
-		{ PartType::BELT_TENSIONER,		"Belt Tensioner",			S::TIMING,		40.0,	1,				true,	true,	false,	false,	1, 2,
-			"Spring-loaded pulley that keeps the slack side tight. How far its arm has travelled shows how much the belt has worn." },
+		{ PartType::BELT_IDLER,			"Belt Idler",				S::TIMING,		25.0,	0,				false,	false,	false,	false,	1, 1,
+			"A plain idler pulley, from before the timing belt ran on its one idler pulley. Nothing takes one now.", nullptr, false },
+		{ PartType::BELT_TENSIONER,		"Timing Idler Pulley",		S::TIMING,		40.0,	1,				true,	true,	false,	false,	1, 2,
+			"The spring-loaded idler pulley that leans on the back of the timing belt's slack side and keeps it tight. How far its spring has travelled shows how much the belt has stretched: a weak one leaves the belt slack." },
 		{ PartType::TIMING_COVER_GASKET,	"Timing Cover Gasket",		S::TIMING,		15.0,	1,				false,	false,	true,	false,	2, 3,
 			"Seals the timing cover to the block and head. Single use." },
 		{ PartType::TIMING_COVER,			"Timing Cover",				S::TIMING,		140.0,	1,				true,	true,	false,	true,	3, 3,
@@ -175,9 +175,11 @@ namespace
 		{ PartType::EXHAUST_PIPE,			"Exhaust Downpipe",			S::EXHAUST,		70.0,	1,				true,	true,	false,	false,	1, 4,
 			"Takes the exhaust from the manifold's collector down and away. A warped flange leaks and ticks." },
 		{ PartType::ALTERNATOR,				"Alternator",				S::IGNITION,	120.0,	1,				true,	true,	false,	false,	2, 2,
-			"Charges the battery, driven by the V-belt off the crank pulley. A worn bearing whines and wobbles its pulley." },
+			"Charges the battery, driven by the serpentine belt off the crank pulley. A worn bearing whines and wobbles its pulley." },
 		{ PartType::DRIVE_BELT,				"V-Belt",					S::COOLING,		15.0,	1,				false,	false,	false,	false,	2, 2,
-			"The fan belt: drives the water pump and the alternator off the crank pulley. Old ones crack and glaze, so a rebuild gets a new one." },
+			"The fan belt, 11 x 980 mm: off the crank pulley, up round the water pump and across to the alternator, whose pivot sets how tight it is. Old ones stretch, crack and glaze, so a rebuild gets a new one." },
+		{ PartType::DRIVE_BELT_TENSIONER,	"Belt Tensioner",			S::COOLING,		45.0,	0,				false,	false,	false,	false,	1, 2,
+			"A sprung pulley for a serpentine belt, from before the fan belt went back to a V-belt. Nothing takes one now.", nullptr, false },
 	};
 	static_assert(std::size(INFO) == static_cast<size_t>(PartType::COUNT), "Every part type needs a catalog row.");
 
@@ -204,9 +206,10 @@ namespace
 		{ "Rocker Shaft Bolt",			PartType::ROCKER_SHAFT,		3,	PartType::BOLT_M8,		25.0 },
 		{ "Distributor Gear Bolt",		PartType::DISTRIBUTOR,		1,	PartType::BOLT_M10,		29.0 },
 		{ "Flywheel Bolt",				PartType::FLYWHEEL,			6,	PartType::BOLT_M10,		79.0 },
-		{ "Belt Idler Bolt",			PartType::BELT_IDLER,		1,	PartType::BOLT_M10,		42.0 },
+		{ "Idler Pulley Bolt",			PartType::BELT_TENSIONER,	1,	PartType::BOLT_M10,		37.0 },
 		{ "Exhaust Pipe Bolt",			PartType::EXHAUST_PIPE,		3,	PartType::BOLT_M10,		40.0 },
 		{ "Alternator Bolt",			PartType::ALTERNATOR,		2,	PartType::BOLT_M10,		39.0 },
+		{ "Belt Tensioner Bolt",		PartType::DRIVE_BELT_TENSIONER, 1, PartType::BOLT_M10,	42.0 },
 	};
 }
 

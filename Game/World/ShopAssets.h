@@ -88,14 +88,53 @@ namespace EngineLayout
 	constexpr float TIMING_PLANE_X = FRONT_X - 0.023f;				// sprockets and belt
 	constexpr float TIMING_COVER_X = FRONT_X - 0.035f;
 	constexpr float TIMING_COVER_Y = -0.06f;						// the middle of the cover
+	// In the covers' own space: the top of the valve cover's plate, and the timing cover's face (lying
+	// face up), where their bolt heads sit.
+	constexpr float VALVE_COVER_TOP = 0.055f;
+	constexpr float TIMING_COVER_FACE = 0.012f;
 	// Along the cam, between the first cylinder's lobes and the second journal: the fuel pump's eccentric,
 	// and the pump on the side of the head beside it.
 	constexpr float FUEL_PUMP_X = -0.112f;
-	// The accessory drive's V-belt runs in one plane in front of the timing cover, round the crank pulley,
-	// the water pump and the alternator.
+	// The timing belt (as the 4A-C has it, seen from the front): round the cam pulley at the top and the
+	// crank pulley, half its size, below it; the spring-loaded idler pulley leans on the back of the slack
+	// side, on the left, nearer the crank.
+	constexpr float CRANK_PULLEY_TEETH = 0.0245f;		// the timing pulleys' tooth tips, where the belt rides
+	constexpr float CAM_PULLEY_TEETH = 0.0465f;
+	constexpr float TIMING_IDLER_Y = -0.15f;
+	constexpr float TIMING_IDLER_Z = -0.032f;
+	constexpr float TIMING_IDLER_RADIUS = 0.017f;
+	// The fan belt, a V-belt in one plane in front of the timing cover: round the crank pulley, up round
+	// the water pump (above the crank, a little to the left), across to the alternator (out to the right,
+	// level with it) and back down. The alternator's pivot sets how tight it is.
 	constexpr float ACCESSORY_BELT_X = TIMING_COVER_X - 0.06f;
-	constexpr float ALTERNATOR_Y = -0.12f;
+	constexpr float ALTERNATOR_Y = 0.0f;
 	constexpr float ALTERNATOR_Z = 0.17f;
+	constexpr float WATER_PUMP_Y = -0.03f;
+	constexpr float WATER_PUMP_Z = -0.02f;
+	// A retired part's (the serpentine belt tensioner): only its model uses them now.
+	constexpr float DRIVE_TENSIONER_Y = -0.06f;
+	constexpr float DRIVE_TENSIONER_Z = -0.07f;
+	constexpr float DRIVE_TENSIONER_RADIUS = 0.03f;
+	// A belt's pulleys, seen from the front of the engine (centres in Z to the right and Y up), in the
+	// order the belt goes round them (clockwise, the way the engine turns): wrap +1 on the belt's working
+	// side, -1 on its back.
+	struct BeltPulley
+	{
+		const char* name = "";
+		glm::vec2 centre = {};
+		float radius = 0.f;
+		float wrap = 1.f;
+	};
+	const std::vector<BeltPulley>& TimingPulleys();
+	const std::vector<BeltPulley>& DrivePulleys();
+	// A belt all the way round, as points along it (Z, Y): each straight run tangent to the pulleys at its
+	// ends, and round each pulley between them, offset metres out from it.
+	std::vector<glm::vec2> BeltPath(const std::vector<BeltPulley>& pulleys, float offset);
+	// The middle of the run from pulley run to the next, where a belt's deflection is checked (Z, Y): the
+	// timing belt's tight side, cam to crank; the fan belt's top run, water pump to alternator.
+	glm::vec2 BeltRunMiddle(const std::vector<BeltPulley>& pulleys, size_t run);
+	constexpr size_t TIMING_CHECK_RUN = 0;
+	constexpr size_t DRIVE_CHECK_RUN = 1;
 	inline float CamAxisY() { return HEAD_DECK_Y + CAM_Y; }
 
 	// Where a bolt-on part's model sits on the assembled engine (its origin, in engine space) and
@@ -202,8 +241,6 @@ namespace ShopModels
 	inline const std::string HOUSE_TRIM = "House Trim";
 	inline const std::string STREET_LIGHT = "Street Light";
 	inline const std::string LAMP_HEAD = "Lamp Head";
-	inline const std::string CAR_BODY = "Car Body";
-	inline const std::string CAR_TRIM = "Car Trim";
 	inline const std::string DUMPSTER = "Dumpster";
 	inline const std::string OIL_DRUM = "Oil Drum";
 	inline const std::string WORKBENCH = "Workbench";
@@ -216,7 +253,29 @@ namespace ShopModels
 	inline const std::string COMPUTER_DESK = "Computer Desk";
 	inline const std::string PACKAGE_BOX = "Package: Box";
 	inline const std::string PACKAGE_CRATE = "Package: Crate";
-	inline const std::string PLAYER = "Player";	// another player, in a game over the network
+	// Another player, in a game over the network: the torso, and the parts that move on it. The fur, the
+	// bare skin and the cap are pieces of their own, each taking the player's colour for it (MonkeyLook).
+	inline const std::string PLAYER = "Player";
+	inline const std::string PLAYER_HEAD = "Player Head";
+	inline const std::string PLAYER_BELLY = "Player Belly";
+	inline const std::string PLAYER_TAIL = "Player Tail";
+	inline const std::string PLAYER_FACE = "Player Face";
+	inline const std::string PLAYER_CAP = "Player Cap";
+	inline const std::string PLAYER_ARM = "Player Arm";
+	inline const std::string PLAYER_HAND = "Player Hand";
+	inline const std::string PLAYER_THIGH = "Player Thigh";
+	inline const std::string PLAYER_SHIN = "Player Shin";
+	inline const std::string PLAYER_FOOT = "Player Foot";
+	// First person: the player's own sleeve (one metre long, from the shoulder at the origin down -Z:
+	// stretched to reach the hand), right hand (the wrist at the origin, fingers to -Z), and body
+	// (feet at the origin, facing -Z, no head: the camera is there).
+	inline const std::string VIEW_SLEEVE = "View Sleeve";
+	inline const std::string VIEW_HAND = "View Hand";
+	// The hand's size: how far it reaches past the wrist, and how thick it is (what's carried sits on it).
+	constexpr float VIEW_HAND_LENGTH = 0.09f;
+	constexpr float VIEW_HAND_THICKNESS = 0.045f;
+	inline const std::string VIEW_BODY = "View Body";
+	inline const std::string VIEW_BODY_SKIN = "View Body Skin";
 }
 
 // Where a part rests on a machine, relative to the machine's origin, and how it's turned.
@@ -292,6 +351,8 @@ private:
 		std::string file = "";
 		ModelImportOptions options = {};
 		std::string texture = "";
+		// Fitted to this height (metres) and stood on its base, centred, if more than 0.
+		float height = 0.f;
 	};
 
 	void LoadOverrides();

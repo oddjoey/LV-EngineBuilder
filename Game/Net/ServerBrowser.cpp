@@ -12,16 +12,30 @@ namespace
 {
 	constexpr auto QUERY_TIMEOUT = std::chrono::seconds(3);
 
-	const char* DEFAULT_LIST =
+	std::string DEFAULT_LIST = std::format(
+		"# The account server everyone logs in to:\n"
+		"account = {}:{}\n"
 		"# Garage servers the game can join, one per line:\n"
-		"#   address[:port] | region | name\n"
-		"# \"Join the closest garage\" pings every one and joins the fastest with room.\n";
+		"# address[:port] | region | name\n# The main menu lists each one with its ping and how many are in it.\n"
+		"{}:{}", NetProtocol::ACCOUNT_IP, NetProtocol::ACCOUNT_PORT, NetProtocol::ACCOUNT_IP, NetProtocol::DEFAULT_PORT);
 
 	std::string Trim(const std::string& text)
 	{
 		size_t first = text.find_first_not_of(" \t\r");
 		size_t last = text.find_last_not_of(" \t\r");
 		return first == std::string::npos ? "" : text.substr(first, last - first + 1);
+	}
+
+	// "example.com:27616" into the address and the port (the default if none is given).
+	void SplitPort(std::string& address, uint16_t& port, uint16_t defaultPort)
+	{
+		port = defaultPort;
+		if (size_t colon = address.rfind(':'); colon != std::string::npos)
+		{
+			try { port = static_cast<uint16_t>(std::stoi(address.substr(colon + 1))); }
+			catch (...) {}
+			address = address.substr(0, colon);
+		}
 	}
 }
 
@@ -32,6 +46,8 @@ void ServerBrowser::Load()
 		std::ofstream(FILE_NAME) << DEFAULT_LIST;
 
 	m_servers.clear();
+	//m_accountAddress = "127.0.0.1";
+	//m_accountPort = NetProtocol::ACCOUNT_PORT;
 	std::ifstream file(FILE_NAME);
 	std::string line;
 	while (std::getline(file, line))
@@ -39,6 +55,14 @@ void ServerBrowser::Load()
 		line = Trim(line);
 		if (line.empty() || line[0] == '#')
 			continue;
+		// account = address[:port]
+		if (line.compare(0, 7, "account") == 0)
+		{
+			size_t equals = line.find('=');
+			m_accountAddress = Trim(equals == std::string::npos ? line.substr(7) : line.substr(equals + 1));
+			SplitPort(m_accountAddress, m_accountPort, NetProtocol::ACCOUNT_PORT);
+			continue;
+		}
 		std::vector<std::string> fields;
 		size_t at = 0;
 		while (true)
@@ -52,13 +76,7 @@ void ServerBrowser::Load()
 
 		Server server;
 		server.address = fields[0];
-		server.port = NetProtocol::DEFAULT_PORT;
-		if (size_t colon = server.address.rfind(':'); colon != std::string::npos)
-		{
-			try { server.port = static_cast<uint16_t>(std::stoi(server.address.substr(colon + 1))); }
-			catch (...) {}
-			server.address = server.address.substr(0, colon);
-		}
+		SplitPort(server.address, server.port, NetProtocol::DEFAULT_PORT);
 		server.region = fields.size() > 1 ? fields[1] : "";
 		server.name = fields.size() > 2 ? fields[2] : "";
 		if (!server.address.empty())
@@ -157,13 +175,4 @@ void ServerBrowser::Update()
 	}
 	if (m_queries.empty())
 		m_refreshed = true;
-}
-
-const ServerBrowser::Server* ServerBrowser::Closest() const
-{
-	const Server* closest = nullptr;
-	for (const auto& server : m_servers)
-		if (server.state == Server::State::ONLINE && (!closest || server.pingMs < closest->pingMs))
-			closest = &server;
-	return closest;
 }

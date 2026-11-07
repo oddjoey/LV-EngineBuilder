@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <optional>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,18 +36,24 @@ struct PauseMenuContext
 	std::vector<std::string> players = {};	// everyone in the garage
 	std::vector<Server> servers = {};		// from the server list
 	bool refreshingServers = false;
+	bool loggedIn = false;			// to the account server: only then are the garages shown
+	bool loggingIn = false;
+	std::string username = "";		// who's logged in
+	bool offline = false;			// playing the local save without a server (debug builds)
+	bool canPlayOffline = false;	// a debug build: offline play is offered
+	// The first key or mouse button pressed this frame (see Controls), for changing a binding.
+	std::optional<int> pressedInput = std::nullopt;
 };
 
-// The Esc menu: resume, the garage servers, settings, controls and quit. The shop keeps running
-// behind it. Until the player is in a garage it is the front screen, and stays open.
+// The menu. Out of a garage it's the main menu, and stays open: the account, the garages to join,
+// settings, controls and quitting. In a garage it's the Esc menu, with the shop running behind it.
 class PauseMenu
 {
 public:
-	enum class Action { NONE, RESUME, QUIT, REFRESH_SERVERS, JOIN_CLOSEST, JOIN, LEAVE };
+	// SAVE and PLAY_OFFLINE are for offline play, in debug builds.
+	enum class Action { NONE, RESUME, QUIT, LOGIN, LOGOUT, REFRESH_SERVERS, JOIN, LEAVE, PLAY_OFFLINE, SAVE };
 
 	void Open();
-	// Opens straight onto the server list (keeping the status line, e.g. why the last garage was left).
-	void OpenServers();
 	void Close();
 	bool IsOpen() const;
 	// Draws the menu if it's open. Changes to settings apply immediately and are saved on leaving
@@ -52,24 +61,37 @@ public:
 	Action Draw(GameSettings& settings, const PauseMenuContext& context);
 	// A line under the menu buttons, e.g. why joining failed.
 	void SetStatus(const std::string& status);
-	// What's typed on the server list to log in with (the username is in the settings). The password
-	// is only kept while the game runs.
+	// What's typed on the main menu to log in with (the username is in the settings). The password
+	// is never saved, and is cleared once logged in.
 	std::string GetPassword() const { return m_password; }
+	void ClearPassword() { std::fill(std::begin(m_password), std::end(m_password), '\0'); }
 	bool IsNewAccount() const { return m_newAccount; }
 	void SetNewAccount(bool newAccount) { m_newAccount = newAccount; }
+	// The garage picked to join (with Action::JOIN).
+	const std::string& GetJoinAddress() const { return m_joinAddress; }
+	int GetJoinPort() const { return m_joinPort; }
+	// Waiting for the key to put a control on: the game leaves the keys alone meanwhile.
+	bool IsBinding() const { return m_binding >= 0; }
 private:
-	enum class Page { MAIN, SETTINGS, CONTROLS, CONFIRM_QUIT, MULTIPLAYER };
+	enum class Page { MAIN, SETTINGS, CONTROLS, CONFIRM_QUIT };
 
 	bool BigButton(const char* label);
 	void DrawGameSettings(GameSettings& settings);
 	void DrawVideoSettings(GameSettings& settings, const PauseMenuContext& context);
 	void DrawAudioSettings(GameSettings& settings);
 	void DrawTimeSettings(GameSettings& settings, const PauseMenuContext& context);
-	Action DrawMultiplayer(GameSettings& settings, const PauseMenuContext& context);
+	Action DrawMainMenu(GameSettings& settings, const PauseMenuContext& context);
+	void DrawControls(GameSettings& settings, const PauseMenuContext& context);
 
 	bool m_open = false;
 	Page m_page = Page::MAIN;
 	std::string m_status = "";
 	char m_password[72] = {};
 	bool m_newAccount = false;
+	std::string m_joinAddress = "";
+	int m_joinPort = 0;
+	// The control waiting for a key (an index into Controls), or -1; and why the last key pressed for
+	// it couldn't be used.
+	int m_binding = -1;
+	std::string m_bindingNote = "";
 };

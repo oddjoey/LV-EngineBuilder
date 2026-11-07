@@ -16,7 +16,7 @@ Workshop::Workshop(const EngineSpec& spec, double startingMoney) : m_spec(&spec)
 	// Every tool and machine has to be bought: the shop starts with bare walls.
 	const auto& tools = ToolCatalog::All();
 	for (const auto& tool : tools)
-		m_ownedTools.push_back(tool.ownedAtStart);
+		m_toolCounts.push_back(tool.ownedAtStart ? 1 : 0);
 
 	const auto& machines = MachineCatalog::All();
 	for (const auto& machine : machines)
@@ -350,9 +350,23 @@ bool Workshop::SellPart(const pPart& part)
 	return true;
 }
 
-bool Workshop::OwnsTool(size_t toolIndex) const
+bool Workshop::OwnsTool(size_t toolId) const
 {
-	return toolIndex < m_ownedTools.size() && m_ownedTools[toolIndex];
+	// An id is one copy of a tool: owned if the shop has that many. What comes in a set is owned with
+	// the set (copy for copy).
+	size_t index = ToolCatalog::IndexOf(toolId), copy = ToolCatalog::CopyOf(toolId);
+	const auto& tools = ToolCatalog::All();
+	if (index < tools.size() && tools[index].partOf >= 0)
+		return OwnsTool(ToolCatalog::IdOf(static_cast<size_t>(tools[index].partOf), copy));
+	return index < m_toolCounts.size() && static_cast<size_t>(m_toolCounts[index]) > copy;
+}
+
+int Workshop::ToolCount(size_t toolIndex) const
+{
+	const auto& tools = ToolCatalog::All();
+	if (toolIndex < tools.size() && tools[toolIndex].partOf >= 0)
+		return ToolCount(static_cast<size_t>(tools[toolIndex].partOf));
+	return toolIndex < m_toolCounts.size() ? m_toolCounts[toolIndex] : 0;
 }
 
 bool Workshop::OwnsMachine(size_t machineIndex) const
@@ -363,13 +377,15 @@ bool Workshop::OwnsMachine(size_t machineIndex) const
 bool Workshop::BuyTool(size_t toolIndex)
 {
 	const auto& tools = ToolCatalog::All();
-	if (toolIndex >= tools.size() || OwnsTool(toolIndex))
+	// As many as you like: each one is another copy (another set, for a set).
+	if (toolIndex >= tools.size() || tools[toolIndex].partOf >= 0 || m_toolCounts[toolIndex] >= static_cast<int>(MAX_TOOL_COPIES))
 		return false;
 	if (!Spend(tools[toolIndex].price, tools[toolIndex].name))
 		return false;
 
-	m_ownedTools[toolIndex] = true;
-	Log(std::format("Bought a {}.", tools[toolIndex].name));
+	m_toolCounts[toolIndex]++;
+	Log(m_toolCounts[toolIndex] > 1 ? std::format("Bought another {} (you have {}).", tools[toolIndex].name, m_toolCounts[toolIndex])
+		: std::format("Bought a {}.", tools[toolIndex].name));
 	return true;
 }
 
@@ -424,7 +440,7 @@ int Workshop::BestToolFor(const Feature& feature) const
 	const auto& tools = ToolCatalog::All();
 	int best = -1;
 	for (size_t i = 0; i < tools.size(); i++)
-		if (m_ownedTools[i] && tools[i].CanMeasure(feature))
+		if (OwnsTool(i) && tools[i].CanMeasure(feature))
 			if (best < 0 || tools[i].sigma < tools[best].sigma)
 				best = static_cast<int>(i);
 	return best;
@@ -435,7 +451,7 @@ int Workshop::BestToolFor(AssemblyCheck check) const
 	const auto& tools = ToolCatalog::All();
 	int best = -1;
 	for (size_t i = 0; i < tools.size(); i++)
-		if (m_ownedTools[i] && tools[i].CanCheck(check))
+		if (OwnsTool(i) && tools[i].CanCheck(check))
 			if (best < 0 || tools[i].sigma < tools[best].sigma)
 				best = static_cast<int>(i);
 	return best;
@@ -448,17 +464,19 @@ std::optional<std::string> Workshop::TurningProblem(AssemblySlot slot, int index
 	if (!holes || !part)
 		return "There's nothing there to turn.";
 	const auto& tools = ToolCatalog::All();
-	if (toolIndex >= tools.size() || !OwnsTool(toolIndex))
+	if (ToolCatalog::IndexOf(toolIndex) >= tools.size() || !OwnsTool(toolIndex))
 		return "You don't have that tool.";
-	const auto& tool = tools[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 	const auto& fastener = PartCatalog::Get(part->GetType()).fastener;
 
-	bool drive = tool.handKind == HandToolKind::RATCHET || tool.handKind == HandToolKind::BREAKER_BAR || tool.handKind == HandToolKind::TORQUE_WRENCH;
-	if (!drive && tool.handKind != HandToolKind::WRENCHES)
+	bool drive = tool.handKind == HandToolKind::RATCHET || tool.handKind == HandToolKind::BREAKER_BAR || tool.handKind == HandToolKind::TORQUE_WRENCH
+		|| tool.handKind == HandToolKind::IMPACT;
+	if (tool.handKind == HandToolKind::WRENCHES)
+		return std::string("Take a wrench out of the set: look at the one you need and press [E].");
+	if (!drive && tool.handKind != HandToolKind::COMBINATION_WRENCH)
 		return std::format("A {} can't turn a {}.", tool.name, part->GetName());
 	if (sizeMm <= 0)
-		return drive ? std::format("Fit a socket to the {} first: look at one in a socket set and press E.", tool.name)
-			: std::string("Pick a wrench size first: [C] changes it.");
+		return std::format("Fit a socket to the {} first: look at one in a socket set and press [E].", tool.name);
 	if (sizeMm != fastener.headMm)
 		return std::format("A {} mm {} doesn't fit a {} mm {}.", sizeMm, drive ? "socket" : "wrench", fastener.headMm, fastener.nut ? "nut" : "bolt head");
 	if (tool.handKind == HandToolKind::TORQUE_WRENCH)
@@ -468,6 +486,9 @@ std::optional<std::string> Workshop::TurningProblem(AssemblySlot slot, int index
 		if (tool.maxTorque < holes->torqueNm)
 			return std::format("The {} only goes to {:.0f} Nm; this takes {:.0f}.", tool.name, tool.maxTorque, holes->torqueNm);
 	}
+	// A motor only turns so hard: past that it stalls (and a tight one won't crack loose).
+	if (tool.powered && tool.maxTorque < holes->torqueNm)
+		return std::format("The {} stalls at {:.0f} Nm; this one takes {:.0f}. Use a hand tool.", tool.name, tool.maxTorque, holes->torqueNm);
 	return std::nullopt;
 }
 
@@ -480,8 +501,7 @@ bool Workshop::TightenFastener(AssemblySlot slot, int index, size_t toolIndex, i
 	}
 	auto part = GetAssembly().Get(slot, index);
 	const auto* holes = EngineAssembly::Holes(slot);
-	const auto& tools = ToolCatalog::All();
-	const auto& tool = tools[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 
 	double torque = 0.0;
 	if (tool.handKind == HandToolKind::TORQUE_WRENCH)
@@ -492,9 +512,11 @@ bool Workshop::TightenFastener(AssemblySlot slot, int index, size_t toolIndex, i
 	}
 	else
 	{
-		// By feel. A short ratchet seldom gets a big bolt there; a breaker bar easily goes past.
-		double feel = tool.handKind == HandToolKind::BREAKER_BAR ? 1.1 : tool.handKind == HandToolKind::RATCHET ? 0.8 : 0.85;
-		torque = holes->torqueNm * std::clamp(Random::Normal(feel, 0.25), 0.2, 2.0);
+		// By feel. A short ratchet seldom gets a big bolt there; a breaker bar easily goes past, and an
+		// impact hammers it well beyond.
+		bool impact = tool.handKind == HandToolKind::IMPACT;
+		double feel = impact ? 1.4 : tool.handKind == HandToolKind::BREAKER_BAR ? 1.1 : tool.handKind == HandToolKind::RATCHET ? 0.8 : 0.85;
+		torque = holes->torqueNm * std::clamp(Random::Normal(feel, impact ? 0.3 : 0.25), 0.2, 2.0);
 		if (tool.handKind == HandToolKind::RATCHET)
 			torque = (std::min)(torque, 70.0);
 		part->SetTightness(FastenerTightness::SNUG);
@@ -527,7 +549,7 @@ int Workshop::FinishTool() const
 {
 	const auto& tools = ToolCatalog::All();
 	for (size_t i = 0; i < tools.size(); i++)
-		if (m_ownedTools[i] && tools[i].measuresFinish)
+		if (OwnsTool(i) && tools[i].measuresFinish)
 			return static_cast<int>(i);
 	return -1;
 }
@@ -545,12 +567,12 @@ bool Workshop::MeasureSize(Part& part, const std::string& featureName, int toolI
 
 	if (toolIndex < 0)
 		toolIndex = BestToolFor(*feature);
-	if (toolIndex < 0 || !OwnsTool(toolIndex) || !ToolCatalog::All()[toolIndex].CanMeasure(*feature))
+	if (toolIndex < 0 || !OwnsTool(toolIndex) || !ToolCatalog::Of(toolIndex).CanMeasure(*feature))
 	{
 		Log(std::format("You don't have a tool that can measure {}.", featureName));
 		return false;
 	}
-	const auto& tool = ToolCatalog::All()[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 
 	FeatureReading reading;
 	if (auto previous = part.GetReading(featureName); previous && !previous->stale)
@@ -581,12 +603,12 @@ bool Workshop::MeasureFinish(Part& part, const std::string& featureName, int too
 
 	if (toolIndex < 0)
 		toolIndex = FinishTool();
-	if (toolIndex < 0 || !OwnsTool(toolIndex) || !ToolCatalog::All()[toolIndex].measuresFinish)
+	if (toolIndex < 0 || !OwnsTool(toolIndex) || !ToolCatalog::Of(toolIndex).measuresFinish)
 	{
 		Log("You need a profilometer to measure surface finish.");
 		return false;
 	}
-	const auto& tool = ToolCatalog::All()[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 
 	FeatureReading reading;
 	if (auto previous = part.GetReading(featureName); previous && !previous->stale)
@@ -686,7 +708,7 @@ double Workshop::LineTotal(const CartLine& line) const
 	switch (line.kind)
 	{
 		case CartLine::Kind::PART:			return Quote(line.order);
-		case CartLine::Kind::TOOL:			return line.index < ToolCatalog::All().size() ? ToolCatalog::All()[line.index].price : 0.0;
+		case CartLine::Kind::TOOL:			return line.index < ToolCatalog::All().size() ? ToolCatalog::Of(line.index).price * line.quantity : 0.0;
 		case CartLine::Kind::MACHINE:		return line.index < MachineCatalog::All().size() ? MachineCatalog::All()[line.index].price : 0.0;
 		case CartLine::Kind::ENGINE_STAND:	return ENGINE_STAND_PRICE * line.quantity;
 		case CartLine::Kind::FURNITURE:		return line.index < FurnitureCatalog::All().size() ? FurnitureCatalog::All()[line.index].price * line.quantity : 0.0;
@@ -708,8 +730,8 @@ std::optional<std::string> Workshop::CartLineProblem(const CartLine& line, const
 	switch (line.kind)
 	{
 		case CartLine::Kind::TOOL:
-			if (OwnsTool(line.index))
-				return "Already owned.";
+			if (ToolCount(line.index) + line.quantity > MAX_TOOL_COPIES)
+				return std::format("There's only room for {} of each tool.", MAX_TOOL_COPIES);
 			break;
 		case CartLine::Kind::MACHINE:
 			if (OwnsMachine(line.index))
@@ -762,7 +784,7 @@ bool Workshop::Checkout(const std::vector<CartLine>& cart)
 		switch (line.kind)
 		{
 			case CartLine::Kind::PART:			Buy(line.order); break;
-			case CartLine::Kind::TOOL:			BuyTool(line.index); break;
+			case CartLine::Kind::TOOL:			for (int i = 0; i < line.quantity; i++) BuyTool(line.index); break;
 			case CartLine::Kind::MACHINE:		BuyMachine(line.index); break;
 			case CartLine::Kind::ENGINE_STAND:	for (int i = 0; i < line.quantity; i++) BuyEngineStand(); break;
 			case CartLine::Kind::FURNITURE:		for (int i = 0; i < line.quantity; i++) BuyFurniture(line.index); break;
@@ -884,6 +906,7 @@ std::string Workshop::AssemblyReadingLabel(AssemblyCheck check, int index, bool 
 		case AssemblyCheck::DECK_CLEARANCE:		return std::format("Cylinder {} deck clearance", index + 1);
 		case AssemblyCheck::INSTALLED_HEIGHT:	return std::format("{} {} installed height", FeatureNames::ValveSide(index % 2 == 1), index / 2 + 1);
 		case AssemblyCheck::ROD_SIDE_CLEARANCE:	return std::format("Rod {} side clearance", index + 1);
+		case AssemblyCheck::BELT_DEFLECTION:	return index == 1 ? "Fan belt deflection" : "Timing belt deflection";
 		default:								return "";
 	}
 }
@@ -900,6 +923,7 @@ bool Workshop::MeasureAssembly(AssemblyCheck check, int index, bool rod, int too
 		case AssemblyCheck::DECK_CLEARANCE:		trueValue = assembly.DeckClearance(index); break;
 		case AssemblyCheck::INSTALLED_HEIGHT:	trueValue = assembly.InstalledHeight(index / 2, index % 2 == 1); break;
 		case AssemblyCheck::ROD_SIDE_CLEARANCE:	trueValue = assembly.RodSideClearance(index); break;
+		case AssemblyCheck::BELT_DEFLECTION:	trueValue = assembly.BeltDeflection(index == 1); break;
 		default:								return false;
 	}
 	return RecordAssemblyReading(check, index, rod, toolIndex, trueValue);
@@ -916,12 +940,12 @@ bool Workshop::RecordAssemblyReading(AssemblyCheck check, int index, bool rod, i
 
 	if (toolIndex < 0)
 		toolIndex = BestToolFor(check);
-	if (toolIndex < 0 || !OwnsTool(toolIndex) || !ToolCatalog::All()[toolIndex].CanCheck(check))
+	if (toolIndex < 0 || !OwnsTool(toolIndex) || !ToolCatalog::Of(toolIndex).CanCheck(check))
 	{
 		Log(std::format("You don't have a tool that can check {}.", label));
 		return false;
 	}
-	const auto& tool = ToolCatalog::All()[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 
 	double reading = tool.Read(*trueValue);
 	// Plastigauge and feelers can't read a negative gap; the parts simply bind.
@@ -1101,10 +1125,10 @@ void Workshop::DevGivePart(const PartOrder& order)
 
 bool Workshop::DevGiveTool(size_t toolIndex)
 {
-	if (toolIndex >= m_ownedTools.size() || m_ownedTools[toolIndex])
+	if (toolIndex >= m_toolCounts.size() || ToolCatalog::Of(toolIndex).partOf >= 0 || m_toolCounts[toolIndex] >= static_cast<int>(MAX_TOOL_COPIES))
 		return false;
-	m_ownedTools[toolIndex] = true;
-	Log(std::format("Dev: a {}.", ToolCatalog::All()[toolIndex].name));
+	m_toolCounts[toolIndex]++;
+	Log(std::format("Dev: a {}.", ToolCatalog::Of(toolIndex).name));
 	return true;
 }
 

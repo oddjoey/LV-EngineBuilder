@@ -47,6 +47,9 @@ namespace Ratings
 
 	float ToolSpeed(const MeasuringTool& tool)
 	{
+		// Spanners and the like by how long a nut or bolt takes.
+		if (tool.TurnSeconds() > 0.0)
+			return LinearScore(tool.TurnSeconds(), 0.4, 4.0);
 		return LinearScore(tool.hoursPerUse, 0.05, 0.4);
 	}
 

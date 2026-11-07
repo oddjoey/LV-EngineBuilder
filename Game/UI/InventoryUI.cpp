@@ -9,6 +9,8 @@
 
 #include <imgui.h>
 
+#include "LV/Engine/Utility/InputManager.h"
+#include "../Controls.h"
 #include "../Simulation/EngineAssembly.h"
 #include "../Simulation/Material.h"
 #include "../Simulation/PartCatalog.h"
@@ -177,7 +179,7 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 	// Dragging: the item follows the cursor and snaps to the cell under it.
 	if (!m_dragging.IsNone())
 	{
-		if (ImGui::IsKeyPressed(ImGuiKey_R, false))
+		if (Controls::Pressed(*InputManager::Get(), Control::ROTATE))
 		{
 			m_dragSize = { m_dragSize.y, m_dragSize.x };
 			m_grabOffset = { m_grabOffset.y, m_grabOffset.x };
@@ -350,7 +352,7 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 
 	if (info.isTool)
 	{
-		const auto& tool = ToolCatalog::All()[info.toolIndex];
+		const auto& tool = ToolCatalog::Of(info.toolIndex);
 		Ratings::Bar("Precision", Ratings::ToolPrecision(tool), 160.f);
 		Ratings::Bar("Speed", Ratings::ToolSpeed(tool), 160.f);
 		if (tool.resolution > 0.0)

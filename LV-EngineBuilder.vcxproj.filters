@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Game">
@@ -83,6 +83,9 @@
     <ClCompile Include="Game\EngineBuilderGame.cpp">
       <Filter>Game</Filter>
     </ClCompile>
+    <ClCompile Include="Game\Controls.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
     <ClCompile Include="Game\GameSettings.cpp">
       <Filter>Game</Filter>
     </ClCompile>
@@ -105,6 +108,9 @@
       <Filter>LV\Engine\Networking</Filter>
     </ClCompile>
     <ClCompile Include="Game\Net\ServerBrowser.cpp">
+      <Filter>Game\Net</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Net\AccountLogin.cpp">
       <Filter>Game\Net</Filter>
     </ClCompile>
     <ClCompile Include="Game\Simulation\Dyno.cpp">
@@ -182,6 +188,9 @@
     <ClCompile Include="Game\UI\ServiceManualFigures.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Game\UI\ServiceManualTips.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
     <ClCompile Include="Game\UI\Ratings.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
@@ -219,6 +228,12 @@
       <Filter>Game\World</Filter>
     </ClCompile>
     <ClCompile Include="Game\World\ShopWorldTools.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\MonkeyUI.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\PlayerAvatar.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
     <ClCompile Include="LV\Engine\Graphics\DLSS.cpp">
@@ -321,6 +336,9 @@
     <ClInclude Include="Game\EngineBuilderGame.h">
       <Filter>Game</Filter>
     </ClInclude>
+    <ClInclude Include="Game\Controls.h">
+      <Filter>Game</Filter>
+    </ClInclude>
     <ClInclude Include="Game\GameSettings.h">
       <Filter>Game</Filter>
     </ClInclude>
@@ -349,6 +367,12 @@
       <Filter>Game\Net</Filter>
     </ClInclude>
     <ClInclude Include="Game\Net\ServerBrowser.h">
+      <Filter>Game\Net</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Net\AccountLogin.h">
+      <Filter>Game\Net</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Net\ClientHandshake.h">
       <Filter>Game\Net</Filter>
     </ClInclude>
     <ClInclude Include="Game\Simulation\Dyno.h">
@@ -457,6 +481,15 @@
       <Filter>Game\World</Filter>
     </ClInclude>
     <ClInclude Include="Game\World\ShopWorld.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\MonkeyLook.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\MonkeyUI.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\PlayerAvatar.h">
       <Filter>Game\World</Filter>
     </ClInclude>
     <ClInclude Include="Game\World\ShopWorldShared.h">

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <format>
 #include <functional>
 #include <set>
@@ -69,6 +70,23 @@ namespace
 		for (size_t i = 0; i < count && !in.Failed(); i++)
 		{
 			bool value = in.Int() != 0;
+			if (i < values.size())
+				values[i] = value;
+		}
+	}
+	// Counts (the tools: how many of each). Ones sent as 0 or 1 before there could be several read the same.
+	void WriteCounts(Writer& out, const std::vector<int>& values)
+	{
+		out.Int(values.size());
+		for (int value : values)
+			out.Int(value);
+	}
+	void ReadCounts(Reader& in, std::vector<int>& values, int most)
+	{
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			int value = std::clamp(static_cast<int>(in.Int()), 0, most);
 			if (i < values.size())
 				values[i] = value;
 		}
@@ -242,7 +260,9 @@ namespace
 			for (int index = 0; index < assembly.SlotCount(static_cast<AssemblySlot>(slot)); index++)
 				if (auto part = assembly.Get(static_cast<AssemblySlot>(slot), index))
 					installed.push_back({ slot, index, part->GetId() });
-		out.Int(installed.size());
+		// The count goes negative (less one) to say the slots are numbered with the serpentine belt's
+		// tensioner in them: a garage kept from before has them one lower from there on.
+		out.Int(-static_cast<long long>(installed.size()) - 1);
 		for (const auto& [slot, index, id] : installed)
 			out.Int(slot).Int(index).Int(id);
 		out.Int(engine.readings.size());
@@ -265,10 +285,15 @@ namespace
 	{
 		Reader in(text);
 		auto engine = std::make_unique<EngineBuild>(workshop.GetSpec());
-		size_t installedCount = in.Count();
-		for (size_t i = 0; i < installedCount && !in.Failed(); i++)
+		long long installedCount = in.Int();
+		bool beforeTensioner = installedCount >= 0;
+		if (!beforeTensioner)
+			installedCount = -installedCount - 1;
+		for (long long i = 0; i < installedCount && !in.Failed(); i++)
 		{
 			long long slot = in.Int(), index = in.Int(), id = in.Int();
+			if (beforeTensioner && slot >= static_cast<long long>(AssemblySlot::DRIVE_BELT_TENSIONER))
+				slot++;
 			auto part = parts.find(static_cast<uint32_t>(id));
 			if (slot < 0 || slot >= SLOTS || part == parts.end())
 				continue;
@@ -332,7 +357,7 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 	}
 	{
 		Writer out;
-		WriteBools(out, workshop.m_ownedTools);
+		WriteCounts(out, workshop.m_toolCounts);
 		records["g:tools"] = out.Text();
 	}
 	{
@@ -417,6 +442,14 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		records["w:sockets"] = out.Text();
 	}
 	{
+		// To the percent, so a pack charging doesn't change the record every frame.
+		Writer out;
+		out.Int(world.m_batteries.size());
+		for (const auto& [tool, battery] : world.m_batteries)
+			out.Int(tool).Int(static_cast<int>(std::round(battery.charge * 100.f))).Int(battery.on);
+		records["w:batteries"] = out.Text();
+	}
+	{
 		Writer out;
 		for (size_t engine = 0; engine < world.m_engineRolls.size(); engine++)
 			out.Num(world.m_engineRolls[engine]).Num(world.m_crankAngles[engine]);
@@ -468,7 +501,7 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			workshop.m_stats.bestEngineSale = in.Num();
 		}
 		else if (key == "g:tools")
-			ReadBools(in, workshop.m_ownedTools);
+			ReadCounts(in, workshop.m_toolCounts, Workshop::MAX_TOOL_COPIES);
 		else if (key == "g:machines")
 			ReadBools(in, workshop.m_ownedMachines);
 		else if (key == "g:upgrades")
@@ -599,13 +632,14 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 	}
 	const auto& tools = ToolCatalog::All();
 	for (size_t i = 0; i < tools.size(); i++)
-	{
-		auto ref = ItemRef::Tool(static_cast<uint32_t>(i));
-		if (!workshop.OwnsTool(i) || world.m_items.contains(ref))
-			continue;
-		auto model = ToolModelName(tools[i]);
-		world.CreateItem(ref, nullptr, world.m_assets->Model(model), world.m_assets->TextureFor(model, ShopTextures::STEEL));
-	}
+		for (size_t copy = 0; copy < static_cast<size_t>(Workshop::MAX_TOOL_COPIES); copy++)
+		{
+			auto ref = ItemRef::Tool(static_cast<uint32_t>(ToolCatalog::IdOf(i, copy)));
+			if (!workshop.OwnsTool(ref.id) || world.m_items.contains(ref))
+				continue;
+			auto model = ToolModelName(tools[i]);
+			world.CreateItem(ref, nullptr, world.m_assets->Model(model), world.m_assets->TextureFor(model, ShopTextures::STEEL));
+		}
 	std::vector<ItemRef> gone;
 	for (const auto& [ref, visual] : world.m_items)
 		if ((ref.IsPart() && !owned.contains(ref.id)) || (ref.IsTool() && !workshop.OwnsTool(ref.id)))
@@ -799,6 +833,24 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			}
 			if (!in.Failed())
 				world.m_toolSizes = sizes;
+		}
+		else if (key == "w:batteries")
+		{
+			std::map<size_t, BatteryPack> batteries;
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+			{
+				auto tool = static_cast<size_t>(in.Int());
+				int percent = static_cast<int>(in.Int());
+				auto& battery = batteries[tool];
+				battery.on = static_cast<int>(in.Int());
+				// Kept as it is here when it's the same to the percent, so charging carries on smoothly.
+				auto here = world.m_batteries.find(tool);
+				bool same = here != world.m_batteries.end() && static_cast<int>(std::round(here->second.charge * 100.f)) == percent;
+				battery.charge = same ? here->second.charge : std::clamp(percent / 100.f, 0.f, 1.f);
+			}
+			if (!in.Failed())
+				world.m_batteries = batteries;
 		}
 		else if (key == "w:engines")
 		{

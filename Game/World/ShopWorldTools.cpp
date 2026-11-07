@@ -8,8 +8,10 @@
 
 #include "LV/Engine/Objects/ObjectManager.h"
 #include "LV/Engine/Utility/InputManager.h"
+#include "../Controls.h"
 #include "../UI/ItemIcons.h"
 #include "../FrameProfiler.h"
+#include "../Simulation/PartCatalog.h"
 #include "ShopWorldShared.h"
 #include "ToolShapes.h"
 
@@ -269,7 +271,7 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 {
 	reachablePoints.clear();
 	m_measureBlocked.clear();
-	const auto& tool = ToolCatalog::All()[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 	// Spanners and the like measure nothing.
 	if (tool.kinds.empty() && !tool.measuresFinish && tool.assemblyChecks.empty())
 		return std::nullopt;
@@ -414,8 +416,9 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 	return best;
 }
 
-Range ShopWorld::AssemblyTarget(const EngineSpec& spec, AssemblyCheck check, bool rod) const
+Range ShopWorld::AssemblyTarget(const EngineAssembly& assembly, AssemblyCheck check, int index, bool rod) const
 {
+	const auto& spec = assembly.GetSpec();
 	switch (check)
 	{
 		case AssemblyCheck::OIL_CLEARANCE:		return rod ? spec.rodClearance : spec.mainClearance;
@@ -424,6 +427,14 @@ Range ShopWorld::AssemblyTarget(const EngineSpec& spec, AssemblyCheck check, boo
 		case AssemblyCheck::DECK_CLEARANCE:		return { spec.quench.min - spec.gasketThickness.nominal, spec.quench.max - spec.gasketThickness.nominal };
 		case AssemblyCheck::INSTALLED_HEIGHT:	return spec.installedHeightRange;
 		case AssemblyCheck::ROD_SIDE_CLEARANCE:	return spec.rodSideClearance;
+		case AssemblyCheck::BELT_DEFLECTION:
+		{
+			// A fan belt that's run in is allowed to give more than a new one.
+			if (index == 0)
+				return spec.timingBeltDeflection;
+			auto belt = assembly.Get(AssemblySlot::DRIVE_BELT, 0);
+			return belt && belt->GetCondition() != PartCondition::NEW ? spec.fanBeltDeflectionUsed : spec.fanBeltDeflectionNew;
+		}
 		default:								return {};
 	}
 }
@@ -461,9 +472,9 @@ void ShopWorld::Measure(Workshop& workshop, const MeasureTarget& target, int too
 		if (!measured)
 			return;
 		auto reading = workshop.GetAssemblyReading(target.check, target.index, target.rod);
-		Range range = AssemblyTarget(workshop.GetSpec(), target.check, target.rod);
+		Range range = AssemblyTarget(workshop.GetAssembly(), target.check, target.index, target.rod);
 		auto format = [&](double value) {
-			return target.check == AssemblyCheck::INSTALLED_HEIGHT ? Units::FormatSize(value, m_units) : Units::FormatDeviation(value, m_units);
+			return target.check == AssemblyCheck::INSTALLED_HEIGHT || target.check == AssemblyCheck::BELT_DEFLECTION ? Units::FormatSize(value, m_units) : Units::FormatDeviation(value, m_units);
 		};
 
 		readout.title = Workshop::AssemblyReadingLabel(target.check, target.index, target.rod);
@@ -876,7 +887,7 @@ void ShopWorld::UpdateMove(const FirstPersonController& player, const InputManag
 	glm::vec3 extent = (model->GetBoundsMax() - model->GetBoundsMin()) * 0.5f;
 	float radius = (std::max)(extent.x, extent.z);
 
-	if (input.WasKeyPressed(GLFW_KEY_R))
+	if (Controls::Pressed(input, Control::ROTATE))
 		m_move->yaw += glm::half_pi<float>();
 
 	// Hold the equipment out in front, snapped to a 5 cm grid on the floor.
@@ -901,12 +912,12 @@ void ShopWorld::UpdateMove(const FirstPersonController& player, const InputManag
 	m_prompt = m_move->valid ? std::format("[LMB] Set the {} down here", station.name) : std::format("The {} doesn't fit here", station.name);
 	m_secondaryPrompt = "[R] Rotate   [F] Cancel";
 
-	if (m_move->valid && (input.WasKeyPressed(GLFW_KEY_E) || input.WasMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT)))
+	if (m_move->valid && (Controls::Pressed(input, Control::USE) || Controls::Pressed(input, Control::PRIMARY)))
 	{
 		Toast(std::format("Moved the {}.", station.name));
 		m_move.reset();
 	}
-	else if (input.WasKeyPressed(GLFW_KEY_F))
+	else if (Controls::Pressed(input, Control::MOVE))
 		CancelMove();
 }
 
@@ -917,8 +928,9 @@ std::optional<glm::vec2> ShopWorld::ProjectToScreen(const glm::vec3& point, cons
 		return std::nullopt;
 
 	// Made once and reused while the view stays the same: the HUD projects hundreds of marker dots.
-	glm::vec3 eye = player.GetEyePosition();
-	glm::vec3 forward = player.GetForward();
+	// From the camera: the eyes, or behind the shoulder in third person.
+	glm::vec3 eye = m_thirdPerson ? m_thirdPersonView.position : player.GetEyePosition();
+	glm::vec3 forward = m_thirdPerson ? m_thirdPersonView.rotation * glm::vec3(0.f, 0.f, -1.f) : player.GetForward();
 	auto& cache = m_screenProjection;
 	if (!cache.valid || cache.eye != eye || cache.forward != forward || cache.display != glm::vec2(display.x, display.y) || cache.fieldOfView != m_fieldOfView)
 	{
@@ -1028,7 +1040,7 @@ void ShopWorld::DrawHotbar(const Workshop& workshop) const
 	if (auto held = GetHeld(); held || !carried.empty())
 	{
 		auto name = held ? DescribeItem(held->ref, workshop).name : carried;
-		std::string hint = m_heldHint.empty() ? "" : "     " + m_heldHint;
+		std::string hint = m_heldHint.empty() ? "" : "     " + Controls::Keys(m_heldHint);
 		float nameWidth = ImGui::CalcTextSize(name.c_str()).x;
 		float lineWidth = nameWidth + ImGui::CalcTextSize(hint.c_str()).x;
 		ImVec2 start = { (display.x - lineWidth) * 0.5f, origin.y - 22.f };
@@ -1139,7 +1151,7 @@ void ShopWorld::DrawPackageLabels(const Workshop& workshop, const FirstPersonCon
 	}
 }
 
-void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& player, bool showControls) const
+void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& player) const
 {
 	DrawPackageLabels(workshop, player);
 
@@ -1149,8 +1161,12 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 	const ImU32 white = IM_COL32(240, 240, 235, 230);
 	const ImU32 grey = IM_COL32(200, 200, 200, 200);
 
-	drawList->AddCircleFilled(center, 3.5f, IM_COL32(0, 0, 0, 160));
-	drawList->AddCircleFilled(center, 2.f, m_hover || m_measureTarget ? IM_COL32(255, 210, 90, 255) : white);
+	// No crosshair while the camera looks back at you: it would be on your face, not what you'd use.
+	if (!IsLookingBack())
+	{
+		drawList->AddCircleFilled(center, 3.5f, IM_COL32(0, 0, 0, 160));
+		drawList->AddCircleFilled(center, 2.f, m_hover || m_measureTarget ? IM_COL32(255, 210, 90, 255) : white);
+	}
 
 	// Faint dots on everything the tool in hand can measure from here...
 	for (const auto& point : m_measurePoints)
@@ -1197,15 +1213,24 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		if (auto screen = ProjectToScreen(*m_spannerTarget, player))
 			drawList->AddCircle({ screen->x, screen->y }, 10.f, IM_COL32(255, 255, 255, 230), 24, 2.f);
 
+	// Turning a nut or bolt: a ring round the crosshair fills as it goes.
+	if (m_turning && m_turning->progress > 0.f)
+	{
+		constexpr float RING = 16.f;
+		float start = -glm::half_pi<float>();
+		drawList->AddCircle(center, RING, IM_COL32(0, 0, 0, 120), 40, 5.f);
+		drawList->PathArcTo(center, RING, start, start + glm::two_pi<float>() * (std::min)(m_turning->progress, 1.f), 40);
+		drawList->PathStroke(IM_COL32(255, 210, 120, 240), 0, 3.f);
+	}
 	if (!m_prompt.empty())
-		ShadowText(drawList, { center.x, center.y + 24.f }, white, m_prompt, true);
+		ShadowText(drawList, { center.x, center.y + 24.f }, white, Controls::Keys(m_prompt), true);
 	if (!m_secondaryPrompt.empty())
-		ShadowText(drawList, { center.x, center.y + 44.f }, grey, m_secondaryPrompt, true);
+		ShadowText(drawList, { center.x, center.y + 44.f }, grey, Controls::Keys(m_secondaryPrompt), true);
 
 	if (m_toastTime > 0.f)
 	{
 		auto alpha = static_cast<int>(255.f * (std::min)(1.f, m_toastTime));
-		ShadowText(drawList, { center.x, display.y - 160.f }, IM_COL32(255, 220, 140, alpha), m_toast, true);
+		ShadowText(drawList, { center.x, display.y - 160.f }, IM_COL32(255, 220, 140, alpha), Controls::Keys(m_toast), true);
 	}
 
 	DrawHardwarePanel(workshop);
@@ -1242,23 +1267,29 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		ShadowText(drawList, { 16.f, 32.f }, IM_COL32(230, 190, 120, 255), std::format("{} deliver{} waiting by the door", m_packages.size(), m_packages.size() == 1 ? "y" : "ies"), false);
 
 	DrawHotbar(workshop);
-
-	if (showControls)
-		ShadowText(drawList, { 16.f, display.y - 30.f }, grey,
-			"WASD move  Space jump  Ctrl crouch  E use  LMB measure  RMB set down  G drop  1-0/wheel hotbar  Tab backpack  F move  R turn engine  Z/X roll engine  Esc menu", false);
 }
 
 std::string ShopWorld::SpannerLabel(size_t toolIndex) const
 {
-	const auto& tool = ToolCatalog::All()[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 	auto it = m_toolSizes.find(toolIndex);
 	int size = it == m_toolSizes.end() ? 0 : it->second;
+	std::string socket = size ? std::format("{} mm socket", size) : "no socket";
+	// A cordless tool says how its pack is doing.
+	std::string pack = "";
+	if (tool.powered)
+	{
+		auto battery = BatteryOn(toolIndex);
+		pack = battery ? std::format("   Battery {}   [C] Take it off", BatteryLabel(*battery)) : "   No battery";
+	}
 	switch (tool.handKind)
 	{
 		case HandToolKind::RATCHET:
 		case HandToolKind::BREAKER_BAR:
-		case HandToolKind::TORQUE_WRENCH:	return size ? std::format("{} mm socket", size) : "no socket";
-		case HandToolKind::WRENCHES:		return std::format("{} mm wrench   [C] Size", size ? size : tool.sizes.front());
+		case HandToolKind::TORQUE_WRENCH:
+		case HandToolKind::IMPACT:			return socket + pack;
+		case HandToolKind::COMBINATION_WRENCH:	return std::format("{} mm", tool.sizes.front());
+		case HandToolKind::BATTERY:			return BatteryLabel(toolIndex) + " charged";
 		default:							return "";
 	}
 }
@@ -1272,11 +1303,11 @@ std::optional<ShopWorld::SocketTarget> ShopWorld::FindSocketTarget(const FirstPe
 	float bestOff = 0.014f;
 	for (const auto& [ref, visual] : m_items)
 	{
-		if (!ref.IsTool() || tools[ref.id].handKind != HandToolKind::SOCKETS)
+		if (!ref.IsTool() || ToolCatalog::Of(ref.id).handKind != HandToolKind::SOCKETS)
 			continue;
 		if (visual.place == ItemPlace::HAND || visual.place == ItemPlace::INVENTORY || visual.place == ItemPlace::PACKAGED || visual.place == ItemPlace::CARRIED)
 			continue;
-		const auto& sizes = tools[ref.id].sizes;
+		const auto& sizes = ToolCatalog::Of(ref.id).sizes;
 		int count = static_cast<int>(sizes.size());
 		glm::vec3 position = visual.object->GetPosition();
 		glm::quat rotation = visual.object->GetRotation();
@@ -1284,10 +1315,11 @@ std::optional<ShopWorld::SocketTarget> ShopWorld::FindSocketTarget(const FirstPe
 		for (int i = 0; i < count; i++)
 		{
 			// A socket out on another tool isn't there to take; the one on the tool in hand leaves a gap to put it back in.
-			bool putBack = sizes[i] == heldSize;
-			if (SocketInUse(sizes[i]) && !putBack)
+			bool inUse = SocketInUse(sizes[i], ref.id);
+			bool putBack = sizes[i] == heldSize && inUse;
+			if (inUse && !putBack)
 				continue;
-			glm::vec3 local = SocketSlot(tools[ref.id], i) + glm::vec3(0.f, SOCKET_HEIGHT * 0.5f, 0.f);
+			glm::vec3 local = SocketSlot(ToolCatalog::Of(ref.id), i) + glm::vec3(0.f, SOCKET_HEIGHT * 0.5f, 0.f);
 			glm::vec3 world = position + rotation * (local * scale);
 			float along = glm::dot(world - eye, forward);
 			if (along <= 0.f || along > INTERACT_DISTANCE)
@@ -1341,14 +1373,7 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindFastenerTarget(const Wor
 				float along = glm::dot(position - eye, forward);
 				if (along <= 0.f || along > INTERACT_DISTANCE + 0.5f)
 					continue;
-				// Markers for the ones this spanner fits: orange finger tight, yellow snugged, green torqued.
 				bool fits = !sizeMm || PartCatalog::Get(part->GetType()).fastener.headMm == sizeMm;
-				if (fits)
-				{
-					auto tightness = part->GetTightness();
-					m_spannerPoints.push_back({ position, tightness == FastenerTightness::TORQUED ? IM_COL32(120, 255, 150, 170)
-						: tightness == FastenerTightness::SNUG ? IM_COL32(240, 220, 90, 170) : IM_COL32(255, 150, 70, 170), "" });
-				}
 				float off = glm::length(position - (eye + forward * along));
 				// Within about 1.5 degrees of the crosshair, however far away.
 				if (off < along * 0.026f)
@@ -1381,28 +1406,16 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindFastenerTarget(const Wor
 	return std::nullopt;
 }
 
-bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex)
+bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime)
 {
-	const auto& tool = ToolCatalog::All()[toolIndex];
+	const auto& tool = ToolCatalog::Of(toolIndex);
 	bool drive = IsDriveTool(tool);
-	bool wrenches = tool.handKind == HandToolKind::WRENCHES;
-	if (!drive && !wrenches)
+	bool wrench = tool.handKind == HandToolKind::COMBINATION_WRENCH;
+	if (!drive && !wrench)
 		return false;
-	bool pressedE = input.WasKeyPressed(GLFW_KEY_E);
-
-	// The wrench set: C takes out the next size.
-	if (wrenches)
-	{
-		if (!m_toolSizes.contains(toolIndex))
-			m_toolSizes[toolIndex] = tool.sizes.front();
-		if (input.WasKeyPressed(GLFW_KEY_C))
-		{
-			auto it = std::find(tool.sizes.begin(), tool.sizes.end(), m_toolSizes[toolIndex]);
-			m_toolSizes[toolIndex] = it == tool.sizes.end() || it + 1 == tool.sizes.end() ? tool.sizes.front() : *(it + 1);
-			Toast(std::format("{} mm wrench", m_toolSizes[toolIndex]));
-		}
-	}
-	int size = m_toolSizes.contains(toolIndex) ? m_toolSizes[toolIndex] : 0;
+	bool pressedE = Controls::Pressed(input, Control::USE);
+	// A wrench is its own size; a drive takes the socket on it.
+	int size = wrench ? tool.sizes.front() : m_toolSizes.contains(toolIndex) ? m_toolSizes[toolIndex] : 0;
 
 	PROFILE_SCOPE("tools: spanner");
 	// A ratchet, breaker bar or torque wrench takes the socket you look at in a socket set.
@@ -1437,8 +1450,10 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 
 	auto target = FindFastenerTarget(workshop, player, size);
 	if (!target)
+	{
+		m_turning.reset();
 		return false;
-	m_spannerTarget = target->position;
+	}
 	m_spannerFastener = *target;
 	workshop.SetActiveEngine(target->engine);
 	const auto& assembly = workshop.GetAssembly();
@@ -1447,6 +1462,12 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 	auto tightness = part->GetTightness();
 	std::string position = assembly.PositionName(target->slot, target->index);
 
+	// The button is held to turn it, and let go before the next one.
+	bool holding = Controls::Held(input, Control::PRIMARY);
+	if (!holding)
+		m_turnDone = false;
+	auto stop = [&] { m_turning.reset(); return false; };
+
 	// A torque wrench only ever does up; anything else snugs a loose one and undoes a tight one.
 	bool torqueWrench = tool.handKind == HandToolKind::TORQUE_WRENCH;
 	bool tightening = torqueWrench || tightness == FastenerTightness::LOOSE;
@@ -1454,59 +1475,238 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 	if (torqueWrench && tightness == FastenerTightness::TORQUED)
 	{
 		m_prompt = std::format("{}: already torqued", position);
-		return pressedE;
+		return stop();
 	}
-	if (auto problem = workshop.TurningProblem(target->slot, target->index, toolIndex, size, tightening))
+	std::optional<std::string> problem = workshop.TurningProblem(target->slot, target->index, toolIndex, size, tightening);
+	// A cordless tool needs a pack with something left in it.
+	std::optional<size_t> battery = tool.powered ? BatteryOn(toolIndex) : std::nullopt;
+	if (!problem && tool.powered && !battery)
+		problem = std::format("There's no battery on the {}: look at a pack and press [E] to clip one on.", tool.name);
+	else if (!problem && battery && BatteryCharge(*battery) <= 0.f)
+		problem = std::format("The {} is flat: put it on a charger.", ToolCatalog::Of(*battery).name);
+	if (problem)
 	{
 		m_prompt = std::format("{} ({})", position, state);
 		m_secondaryPrompt = *problem;
-		// E says why rather than opening the stand behind it.
-		if (pressedE)
+		// Clicking says why.
+		if (Controls::Pressed(input, Control::PRIMARY))
 			Toast(*problem);
-		return pressedE;
+		return stop();
 	}
 	std::string spec = std::format("{:.0f} Nm", holes->torqueNm);
-	m_prompt = torqueWrench ? std::format("[E] Torque {} to {}", position, spec)
-		: tightening ? std::format("[E] Snug up {} (spec {}: a torque wrench does it properly)", position, spec)
-		: std::format("[E] Loosen {}", position);
-	m_secondaryPrompt = std::format("It's {}.   [Shift+E] Every one on that part", state);
-	if (!pressedE)
+	m_prompt = torqueWrench ? std::format("[LMB] Hold to torque {} to {}", position, spec)
+		: tightening ? std::format("[LMB] Hold to snug up {} (spec {}: a torque wrench does it properly)", position, spec)
+		: std::format("[LMB] Hold to loosen {}", position);
+	m_secondaryPrompt = std::format("It's {}.", state);
+	if (!holding || m_turnDone)
+		return stop();
+
+	// Turning: as long as the tool takes for each of them (bigger nuts and bolts a little longer), the
+	// tool heard all the while. Looking away, or at another, starts again.
+	Sound turning = tool.handKind == HandToolKind::IMPACT ? Sound::IMPACT : tool.powered ? Sound::CORDLESS_RATCHET
+		: tool.handKind == HandToolKind::BREAKER_BAR ? Sound::BREAKER_BAR : wrench ? Sound::WRENCH : Sound::RATCHET;
+	bool same = m_turning && m_turning->fastener.engine == target->engine && m_turning->fastener.slot == target->slot
+		&& m_turning->fastener.index == target->index && m_turning->tightening == tightening;
+	if (!same)
+		m_turning = Turning{ *target, tightening, { target->index } };
+	const auto& fastener = PartCatalog::Get(part->GetType()).fastener;
+	double seconds = tool.TurnSeconds() * (0.6 + fastener.headMm / 30.0);
+	m_turning->progress += static_cast<float>(deltaTime / seconds);
+	m_turning->soundTimer -= deltaTime;
+	if (m_turning->soundTimer <= 0.f)
+	{
+		Cue(turning, target->position);
+		m_turning->soundTimer = tool.handKind == HandToolKind::IMPACT ? 0.45f : tool.powered ? 0.6f : 0.7f;
+	}
+	if (m_turning->progress < 1.f)
 		return false;
 
-	// Shift: the rest of that part's holes of the same kind, wherever they need the same job.
-	std::vector<int> indices = { target->index };
-	if (m_fillAllHoles)
+	// Done, and a cordless tool's pack the emptier for it (the tight ones take more of it).
+	m_turning.reset();
+	m_turnDone = true;
+	if (!(tightening ? workshop.TightenFastener(target->slot, target->index, toolIndex, size) : workshop.LoosenFastener(target->slot, target->index, toolIndex, size)))
+		return true;
+	if (battery)
 	{
-		int first = target->index / holes->perParent * holes->perParent;
-		for (int index = first; index < first + holes->perParent; index++)
+		auto& pack = m_batteries[*battery];
+		double used = tool.drawAh * (0.5 + holes->torqueNm / 60.0);
+		pack.charge = (std::max)(0.f, pack.charge - static_cast<float>(used / ToolCatalog::Of(*battery).capacityAh));
+	}
+	if (torqueWrench)
+		Cue(Sound::TORQUE_CLICK, target->position);
+	Toast(std::format("{} {}.", torqueWrench ? "Torqued" : tightening ? "Snugged up" : "Loosened", position));
+	if (battery && BatteryCharge(*battery) <= 0.f)
+		Toast(std::format("The {} has gone flat.", ToolCatalog::Of(*battery).name));
+	return true;
+}
+
+std::optional<size_t> ShopWorld::BatteryOn(size_t host) const
+{
+	for (const auto& [index, battery] : m_batteries)
+		if (battery.on == static_cast<int>(host))
+			return index;
+	return std::nullopt;
+}
+
+float ShopWorld::BatteryCharge(size_t battery) const
+{
+	auto it = m_batteries.find(battery);
+	return it == m_batteries.end() ? 1.f : it->second.charge;
+}
+
+std::string ShopWorld::BatteryLabel(size_t battery) const
+{
+	float charge = BatteryCharge(battery);
+	return charge <= 0.f ? "flat" : std::format("{:.0f}%", std::ceil(charge * 100.f));
+}
+
+bool ShopWorld::UpdateBatteries(Workshop& workshop, const InputManager& input, ItemVisual* held)
+{
+	const auto& tools = ToolCatalog::All();
+	const MeasuringTool* heldTool = held && held->ref.IsTool() ? &ToolCatalog::Of(held->ref.id) : nullptr;
+	bool pressedE = Controls::Pressed(input, Control::USE);
+
+	// A cordless tool in hand: C takes its pack off, back to its place on the tool board.
+	if (heldTool && heldTool->powered && Controls::Pressed(input, Control::WRENCH_SIZE))
+		if (auto battery = BatteryOn(held->ref.id))
 		{
-			auto other = index != target->index ? assembly.Get(target->slot, index) : nullptr;
-			if (!other)
-				continue;
-			bool needsIt = tightening ? other->GetTightness() != FastenerTightness::TORQUED && (torqueWrench || other->GetTightness() == FastenerTightness::LOOSE)
-				: other->GetTightness() != FastenerTightness::LOOSE;
-			if (needsIt)
-				indices.push_back(index);
+			m_batteries[*battery].on = -1;
+			Cue(Sound::SOCKET_CLINK, held->object->GetPosition());
+			Toast(std::format("Took the {} off the {}: it's back on the tool board.", ToolCatalog::Of(*battery).name, heldTool->name));
+			return true;
 		}
-	}
-	int done = 0;
-	for (int index : indices)
-		if (tightening ? workshop.TightenFastener(target->slot, index, toolIndex, size) : workshop.LoosenFastener(target->slot, index, toolIndex, size))
-			done++;
-	// Heard at the bolt: a ratchet's run of clicks, a spanner pulled round, a breaker bar's crack, and
-	// a torque wrench's click as it lets go at its setting.
-	if (done > 0)
+
+	if (!m_hover || m_hover->kind != TargetKind::ITEM || !m_hover->item.IsTool())
+		return false;
+	ItemVisual& aimed = *Find(m_hover->item);
+	size_t aimedIndex = aimed.ref.id;
+	const auto& aimedTool = ToolCatalog::Of(aimedIndex);
+
+	// A pack, with a cordless tool in hand: it clips on, and the one on before goes back on the board.
+	if (aimedTool.handKind == HandToolKind::BATTERY && heldTool && heldTool->powered)
 	{
-		Sound turning = tool.handKind == HandToolKind::BREAKER_BAR ? Sound::BREAKER_BAR
-			: tool.handKind == HandToolKind::WRENCHES ? Sound::WRENCH : Sound::RATCHET;
-		Cue(turning, target->position);
-		if (torqueWrench)
-			Cue(Sound::TORQUE_CLICK, target->position);
+		m_prompt = std::format("[E] Clip the {} ({}) on the {}", aimedTool.name, BatteryLabel(aimedIndex), heldTool->name);
+		if (!pressedE)
+			return false;
+		if (auto old = BatteryOn(held->ref.id))
+			m_batteries[*old].on = -1;
+		SetPlace(aimed, ItemPlace::STORAGE);
+		m_batteries[aimedIndex].on = static_cast<int>(held->ref.id);
+		Cue(Sound::SOCKET_CLINK, aimed.object->GetPosition());
+		Toast(std::format("{} on the {}: {}.", aimedTool.name, heldTool->name, BatteryLabel(aimedIndex)));
+		return true;
 	}
-	std::string verb = torqueWrench ? "Torqued" : tightening ? "Snugged up" : "Loosened";
-	if (done == 1)
-		Toast(std::format("{} {}.", verb, position));
-	else if (done > 1)
-		Toast(std::format("{} {} {}s.", verb, done, holes->name));
+	if (aimedTool.handKind == HandToolKind::BATTERY)
+	{
+		m_secondaryPrompt = std::format("{} charged", BatteryLabel(aimedIndex));
+		return false;
+	}
+
+	// A charger: a pack in hand goes on it, and E takes it back off. One without a pack is picked up
+	// like anything else.
+	if (aimedTool.handKind != HandToolKind::CHARGER)
+		return false;
+	if (auto charging = BatteryOn(aimedIndex))
+	{
+		bool full = BatteryCharge(*charging) >= 1.f;
+		m_prompt = std::format("[E] Take the {} off the charger ({}{})", ToolCatalog::Of(*charging).name, BatteryLabel(*charging), full ? ", charged" : ", charging");
+		if (!pressedE)
+			return false;
+		m_batteries[*charging].on = -1;
+		PickUp(workshop, *Find(ItemRef::Tool(static_cast<uint32_t>(*charging))));
+		return true;
+	}
+	if (heldTool && heldTool->handKind == HandToolKind::BATTERY)
+	{
+		m_prompt = std::format("[E] Put the {} ({}) on the {}", heldTool->name, BatteryLabel(held->ref.id), aimedTool.name);
+		if (!pressedE)
+			return false;
+		Cue(Sound::SOCKET_CLINK, aimed.object->GetPosition());
+		m_batteries[held->ref.id].on = static_cast<int>(aimedIndex);
+		SetPlace(*held, ItemPlace::STORAGE);
+		return true;
+	}
+	m_secondaryPrompt = "Hold a battery pack and press [E] on it to charge the pack";
+	return false;
+}
+
+void ShopWorld::ChargeBatteries(float deltaTime)
+{
+	const auto& tools = ToolCatalog::All();
+	for (auto& [index, battery] : m_batteries)
+	{
+		if (battery.on < 0 || ToolCatalog::IndexOf(static_cast<size_t>(battery.on)) >= tools.size() || ToolCatalog::Of(battery.on).handKind != HandToolKind::CHARGER)
+			continue;
+		// Only set down somewhere: plugged in.
+		const ItemVisual* charger = Find(ItemRef::Tool(static_cast<uint32_t>(battery.on)));
+		if (!charger || (charger->place != ItemPlace::STORAGE && charger->place != ItemPlace::BENCH && charger->place != ItemPlace::WORLD))
+			continue;
+		// 1 A puts 1 Ah in a minute (the store says so).
+		double perSecond = ToolCatalog::Of(battery.on).chargeAmps / ToolCatalog::Of(index).capacityAh / 60.0;
+		battery.charge = (std::min)(1.f, battery.charge + static_cast<float>(perSecond * deltaTime));
+	}
+}
+
+void ShopWorld::LayOutBatteries()
+{
+	const auto& tools = ToolCatalog::All();
+	for (const auto& [index, battery] : m_batteries)
+	{
+		if (battery.on < 0 || ToolCatalog::IndexOf(static_cast<size_t>(battery.on)) >= tools.size())
+			continue;
+		ItemVisual* pack = Find(ItemRef::Tool(static_cast<uint32_t>(index)));
+		const ItemVisual* host = Find(ItemRef::Tool(static_cast<uint32_t>(battery.on)));
+		auto mount = BatteryMountOn(ToolCatalog::Of(battery.on), ToolCatalog::Of(index));
+		if (!pack || !host || !mount)
+			continue;
+		// On the tool or the charger, wherever it is, and seen only when it is.
+		glm::quat rotation = host->object->GetRotation();
+		glm::vec3 scale = host->object->GetScale();
+		pack->object->SetPosition(host->object->GetPosition() + rotation * (mount->position * scale));
+		pack->object->SetRotation(rotation * mount->turn);
+		pack->object->SetScale(scale);
+		pack->object->SetVisible(host->object->IsVisible());
+		pack->object->SetPickable(false);
+		pack->object->SetCastsShadows(host->object->CastsShadows());
+	}
+}
+
+void ShopWorld::LayOutSetMembers()
+{
+	// Put away, what comes in a set lies in it (its own copy of the set), wherever the set is, and is
+	// seen only when the set is.
+	for (auto& [ref, member] : m_items)
+	{
+		if (!ref.IsTool())
+			continue;
+		const auto& tool = ToolCatalog::Of(ref.id);
+		if (tool.partOf < 0 || member.place != ItemPlace::STORAGE)
+			continue;
+		const ItemVisual* set = Find(ItemRef::Tool(static_cast<uint32_t>(ToolCatalog::IdOf(tool.partOf, ToolCatalog::CopyOf(ref.id)))));
+		if (!set)
+			continue;
+		const auto& setTool = ToolCatalog::Of(tool.partOf);
+		auto slot = std::find(setTool.sizes.begin(), setTool.sizes.end(), tool.sizes.front());
+		auto place = WrenchSlot(setTool, static_cast<size_t>(slot - setTool.sizes.begin()));
+		glm::quat rotation = set->object->GetRotation();
+		member.object->SetPosition(set->object->GetPosition() + rotation * (place.position * set->object->GetScale()));
+		member.object->SetRotation(rotation * place.turn);
+		member.object->SetVisible(set->object->IsVisible());
+		member.object->SetPickable(set->object->IsVisible());
+	}
+}
+
+bool ShopWorld::UpdateSetMembers(const InputManager& input, ItemVisual* held)
+{
+	// Something from a set in hand, aimed at its set: E puts it back.
+	if (!held || !held->ref.IsTool() || !m_hover || m_hover->kind != TargetKind::ITEM || !m_hover->item.IsTool())
+		return false;
+	const auto& tool = ToolCatalog::Of(held->ref.id);
+	if (tool.partOf < 0 || m_hover->item.id != ToolCatalog::IdOf(tool.partOf, ToolCatalog::CopyOf(held->ref.id)))
+		return false;
+	m_prompt = std::format("[E] Put the {} back in the set", tool.name);
+	if (!Controls::Pressed(input, Control::USE))
+		return false;
+	SetPlace(*held, ItemPlace::STORAGE);
 	return true;
 }

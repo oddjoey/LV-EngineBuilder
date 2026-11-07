@@ -87,8 +87,9 @@ namespace ModelPreview
 		}
 
 		// Draws the model into a depth-tested picture (so nothing behind shows through, however the
-		// triangles overlap), then turns each row into runs of one colour for ImGui to fill.
-		void Render(const Shape& cache, Picture& picture, int width, int height, ImVec4 tint, double time)
+		// triangles overlap), then turns each row into runs of one colour for ImGui to fill. Tipped toward
+		// the viewer by tilt (radians) so its top shows.
+		void Render(const Shape& cache, Picture& picture, int width, int height, ImVec4 tint, double time, float tilt = 0.45f)
 		{
 			int sampleWidth = width * SUPERSAMPLE, sampleHeight = height * SUPERSAMPLE;
 			static std::vector<float> depth;
@@ -98,7 +99,7 @@ namespace ModelPreview
 
 			// Turning slowly about the vertical axis, tipped toward the viewer a little so its top shows.
 			float angle = static_cast<float>(time) * 0.6f;
-			glm::mat3 rotation = glm::mat3(glm::rotate(glm::mat4(1.f), 0.45f, { 1.f, 0.f, 0.f }) * glm::rotate(glm::mat4(1.f), angle, { 0.f, 1.f, 0.f }));
+			glm::mat3 rotation = glm::mat3(glm::rotate(glm::mat4(1.f), tilt, { 1.f, 0.f, 0.f }) * glm::rotate(glm::mat4(1.f), angle, { 0.f, 1.f, 0.f }));
 			float scale = (std::min)(sampleWidth, sampleHeight) * 0.46f / cache.radius;
 			glm::vec3 light = glm::normalize(glm::vec3(0.4f, 0.8f, 0.6f));
 			glm::vec3 tinted = glm::vec3(tint.x, tint.y, tint.z) * 0.85f * 255.f;
@@ -187,6 +188,25 @@ namespace ModelPreview
 			}
 		}
 
+		// One flat rectangle per run of the picture, straight into the draw list.
+		void Blit(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, const Picture& picture)
+		{
+			ImVec2 origin = { std::floor(min.x), std::floor(min.y) };
+			drawList->PushClipRect(min, max, true);
+			constexpr size_t BATCH = 4096;
+			for (size_t first = 0; first < picture.spans.size(); first += BATCH)
+			{
+				size_t count = (std::min)(BATCH, picture.spans.size() - first);
+				drawList->PrimReserve(static_cast<int>(count * 6), static_cast<int>(count * 4));
+				for (size_t i = first; i < first + count; i++)
+				{
+					const auto& span = picture.spans[i];
+					drawList->PrimRect({ origin.x + span.x0, origin.y + span.y }, { origin.x + span.x1 + 1, origin.y + span.y + 1 }, span.color);
+				}
+			}
+			drawList->PopClipRect();
+		}
+
 		// Lets go of what hasn't been drawn lately (the shop window closed, the book turned on), at most once a second.
 		void Forget(double time)
 		{
@@ -230,20 +250,63 @@ namespace ModelPreview
 			picture.renderedTint = tint;
 		}
 
-		// One flat rectangle per run, straight into the draw list.
-		ImVec2 origin = { std::floor(min.x), std::floor(min.y) };
-		drawList->PushClipRect(min, max, true);
-		constexpr size_t BATCH = 4096;
-		for (size_t first = 0; first < picture.spans.size(); first += BATCH)
+		Blit(drawList, min, max, picture);
+	}
+
+	void DrawScene(const std::vector<Piece>& pieces, float width, float height)
+	{
+		ImVec2 min = ImGui::GetCursorScreenPos();
+		ImGui::Dummy({ width, height });
+		ImDrawList* drawList = ImGui::GetWindowDrawList();
+		ImVec2 max = { min.x + width, min.y + height };
+		drawList->AddRectFilledMultiColor(min, max, IM_COL32(52, 56, 64, 255), IM_COL32(52, 56, 64, 255), IM_COL32(28, 30, 34, 255), IM_COL32(28, 30, 34, 255));
+
+		// Every piece's triangles, placed and tinted, gathered into one shape about the middle of the lot.
+		// It's small (a figure of boxes), so it's gathered again each time it's turned.
+		static Shape scene;
+		static Picture picture;
+		double time = ImGui::GetTime();
+		int pixelsWide = (std::max)(1, static_cast<int>(width)), pixelsHigh = (std::max)(1, static_cast<int>(height));
+		if (time - picture.renderedAt >= TURN_INTERVAL || time < picture.renderedAt)
 		{
-			size_t count = (std::min)(BATCH, picture.spans.size() - first);
-			drawList->PrimReserve(static_cast<int>(count * 6), static_cast<int>(count * 4));
-			for (size_t i = first; i < first + count; i++)
+			scene.facets.clear();
+			glm::vec3 low = glm::vec3(FLT_MAX), high = glm::vec3(-FLT_MAX);
+			for (const auto& piece : pieces)
 			{
-				const auto& span = picture.spans[i];
-				drawList->PrimRect({ origin.x + span.x0, origin.y + span.y }, { origin.x + span.x1 + 1, origin.y + span.y + 1 }, span.color);
+				auto model = ModelManager::Get()->GetModel(piece.modelIndex);
+				if (!model)
+					continue;
+				const auto& vertices = model->GetVertices();
+				const auto& indices = model->GetIndices();
+				for (size_t i = 0; i + 2 < indices.size(); i += 3)
+				{
+					Facet facet;
+					for (int corner = 0; corner < 3; corner++)
+					{
+						facet.corners[corner] = glm::vec3(piece.transform * glm::vec4(vertices[indices[i + corner]].position, 1.f));
+						low = glm::min(low, facet.corners[corner]);
+						high = glm::max(high, facet.corners[corner]);
+					}
+					glm::vec3 normal = glm::cross(facet.corners[1] - facet.corners[0], facet.corners[2] - facet.corners[0]);
+					float area = glm::length(normal);
+					if (area < 1e-12f)
+						continue;
+					facet.normal = normal / area;
+					facet.color = (vertices[indices[i]].color + vertices[indices[i + 1]].color + vertices[indices[i + 2]].color) / 3.f * piece.tint;
+					scene.facets.push_back(facet);
+				}
 			}
+			if (scene.facets.empty())
+				return;
+			glm::vec3 middle = (low + high) * 0.5f;
+			for (auto& facet : scene.facets)
+				for (auto& corner : facet.corners)
+					corner -= middle;
+			scene.radius = (std::max)(glm::length(high - low) * 0.5f, 1e-4f);
+			// A standing figure, seen from a little above.
+			Render(scene, picture, pixelsWide, pixelsHigh, { 1.f, 1.f, 1.f, 1.f }, time, 0.15f);
+			picture.renderedAt = time;
 		}
-		drawList->PopClipRect();
+		Blit(drawList, min, max, picture);
 	}
 }

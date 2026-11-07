@@ -1,6 +1,7 @@
 #include "ShopAssets.h"
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -46,6 +47,20 @@ namespace
 	glm::mat4 At(const glm::vec3& position)
 	{
 		return glm::translate(glm::mat4(1.f), position);
+	}
+
+	// A belt laid along a path round its pulleys (EngineLayout::BeltPath, in Z and Y): a box from each point
+	// to the next, its width along X, a little long so the pieces round a pulley meet.
+	void BeltAlong(MeshBuilder& builder, const std::vector<glm::vec2>& path, float width, float thick, const glm::vec3& color)
+	{
+		for (size_t i = 0; i < path.size(); i++)
+		{
+			glm::vec2 from = path[i], to = path[(i + 1) % path.size()];
+			glm::vec2 run = to - from, centre = (from + to) * 0.5f;
+			builder.SetTransform(glm::rotate(At({ 0.f, centre.y, centre.x }), std::atan2(-run.y, run.x), { 1.f, 0.f, 0.f })).SetColor(color);
+			builder.AddBox({}, { width, thick, glm::length(run) + thick * 0.5f });
+			builder.ResetTransform();
+		}
 	}
 
 	// Primitives are built along Y; these turn them to run along X or Z.
@@ -202,9 +217,10 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 		case PartType::EXHAUST_PIPE:		add(FeatureNames::FLANGE_FLATNESS, { 0.06f, -0.12f, -0.09f }); break;
 		case PartType::CRANK_SPROCKET:		add(FeatureNames::ROOT_DIAMETER, { 0.f, 0.022f, 0.f }); break;
 		case PartType::CAM_SPROCKET:		add(FeatureNames::ROOT_DIAMETER, { 0.f, 0.044f, 0.f }); break;
-		case PartType::TIMING_BELT:		add(FeatureNames::BELT_TOOTH_HEIGHT, { 0.f, 0.004f, 0.0355f }); break;
+		case PartType::TIMING_BELT:		add(FeatureNames::BELT_TOOTH_HEIGHT, { 0.f, CamAxisY() + CAM_PULLEY_TEETH + 0.004f, 0.f }); break;
 		case PartType::BELT_IDLER:			add(FeatureNames::IDLER_PLAY, { 0.f, 0.011f, 0.f }); break;
-		case PartType::BELT_TENSIONER:		add(FeatureNames::TENSIONER_TRAVEL, { 0.033f, 0.012f, 0.f }); break;
+		case PartType::DRIVE_BELT_TENSIONER:	add(FeatureNames::IDLER_PLAY, { -0.01f, 0.f, 0.f }); break;
+		case PartType::BELT_TENSIONER:		add(FeatureNames::TENSIONER_TRAVEL, { 0.018f, 0.028f, 0.008f }); break;
 		case PartType::TIMING_COVER:		add(FeatureNames::FACE_FLATNESS, { 0.2f, -0.022f, 0.1f }); break;
 		case PartType::CRANK_PULLEY:		add(FeatureNames::RING_RUNOUT, { -0.008f, 0.066f, 0.f }); break;
 		case PartType::VALVE_COVER:			add(FeatureNames::RAIL_FLATNESS, { 0.18f, 0.f, 0.1f }); break;
@@ -243,6 +259,11 @@ std::vector<AssemblyAnchor> ShopAssets::AssemblyAnchors(const EngineSpec& spec)
 	}
 	for (int journal = 0; journal < spec.camJournals; journal++)
 		anchors.push_back({ AssemblyCheck::CAM_CLEARANCE, journal, false, { CamTowerX(journal), HEAD_DECK_Y + CAM_Y, 0.f } });
+	// The belts, pushed in the middle of the run the manual checks: the timing belt's tight side, the fan
+	// belt's top run.
+	glm::vec2 timing = BeltRunMiddle(TimingPulleys(), TIMING_CHECK_RUN), fan = BeltRunMiddle(DrivePulleys(), DRIVE_CHECK_RUN);
+	anchors.push_back({ AssemblyCheck::BELT_DEFLECTION, 0, false, { TIMING_PLANE_X, timing.y, timing.x } });
+	anchors.push_back({ AssemblyCheck::BELT_DEFLECTION, 1, false, { ACCESSORY_BELT_X, fan.y, fan.x } });
 	return anchors;
 }
 
@@ -257,6 +278,7 @@ void ShopAssets::LoadTools()
 	const glm::vec3 steel = { 0.72f, 0.73f, 0.76f };
 	const glm::vec3 dark = { 0.2f, 0.2f, 0.22f };
 	const glm::vec3 face = { 0.95f, 0.95f, 0.9f };
+	const glm::vec3 orange = { 0.9f, 0.45f, 0.08f };
 
 	// Tools lie flat with their origin in the middle of their footprint.
 	for (const auto& tool : ToolCatalog::All())
@@ -370,10 +392,23 @@ void ShopAssets::LoadTools()
 				break;
 			}
 			case ToolShape::WRENCH_SET:
-				Box(builder, { 0.f, 0.008f, 0.f }, { 0.26f, 0.016f, 0.14f }, { 0.15f, 0.2f, 0.45f });
-				for (int i = 0; i < 6; i++)
-					Box(builder, { 0.f, 0.019f, -0.055f + i * 0.022f }, { 0.12f + i * 0.02f, 0.004f, 0.012f }, steel);
+				// The tray, with a dark recess where each wrench lies (the wrenches are tools of their own:
+				// WrenchSlot).
+				Box(builder, { 0.f, 0.007f, 0.f }, { 0.3f, 0.014f, 0.22f }, { 0.15f, 0.2f, 0.45f });
+				for (size_t i = 0; i < tool.sizes.size(); i++)
+					Box(builder, { WrenchSlot(tool, i).position.x, 0.0143f, 0.f }, { 0.012f, 0.001f, WrenchLength(tool.sizes[i]) }, { 0.08f, 0.09f, 0.14f });
 				break;
+			case ToolShape::WRENCH:
+			{
+				// The shank along X, the ring at +X, the open jaws at -X.
+				int size = tool.sizes.front();
+				float length = WrenchLength(size), ring = WrenchRingRadius(size);
+				Box(builder, { 0.f, 0.002f, 0.f }, { length - ring * 2.f, 0.004f, 0.006f + size * 0.0002f }, steel);
+				Tube(builder, At({ length * 0.5f - ring, 0.003f, 0.f }), ring, size * 0.0005f, 0.006f, steel, 0.f, glm::two_pi<float>(), 16);
+				for (float side : { -1.f, 1.f })
+					Box(builder, { -length * 0.5f + ring * 0.6f, 0.0025f, side * (size * 0.0005f + ring * 0.25f) }, { ring * 1.2f, 0.005f, ring * 0.45f }, steel);
+				break;
+			}
 			case ToolShape::MANUAL:
 			{
 				// A thick workshop book lying shut: navy covers, the page block between them, a spine down
@@ -398,6 +433,46 @@ void ShopAssets::LoadTools()
 				Cylinder(builder, AlongX({ 0.f, 0.05f, 0.f }), 0.02f, 0.14f, steel);
 				Box(builder, { 0.06f, 0.05f, 0.f }, { 0.03f, 0.05f, 0.05f }, dark);
 				break;
+			// Cordless: in the shop's one make, orange and black. The battery pack is its own item,
+			// clipped on (BatteryMountOn).
+			case ToolShape::CORDLESS_RATCHET:
+			{
+				// A ratchet with a motor housing over the back of the handle.
+				float length = DriveToolLength(tool);
+				Box(builder, { 0.f, 0.006f, 0.f }, { length, 0.012f, 0.016f }, steel);
+				Box(builder, { -length * 0.29f, 0.02f, 0.f }, { length * 0.42f, 0.04f, 0.036f }, orange);
+				Box(builder, { -length * 0.29f, 0.041f, 0.f }, { length * 0.3f, 0.002f, 0.02f }, dark);
+				Cylinder(builder, At({ length * 0.5f, 0.012f, 0.f }), 0.016f, 0.024f, steel);
+				Box(builder, { length * 0.5f, -0.002f, 0.f }, { 0.0095f, 0.012f, 0.0095f }, steel);
+				break;
+			}
+			case ToolShape::IMPACT:
+				// Lying on its side: the body and its nose along X, the anvil out the front, and the grip
+				// down from the body (the pack clips on under it).
+				Box(builder, { 0.f, 0.03f, -0.04f }, { 0.17f, 0.06f, 0.07f }, orange);
+				Box(builder, { -0.06f, 0.03f, -0.04f }, { 0.05f, 0.062f, 0.072f }, dark);
+				Cylinder(builder, AlongX({ IMPACT_NOSE.x - 0.02f, IMPACT_NOSE.y, IMPACT_NOSE.z }), 0.024f, 0.02f, steel);
+				Box(builder, { IMPACT_NOSE.x - 0.005f, IMPACT_NOSE.y, IMPACT_NOSE.z }, { 0.012f, 0.0127f, 0.0127f }, steel);
+				Box(builder, { IMPACT_GRIP.x, IMPACT_GRIP.y, IMPACT_GRIP.z }, { 0.045f, 0.05f, 0.1f }, dark);
+				Box(builder, { IMPACT_GRIP.x + 0.03f, IMPACT_GRIP.y, 0.012f }, { 0.014f, 0.02f, 0.024f }, dark);
+				break;
+			case ToolShape::BATTERY:
+			{
+				// The pack, a band round it in its size's colour (blue, green, red as it gets bigger), and
+				// the rail on top.
+				float body = BatteryBodyHeight(tool);
+				glm::vec3 band = tool.capacityAh < 3.0 ? glm::vec3(0.2f, 0.4f, 0.8f) : tool.capacityAh < 5.0 ? glm::vec3(0.2f, 0.65f, 0.3f) : glm::vec3(0.8f, 0.2f, 0.15f);
+				Box(builder, { 0.f, body * 0.5f, 0.f }, { BATTERY_LENGTH, body, BATTERY_WIDTH }, dark);
+				Box(builder, { 0.f, body * 0.35f, 0.f }, { BATTERY_LENGTH + 0.002f, 0.012f, BATTERY_WIDTH + 0.002f }, band);
+				Box(builder, { 0.01f, body + BATTERY_RAIL * 0.5f, 0.f }, { BATTERY_LENGTH * 0.6f, BATTERY_RAIL, 0.03f }, orange);
+				break;
+			}
+			case ToolShape::CHARGER:
+				// A cradle with a lamp at the front; the rapid one is bigger.
+				Box(builder, { 0.f, CHARGER_HEIGHT * 0.5f, 0.f }, { tool.chargeAmps > 3.0 ? 0.16f : 0.14f, CHARGER_HEIGHT, 0.1f }, dark);
+				Box(builder, { 0.f, CHARGER_HEIGHT - 0.002f, 0.f }, { BATTERY_LENGTH * 0.7f, 0.004f, 0.034f }, orange);
+				Box(builder, { 0.05f, CHARGER_HEIGHT * 0.6f, 0.051f }, { 0.012f, 0.008f, 0.002f }, { 0.3f, 0.9f, 0.35f });
+				break;
 		}
 		AddModel(ToolModelName(tool), builder);
 	}
@@ -412,7 +487,7 @@ void ShopAssets::LoadTools()
 
 void ShopAssets::LoadOverrides()
 {
-	// Each line: <Model Name> = <file> [scale=0.001] [rotate=x,y,z] [offset=x,y,z] [texture=file.png]
+	// Each line: <Model Name> = <file> [scale=0.001] [rotate=x,y,z] [offset=x,y,z] [height=0.9] [texture=file.png]
 	std::ifstream file(MODEL_FOLDER + "models.cfg");
 	if (!file)
 		return;
@@ -462,6 +537,7 @@ void ShopAssets::LoadOverrides()
 				else if (key == "rotate") entry.options.rotationDegrees = parseVector(value);
 				else if (key == "offset") entry.options.offset = parseVector(value);
 				else if (key == "texture") entry.texture = value;
+				else if (key == "height") entry.height = std::stof(value);
 			}
 		}
 		catch (const std::exception&)
@@ -486,7 +562,20 @@ void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder)
 		{
 			if (!std::filesystem::exists(path))
 				throw std::runtime_error("file not found");
-			m_models[name] = modelManager->CreateModel(::Model(name, path, entry.options))->GetIndex();
+			// Fitted to a height: measured as it comes in, then brought in again scaled to it, its base on the
+			// floor and its middle over the origin (then moved by any offset given).
+			auto options = entry.options;
+			if (entry.height > 0.f)
+			{
+				auto probeOptions = options;
+				probeOptions.offset = {};
+				::Model probe(name, path, probeOptions);
+				glm::vec3 low = probe.GetBoundsMin(), high = probe.GetBoundsMax();
+				float fit = high.y > low.y ? entry.height / (high.y - low.y) : 1.f;
+				options.scale *= fit;
+				options.offset = entry.options.offset - glm::vec3((low.x + high.x) * 0.5f, low.y, (low.z + high.z) * 0.5f) * fit;
+			}
+			m_models[name] = modelManager->CreateModel(::Model(name, path, options))->GetIndex();
 
 			if (!entry.texture.empty())
 				m_modelTextures[name] = TextureManager::Get()->CreateTexture({ name, MODEL_FOLDER + entry.texture })->GetIndex();
@@ -733,8 +822,9 @@ void ShopAssets::LoadEnvironment()
 		const glm::vec3 board = { 0.70f, 0.70f, 0.68f };
 		for (float x : { -1.58f, 1.58f })
 			for (float z : { -0.23f, 0.23f })
-				Box(shelf, { x, 1.1f, z }, { 0.04f, 2.2f, 0.04f }, upright);
-		for (float y : { 0.35f, 0.85f, 1.35f, 1.85f })
+				Box(shelf, { x, 0.85f, z }, { 0.04f, 1.7f, 0.04f }, upright);
+		// The boards at ShopLayout::SHELF_BOARDS.
+		for (float y : { 0.3f, 0.7f, 1.1f, 1.5f })
 			Box(shelf, { 0.f, y - 0.015f, 0.f }, { 3.2f, 0.03f, 0.5f }, board);
 		add(ShopModels::SHELF, shelf);
 	}
@@ -812,28 +902,108 @@ void ShopAssets::LoadEnvironment()
 		add(ShopModels::COMPUTER_DESK, desk);
 	}
 	{
-		// Another player: a mechanic in overalls, feet at the origin, facing -Z. White, so each player's
-		// colour can be tinted on.
+		// Another player: a monkey in a cap, in pieces so it can walk and look about. The torso has its
+		// feet at the origin, facing -Z; the head turns about the neck, and the arms and legs swing from
+		// the shoulder and hip, hanging -Y. The fur, the bare skin (belly, face, hands, feet) and the cap
+		// are pieces of their own, all white, so each player's colours (MonkeyLook) are tinted on.
+		const glm::vec3 detail = { 0.08f, 0.06f, 0.05f };	// eyes, nostrils and mouth: dark whatever the skin
 		MeshBuilder player;
 		player.SetUVScale(2.f);
-		const glm::vec3 skin = { 0.85f, 0.68f, 0.55f };
-		for (float x : { -0.1f, 0.1f })
-		{
-			Box(player, { x, 0.42f, 0.f }, { 0.14f, 0.84f, 0.16f });
-			Box(player, { x, 0.04f, -0.04f }, { 0.15f, 0.08f, 0.26f }, DARK);
-		}
-		Box(player, { 0.f, 1.15f, 0.f }, { 0.42f, 0.62f, 0.24f });
-		for (float x : { -0.27f, 0.27f })
-		{
-			Box(player, { x, 1.12f, 0.f }, { 0.11f, 0.58f, 0.12f });
-			Box(player, { x, 0.78f, 0.f }, { 0.09f, 0.1f, 0.1f }, skin);
-		}
-		Box(player, { 0.f, 1.5f, 0.f }, { 0.12f, 0.08f, 0.12f }, skin);
-		Box(player, { 0.f, 1.66f, 0.f }, { 0.22f, 0.26f, 0.24f }, skin);
-		// A cap with its peak to the front, so you can tell which way they're looking.
-		Box(player, { 0.f, 1.8f, 0.01f }, { 0.24f, 0.07f, 0.26f }, DARK);
-		Box(player, { 0.f, 1.775f, -0.16f }, { 0.22f, 0.02f, 0.1f }, DARK);
+		Box(player, { 0.f, 1.14f, 0.01f }, { 0.4f, 0.6f, 0.26f });
+		Box(player, { 0.f, 1.5f, 0.f }, { 0.13f, 0.08f, 0.13f });
 		add(ShopModels::PLAYER, player);
+
+		MeshBuilder belly;
+		Box(belly, { 0.f, 1.08f, -0.12f }, { 0.26f, 0.38f, 0.03f });
+		add(ShopModels::PLAYER_BELLY, belly);
+
+		// The tail, curling up from the base of the back.
+		MeshBuilder tail;
+		Box(tail, { 0.f, 0.86f, 0.17f }, { 0.04f, 0.04f, 0.1f });
+		Box(tail, { 0.f, 0.9f, 0.24f }, { 0.04f, 0.1f, 0.04f });
+		Box(tail, { 0.f, 0.97f, 0.21f }, { 0.04f, 0.04f, 0.08f });
+		add(ShopModels::PLAYER_TAIL, tail);
+
+		// The head: a furry skull with a heavy brow; the face is its own piece.
+		MeshBuilder head;
+		Box(head, { 0.f, 0.13f, 0.01f }, { 0.24f, 0.24f, 0.24f });
+		Box(head, { 0.f, 0.176f, -0.122f }, { 0.19f, 0.026f, 0.03f });
+		add(ShopModels::PLAYER_HEAD, head);
+
+		// The face: pale, the eyes under the brow, a muzzle with its nostrils and mouth, and the ears.
+		MeshBuilder face;
+		Box(face, { 0.f, 0.11f, -0.115f }, { 0.18f, 0.16f, 0.02f });
+		for (float side : { -1.f, 1.f })
+		{
+			Box(face, { side * 0.045f, 0.145f, -0.127f }, { 0.03f, 0.024f, 0.006f }, detail);
+			Box(face, { side * 0.016f, 0.075f, -0.177f }, { 0.012f, 0.01f, 0.004f }, detail);
+			Box(face, { side * 0.135f, 0.13f, 0.f }, { 0.04f, 0.07f, 0.05f });
+		}
+		Box(face, { 0.f, 0.06f, -0.14f }, { 0.13f, 0.08f, 0.07f });
+		Box(face, { 0.f, 0.04f, -0.176f }, { 0.08f, 0.006f, 0.004f }, detail);
+		add(ShopModels::PLAYER_FACE, face);
+
+		// The cap, about the neck like the head, its peak to the front so you can tell which way it's
+		// looking.
+		MeshBuilder cap;
+		Box(cap, { 0.f, 0.27f, 0.01f }, { 0.26f, 0.07f, 0.26f });
+		Box(cap, { 0.f, 0.245f, -0.165f }, { 0.22f, 0.02f, 0.11f }, { 0.8f, 0.8f, 0.8f });
+		add(ShopModels::PLAYER_CAP, cap);
+
+		// Long furry arms from the shoulder, and the hands at the end of them.
+		MeshBuilder arm;
+		arm.SetUVScale(2.f);
+		Box(arm, { 0.f, -0.31f, 0.f }, { 0.11f, 0.62f, 0.12f });
+		add(ShopModels::PLAYER_ARM, arm);
+
+		MeshBuilder hand;
+		Box(hand, { 0.f, -0.66f, 0.f }, { 0.09f, 0.1f, 0.1f });
+		add(ShopModels::PLAYER_HAND, hand);
+
+		// The legs bend at the knee: the thigh from the hip, the shin (and its long bare foot) from the knee.
+		MeshBuilder thigh;
+		thigh.SetUVScale(2.f);
+		Box(thigh, { 0.f, -0.21f, 0.f }, { 0.14f, 0.44f, 0.16f });
+		add(ShopModels::PLAYER_THIGH, thigh);
+
+		MeshBuilder shin;
+		shin.SetUVScale(2.f);
+		Box(shin, { 0.f, -0.2f, 0.f }, { 0.13f, 0.4f, 0.15f });
+		add(ShopModels::PLAYER_SHIN, shin);
+
+		MeshBuilder foot;
+		Box(foot, { 0.f, -0.4f, -0.05f }, { 0.13f, 0.04f, 0.26f });
+		add(ShopModels::PLAYER_FOOT, foot);
+	}
+	{
+		// First person, the same monkey: the right arm's fur (stretched to reach the hand), the hand,
+		// and the body below the view, its fur and its bare skin apart so each takes its colour.
+		MeshBuilder sleeve;
+		sleeve.SetUVScale(2.f);
+		Box(sleeve, { 0.f, 0.f, -0.5f }, { 0.0425f, 0.085f, 1.f });
+		add(ShopModels::VIEW_SLEEVE, sleeve);
+
+		MeshBuilder hand;
+		Box(hand, { 0.f, 0.f, -ShopModels::VIEW_HAND_LENGTH * 0.5f }, { 0.0425f, ShopModels::VIEW_HAND_THICKNESS, ShopModels::VIEW_HAND_LENGTH });
+		add(ShopModels::VIEW_HAND, hand);
+
+		// The legs, the torso up to the shoulders, and the left arm hanging (the right one is the sleeve
+		// and hand); then the feet, belly and left hand.
+		MeshBuilder body;
+		body.SetUVScale(2.f);
+		for (float x : { -0.1f, 0.1f })
+			Box(body, { x, 0.42f, 0.f }, { 0.14f, 0.84f, 0.16f });
+		Box(body, { 0.f, 1.12f, 0.f }, { 0.4f, 0.6f, 0.26f });
+		Box(body, { 0.f, 1.44f, 0.f }, { 0.36f, 0.06f, 0.2f });
+		Box(body, { -0.27f, 1.1f, 0.f }, { 0.11f, 0.6f, 0.12f });
+		add(ShopModels::VIEW_BODY, body);
+
+		MeshBuilder bodySkin;
+		for (float x : { -0.1f, 0.1f })
+			Box(bodySkin, { x, 0.02f, -0.06f }, { 0.13f, 0.04f, 0.28f });
+		Box(bodySkin, { 0.f, 1.06f, -0.13f }, { 0.26f, 0.38f, 0.03f });
+		Box(bodySkin, { -0.27f, 0.75f, 0.f }, { 0.09f, 0.1f, 0.1f });
+		add(ShopModels::VIEW_BODY_SKIN, bodySkin);
 	}
 }
 
@@ -1325,9 +1495,9 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::ROCKER_SHAFT:			return { { 0.f, HEAD_DECK_Y + VALVE_FACE_Y + VALVE_STEM_LENGTH + ROCKER_PIVOT_Y, index == 1 ? VALVE_Z + ROCKER_PIVOT_Z : -VALVE_Z - ROCKER_PIVOT_Z } };
 		case PartType::CRANK_SPROCKET:			return { { TIMING_PLANE_X, CRANK_Y, 0.f } };
 		case PartType::CAM_SPROCKET:			return { { TIMING_PLANE_X, CamAxisY(), 0.f } };
-		case PartType::TIMING_BELT:			return { { TIMING_PLANE_X, (CRANK_Y + CamAxisY()) * 0.5f, 0.f }, FACING_FRONT };
+		case PartType::TIMING_BELT:			return { { TIMING_PLANE_X, 0.f, 0.f } };
 		case PartType::BELT_IDLER:				return { { TIMING_PLANE_X + 0.012f, -0.05f, index == 0 ? 0.062f : -0.062f }, FACING_FRONT };
-		case PartType::BELT_TENSIONER:			return { { TIMING_PLANE_X + 0.004f, -0.13f, -0.072f } };
+		case PartType::BELT_TENSIONER:			return { { TIMING_PLANE_X, TIMING_IDLER_Y, TIMING_IDLER_Z } };
 		case PartType::TIMING_COVER_GASKET:		return { { TIMING_COVER_X + 0.0055f, TIMING_COVER_Y, 0.f }, FACING_FRONT };
 		case PartType::TIMING_COVER:			return { { TIMING_COVER_X, TIMING_COVER_Y, 0.f }, FACING_FRONT };
 		case PartType::FRONT_CRANK_SEAL:		return { { TIMING_COVER_X - 0.012f, CRANK_Y, 0.f }, FACING_FRONT };
@@ -1349,11 +1519,12 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		// At the front, beside the water pump, its pulley in the belt's plane.
 		case PartType::ALTERNATOR:				return { { ACCESSORY_BELT_X, ALTERNATOR_Y, ALTERNATOR_Z } };
 		case PartType::DRIVE_BELT:				return { { ACCESSORY_BELT_X, 0.f, 0.f } };
+		case PartType::DRIVE_BELT_TENSIONER:		return { { ACCESSORY_BELT_X, DRIVE_TENSIONER_Y, DRIVE_TENSIONER_Z } };
 		case PartType::EXHAUST_MANIFOLD_GASKET:	return otherSide({ { 0.f, PORT_Y, -PORT_FACE_Z - 0.001f }, FACING_EXHAUST });
 		case PartType::EXHAUST_MANIFOLD:
 		case PartType::EXHAUST_PIPE:			return otherSide({ { 0.f, PORT_Y, -PORT_FACE_Z - 0.002f } });
 		case PartType::WATER_PUMP_GASKET:		return { { TIMING_COVER_X - 0.0125f, -0.04f, 0.06f }, FACING_FRONT };
-		case PartType::WATER_PUMP:				return { { TIMING_COVER_X - 0.014f, -0.04f, 0.06f } };
+		case PartType::WATER_PUMP:				return { { TIMING_COVER_X - 0.014f, WATER_PUMP_Y, WATER_PUMP_Z } };
 		case PartType::THERMOSTAT:				return crossOver({ { -0.17f, 0.10f, PORT_FACE_Z + 0.001f }, FACING_INTAKE });
 		case PartType::THERMOSTAT_HOUSING:		return crossOver({ { -0.17f, 0.10f, PORT_FACE_Z + 0.004f }, FACING_INTAKE });
 		default:								return {};
@@ -1536,24 +1707,12 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::CAM_SPROCKET, cam);
 	}
 	{
-		// Lying flat: the crank end at -X, the cam end at +X. Stood up, -X points down. A wide black
-		// toothed belt wrapped round both sprockets.
+		// In its plane (X = 0, as it sits on the engine) round the cam and crank pulleys and over the back
+		// of the idler: a wide black toothed belt.
 		MeshBuilder belt;
 		belt.SetUVScale(20.f);
-		const glm::vec3 BELT = { 0.09f, 0.09f, 0.10f };
 		constexpr float WIDTH = 0.022f, THICK = 0.004f;
-		float halfSpan = (CamAxisY() - CRANK_Y) * 0.5f;
-		Tube(belt, At({ -halfSpan, 0.f, 0.f }), 0.0245f + THICK, 0.0245f, WIDTH, BELT, 0.f, glm::two_pi<float>(), 28);
-		Tube(belt, At({ halfSpan, 0.f, 0.f }), 0.0465f + THICK, 0.0465f, WIDTH, BELT, 0.f, glm::two_pi<float>(), 40);
-		for (float side : { -1.f, 1.f })
-		{
-			float dz = (0.0465f - 0.0245f) * side;
-			float length = std::sqrt(halfSpan * halfSpan * 4.f + dz * dz);
-			float angle = -std::atan2(dz, halfSpan * 2.f);
-			belt.SetTransform(glm::rotate(At({ 0.f, 0.f, side * (0.0355f + THICK * 0.5f) }), angle, { 0.f, 1.f, 0.f })).SetColor(BELT);
-			belt.AddBox({}, { length, WIDTH, THICK });
-			belt.ResetTransform();
-		}
+		BeltAlong(belt, BeltPath(TimingPulleys(), THICK * 0.5f), WIDTH, THICK, { 0.09f, 0.09f, 0.10f });
 		add(PartType::TIMING_BELT, belt);
 	}
 	{
@@ -1564,11 +1723,14 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::BELT_IDLER, idler);
 	}
 	{
-		// A sprung arm on its pivot with a pulley on the end, pressing on the belt.
+		// The timing idler pulley: origin at its pulley, in the belt's plane, a smooth pulley on its
+		// bearing; behind it the bracket up to its pivot bolt, and the spring that pulls it onto the belt.
 		MeshBuilder tensioner;
-		Box(tensioner, { 0.f, 0.012f, 0.f }, { 0.035f, 0.024f, 0.025f }, { 0.45f, 0.45f, 0.48f });
-		Box(tensioner, { 0.03f, 0.006f, 0.f }, { 0.04f, 0.008f, 0.014f }, STEEL_GREY);
-		Cylinder(tensioner, At({ 0.05f, 0.012f, 0.f }), 0.018f, 0.022f, { 0.70f, 0.71f, 0.74f }, 24);
+		Cylinder(tensioner, AlongX({}), TIMING_IDLER_RADIUS, 0.024f, { 0.70f, 0.71f, 0.74f }, 28);
+		Cylinder(tensioner, AlongX({ -0.0125f, 0.f, 0.f }), 0.007f, 0.002f, BLACK, 16);
+		Box(tensioner, { 0.016f, 0.014f, 0.004f }, { 0.006f, 0.04f, 0.022f }, { 0.45f, 0.45f, 0.48f });
+		Cylinder(tensioner, AlongX({ 0.018f, 0.028f, 0.008f }), 0.008f, 0.01f, STEEL_GREY, 16);
+		Cylinder(tensioner, At({ 0.018f, 0.045f, -0.006f }), 0.003f, 0.03f, STEEL_GREY, 8);
 		add(PartType::BELT_TENSIONER, tensioner);
 	}
 	{
@@ -1581,7 +1743,7 @@ void ShopAssets::LoadAncillaries()
 		// The crank seal boss sits 0.19 m below the cover's middle, the water pump boss just above it.
 		MeshBuilder cover;
 		cover.SetUVScale(4.f);
-		Box(cover, { 0.f, 0.006f, 0.f }, { 0.50f, 0.012f, 0.21f });
+		Box(cover, { 0.f, TIMING_COVER_FACE * 0.5f, 0.f }, { 0.50f, TIMING_COVER_FACE, 0.21f });
 		for (float side : { -1.f, 1.f })
 		{
 			Box(cover, { 0.f, -0.011f, side * 0.102f }, { 0.50f, 0.022f, 0.006f });
@@ -1606,7 +1768,7 @@ void ShopAssets::LoadAncillaries()
 		Tube(pulley, AlongX({ -0.008f, 0.f, 0.f }), 0.066f, 0.055f, 0.018f, WHITE, 0.f, glm::two_pi<float>(), 32);
 		for (float x : { -0.004f, -0.008f, -0.012f })
 			Tube(pulley, AlongX({ x, 0.f, 0.f }), 0.0665f, 0.062f, 0.0015f, DARK, 0.f, glm::two_pi<float>(), 32);
-		// The V-belt groove out in front, in the accessory belt's plane.
+		// The belt groove out in front, in the accessory belt's plane.
 		Cylinder(pulley, AlongX({ -0.022f, 0.f, 0.f }), 0.02f, 0.01f, STEEL_GREY, 20);
 		Tube(pulley, AlongX({ ACCESSORY_BELT_X - (TIMING_COVER_X - 0.03f), 0.f, 0.f }), 0.058f, 0.02f, 0.01f, STEEL_GREY, 0.f, glm::two_pi<float>(), 32);
 		add(PartType::CRANK_PULLEY, pulley);
@@ -1624,7 +1786,7 @@ void ShopAssets::LoadAncillaries()
 			Box(cover, { 0.f, 0.025f, side * 0.1025f }, { BLOCK_LENGTH, 0.05f, 0.005f }, PAINT_RED);
 			Box(cover, { side * (BLOCK_LENGTH * 0.5f - 0.0025f), 0.025f, 0.f }, { 0.005f, 0.05f, 0.21f }, PAINT_RED);
 		}
-		Box(cover, { 0.f, 0.052f, 0.f }, { BLOCK_LENGTH, 0.006f, 0.21f }, PAINT_RED);
+		Box(cover, { 0.f, VALVE_COVER_TOP - 0.003f, 0.f }, { BLOCK_LENGTH, 0.006f, 0.21f }, PAINT_RED);
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 			Cylinder(cover, At({ BoreX(cylinder), 0.0555f, 0.f }), 0.014f, 0.001f, DARK, 20);
 		Cylinder(cover, At({ 0.12f, 0.059f, 0.055f }), 0.018f, 0.008f, BLACK, 20);
@@ -1776,39 +1938,30 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::ALTERNATOR, alternator);
 	}
 	{
-		// In the belt's plane (X = 0), in engine Y and Z: a band round each pulley and a straight run
-		// between each pair, on the outside of the triangle they make.
+		// The fan belt, an 11 mm V-belt, in its plane (X = 0) round its pulleys.
 		MeshBuilder belt;
 		belt.SetUVScale(20.f);
-		const glm::vec3 BELT = { 0.09f, 0.09f, 0.10f };
-		constexpr float WIDTH = 0.01f, THICK = 0.006f;
-		struct Pulley { glm::vec2 centre; float radius; };
-		const Pulley pulleys[] = {
-			{ { CRANK_Y, 0.f }, 0.058f },			// crank
-			{ { -0.04f, 0.06f }, 0.05f },			// water pump
-			{ { ALTERNATOR_Y, ALTERNATOR_Z }, 0.032f },	// alternator
-		};
-		glm::vec2 middle = (pulleys[0].centre + pulleys[1].centre + pulleys[2].centre) / 3.f;
-		for (const auto& pulley : pulleys)
-			Tube(belt, AlongX({ 0.f, pulley.centre.x, pulley.centre.y }), pulley.radius + THICK, pulley.radius, WIDTH, BELT, 0.f, glm::two_pi<float>(), 32);
-		for (int i = 0; i < 3; i++)
-		{
-			const Pulley& a = pulleys[i];
-			const Pulley& b = pulleys[(i + 1) % 3];
-			glm::vec2 along = glm::normalize(b.centre - a.centre);
-			glm::vec2 out = { -along.y, along.x };
-			if (glm::dot(out, (a.centre + b.centre) * 0.5f - middle) < 0.f)
-				out = -out;
-			glm::vec2 from = a.centre + out * (a.radius + THICK * 0.5f), to = b.centre + out * (b.radius + THICK * 0.5f);
-			glm::vec2 run = to - from;
-			// A box along Z, turned about X onto the run.
-			float angle = std::atan2(-run.x, run.y);
-			glm::vec2 centre = (from + to) * 0.5f;
-			belt.SetTransform(glm::rotate(At({ 0.f, centre.x, centre.y }), angle, { 1.f, 0.f, 0.f })).SetColor(BELT);
-			belt.AddBox({}, { WIDTH, THICK, glm::length(run) });
-			belt.ResetTransform();
-		}
+		constexpr float WIDTH = 0.011f, THICK = 0.008f;
+		BeltAlong(belt, BeltPath(DrivePulleys(), THICK * 0.5f), WIDTH, THICK, { 0.09f, 0.09f, 0.10f });
 		add(PartType::DRIVE_BELT, belt);
+	}
+	{
+		// Origin at its pulley, in the belt's plane: a smooth pulley on its spindle, and the arm back up
+		// to the sprung pivot that bolts to the timing cover.
+		MeshBuilder tensioner;
+		tensioner.SetUVScale(6.f);
+		constexpr float COVER_FACE = (TIMING_COVER_X - TIMING_COVER_FACE) - ACCESSORY_BELT_X;	// along +X, where it meets the cover
+		const glm::vec2 pivot = { 0.02f, 0.035f };	// (Z, Y) from the pulley
+		Cylinder(tensioner, AlongX({}), DRIVE_TENSIONER_RADIUS, 0.014f, STEEL_GREY, 28);
+		Cylinder(tensioner, AlongX({ -0.0085f, 0.f, 0.f }), 0.011f, 0.003f, DARK, 18);
+		Cylinder(tensioner, AlongX({ 0.013f, 0.f, 0.f }), 0.009f, 0.012f, WHITE, 16);
+		float armLength = glm::length(pivot);
+		tensioner.SetTransform(glm::rotate(At({ 0.022f, pivot.y * 0.5f, pivot.x * 0.5f }), std::atan2(-pivot.y, pivot.x), { 1.f, 0.f, 0.f })).SetColor(WHITE);
+		tensioner.AddBox({}, { 0.008f, 0.018f, armLength });
+		tensioner.ResetTransform();
+		Cylinder(tensioner, AlongX({ (0.018f + COVER_FACE) * 0.5f, pivot.y, pivot.x }), 0.018f, COVER_FACE - 0.018f, WHITE, 20);
+		Cylinder(tensioner, AlongX({ 0.02f, pivot.y, pivot.x }), 0.008f, 0.006f, DARK, 14);
+		add(PartType::DRIVE_BELT_TENSIONER, tensioner);
 	}
 	{
 		MeshBuilder thermostat;
@@ -1955,7 +2108,102 @@ void ShopAssets::LoadFurniture()
 				Cylinder(builder, At({ 0.3f, 0.55f, 0.f }), 0.015f, 0.6f, black, 8);
 				break;
 			}
+			case FurnitureKind::MONCHU:
+			{
+				// Only if monchu.fbx won't load (models.cfg): a monkey sat on a plinth.
+				const glm::vec3 fur = { 0.36f, 0.22f, 0.12f }, face = { 0.78f, 0.6f, 0.46f };
+				Box(builder, { 0.f, 0.1f, 0.f }, { 0.5f, 0.2f, 0.5f }, { 0.3f, 0.3f, 0.32f });
+				Box(builder, { 0.f, 0.45f, 0.f }, { 0.34f, 0.5f, 0.28f }, fur);
+				Box(builder, { 0.f, 0.82f, 0.f }, { 0.26f, 0.24f, 0.24f }, fur);
+				Box(builder, { 0.f, 0.8f, -0.125f }, { 0.18f, 0.16f, 0.02f }, face);
+				for (float side : { -1.f, 1.f })
+					Box(builder, { side * 0.15f, 0.84f, 0.f }, { 0.05f, 0.08f, 0.05f }, face);
+				break;
+			}
 		}
 		AddModel(FurnitureModel(furniture), builder);
 	}
+}
+
+const std::vector<EngineLayout::BeltPulley>& EngineLayout::TimingPulleys()
+{
+	// Down the tight side from the cam to the crank, and back up the slack side over the idler.
+	static const std::vector<BeltPulley> pulleys = {
+		{ "Cam pulley", { 0.f, CamAxisY() }, CAM_PULLEY_TEETH, 1.f },
+		{ "Crank pulley", { 0.f, CRANK_Y }, CRANK_PULLEY_TEETH, 1.f },
+		{ "Idler pulley", { TIMING_IDLER_Z, TIMING_IDLER_Y }, TIMING_IDLER_RADIUS, -1.f },
+	};
+	return pulleys;
+}
+
+const std::vector<EngineLayout::BeltPulley>& EngineLayout::DrivePulleys()
+{
+	// Up the left from the crank to the water pump, across the top to the alternator, and back down.
+	static const std::vector<BeltPulley> pulleys = {
+		{ "Crank", { 0.f, CRANK_Y }, 0.058f, 1.f },
+		{ "Water pump", { WATER_PUMP_Z, WATER_PUMP_Y }, 0.05f, 1.f },
+		{ "Alternator", { ALTERNATOR_Z, ALTERNATOR_Y }, 0.032f, 1.f },
+	};
+	return pulleys;
+}
+
+namespace
+{
+	// The straight run from each pulley to the next: on the same side of both for two wrapped the same
+	// way, crossing between them otherwise. Its ends, on each pulley, offset out from them.
+	std::vector<std::pair<glm::vec2, glm::vec2>> BeltRuns(const std::vector<EngineLayout::BeltPulley>& pulleys, float offset)
+	{
+		size_t count = pulleys.size();
+		std::vector<std::pair<glm::vec2, glm::vec2>> runs(count);
+		for (size_t i = 0; i < count; i++)
+		{
+			const auto& a = pulleys[i];
+			const auto& b = pulleys[(i + 1) % count];
+			glm::vec2 between = b.centre - a.centre;
+			float distance = glm::length(between), heading = std::atan2(between.y, between.x);
+			float ra = a.wrap * (a.radius + offset), rb = b.wrap * (b.radius + offset);
+			for (float side : { 1.f, -1.f })
+			{
+				float angle = heading + side * std::acos(std::clamp((rb - ra) / distance, -1.f, 1.f));
+				glm::vec2 normal = { std::cos(angle), std::sin(angle) };
+				if (glm::dot(glm::vec2(-normal.y, normal.x), between) <= 0.f)
+					continue;
+				runs[i] = { a.centre - normal * ra, b.centre - normal * rb };
+				break;
+			}
+		}
+		return runs;
+	}
+}
+
+std::vector<glm::vec2> EngineLayout::BeltPath(const std::vector<BeltPulley>& pulleys, float offset)
+{
+	// Round each pulley from where the last run meets it to where the next leaves it; the runs are the
+	// straight joins from one pulley's last point to the next one's first.
+	size_t count = pulleys.size();
+	auto runs = BeltRuns(pulleys, offset);
+	std::vector<glm::vec2> path;
+	for (size_t i = 0; i < count; i++)
+	{
+		const auto& pulley = pulleys[i];
+		glm::vec2 arrive = runs[(i + count - 1) % count].second - pulley.centre;
+		glm::vec2 leave = runs[i].first - pulley.centre;
+		float start = std::atan2(arrive.y, arrive.x);
+		float sweep = pulley.wrap > 0.f ? start - std::atan2(leave.y, leave.x) : std::atan2(leave.y, leave.x) - start;
+		sweep = std::fmod(sweep + glm::two_pi<float>() * 2.f, glm::two_pi<float>());
+		int segments = (std::max)(2, static_cast<int>(sweep / glm::two_pi<float>() * 40.f));
+		float radius = pulley.radius + offset;
+		for (int segment = 0; segment <= segments; segment++)
+		{
+			float angle = start - pulley.wrap * sweep * segment / segments;
+			path.push_back(pulley.centre + radius * glm::vec2(std::cos(angle), std::sin(angle)));
+		}
+	}
+	return path;
+}
+
+glm::vec2 EngineLayout::BeltRunMiddle(const std::vector<BeltPulley>& pulleys, size_t run)
+{
+	auto runs = BeltRuns(pulleys, 0.f);
+	return (runs[run % runs.size()].first + runs[run % runs.size()].second) * 0.5f;
 }

@@ -87,6 +87,26 @@ namespace
 
 void EngineBuilderGame::RegisterConsoleCommands()
 {
+	// Anyone's: the door, and where you are and how the frame is going.
+	m_console.AddCommand("door", "door [open|close]", "Rolls the garage door up or down (or the other way to how it is).", [this](const Console::Arguments& args) {
+		bool open = args.empty() ? m_world.GetDoorOpenAmount() < 0.5f : Normalize(args[0]) == "open";
+		m_world.SetDoorOpen(open);
+		m_console.Print(open ? "Rolling the door up." : "Pulling the door down.");
+	});
+
+	m_console.AddCommand("profile", "profile [on|off]", "Logs per-section frame timings to the debug output every 2 s.", [this](const Console::Arguments& args) {
+		auto& profiler = FrameProfiler::Get();
+		profiler.SetEnabled(Switch(args, profiler.IsEnabled()));
+		m_console.Print(std::format("Frame profiler {}.", profiler.IsEnabled() ? "on" : "off"));
+	});
+
+	m_console.AddCommand("pos", "pos", "Prints where you're standing.", [this](const Console::Arguments&) {
+		glm::vec3 feet = m_player.GetFeetPosition();
+		m_console.Print(std::format("x {:.2f}  y {:.2f}  z {:.2f}  facing {:.0f} deg", feet.x, feet.y, feet.z, glm::degrees(m_player.GetYaw())));
+	});
+
+	// Cheats, and the developer's views: debug builds only.
+#ifdef _DEBUG
 	auto partNames = [] {
 		std::vector<std::string> names;
 		for (int type = 0; type < static_cast<int>(PartType::COUNT); type++)
@@ -246,12 +266,6 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		}
 	});
 
-	m_console.AddCommand("door", "door [open|close]", "Rolls the garage door up or down (or the other way to how it is).", [this](const Console::Arguments& args) {
-		bool open = args.empty() ? m_world.GetDoorOpenAmount() < 0.5f : Normalize(args[0]) == "open";
-		m_world.SetDoorOpen(open);
-		m_console.Print(open ? "Rolling the door up." : "Pulling the door down.");
-	});
-
 	m_console.AddCommand("assemble",
 
  "assemble", "Fits new OEM parts to every empty position on the active engine.", [this](const Console::Arguments&) {
@@ -287,17 +301,6 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Bounding boxes {}.", settings.showBounds ? "on" : "off"));
 	});
 
-	m_console.AddCommand("profile", "profile [on|off]", "Logs per-section frame timings to the debug output every 2 s.", [this](const Console::Arguments& args) {
-		auto& profiler = FrameProfiler::Get();
-		profiler.SetEnabled(Switch(args, profiler.IsEnabled()));
-		m_console.Print(std::format("Frame profiler {}.", profiler.IsEnabled() ? "on" : "off"));
-	});
-
-	m_console.AddCommand("pos", "pos", "Prints where you're standing.", [this](const Console::Arguments&) {
-		glm::vec3 feet = m_player.GetFeetPosition();
-		m_console.Print(std::format("x {:.2f}  y {:.2f}  z {:.2f}  facing {:.0f} deg", feet.x, feet.y, feet.z, glm::degrees(m_player.GetYaw())));
-	});
-
 	m_console.AddCommand("tp", "tp <x> <z> [y]", "Moves you to a spot on the floor (pos shows where you are).", [this](const Console::Arguments& args) {
 		auto x = args.size() > 1 ? Number(args[0]) : std::nullopt;
 		auto z = args.size() > 1 ? Number(args[1]) : std::nullopt;
@@ -307,4 +310,5 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_player.SetPosition({ static_cast<float>(*x), static_cast<float>(*y), static_cast<float>(*z) });
 		m_console.Print(std::format("Moved to {:.2f}, {:.2f}.", *x, *z));
 	});
+#endif
 }

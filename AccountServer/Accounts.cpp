@@ -20,7 +20,7 @@
 
 namespace
 {
-	constexpr long long FILE_VERSION = 1;
+	constexpr long long FILE_VERSION = 2;
 	// Slow on purpose, so a stolen accounts file is slow to guess passwords from: a few tens of
 	// milliseconds per log in.
 	constexpr long long ITERATIONS = 100'000;
@@ -110,13 +110,6 @@ bool Accounts::Load(const std::string& path, std::string& error)
 		account.salt = in.Next();
 		account.hash = in.Next();
 		account.iterations = in.Int();
-		account.layout = in.Next();
-		account.placed = in.Int() != 0;
-		account.x = static_cast<float>(in.Num());
-		account.y = static_cast<float>(in.Num());
-		account.z = static_cast<float>(in.Num());
-		account.yaw = static_cast<float>(in.Num());
-		account.pitch = static_cast<float>(in.Num());
 		m_nextId = (std::max)(m_nextId, account.id + 1);
 		m_accounts[Key(account.username)] = account;
 	}
@@ -136,8 +129,7 @@ bool Accounts::Save(std::string& error)
 	out.Word("accounts").Int(m_accounts.size()).Line();
 	for (const auto& [key, account] : m_accounts)
 	{
-		out.Int(account.id).Str(account.username).Str(account.salt).Str(account.hash).Int(account.iterations).Str(account.layout)
-			.Int(account.placed).Num(account.x).Num(account.y).Num(account.z).Num(account.yaw).Num(account.pitch).Line();
+		out.Int(account.id).Str(account.username).Str(account.salt).Str(account.hash).Int(account.iterations).Line();
 	}
 
 	// Written beside the old one, then swapped in, so a crash mid-save never loses the accounts.

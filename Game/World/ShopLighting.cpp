@@ -87,8 +87,7 @@ void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float
 	// The shop and the house: dim ambient plus whatever daylight gets in through the windows and the door.
 	constexpr float MARGIN = 0.04f;
 	lighting.interiors.push_back({ interior.min - glm::vec3(MARGIN, 0.f, MARGIN), interior.max + glm::vec3(MARGIN) });
-	lighting.interiors.push_back({ interior.houseMin - glm::vec3(MARGIN, 0.f, MARGIN), interior.houseMax + glm::vec3(MARGIN) });
-	// Kept modest so the (shadowed) lamps do most of the lighting and things look grounded.
+	lighting.interiors.push_back({ interior.houseMin - glm::vec3(MARGIN, 0.f, MARGIN), interior.houseMax + glm::vec3(MARGIN) });	// Kept modest so the (shadowed) lamps do most of the lighting and things look grounded.
 	lighting.interiorAmbient = glm::vec3(0.05f, 0.05f, 0.055f) + glm::vec3(0.9f, 0.95f, 1.f) * daylight * (0.06f + 0.05f * doorOpen);
 
 	// The ceiling lamps shine down on everything in the shop, so they cast shadows: machines,
@@ -101,7 +100,6 @@ void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float
 	}
 	for (const auto& lamp : interior.houseLamps)
 		lighting.pointLights.push_back({ lamp - glm::vec3(0.f, 0.08f, 0.f), 5.5f, HOUSE_LAMP, LightZone::INTERIOR });
-
 	// Street and porch lights come on at dusk.
 	float lampsOn = 1.f - glm::smoothstep(0.25f, 0.55f, daylight);
 	if (lampsOn > 0.f)

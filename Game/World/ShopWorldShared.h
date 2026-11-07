@@ -46,7 +46,7 @@ namespace ShopLayout
 	inline const glm::vec3 FURNITURE_HOME = { 1.5f, 0.f, 1.5f };
 	// The lift goes in the middle of the side bay (or the first free floor, without one).
 	inline const glm::vec3 LIFT_HOME = { -10.f, 0.f, 0.f };
-	inline const float SHELF_BOARDS[] = { 0.35f, 0.85f, 1.35f, 1.85f };
+	inline const float SHELF_BOARDS[] = { 0.3f, 0.7f, 1.1f, 1.5f };	// the top one below the eyes, in reach
 	constexpr float SHELF_HALF_WIDTH = 1.5f;
 
 	inline const glm::vec3 RACK_POSITION = { -6.3f, 0.f, -0.2f };

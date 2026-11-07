@@ -2,15 +2,26 @@
 
 #include <string>
 
+#include "Controls.h"
+#include "World/MonkeyLook.h"
+
 // Player preferences, kept in a small key=value file next to the executable's working directory.
 struct GameSettings
 {
 	float mouseSensitivity = 1.f;	// multiplier on the base look speed
 	bool invertY = false;
 	float fieldOfView = 70.f;		// degrees, vertical
-	bool showControls = true;		// the key hint line at the bottom of the HUD
 	bool showFps = false;
 	bool imperialUnits = false;
+	bool darkMode = false;			// the menus, screens and the service manual in dark colours
+
+	// First person: your own arm (and what it holds) and body
+	bool viewArm = true;
+	bool viewBody = true;
+	float viewHandRight = 0.f;		// metres the hand is moved from where it's held: to the right,
+	float viewHandUp = 0.f;			// up,
+	float viewHandForward = 0.f;	// and out from you
+	float viewBodyBack = 0.3f;		// metres the body stands behind your eyes: further back, less of it in view
 
 	// Video
 	int displayMode = 0;			// DisplayMode: windowed, borderless, fullscreen
@@ -35,13 +46,20 @@ struct GameSettings
 	bool dayNightCycle = true;
 	float dayLengthMinutes = 30.f;	// real minutes for a full 24 hours
 
-	// Multiplayer: the account you log in with (the password is never saved), and the last garage
-	// joined by address.
+	// How your monkey looks (the backpack's Monkey tab).
+	MonkeyLook monkey = {};
+
+	// What each control is on (see Controls).
+	Controls::Bindings controls = Controls::Defaults();
+
+	// Multiplayer: the account you log in with (the password is never saved).
 	std::string username = "";
-	std::string joinAddress = "127.0.0.1";
-	int port = 27616;
 
 	static constexpr const char* FILE_NAME = "game_settings.cfg";
+	// How far the hand can be moved each way, and the body set back.
+	static constexpr float VIEW_HAND_REACH = 0.15f;
+	static constexpr float VIEW_BODY_BACK_MIN = 0.1f;
+	static constexpr float VIEW_BODY_BACK_MAX = 0.6f;
 
 	static GameSettings Load();
 	void Save() const;

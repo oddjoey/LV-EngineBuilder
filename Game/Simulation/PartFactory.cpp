@@ -620,6 +620,7 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::FUEL_PUMP:
 		case PartType::DISTRIBUTOR:
 		case PartType::ALTERNATOR:
+		case PartType::DRIVE_BELT_TENSIONER:
 		case PartType::WATER_PUMP:
 		case PartType::THERMOSTAT_HOUSING:		material = MaterialType::CAST_ALUMINUM; break;
 		case PartType::PLUG_LEAD:				material = MaterialType::NYLON; break;
@@ -721,6 +722,7 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 			addLength(FeatureNames::BELT_TOOTH_HEIGHT, FeatureKind::THICKNESS, Tolerance::Limits(1.85, 2.00), -0.45, -0.05);
 			break;
 		case PartType::BELT_IDLER:
+		case PartType::DRIVE_BELT_TENSIONER:
 			// Rocked on its bearing: a worn one has play.
 			addLength(FeatureNames::IDLER_PLAY, FeatureKind::RUNOUT, Tolerance::Limits(0.00, 0.05), 0.02, 0.25);
 			break;

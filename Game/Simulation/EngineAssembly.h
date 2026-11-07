@@ -74,6 +74,7 @@ enum class AssemblySlot
 	EXHAUST_PIPE,
 	ALTERNATOR,
 	DRIVE_BELT,
+	DRIVE_BELT_TENSIONER,	// added later still, so the nuts and bolts after it moved up one
 	// Nuts and bolts: one slot per set of holes (PartCatalog::Holes), taking that set's size. A
 	// hole's index / perParent is the index of the part it holds on.
 	HEAD_BOLT,
@@ -99,6 +100,7 @@ enum class AssemblySlot
 	BELT_IDLER_BOLT,
 	EXHAUST_PIPE_BOLT,
 	ALTERNATOR_BOLT,
+	DRIVE_BELT_TENSIONER_BOLT,
 	COUNT
 };
 static_assert(static_cast<int>(AssemblySlot::CORE_PLUG) == static_cast<int>(PartType::CORE_PLUG)
@@ -152,6 +154,10 @@ public:
 	std::optional<double> MainClearance(int journal) const;
 	std::optional<double> RodClearance(int cylinder) const;
 	std::optional<double> RodSideClearance(int cylinder) const;
+	// How far a belt's run gives (mm) under the manual's push: the timing belt (a weak idler spring or a
+	// stretched belt leave it slack; the idler has to be bolted up), or the fan belt (a used one is
+	// looser, and it's only tight once the alternator is bolted up on its pivot).
+	std::optional<double> BeltDeflection(bool fanBelt) const;
 	std::optional<double> PistonToWall(int cylinder) const;
 	std::optional<double> RingGap(int cylinder) const;
 	std::optional<double> DeckClearance(int cylinder) const;	// positive = piston below deck at TDC

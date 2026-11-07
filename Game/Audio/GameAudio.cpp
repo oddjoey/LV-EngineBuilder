@@ -249,6 +249,39 @@ namespace
 				s.Ring(0.f, 6130.f, 0.1f, 0.03f);
 				return s.ToClip();
 			}
+			case Sound::IMPACT:
+			{
+				// The motor's whine under the hammer: a rapid run of hard, metallic blows.
+				Synth s(0.5f);
+				float phase = 0.f;
+				for (size_t i = 0; i < s.Size(); i++)
+				{
+					phase += TWO_PI * 620.f / RATE;
+					s.samples[i] += 0.08f * (std::sin(phase) + 0.5f * std::sin(phase * 2.f));
+				}
+				for (float t = 0.f; t < 0.48f; t += 0.022f + 0.003f * noise.Next())
+				{
+					s.Burst(noise, t, 0.006f, 7000.f, 0.55f, 0.0002f);
+					s.Thump(t, 180.f, 0.25f, 0.008f);
+					s.Ring(t, 2400.f + 200.f * noise.Next(), 0.12f, 0.01f);
+				}
+				return s.ToClip();
+			}
+			case Sound::CORDLESS_RATCHET:
+			{
+				// A small motor's whirr through its gearbox.
+				Synth s(0.65f);
+				float phase = 0.f;
+				for (size_t i = 0; i < s.Size(); i++)
+				{
+					float t = s.Time(i);
+					float envelope = (std::min)(1.f, t / 0.03f) * (std::min)(1.f, (0.65f - t) / 0.05f);
+					phase += TWO_PI * (880.f + 40.f * std::sin(t * 30.f)) / RATE;
+					s.samples[i] += 0.12f * envelope * (std::sin(phase) + 0.4f * std::sin(phase * 3.f));
+				}
+				s.Hiss(noise, 0.f, 0.65f, 2000.f, 7000.f, 0.08f, 0.03f);
+				return s.ToClip();
+			}
 			case Sound::MEASURE:
 			{
 				// A gauge's double beep.
@@ -537,7 +570,7 @@ void GameAudio::Loops(float deltaTime, ShopWorld& world, float timeOfDay)
 	// lamps' hum in the garage, and birds through the day when you're out.
 	ShopInterior interior = world.GetInterior();
 	bool inGarage = interior.InGarage(m_listener);
-	bool inside = inGarage || interior.InHouse(m_listener);
+	bool inside = interior.Contains(m_listener);
 	float doorOpen = world.GetDoorOpenAmount();
 	keep(m_windLoop, m_windClip, Bus::AMBIENCE, true, nullptr, inside ? 0.06f + 0.12f * doorOpen : 0.35f, 1.f);
 	keep(m_humLoop, m_humClip, Bus::AMBIENCE, inGarage, nullptr, 0.12f, 1.f);

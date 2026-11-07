@@ -1,8 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "../Simulation/MeasuringTool.h"
 
@@ -32,7 +35,12 @@ enum class ToolShape
 	TORQUE_WRENCH,
 	MANUAL,			// the factory service manual
 	STEEL_SQUARE,
-	ROD_ALIGNER
+	ROD_ALIGNER,
+	CORDLESS_RATCHET,
+	IMPACT,
+	BATTERY,
+	CHARGER,
+	WRENCH			// one combination wrench
 };
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
@@ -41,7 +49,11 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 		return ToolShape::MANUAL;
 	switch (tool.handKind)
 	{
-		case HandToolKind::RATCHET:			return ToolShape::RATCHET;
+		case HandToolKind::RATCHET:			return tool.powered ? ToolShape::CORDLESS_RATCHET : ToolShape::RATCHET;
+		case HandToolKind::IMPACT:			return ToolShape::IMPACT;
+		case HandToolKind::BATTERY:			return ToolShape::BATTERY;
+		case HandToolKind::CHARGER:			return ToolShape::CHARGER;
+		case HandToolKind::COMBINATION_WRENCH:	return ToolShape::WRENCH;
 		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
 		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
 		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
@@ -97,6 +109,11 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::MANUAL:			return { 2, 3 };
 		case ToolShape::STEEL_SQUARE:		return { 2, 2 };
 		case ToolShape::ROD_ALIGNER:		return { 2, 3 };
+		case ToolShape::CORDLESS_RATCHET:	return { 1, 4 };
+		case ToolShape::IMPACT:			return { 2, 2 };
+		case ToolShape::BATTERY:			return { 1, 1 };
+		case ToolShape::CHARGER:			return { 2, 1 };
+		case ToolShape::WRENCH:			return { 1, 2 };
 	}
 	return { 1, 1 };
 }
@@ -124,19 +141,107 @@ inline glm::vec3 SocketSlot(const MeasuringTool& set, size_t index)
 	return { -0.11f + index * 0.22f / (count > 1 ? count - 1 : 1), 0.016f + SOCKET_HEIGHT * 0.5f, 0.f };
 }
 
-// The handle's length along X for a ratchet, breaker bar or torque wrench.
+// The handle's length along X for a ratchet (hand or cordless), breaker bar or torque wrench.
 inline float DriveToolLength(const MeasuringTool& tool)
 {
-	return tool.handKind == HandToolKind::RATCHET ? 0.2f : tool.handKind == HandToolKind::BREAKER_BAR ? 0.45f : 0.42f;
+	if (tool.handKind == HandToolKind::RATCHET)
+		return tool.powered ? 0.28f : 0.2f;
+	return tool.handKind == HandToolKind::BREAKER_BAR ? 0.45f : 0.42f;
 }
 
-// The middle of a socket on a drive tool's square drive, under its head, in the tool's own space.
+// A cordless impact wrench lies on its side: the nose along +X, the pistol grip down +Z from the body.
+constexpr glm::vec3 IMPACT_NOSE = { 0.105f, 0.03f, -0.04f };	// the end of the anvil
+constexpr glm::vec3 IMPACT_GRIP = { -0.025f, 0.03f, 0.045f };	// the middle of the grip
+constexpr float IMPACT_GRIP_END = 0.095f;						// where the battery clips on, along Z
+
+// The middle of a socket on a drive tool's square drive, in the tool's own space, and how it's turned
+// there (a socket model stands along Y): under the head of a ratchet, breaker bar or torque wrench, out
+// in front of an impact's nose.
 inline glm::vec3 DriveSocketPosition(const MeasuringTool& tool)
 {
+	if (tool.handKind == HandToolKind::IMPACT)
+		return IMPACT_NOSE + glm::vec3(SOCKET_HEIGHT * 0.5f, 0.f, 0.f);
 	return { DriveToolLength(tool) * 0.5f, -0.008f - SOCKET_HEIGHT * 0.5f, 0.f };
+}
+inline glm::quat DriveSocketTurn(const MeasuringTool& tool)
+{
+	if (tool.handKind == HandToolKind::IMPACT)
+		return glm::angleAxis(-glm::half_pi<float>(), glm::vec3(0.f, 0.f, 1.f));
+	return glm::quat(1.f, 0.f, 0.f, 0.f);
 }
 
 inline bool IsDriveTool(const MeasuringTool& tool)
 {
-	return tool.handKind == HandToolKind::RATCHET || tool.handKind == HandToolKind::BREAKER_BAR || tool.handKind == HandToolKind::TORQUE_WRENCH;
+	return tool.handKind == HandToolKind::RATCHET || tool.handKind == HandToolKind::BREAKER_BAR || tool.handKind == HandToolKind::TORQUE_WRENCH
+		|| tool.handKind == HandToolKind::IMPACT;
+}
+
+// A battery pack lies flat, its bottom at the origin, 0.11 m along X and 0.075 m across: the bigger it
+// is, the taller. The rail it clips on by is on top.
+constexpr float BATTERY_LENGTH = 0.11f;
+constexpr float BATTERY_WIDTH = 0.075f;
+constexpr float BATTERY_RAIL = 0.008f;
+inline float BatteryBodyHeight(const MeasuringTool& battery)
+{
+	return 0.04f + 0.006f * static_cast<float>(battery.capacityAh);
+}
+inline float BatteryHeight(const MeasuringTool& battery)
+{
+	return BatteryBodyHeight(battery) + BATTERY_RAIL;
+}
+
+// A charger: a cradle 0.04 m tall that a pack sits in upside down.
+constexpr float CHARGER_HEIGHT = 0.04f;
+
+// Where a battery pack goes on a cordless tool or a charger, in that one's own space: the pack's
+// origin, and how it's turned so its rail meets the tool's grip (or the charger's cradle). Nothing for
+// anything else.
+struct BatteryMount
+{
+	glm::vec3 position = {};
+	glm::quat turn = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+inline std::optional<BatteryMount> BatteryMountOn(const MeasuringTool& host, const MeasuringTool& battery)
+{
+	// The pack's X, Y and Z, as they end up on the host.
+	auto turn = [](const glm::vec3& x, const glm::vec3& y, const glm::vec3& z) { return glm::quat_cast(glm::mat3(x, y, z)); };
+	float height = BatteryHeight(battery);
+	if (host.handKind == HandToolKind::IMPACT)
+		// Under the grip, the rail up into it.
+		return BatteryMount{ { IMPACT_GRIP.x, IMPACT_GRIP.y, IMPACT_GRIP_END + height }, turn({ 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }, { 0.f, 1.f, 0.f }) };
+	if (host.powered)
+		// On the end of the handle.
+		return BatteryMount{ { -DriveToolLength(host) * 0.5f - height, 0.02f, 0.f }, turn({ 0.f, 0.f, 1.f }, { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }) };
+	if (host.handKind == HandToolKind::CHARGER)
+		// Upside down in the cradle.
+		return BatteryMount{ { 0.f, CHARGER_HEIGHT + height, 0.f }, turn({ 1.f, 0.f, 0.f }, { 0.f, -1.f, 0.f }, { 0.f, 0.f, -1.f }) };
+	return std::nullopt;
+}
+
+// A combination wrench lies flat along X, its ring end at +X and its open end at -X: longer for the
+// bigger sizes.
+inline float WrenchLength(int sizeMm)
+{
+	return 0.09f + sizeMm * 0.006f;
+}
+
+// A wrench's ring, outside.
+inline float WrenchRingRadius(int sizeMm)
+{
+	return 0.004f + sizeMm * 0.0006f;
+}
+
+// Where each wrench lies in its set's tray (0.3 m wide, 0.22 m deep), in the tray's own space: front to
+// back, side by side, smallest at the left, the rings at alternate ends so they fit.
+struct WrenchPlace
+{
+	glm::vec3 position = {};
+	glm::quat turn = glm::quat(1.f, 0.f, 0.f, 0.f);
+};
+inline WrenchPlace WrenchSlot(const MeasuringTool& set, size_t index)
+{
+	int count = static_cast<int>(set.sizes.size());
+	float x = -0.12f + index * 0.24f / (count > 1 ? count - 1 : 1);
+	float yaw = (index % 2 == 0 ? 1.f : -1.f) * glm::half_pi<float>();
+	return { { x, 0.016f, 0.f }, glm::angleAxis(yaw, glm::vec3(0.f, 1.f, 0.f)) };
 }

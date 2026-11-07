@@ -7,6 +7,7 @@
 
 #include "LV/Engine/Objects/Camera.h"
 #include "LV/Engine/Utility/InputManager.h"
+#include "../Controls.h"
 
 void FirstPersonController::SetPosition(const glm::vec3& feetPosition)
 {
@@ -43,14 +44,14 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 	glm::vec3 right = { std::cos(m_yaw), 0.f, -std::sin(m_yaw) };
 	glm::vec3 move = {};
 
-	if (input.IsKeyPressed(GLFW_KEY_W)) move += forward;
-	if (input.IsKeyPressed(GLFW_KEY_S)) move -= forward;
-	if (input.IsKeyPressed(GLFW_KEY_D)) move += right;
-	if (input.IsKeyPressed(GLFW_KEY_A)) move -= right;
+	if (Controls::Held(input, Control::FORWARD)) move += forward;
+	if (Controls::Held(input, Control::BACK)) move -= forward;
+	if (Controls::Held(input, Control::RIGHT)) move += right;
+	if (Controls::Held(input, Control::LEFT)) move -= right;
 
-	// Crouching (held Ctrl): lower and slower, no running or jumping. Letting go stands back up, unless
+	// Crouching (held, Ctrl by default): lower and slower, no running or jumping. Letting go stands back up, unless
 	// something low overhead is in the way, and the eye eases between the two heights.
-	if (input.IsKeyPressed(GLFW_KEY_LEFT_CONTROL))
+	if (Controls::Held(input, Control::CROUCH))
 		m_crouching = true;
 	else if (m_crouching && HasHeadroom(obstacles))
 		m_crouching = false;
@@ -61,7 +62,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 
 	if (glm::length(move) > 0.f)
 	{
-		float speed = m_crouching ? m_crouchSpeed : input.IsKeyPressed(GLFW_KEY_LEFT_SHIFT) ? m_runSpeed : m_walkSpeed;
+		float speed = m_crouching ? m_crouchSpeed : Controls::Held(input, Control::RUN) ? m_runSpeed : m_walkSpeed;
 		m_position += glm::normalize(move) * speed * deltaTime;
 	}
 
@@ -83,7 +84,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 
 	// Jumping: a fixed take-off speed and gravity. Walking, the feet stay on the ground: up a step, and
 	// down one rather than falling off it.
-	if (m_grounded && !m_crouching && input.WasKeyPressed(GLFW_KEY_SPACE))
+	if (m_grounded && !m_crouching && Controls::Pressed(input, Control::JUMP))
 	{
 		m_verticalVelocity = m_jumpSpeed;
 		m_grounded = false;

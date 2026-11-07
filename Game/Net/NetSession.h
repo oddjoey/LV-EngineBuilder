@@ -12,6 +12,7 @@
 #include "LV/Engine/Networking/Socket.h"
 #include "NetProtocol.h"
 #include "NetState.h"
+#include "../World/PlayerAvatar.h"
 
 class Workshop;
 class ShopWorld;
@@ -40,10 +41,13 @@ public:
 		bool local = false;
 	};
 
-	// Starts connecting to a garage server, logging in to an account there (or making a new one). The
+	// Each player's colour: their overalls (theirs to everyone else, and their own sleeve and body in
+	// first person) and their name over their head.
+	static glm::vec4 PlayerColor(int id);
+
+	// Starts connecting to a garage server, with the ticket from logging in (see AccountLogin). The
 	// garage arrives a moment later: see TakeWelcome.
-	bool Join(const std::string& address, uint16_t port, const std::string& username, const std::string& password,
-		bool newAccount, std::string& error);
+	bool Join(const std::string& address, uint16_t port, const std::string& ticket, const std::string& signature, std::string& error);
 	// Leaves the garage (or stops trying to join it).
 	void Leave(ShopWorld& world);
 
@@ -82,11 +86,16 @@ private:
 		glm::vec3 feet = {};
 		float yaw = 0.f;
 		float pitch = 0.f;
+		// NetProtocol's presence: 0 down, 1 the right one out, 2 both; and crouched or not.
+		int arms = 0;
+		bool crouching = false;
+		MonkeyLook look = {};
 		// Where they're drawn: eased towards where they are, between the updates.
 		glm::vec3 shownFeet = {};
 		float shownYaw = 0.f;
+		float shownPitch = 0.f;
 		bool placed = false;
-		pObject avatar = nullptr;
+		PlayerAvatar avatar = {};
 	};
 
 	void Receive(ShopWorld& world, float& timeOfDay);
@@ -99,7 +108,7 @@ private:
 	// What changed between the garage as it was and as it is: whole records, and money and the
 	// tallies as how much they went up or down.
 	std::vector<Op> Diff(const StateRecords& now) const;
-	std::string PresenceMessage(const FirstPersonController& player) const;
+	std::string PresenceMessage(const FirstPersonController& player, const ShopWorld& world) const;
 	void ReadPresence(const std::string& message, ShopWorld& world);
 	void SetClock(float time, float& timeOfDay);
 	void RemoveRemote(int id, ShopWorld& world);
@@ -109,11 +118,11 @@ private:
 	Role										m_role = Role::OFFLINE;
 	std::unique_ptr<Net::Connection>			m_connection = nullptr;
 	std::string									m_server = "";
-	// Until the connection is encrypted: this side of the key exchange, and the log in waiting to
-	// be sent once nobody else can read it.
+	// Until the connection is encrypted: this side of the key exchange. Then the ticket from the
+	// account server (and its signature) is sent, to say who we are.
 	std::unique_ptr<Net::KeyExchange>			m_keyExchange = nullptr;
-	std::string									m_password = "";
-	bool										m_newAccount = false;
+	std::string									m_ticket = "";
+	std::string									m_ticketSignature = "";
 	int											m_localId = 0;
 	std::string									m_localName = "";
 	float										m_connectTime = 0.f;

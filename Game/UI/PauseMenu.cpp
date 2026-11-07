@@ -4,29 +4,21 @@
 
 #include <imgui.h>
 
+#include "LV/Engine/Utility/InputManager.h"
+#include "../Controls.h"
+
 namespace
 {
 	constexpr float MENU_WIDTH = 420.f;
 	constexpr float BUTTON_HEIGHT = 40.f;
 
-	const char* CONTROLS[][2] = 
+	// The controls that can't be changed (see Controls).
+	const char* FIXED_CONTROLS[][2] =
 	{
-		{ "W A S D", "Walk" },
-		{ "Shift", "Run" },
-		{ "Space", "Jump" },
 		{ "Mouse", "Look around" },
-		{ "E", "Pick up into your backpack, open deliveries, use stations, fit parts, open the roll-up door" },
-		{ "Left click", "Measure with the tool in your hand (otherwise same as E)" },
-		{ "Right click", "Set what you're holding down where you're aiming" },
-		{ "G", "Drop what you're holding" },
-		{ "Q", "Stow what you're holding in your backpack (or, when it won't fit, on the parts shelf or tool board)" },
-		{ "1 - 0", "Take a hotbar item in hand / put it back" },
-		{ "Tab", "Open or close your backpack: drag items, R turns them, drag out to drop" },
-		{ "F", "Move equipment: machines, bench, stands, shelf, tool board (R rotates, F cancels)" },
-		{ "R (hold)", "Turn over the engine you're looking at, by hand" },
-		{ "Z / X (hold)", "Roll the engine you're looking at on its stand" },
+		{ "1 - 0, mouse wheel", "Take a hotbar item in hand / put it back" },
 		{ "Esc", "Close screens / this menu" },
-		{ "F3", "Developer menu: x-ray, bounding boxes, time of day, Lordi's debug panels" },
+		{ "`", "Console" },
 	};
 }
 
@@ -37,15 +29,11 @@ void PauseMenu::Open()
 	m_status.clear();
 }
 
-void PauseMenu::OpenServers()
-{
-	m_open = true;
-	m_page = Page::MULTIPLAYER;
-}
-
 void PauseMenu::Close()
 {
 	m_open = false;
+	m_binding = -1;
+	m_bindingNote.clear();
 }
 
 bool PauseMenu::IsOpen() const
@@ -69,8 +57,39 @@ void PauseMenu::DrawGameSettings(GameSettings& settings)
 	ImGui::Checkbox("Invert mouse Y", &settings.invertY);
 	ImGui::SliderFloat("Field of view", &settings.fieldOfView, 55.f, 100.f, "%.0f deg");
 	ImGui::Checkbox("Imperial units in the workshop", &settings.imperialUnits);
-	ImGui::Checkbox("Show control hints", &settings.showControls);
+	ImGui::Checkbox("Dark mode (menus, screens and the service manual)", &settings.darkMode);
 	ImGui::Checkbox("Show FPS", &settings.showFps);
+
+	// Your own arm and body in first person. The hand moves with what it holds.
+	ImGui::SeparatorText("First person");
+	ImGui::Checkbox("Show your arm", &settings.viewArm);
+	ImGui::SameLine();
+	ImGui::Checkbox("Show your body", &settings.viewBody);
+	constexpr float REACH = GameSettings::VIEW_HAND_REACH * 100.f;
+	auto centimetres = [](const char* label, float& metres, float min, float max) {
+		float value = metres * 100.f;
+		if (ImGui::SliderFloat(label, &value, min, max, "%.0f cm"))
+			metres = value / 100.f;
+	};
+	centimetres("Hand left / right", settings.viewHandRight, -REACH, REACH);
+	centimetres("Hand down / up", settings.viewHandUp, -REACH, REACH);
+	centimetres("Hand near / far", settings.viewHandForward, -REACH, REACH);
+	ImGui::BeginDisabled(!settings.viewBody);
+	centimetres("Body behind your view", settings.viewBodyBack, GameSettings::VIEW_BODY_BACK_MIN * 100.f, GameSettings::VIEW_BODY_BACK_MAX * 100.f);
+	ImGui::EndDisabled();
+	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
+	ImGui::TextDisabled("The further back the body stands, the less of it you see looking down.");
+	ImGui::PopTextWrapPos();
+	if (ImGui::Button("Reset first person"))
+	{
+		GameSettings defaults;
+		settings.viewArm = defaults.viewArm;
+		settings.viewBody = defaults.viewBody;
+		settings.viewHandRight = defaults.viewHandRight;
+		settings.viewHandUp = defaults.viewHandUp;
+		settings.viewHandForward = defaults.viewHandForward;
+		settings.viewBodyBack = defaults.viewBodyBack;
+	}
 }
 
 void PauseMenu::DrawVideoSettings(GameSettings& settings, const PauseMenuContext& context)
@@ -173,23 +192,143 @@ void PauseMenu::DrawTimeSettings(GameSettings& settings, const PauseMenuContext&
 	ImGui::PopTextWrapPos();
 }
 
-PauseMenu::Action PauseMenu::DrawMultiplayer(GameSettings& settings, const PauseMenuContext& context)
+void PauseMenu::DrawControls(GameSettings& settings, const PauseMenuContext& context)
 {
+	const ImVec4 gold = { 1.f, 0.85f, 0.4f, 1.f };
+	// Waiting for a key: the first one pressed is it, Esc gives up, and the keys kept for something
+	// else are turned down.
+	if (m_binding >= 0 && context.pressedInput)
+	{
+		int pressed = *context.pressedInput;
+		if (pressed == GLFW_KEY_ESCAPE)
+		{
+			m_binding = -1;
+			m_bindingNote.clear();
+		}
+		else if (std::string reserved = Controls::Reserved(pressed); !reserved.empty())
+			m_bindingNote = reserved;
+		else
+		{
+			settings.controls[m_binding] = pressed;
+			m_binding = -1;
+			m_bindingNote.clear();
+		}
+	}
+
+	ImGui::TextUnformatted("Controls");
+	ImGui::Separator();
+	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
+	if (m_binding >= 0)
+		ImGui::TextColored(gold, "Press the key or mouse button for \"%s\" (Esc to cancel).", Controls::InfoOf(static_cast<Control>(m_binding)).name);
+	else
+		ImGui::TextDisabled("Click a control's key to change it, then press the key or mouse button you want.");
+	if (!m_bindingNote.empty())
+		ImGui::TextColored({ 1.f, 0.5f, 0.4f, 1.f }, "%s", m_bindingNote.c_str());
+	ImGui::PopTextWrapPos();
+
+	// Everything else is off while a key is awaited, so a mouse button pressed for it can't also
+	// click something here.
+	ImGui::BeginDisabled(m_binding >= 0);
+	ImGui::BeginChild("ControlsList", { 0.f, ImGui::GetIO().DisplaySize.y * 0.55f });
+	const char* group = "";
+	bool table = false;
+	for (size_t i = 0; i < Controls::COUNT; i++)
+	{
+		if (!Controls::Available(static_cast<Control>(i)))
+			continue;
+		const auto& info = Controls::InfoOf(static_cast<Control>(i));
+		if (std::string(group) != info.group)
+		{
+			if (table)
+				ImGui::EndTable();
+			group = info.group;
+			ImGui::SeparatorText(group);
+			table = ImGui::BeginTable(group, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp);
+			if (table)
+			{
+				ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 150.f);
+				ImGui::TableSetupColumn("What", ImGuiTableColumnFlags_WidthStretch);
+			}
+		}
+		if (!table)
+			continue;
+		ImGui::PushID(static_cast<int>(i));
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		bool waiting = m_binding == static_cast<int>(i);
+		std::string label = waiting ? "..." : Controls::Name(settings.controls[i]);
+		if (ImGui::Button(label.c_str(), { 140.f, 0.f }))
+		{
+			m_binding = static_cast<int>(i);
+			m_bindingNote.clear();
+		}
+		ImGui::TableSetColumnIndex(1);
+		ImGui::TextUnformatted(info.name);
+		// On the same key as something else: both still work, which is fine for things never done at
+		// once, but worth knowing.
+		std::string shared;
+		for (size_t other = 0; other < Controls::COUNT; other++)
+			if (other != i && settings.controls[other] == settings.controls[i])
+				shared += std::string(shared.empty() ? "" : ", ") + Controls::InfoOf(static_cast<Control>(other)).name;
+		if (!shared.empty())
+		{
+			ImGui::SameLine();
+			ImGui::TextColored(gold, "(shared)");
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("Also: %s", shared.c_str());
+		}
+		ImGui::PopID();
+	}
+	if (table)
+		ImGui::EndTable();
+
+	ImGui::SeparatorText("Always");
+	if (ImGui::BeginTable("Fixed", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+	{
+		ImGui::TableSetupColumn("Key", ImGuiTableColumnFlags_WidthFixed, 150.f);
+		ImGui::TableSetupColumn("What", ImGuiTableColumnFlags_WidthStretch);
+		for (const auto& control : FIXED_CONTROLS)
+		{
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::TextColored(gold, "%s", control[0]);
+			ImGui::TableSetColumnIndex(1);
+			ImGui::TextUnformatted(control[1]);
+		}
+		ImGui::EndTable();
+	}
+	ImGui::EndChild();
+
+	if (ImGui::Button("Reset to defaults"))
+		settings.controls = Controls::Defaults();
+	if (BigButton("Back"))
+	{
+		settings.Save();
+		m_page = Page::MAIN;
+	}
+	ImGui::EndDisabled();
+}
+
+PauseMenu::Action PauseMenu::DrawMainMenu(GameSettings& settings, const PauseMenuContext& context)
+{
+	// The game is played in a garage on a server: until you're in one, this is the main menu, over the
+	// camera circling the garage.
 	Action action = Action::NONE;
-	ImGui::TextUnformatted("Multiplayer");
+	ImGui::SetWindowFontScale(1.5f);
+	ImGui::TextUnformatted("LV: Engine Builder");
+	ImGui::SetWindowFontScale(1.f);
 	ImGui::Separator();
 	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
 
-	if (!context.online && !context.joining)
+	// Logging in comes first: the garages are only shown to someone logged in.
+	ImGui::SeparatorText("Account");
+	if (!context.loggedIn)
 	{
-		ImGui::TextDisabled("The game is played in a garage on a server, together with whoever else is there. The server "
-			"keeps the garage and saves it.");
-		// Accounts are kept by each server: your things and where you were are saved with yours.
-		ImGui::SeparatorText("Account");
-		if (ImGui::RadioButton("Log in", !m_newAccount))
+		ImGui::BeginDisabled(context.loggingIn);
+		if (ImGui::RadioButton("Existing", !m_newAccount))
 			m_newAccount = false;
 		ImGui::SameLine();
-		if (ImGui::RadioButton("Create a new account", m_newAccount))
+		if (ImGui::RadioButton("New", m_newAccount))
 			m_newAccount = true;
 		char username[32] = {};
 		settings.username.copy(username, sizeof(username) - 1);
@@ -197,14 +336,27 @@ PauseMenu::Action PauseMenu::DrawMultiplayer(GameSettings& settings, const Pause
 		if (ImGui::InputText("Username", username, sizeof(username)))
 			settings.username = username;
 		ImGui::SetNextItemWidth(-90.f);
-		ImGui::InputText("Password", m_password, sizeof(m_password), ImGuiInputTextFlags_Password);
+		bool entered = ImGui::InputText("Password", m_password, sizeof(m_password), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
 		if (m_newAccount)
-			ImGui::TextDisabled("A username is 3 to 20 letters, digits, - or _; a password at least 6 characters. "
-				"The account is made on the server you join.");
+			ImGui::TextDisabled("A username is 3 to 20 letters, digits, - or _; a password at least 6 characters.");
+		if (BigButton(context.loggingIn ? "Logging in..." : m_newAccount ? "Create account" : "Log in") || entered)
+			action = Action::LOGIN;
+		ImGui::EndDisabled();
+	}
+	else
+	{
+		ImGui::Text("Logged in as %s.", context.username.c_str());
+		ImGui::SameLine();
+		ImGui::BeginDisabled(context.joining);
+		if (ImGui::SmallButton("Log out"))
+			action = Action::LOGOUT;
+		ImGui::EndDisabled();
+	}
 
-		ImGui::SeparatorText("Garage servers");
-		if (BigButton(context.refreshingServers ? "Finding the closest garage..." : "Join the closest garage"))
-			action = Action::JOIN_CLOSEST;
+	if (context.loggedIn)
+	{
+		ImGui::BeginDisabled(context.joining);
+		ImGui::SeparatorText("Garages");
 		ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
 		if (ImGui::BeginTable("Servers", 5, flags))
 		{
@@ -236,8 +388,8 @@ PauseMenu::Action PauseMenu::DrawMultiplayer(GameSettings& settings, const Pause
 				ImGui::BeginDisabled(!server.joinable);
 				if (ImGui::SmallButton("Join"))
 				{
-					settings.joinAddress = server.address;
-					settings.port = server.port;
+					m_joinAddress = server.address;
+					m_joinPort = server.port;
 					action = Action::JOIN;
 				}
 				ImGui::EndDisabled();
@@ -251,47 +403,37 @@ PauseMenu::Action PauseMenu::DrawMultiplayer(GameSettings& settings, const Pause
 		if (ImGui::Button("Refresh"))
 			action = Action::REFRESH_SERVERS;
 		ImGui::EndDisabled();
-
-		if (ImGui::CollapsingHeader("Join by address"))
-		{
-			char address[128] = {};
-			settings.joinAddress.copy(address, sizeof(address) - 1);
-			ImGui::SetNextItemWidth(-90.f);
-			if (ImGui::InputText("Address", address, sizeof(address)))
-				settings.joinAddress = address;
-			ImGui::SetNextItemWidth(-90.f);
-			ImGui::InputInt("Port", &settings.port, 0);
-			settings.port = std::clamp(settings.port, 1024, 65535);
-			if (BigButton("Join"))
-				action = Action::JOIN;
-		}
+		ImGui::EndDisabled();
 	}
-	else
+
+	if (context.joining)
 	{
-		if (context.joining)
-			ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "Joining %s...", context.server.c_str());
-		else
-			ImGui::Text("In the garage at %s.", context.server.c_str());
-		ImGui::SeparatorText(std::format("In the garage ({})", context.players.size()).c_str());
-		for (const auto& player : context.players)
-			ImGui::BulletText("%s", player.c_str());
-		ImGui::Spacing();
-		if (BigButton(context.joining ? "Cancel" : "Leave the garage"))
+		ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "Joining %s...", context.server.c_str());
+		if (BigButton("Cancel"))
 			action = Action::LEAVE;
 	}
-	ImGui::PopTextWrapPos();
-
 	if (!m_status.empty())
-	{
-		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
 		ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "%s", m_status.c_str());
-		ImGui::PopTextWrapPos();
-	}
-	if (BigButton("Back"))
+
+	ImGui::Separator();
+	if (context.canPlayOffline)
 	{
-		settings.Save();
-		m_page = Page::MAIN;
+		ImGui::BeginDisabled(context.joining);
+		if (BigButton("Play offline (debug build)"))
+			action = Action::PLAY_OFFLINE;
+		ImGui::EndDisabled();
 	}
+	// Settings, controls and quitting side by side along the bottom.
+	float third = (ImGui::GetContentRegionAvail().x - 2.f * ImGui::GetStyle().ItemSpacing.x) / 3.f;
+	if (ImGui::Button("Settings", { third, BUTTON_HEIGHT }))
+		m_page = Page::SETTINGS;
+	ImGui::SameLine();
+	if (ImGui::Button("Controls", { third, BUTTON_HEIGHT }))
+		m_page = Page::CONTROLS;
+	ImGui::SameLine();
+	if (ImGui::Button("Quit to Desktop", { third, BUTTON_HEIGHT }))
+		m_page = Page::CONFIRM_QUIT;
+	ImGui::PopTextWrapPos();
 	return action;
 }
 
@@ -305,7 +447,8 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 	ImGui::GetBackgroundDrawList()->AddRectFilled({ 0.f, 0.f }, io.DisplaySize, IM_COL32(0, 0, 0, 140));
 	ImGui::SetNextWindowPos({ io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f }, ImGuiCond_Always, { 0.5f, 0.5f });
 
-	bool wide = m_page == Page::CONTROLS || m_page == Page::SETTINGS || m_page == Page::MULTIPLAYER;
+	bool mainMenu = m_page == Page::MAIN && !context.online && !context.offline;
+	bool wide = m_page == Page::CONTROLS || m_page == Page::SETTINGS || mainMenu;
 	ImGui::SetNextWindowSize({ wide ? MENU_WIDTH * 1.6f : MENU_WIDTH, 0.f });
 
 	// Keep the menu in front, but not while one of its dropdowns is open: taking focus every frame
@@ -324,22 +467,34 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 		switch (m_page)
 		{
 			case Page::MAIN:
-				// The game is played in a garage on a server: until you're in one, this is the front
-				// screen, and there's nothing to resume.
+				if (!context.online && !context.offline)
+				{
+					action = DrawMainMenu(settings, context);
+					break;
+				}
 				ImGui::SetWindowFontScale(1.5f);
-				ImGui::TextUnformatted(context.online ? "Paused" : "LV: Engine Builder");
+				ImGui::TextUnformatted(context.online ? "Paused" : "Paused (offline)");
 				ImGui::SetWindowFontScale(1.f);
 				ImGui::Separator();
+				if (BigButton("Resume"))
+					action = Action::RESUME;
 				if (context.online)
 				{
-					if (BigButton("Resume"))
-						action = Action::RESUME;
-					if (BigButton(std::format("Multiplayer ({} in the garage)", context.players.size()).c_str()))
-						m_page = Page::MULTIPLAYER;
+					ImGui::SeparatorText(std::format("In the garage at {} ({})", context.server, context.players.size()).c_str());
+					for (const auto& player : context.players)
+						ImGui::BulletText("%s", player.c_str());
+					if (BigButton("Leave the garage"))
+						action = Action::LEAVE;
 					ImGui::TextDisabled("The garage is saved by its server.");
 				}
-				else if (BigButton(context.joining ? "Joining a garage..." : "Join a garage"))
-					m_page = Page::MULTIPLAYER;
+				else
+				{
+					if (BigButton("Save"))
+						action = Action::SAVE;
+					if (BigButton("Back to the main menu"))
+						action = Action::LEAVE;
+					ImGui::TextDisabled("Offline, from the local save: a debug build only. It's saved when you leave.");
+				}
 				if (BigButton("Settings"))
 					m_page = Page::SETTINGS;
 				if (BigButton("Controls"))
@@ -390,39 +545,20 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 				break;
 
 			case Page::CONTROLS:
-				ImGui::TextUnformatted("Controls");
-				ImGui::Separator();
-				if (ImGui::BeginTable("Controls", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
-				{
-					for (const auto& control : CONTROLS)
-					{
-						ImGui::TableNextRow();
-						ImGui::TableSetColumnIndex(0);
-						ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "%s", control[0]);
-						ImGui::TableSetColumnIndex(1);
-						ImGui::TextUnformatted(control[1]);
-					}
-					ImGui::EndTable();
-				}
-				if (BigButton("Back"))
-					m_page = Page::MAIN;
+				DrawControls(settings, context);
 				break;
 
 			case Page::CONFIRM_QUIT:
 				ImGui::TextUnformatted("Quit to desktop?");
 				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH - 48.f);
 				ImGui::TextDisabled(context.online ? "You'll leave the garage. Its server keeps everything done in it."
-					: "See you next time.");
+					: context.offline ? "The offline game is saved first." : "See you next time.");
 				ImGui::PopTextWrapPos();
 				ImGui::Spacing();
 				if (BigButton("Quit"))
 					action = Action::QUIT;
 				if (BigButton("Cancel"))
 					m_page = Page::MAIN;
-				break;
-
-			case Page::MULTIPLAYER:
-				action = DrawMultiplayer(settings, context);
 				break;
 		}
 	}

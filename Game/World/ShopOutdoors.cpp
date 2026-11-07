@@ -476,34 +476,6 @@ namespace
 			add(ShopModels::LAMP_HEAD, head);
 		}
 		{
-			// A plain hatchback, nose along +X.
-			MeshBuilder body;
-			body.SetUVScale(2.f);
-			Box(body, { 0.f, 0.62f, 0.f }, { 4.2f, 0.62f, 1.76f });
-			Box(body, { -0.35f, 1.18f, 0.f }, { 2.3f, 0.52f, 1.6f });
-			Box(body, { 1.45f, 0.95f, 0.f }, { 1.3f, 0.06f, 1.7f });
-			add(ShopModels::CAR_BODY, body);
-
-			MeshBuilder trim;
-			const glm::vec3 tyre = { 0.12f, 0.12f, 0.12f };
-			const glm::vec3 glassColor = { 0.10f, 0.13f, 0.16f };
-			for (float x : { -1.35f, 1.35f })
-				for (float z : { -0.8f, 0.8f })
-				{
-					trim.SetTransform(glm::rotate(glm::translate(glm::mat4(1.f), { x, 0.33f, z }), glm::half_pi<float>(), { 1.f, 0.f, 0.f }));
-					trim.SetColor(tyre).AddCylinder({}, 0.33f, 0.22f, 16);
-					trim.SetColor({ 0.6f, 0.6f, 0.62f }).AddCylinder({}, 0.2f, 0.24f, 12);
-				}
-			trim.ResetTransform();
-			Box(trim, { 0.79f, 1.18f, 0.f }, { 0.04f, 0.42f, 1.5f }, glassColor);		// windscreen
-			Box(trim, { -1.51f, 1.18f, 0.f }, { 0.04f, 0.42f, 1.5f }, glassColor);
-			for (float z : { -0.81f, 0.81f })
-				Box(trim, { -0.35f, 1.2f, z }, { 2.1f, 0.38f, 0.02f }, glassColor);
-			for (float x : { -2.12f, 2.12f })
-				Box(trim, { x, 0.45f, 0.f }, { 0.08f, 0.18f, 1.7f }, { 0.2f, 0.2f, 0.2f });	// bumpers
-			add(ShopModels::CAR_TRIM, trim);
-		}
-		{
 			MeshBuilder dumpster;
 			const glm::vec3 green = { 0.25f, 0.42f, 0.30f };
 			Box(dumpster, { 0.f, 0.62f, 0.f }, { 1.9f, 1.04f, 1.15f }, green);

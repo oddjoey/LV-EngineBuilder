@@ -8,7 +8,7 @@
 #include "../Game/Net/NetProtocol.h"
 #include "../LV/Engine/Networking/Crypto.h"
 #include "../LV/Engine/Networking/Socket.h"
-#include "Accounts.h"
+#include "Profiles.h"
 
 // One garage, kept for everyone who plays in it. The server doesn't run the shop: the players'
 // games do. It keeps the garage as the records they send (see NetProtocol), puts every change in
@@ -25,7 +25,9 @@ public:
 		int port = NetProtocol::DEFAULT_PORT;
 		int maxPlayers = 16;				// at once, 1 to NetProtocol::MAX_SLOTS
 		std::string garageFile = "garage.lvgarage";
-		std::string accountsFile = "accounts.lvaccounts";
+		std::string profilesFile = "profiles.lvprofiles";
+		// The account server's public identity (it writes the file out): log ins are checked against it.
+		std::string accountIdentityFile = "account_identity.txt";
 		std::string identityFile = "server_identity.key";
 		float dayLengthMinutes = 30.f;		// real minutes for a full 24 hours; 0 stops the sun
 		float autosaveSeconds = 30.f;
@@ -50,7 +52,7 @@ private:
 	{
 		std::unique_ptr<Net::Connection> connection = nullptr;
 		PeerState state = PeerState::NEW;
-		Accounts::Account* account = nullptr;
+		Profiles::Profile* profile = nullptr;
 		int id = 0;			// the account's number
 		int slot = 0;		// see NetProtocol::MAX_SLOTS
 		std::string name = "";
@@ -82,7 +84,8 @@ private:
 	std::unique_ptr<Net::Listener>		m_listener = nullptr;
 	std::vector<Peer>					m_peers = {};
 	NetProtocol::Records				m_records = {};
-	Accounts							m_accounts = {};
+	Profiles							m_profiles = {};
+	std::string							m_accountIdentity = "";
 	std::unique_ptr<Net::Identity>		m_identity = nullptr;
 	// The player sending a brand new garage its first shop, if anyone is.
 	int									m_seeder = 0;

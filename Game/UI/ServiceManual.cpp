@@ -7,6 +7,7 @@
 
 #include <imgui.h>
 
+#include "../Controls.h"
 #include "ModelPreview.h"
 #include "../Simulation/EngineSpec.h"
 #include "../Simulation/Machine.h"
@@ -25,12 +26,23 @@ namespace
 		auto linear = [](int value) { return static_cast<int>(std::pow(value / 255.0, 2.2) * 255.0 + 0.5); };
 		return IM_COL32(linear(r), linear(g), linear(b), a);
 	}
-	const ImU32 PAPER = Shade(244, 238, 222);
-	const ImU32 PAPER_SHADE = Shade(200, 190, 165);
-	const ImU32 INK = Shade(30, 27, 24);
-	const ImU32 INK_FAINT = Shade(110, 100, 86);
-	const ImU32 ACCENT = Shade(28, 48, 100);		// the cover's navy, for headings
-	const ImU32 NOTE_FILL = Shade(232, 222, 190);
+	// The page's inks: cream paper and black ink, or (dark mode) charcoal paper and pale ink. Set as the
+	// book is drawn (SetInks).
+	ImU32 PAPER = 0;
+	ImU32 PAPER_SHADE = 0;
+	ImU32 INK = 0;
+	ImU32 INK_FAINT = 0;
+	ImU32 ACCENT = 0;		// the cover's navy, for headings (a paler blue on a dark page)
+	ImU32 NOTE_FILL = 0;
+	void SetInks(bool dark)
+	{
+		PAPER = dark ? Shade(34, 33, 36) : Shade(244, 238, 222);
+		PAPER_SHADE = dark ? Shade(82, 78, 72) : Shade(200, 190, 165);
+		INK = dark ? Shade(228, 222, 208) : Shade(30, 27, 24);
+		INK_FAINT = dark ? Shade(150, 142, 128) : Shade(110, 100, 86);
+		ACCENT = dark ? Shade(140, 168, 230) : Shade(28, 48, 100);
+		NOTE_FILL = dark ? Shade(52, 49, 44) : Shade(232, 222, 190);
+	}
 	const ImU32 COVER = Shade(24, 36, 76);
 	const ImU32 GOLD = Shade(206, 160, 56);
 	// Reading size, against the interface font.
@@ -114,7 +126,12 @@ void ServiceManual::Build(bool imperial)
 		line.specs = std::move(specs);
 		chapter->lines.push_back(std::move(line));
 	};
-	auto figure = [&](const std::string& name, const std::string& value) { chapter->lines.push_back({ Kind::SPEC, name, value }); };
+	auto figure = [&](const std::string& name, const std::string& value, const std::string& tip = "") {
+		Line line = { Kind::SPEC, name, value };
+		const char* known = SpecTip(name);
+		line.tip = !tip.empty() ? tip : known ? known : "";
+		chapter->lines.push_back(std::move(line));
+	};
 	auto note = [&](const std::string& text) { chapter->lines.push_back({ Kind::NOTE, text }); };
 	// Figures are numbered within their chapter: Fig. 7.2 is the second in chapter 7.
 	auto illustrate = [&](Figure figure, const std::string& caption) {
@@ -152,16 +169,18 @@ void ServiceManual::Build(bool imperial)
 		", the units set in Settings. Torques are in newton metres.");
 	note("Nothing in the shop tells you a part is good or bad. Only your measurements do, and the dyno finds out the rest.");
 	heading("Shop Controls");
-	figure("Walk / run", "WASD / Shift");
-	figure("Jump / crouch", "Space / Ctrl");
-	figure("Use, pick up, fit", "E");
-	figure("Measure (tool in hand)", "Left click");
-	figure("Set down / drop", "Right click / G");
+	// As they're bound now (Settings, Controls).
+	using Controls::NameOf;
+	figure("Walk / run", std::format("{}{}{}{} / {}", NameOf(Control::FORWARD), NameOf(Control::LEFT), NameOf(Control::BACK), NameOf(Control::RIGHT), NameOf(Control::RUN)));
+	figure("Jump / crouch", std::format("{} / {}", NameOf(Control::JUMP), NameOf(Control::CROUCH)));
+	figure("Use, pick up, fit", NameOf(Control::USE));
+	figure("Measure, or hold to turn a bolt", NameOf(Control::PRIMARY));
+	figure("Set down / drop", std::format("{} / {}", NameOf(Control::SET_DOWN), NameOf(Control::DROP)));
 	figure("Hotbar", "1 - 0, mouse wheel");
-	figure("Backpack", "Tab");
-	figure("Move equipment", "F");
-	figure("Turn the engine over", "R");
-	figure("Roll the engine on its stand", "Z / X");
+	figure("Backpack", NameOf(Control::BACKPACK));
+	figure("Move equipment", NameOf(Control::MOVE));
+	figure("Turn the engine over", NameOf(Control::ROTATE));
+	figure("Roll the engine on its stand", std::format("{} / {}", NameOf(Control::ROLL_BACK), NameOf(Control::ROLL_FORWARD)));
 
 	begin("2. Tools and Equipment");
 	heading("Measuring Tools");
@@ -184,7 +203,7 @@ void ServiceManual::Build(bool imperial)
 	heading("Hand Tools");
 	for (const auto& tool : ToolCatalog::All())
 	{
-		if (!tool.IsHandTool())
+		if (!tool.IsHandTool() || tool.partOf >= 0)
 			continue;
 		std::vector<std::pair<std::string, std::string>> specs;
 		if (!tool.sizes.empty())
@@ -198,6 +217,14 @@ void ServiceManual::Build(bool imperial)
 			specs.push_back({ "Accuracy", std::format("+/- {:.0f}%", tool.torqueError * 100.0) });
 		if (tool.maxTorque > 0.0)
 			specs.push_back({ "Up to", torque(tool.maxTorque) });
+		if (tool.TurnSeconds() > 0.0)
+			specs.push_back({ "Time per bolt", std::format("about {:.1f} s", tool.TurnSeconds()) });
+		if (tool.drawAh > 0.0)
+			specs.push_back({ "Battery use", std::format("{:.2f} Ah a bolt, more for tight ones", tool.drawAh) });
+		if (tool.capacityAh > 0.0)
+			specs.push_back({ "Holds", std::format("{:.0f} Ah", tool.capacityAh) });
+		if (tool.chargeAmps > 0.0)
+			specs.push_back({ "Charges at", std::format("{:.0f} A", tool.chargeAmps) });
 		item(tool.name, tool.description, ToolModelName(tool), std::move(specs));
 	}
 	note("Every nut and bolt needs a socket or wrench of its size. Only a torque wrench does one up to spec; anything else leaves it "
@@ -226,9 +253,31 @@ void ServiceManual::Build(bool imperial)
 	step("Check the clearances with the parts together: piston to wall, bearing oil clearance, ring gap, cam clearance.");
 	step("Assemble on the engine stand in the order in chapter 10, torquing every bolt to chapter 11.");
 	step("Final checks (chapter 12), then run it on the dyno and sell it, or take it back to a stand to put right what the dyno found.");
+	heading("At the Workbench");
+	text("The workbench is where a part is read. Everything you learn about a part with your tools is written up there, feature by "
+		"feature, against this book's figures. Nowhere else shows a part's details: the engine stand lists what's fitted and the engine's "
+		"checks, and a machine shows only what it can cut.");
+	step(std::format("Set the part down on the bench top: hold it and right-click, or {} to drop it there. Anything resting on the "
+		"top counts, however it got there.", NameOf(Control::DROP)));
+	step(std::format("Look at the bench and press {} to open it. Every part on it is listed down the side; pick one to read it.",
+		NameOf(Control::USE)));
+	step("The header gives its number, material, quality and condition, and why it's damaged if it is. A nut or bolt also shows its "
+		"thread and head size, the hole it's in and how tight it was done up, or every hole it fits.");
+	step("Below that, the part's features (bores, journals, faces, gaps), grouped by area on a big part. Each row has the spec, your "
+		"last measured size and finish, a verdict, and which tools can measure it.");
+	step("Click a row to open it: the spec beside your last reading, station by station, what to do to bring it back into spec, and "
+		"the machines that can cut it.");
+	text("A part that isn't fitted can be sold from the bench for half its value.");
+	text("A feature reads \"Not measured\" until you measure it in the shop: hold the tool and aim at the feature on the part. A reading "
+		"turns grey and stale once the part has been cut or changed since, so measure it again. A feature that says \"Check on stand\" "
+		"can only be measured with the engine together, such as an oil clearance or a deck height.");
+	note("The bench only reports what you measured, with the tool you measured it with. A caliper's verdict on a bore is only as good as "
+		"a caliper. Any workbench reads parts, the shop's own or one bought from the store: each shows what's on its own top.");
 	heading("At the Engine Stand");
 	text("Hold a part and look at the engine: the place it fits is shown, and E fits it there. Look at a fitted part with empty hands "
 		"and E takes it off. R turns the crank over; Z and X roll the whole engine on the stand so you can get at the bottom end.");
+	text(std::format("{} at the stand lists the parts fitted and the engine's checks (clearances, torques, timing, belt deflection). "
+		"To read a part's details, take it off and set it on the workbench.", NameOf(Control::USE)));
 	text("Empty bolt holes are highlighted when you are close to the engine. Look at a nut or bolt to see its size, how tight it is "
 		"and its torque spec.");
 	heading("Taking an Engine Apart");
@@ -452,9 +501,11 @@ void ServiceManual::Build(bool imperial)
 	step("Camshaft into the head, then the cam caps, torqued.", { PartType::CAMSHAFT, PartType::CAM_CAP });
 	step("Rocker shafts over the cam, intake side and exhaust side, bolts torqued. Then a rocker arm onto its shaft over each valve.", { PartType::ROCKER_SHAFT, PartType::ROCKER_ARM, PartType::BOLT_M8 });
 	heading("Timing Belt");
-	step("Crank sprocket (in front of the pump) and cam sprocket; belt idlers, their bolts torqued.", { PartType::CRANK_SPROCKET, PartType::CAM_SPROCKET, PartType::BELT_IDLER, PartType::BOLT_M10 });
-	step("Timing belt round the lot with the marks lined up, then the tensioner.", { PartType::TIMING_BELT, PartType::BELT_TENSIONER });
-	illustrate(Figure::BELT_ROUTING, "Timing belt routing, from the front, with the timing marks at TDC.");
+	step("Crank timing pulley (in front of the pump) and cam timing pulley.", { PartType::CRANK_SPROCKET, PartType::CAM_SPROCKET });
+	step("Timing belt round the two pulleys with the marks lined up, then the idler pulley onto the back of its slack side, its "
+		"bolt torqued. Check the belt's deflection halfway down the tight side: 6 - 7 mm under 2 kg.", { PartType::TIMING_BELT, PartType::BELT_TENSIONER, PartType::BOLT_M10 });
+	illustrate(Figure::BELT_ROUTING, "Timing belt routing, from the front, with the timing marks at TDC. The arrow is where its deflection is checked.");
+	figure("Timing belt deflection (2 kg)", size(spec.timingBeltDeflection.min) + " - " + size(spec.timingBeltDeflection.max));
 	step("Timing cover gasket and cover, front crank seal, crank pulley (its bolt to full torque).", { PartType::TIMING_COVER_GASKET, PartType::TIMING_COVER, PartType::FRONT_CRANK_SEAL, PartType::CRANK_PULLEY, PartType::BOLT_M14 });
 	heading("Closing Up and Ancillaries");
 	step("Oil pan gasket and pan, once the pickup, rear seal, timing cover and rod caps are on. Drain plug and oil filter.", { PartType::OIL_PAN_GASKET, PartType::OIL_PAN, PartType::OIL_DRAIN_PLUG, PartType::OIL_FILTER });
@@ -462,9 +513,13 @@ void ServiceManual::Build(bool imperial)
 	step("Intake manifold and gasket, then the carburettor on top of the plenum. The mechanical fuel pump on the side of the head at the cam, its arm in on the cam's eccentric.", { PartType::INTAKE_MANIFOLD_GASKET, PartType::INTAKE_MANIFOLD, PartType::CARBURETTOR, PartType::FUEL_PUMP });
 	step("Exhaust manifold and gasket, then the downpipe on its collector.", { PartType::EXHAUST_MANIFOLD_GASKET, PartType::EXHAUST_MANIFOLD, PartType::EXHAUST_PIPE });
 	step("Water pump and gasket on the timing cover; thermostat and its housing.", { PartType::WATER_PUMP_GASKET, PartType::WATER_PUMP, PartType::THERMOSTAT, PartType::THERMOSTAT_HOUSING });
-	step("Alternator on its bracket at the front, bolts torqued. Then the V-belt round the crank pulley, the water pump and the "
-		"alternator.", { PartType::ALTERNATOR, PartType::DRIVE_BELT, PartType::BOLT_M10 });
-	note("Hold Shift while fitting a nut or bolt to run in every empty hole of that size on the part at once.");
+	step("Alternator on its pivot at the front. The fan belt round the crank pulley, the water pump and the alternator; swing the "
+		"alternator out until the belt deflects 8.5 - 10.5 mm under 10 kg between the water pump and the alternator (10 - 12 mm "
+		"for a used belt), then torque its bolts.", { PartType::ALTERNATOR, PartType::DRIVE_BELT, PartType::BOLT_M10 });
+	illustrate(Figure::DRIVE_BELT_ROUTING, "Fan belt routing, from the front. The arrow is where its deflection is checked.");
+	figure("Fan belt deflection, new (10 kg)", size(spec.fanBeltDeflectionNew.min) + " - " + size(spec.fanBeltDeflectionNew.max));
+	figure("Fan belt deflection, used (10 kg)", size(spec.fanBeltDeflectionUsed.min) + " - " + size(spec.fanBeltDeflectionUsed.max));
+	figure("Fan belt size", "11 x 980 mm V-belt");
 
 	begin("11. Torque Specifications");
 	text("Torque with a torque wrench driving the right socket. The engine's real clamping force is only as good as the wrench: a "
@@ -478,7 +533,9 @@ void ServiceManual::Build(bool imperial)
 	for (const auto& holes : PartCatalog::Holes())
 	{
 		const auto& info = PartCatalog::Get(holes.size);
-		figure(std::format("{} ({} x{}, {} mm)", holes.name, info.fastener.thread, holes.perParent, info.fastener.headMm), torque(holes.torqueNm));
+		figure(std::format("{} ({} x{}, {} mm)", holes.name, info.fastener.thread, holes.perParent, info.fastener.headMm), torque(holes.torqueNm),
+			std::format("How tight to do up the {}, with a torque wrench on a {} mm socket. {} is the thread (M: metric, then its diameter in mm); "
+				"x{} is how many there are on each part.", holes.name, info.fastener.headMm, info.fastener.thread, holes.perParent));
 	}
 	note("Head bolts, main cap bolts and rod nuts carry the engine. Under-torqued, a cap walks and a gasket leaks; over-torqued, a bolt "
 		"stretches past its limit.");
@@ -631,6 +688,30 @@ int ServiceManual::SpreadCount() const
 	return static_cast<int>((m_pages.size() + 1) / 2);
 }
 
+void ServiceManual::HoverSpec(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, const std::string& name, const std::string& tip, float fontSize) const
+{
+	if (!ImGui::IsMouseHoveringRect(min, max))
+		return;
+	drawList->AddRectFilled(min, max, NOTE_FILL, 3.f);
+	// On paper like the book's notes, with the figure's name in the heading navy.
+	ImGui::PushStyleColor(ImGuiCol_PopupBg, PAPER);
+	ImGui::PushStyleColor(ImGuiCol_Border, GOLD);
+	ImGui::PushStyleColor(ImGuiCol_Text, INK);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { fontSize * 0.6f, fontSize * 0.5f });
+	if (ImGui::BeginTooltip())
+	{
+		ImGui::PushTextWrapPos(fontSize * 22.f);
+		ImGui::PushStyleColor(ImGuiCol_Text, ACCENT);
+		ImGui::TextUnformatted(name.c_str());
+		ImGui::PopStyleColor();
+		ImGui::TextUnformatted(tip.c_str());
+		ImGui::PopTextWrapPos();
+		ImGui::EndTooltip();
+	}
+	ImGui::PopStyleVar();
+	ImGui::PopStyleColor(3);
+}
+
 void ServiceManual::DrawCover(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, float fontSize) const
 {
 	// The title page: the maker's band, the engine's name, a cutaway of four cylinders, the book's title.
@@ -641,7 +722,8 @@ void ServiceManual::DrawCover(ImDrawList* drawList, const ImVec2& min, const ImV
 		ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, text);
 		drawList->AddText(font, size, { min.x + (width - extent.x) * 0.5f, y }, color, text);
 	};
-	drawList->AddRectFilled({ min.x, min.y + height * 0.08f }, { max.x, min.y + height * 0.16f }, ACCENT);
+	// The maker's band is the cover's navy on any page, so the gold name on it always reads.
+	drawList->AddRectFilled({ min.x, min.y + height * 0.08f }, { max.x, min.y + height * 0.16f }, COVER);
 	centred("MONKEY KOBO MOTOR WORKS", 1.3f, min.y + height * 0.12f - fontSize * 0.65f, GOLD);
 	centred("LV-16", 4.f, min.y + height * 0.22f, ACCENT);
 	centred("1.6 LITRE SOHC INLINE FOUR", 1.2f, min.y + height * 0.22f + fontSize * 4.6f, INK);
@@ -743,6 +825,8 @@ bool ServiceManual::DrawPage(ImDrawList* drawList, int page, const ImVec2& min, 
 				textY += font->CalcTextSizeA(fontSize, FLT_MAX, textWidth, line.value.c_str()).y + fontSize * 0.35f;
 				for (const auto& [name, figure] : line.specs)
 				{
+					if (const char* tip = SpecTip(name))
+						HoverSpec(drawList, { textX - fontSize * 0.2f, textY - fontSize * 0.05f }, { max.x + fontSize * 0.2f, textY + fontSize * 1.1f }, name, tip, fontSize);
 					ImVec2 nameSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, name.c_str());
 					ImVec2 figureSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, figure.c_str());
 					drawList->AddText(font, fontSize, { textX, textY }, INK_FAINT, name.c_str());
@@ -770,6 +854,8 @@ bool ServiceManual::DrawPage(ImDrawList* drawList, int page, const ImVec2& min, 
 			case Kind::SPEC:
 			{
 				// Name on the left, figure flush right, dotted leaders between.
+				if (!line.tip.empty())
+					HoverSpec(drawList, { min.x - fontSize * 0.2f, y - fontSize * 0.05f }, { max.x + fontSize * 0.2f, y + height - fontSize * 0.1f }, line.text, line.tip, fontSize);
 				ImVec2 valueSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, line.value.c_str());
 				float nameWidth = (std::max)(width - valueSize.x - fontSize * 1.5f, width * 0.3f);
 				ImVec2 nameSize = font->CalcTextSizeA(fontSize, FLT_MAX, nameWidth, line.text.c_str());
@@ -819,10 +905,12 @@ bool ServiceManual::DrawPage(ImDrawList* drawList, int page, const ImVec2& min, 
 	return jumped;
 }
 
-bool ServiceManual::Draw(bool imperial)
+bool ServiceManual::Draw(bool imperial, bool dark)
 {
 	if (!m_open)
 		return false;
+	SetInks(dark);
+	SetFigureInks(dark);
 	if (!m_built || m_builtImperial != imperial)
 		Build(imperial);
 

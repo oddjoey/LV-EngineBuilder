@@ -145,6 +145,42 @@ namespace ItemIcons
 				drawList->AddLine(p(0.24f, 0.50f), p(0.80f, 0.50f), color, line * 3.f);
 				drawList->AddCircle(p(0.66f, 0.50f), size * 0.12f, color, 20, line);
 				break;
+			case ToolShape::CORDLESS_RATCHET:
+				// A ratchet with a fat motor housing and a pack on the end.
+				drawList->AddLine(p(0.25f, 0.75f), p(0.75f, 0.25f), color, line * 3.f);
+				drawList->AddCircleFilled(p(0.78f, 0.22f), size * 0.1f, color);
+				drawList->AddLine(p(0.25f, 0.75f), p(0.45f, 0.55f), color, line * 6.f);
+				drawList->AddRectFilled(p(0.08f, 0.76f), p(0.30f, 0.94f), color, size * 0.03f);
+				break;
+			case ToolShape::IMPACT:
+				// A pistol: the body and nose across the top, the grip down, the pack under it.
+				drawList->AddRectFilled(p(0.12f, 0.20f), p(0.72f, 0.42f), color, size * 0.05f);
+				drawList->AddRectFilled(p(0.72f, 0.26f), p(0.86f, 0.36f), color);
+				drawList->AddRectFilled(p(0.30f, 0.42f), p(0.46f, 0.74f), color);
+				drawList->AddRectFilled(p(0.20f, 0.74f), p(0.58f, 0.90f), color, size * 0.03f);
+				break;
+			case ToolShape::BATTERY:
+			{
+				// A pack, with a bar for how big it is.
+				drawList->AddRect(p(0.15f, 0.30f), p(0.85f, 0.82f), color, size * 0.05f, 0, line * 1.5f);
+				drawList->AddRectFilled(p(0.35f, 0.18f), p(0.65f, 0.30f), color);
+				float filled = std::clamp(static_cast<float>(tool.capacityAh) / 6.f, 0.2f, 1.f);
+				drawList->AddRectFilled(p(0.24f, 0.70f - 0.32f * filled), p(0.76f, 0.72f), color);
+				break;
+			}
+			case ToolShape::WRENCH:
+				// One spanner: the ring at the top, the open jaws at the bottom.
+				drawList->AddLine(p(0.28f, 0.8f), p(0.72f, 0.24f), color, line * 2.6f);
+				drawList->AddCircle(p(0.74f, 0.21f), size * 0.1f, color, 16, line * 1.6f);
+				drawList->AddLine(p(0.2f, 0.84f), p(0.18f, 0.94f), color, line * 2.f);
+				drawList->AddLine(p(0.32f, 0.9f), p(0.34f, 0.98f), color, line * 2.f);
+				break;
+			case ToolShape::CHARGER:
+				// The cradle, and a bolt of lightning over it.
+				drawList->AddRectFilled(p(0.10f, 0.62f), p(0.90f, 0.86f), color, size * 0.04f);
+				drawList->AddTriangleFilled(p(0.54f, 0.10f), p(0.36f, 0.38f), p(0.50f, 0.38f), color);
+				drawList->AddTriangleFilled(p(0.50f, 0.32f), p(0.64f, 0.32f), p(0.44f, 0.58f), color);
+				break;
 		}
 	}
 
@@ -219,7 +255,7 @@ namespace ItemIcons
 	void DrawItem(ImDrawList* drawList, bool isTool, int toolIndex, PartType partType, ImVec2 min, float size, ImU32 color)
 	{
 		if (isTool)
-			DrawTool(drawList, ToolCatalog::All()[toolIndex], min, size, color);
+			DrawTool(drawList, ToolCatalog::Of(toolIndex), min, size, color);
 		else
 			PartIcons::Draw(drawList, partType, min, size, color);
 	}
@@ -308,6 +344,15 @@ namespace ItemIcons
 				drawList->AddCircleFilled(p(0.5f, 0.18f), size * 0.1f, color);
 				drawList->AddRectFilled(p(0.4f, 0.42f), p(0.6f, 0.56f), color);
 				drawList->AddLine(p(0.68f, 0.5f), p(0.8f, 0.7f), color, line);
+				break;
+			case FurnitureKind::MONCHU:
+				// A monkey's head on its plinth.
+				drawList->AddRectFilled(p(0.26f, 0.78f), p(0.74f, 0.92f), dim);
+				drawList->AddRect(p(0.26f, 0.78f), p(0.74f, 0.92f), color, 0.f, 0, line);
+				drawList->AddCircleFilled(p(0.24f, 0.44f), size * 0.08f, color);
+				drawList->AddCircleFilled(p(0.76f, 0.44f), size * 0.08f, color);
+				drawList->AddCircleFilled(p(0.5f, 0.46f), size * 0.25f, color);
+				drawList->AddCircleFilled(p(0.5f, 0.52f), size * 0.15f, dim);
 				break;
 		}
 	}

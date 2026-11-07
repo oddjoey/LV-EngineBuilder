@@ -1,6 +1,7 @@
 #include "GarageServer.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -35,7 +36,9 @@ GarageServer::Config GarageServer::Config::Load(const std::string& path)
 		file << "port=" << config.port << "\n";
 		file << "max_players=" << config.maxPlayers << "\n";
 		file << "garage_file=" << config.garageFile << "\n";
-		file << "accounts_file=" << config.accountsFile << "\n";
+		file << "profiles_file=" << config.profilesFile << "\n";
+		file << "# The account server's public identity, which it writes out when it starts: copy that file here.\n";
+		file << "account_identity_file=" << config.accountIdentityFile << "\n";
 		file << "# The server's private identity key: keep it secret, and keep it. Players' games refuse a\n";
 		file << "# server whose identity changes.\n";
 		file << "identity_file=" << config.identityFile << "\n";
@@ -64,7 +67,8 @@ GarageServer::Config GarageServer::Config::Load(const std::string& path)
 		else if (key == "port") value >> config.port;
 		else if (key == "max_players") value >> config.maxPlayers;
 		else if (key == "garage_file") config.garageFile = text;
-		else if (key == "accounts_file") config.accountsFile = text;
+		else if (key == "profiles_file") config.profilesFile = text;
+		else if (key == "account_identity_file") config.accountIdentityFile = text;
 		else if (key == "identity_file") config.identityFile = text;
 		else if (key == "day_length_minutes") value >> config.dayLengthMinutes;
 		else if (key == "autosave_seconds") value >> config.autosaveSeconds;
@@ -79,8 +83,21 @@ GarageServer::Config GarageServer::Config::Load(const std::string& path)
 bool GarageServer::Start(const Config& config, std::string& error)
 {
 	m_config = config;
-	if (!Load(error) || !m_accounts.Load(config.accountsFile, error))
+	if (!Load(error) || !m_profiles.Load(config.profilesFile, error))
 		return false;
+	// Who logs players in: tickets are checked against the account server's identity.
+	{
+		std::ifstream file(config.accountIdentityFile);
+		std::getline(file, m_accountIdentity);
+		while (!m_accountIdentity.empty() && std::isspace(static_cast<unsigned char>(m_accountIdentity.back())))
+			m_accountIdentity.pop_back();
+		if (m_accountIdentity.empty())
+		{
+			error = std::format("There's no {} here: copy it from the account server, which writes it out when it starts.",
+				config.accountIdentityFile);
+			return false;
+		}
+	}
 	m_identity = Net::Identity::LoadOrCreate(config.identityFile, error);
 	if (!m_identity)
 	{
@@ -97,7 +114,7 @@ bool GarageServer::Start(const Config& config, std::string& error)
 		config.region.empty() ? "no region" : config.region, config.port, config.maxPlayers));
 	Log(m_records.empty() ? std::format("{} is new: the first player to join starts it.", config.garageFile)
 		: std::format("Loaded {} records from {}.", m_records.size(), config.garageFile));
-	Log(std::format("{} accounts.", m_accounts.Count()));
+	Log(std::format("Log ins are checked against the account server with fingerprint {}.", Net::Fingerprint(m_accountIdentity)));
 	// Players can check this against what their game remembers for this server.
 	Log(std::format("Identity fingerprint: {}", Net::Fingerprint(m_identity->PublicKey())));
 	return true;
@@ -106,7 +123,7 @@ bool GarageServer::Start(const Config& config, std::string& error)
 void GarageServer::Stop()
 {
 	if (SaveAll())
-		Log("Garage and accounts saved.");
+		Log("Garage and profiles saved.");
 	for (auto& peer : m_peers)
 		if (peer.connection)
 			peer.connection->Flush();
@@ -197,7 +214,7 @@ void GarageServer::Receive(Peer& peer, bool& open)
 		else if (type == "presence")
 		{
 			// Passed on to everyone else, as long as it's who it says it is. Where they are is kept
-			// with their account, for when they come back.
+			// in their profile here, for when they come back.
 			if (in.Int() != peer.id)
 				continue;
 			SendToPlaying(message, peer.id);
@@ -209,23 +226,23 @@ void GarageServer::Receive(Peer& peer, bool& open)
 			float pitch = static_cast<float>(in.Num());
 			if (!in.Failed())
 			{
-				auto& account = *peer.account;
-				account.placed = true;
-				account.x = x;
-				account.y = y;
-				account.z = z;
-				account.yaw = yaw;
-				account.pitch = pitch;
-				m_accounts.MarkDirty();
+				auto& profile = *peer.profile;
+				profile.placed = true;
+				profile.x = x;
+				profile.y = y;
+				profile.z = z;
+				profile.yaw = yaw;
+				profile.pitch = pitch;
+				m_profiles.MarkDirty();
 			}
 		}
 		else if (type == "profile")
 		{
 			std::string layout = in.Next();
-			if (!in.Failed() && layout != peer.account->layout)
+			if (!in.Failed() && layout != peer.profile->layout)
 			{
-				peer.account->layout = layout;
-				m_accounts.MarkDirty();
+				peer.profile->layout = layout;
+				m_profiles.MarkDirty();
 			}
 		}
 	}
@@ -266,43 +283,34 @@ void GarageServer::Refuse(Peer& peer, const std::string& why)
 
 void GarageServer::Hello(Peer& peer, Reader& in, bool& open)
 {
+	// Who they are is the account server's word: its ticket, signed with its identity key.
 	long long version = in.Int();
-	bool newAccount = in.Int() != 0;
-	std::string username = in.Next();
-	std::string password = in.Next();
+	std::string ticketText = in.Next();
+	std::string signature = in.Next();
+	std::optional<NetProtocol::Ticket> ticket;
 	std::string refusal;
-	Accounts::Account* account = nullptr;
 	int slot = FreeSlot();
 	if (in.Failed() || version != NetProtocol::VERSION)
 		refusal = "That garage is running a different version of the game.";
+	else if (!Net::VerifySignature(m_accountIdentity, ticketText, signature) || !(ticket = NetProtocol::ReadTicket(ticketText)))
+		refusal = "That garage doesn't use the account server you logged in to.";
+	else if (NetProtocol::TicketExpired(*ticket))
+		refusal = "Your log in has run out: log in again.";
+	else if (IsLoggedIn(ticket->account))
+		refusal = std::format("{} is already in the garage.", ticket->username);
 	else if (slot == 0)
 		refusal = std::format("That garage is full ({} players).", m_config.maxPlayers);
-	else if (newAccount)
-		account = m_accounts.Create(username, password, refusal);
-	else
-		account = m_accounts.LogIn(username, password, refusal);
-	if (account && IsLoggedIn(account->id))
-		refusal = std::format("{} is already in the garage.", account->username);
 	if (!refusal.empty())
 	{
-		Log(std::format("Turned away {} from {}: {}", username, peer.connection->GetAddress(), refusal));
-		peer.connection->Send(Writer().Word("reject").Str(refusal).Text());
-		peer.connection->Flush();
+		Refuse(peer, refusal);
 		open = false;
 		return;
 	}
-	if (newAccount)
-	{
-		std::string error;
-		if (!m_accounts.Save(error))
-			Log("Couldn't save the accounts: " + error);
-	}
-	peer.account = account;
-	peer.id = account->id;
+	peer.profile = &m_profiles.Get(ticket->account, ticket->username);
+	peer.id = ticket->account;
 	peer.slot = slot;
-	peer.name = account->username;
-	Log(std::format("{} (account {}) {} from {}.", peer.name, peer.id, newAccount ? "made an account and joined" : "logged in",
-		peer.connection->GetAddress()));
+	peer.name = ticket->username;
+	Log(std::format("{} (account {}) joined from {}.", peer.name, peer.id, peer.connection->GetAddress()));
 
 	// A brand new garage: the first player's fresh shop becomes it, and anyone else waits for that.
 	if (m_records.empty())
@@ -334,8 +342,8 @@ void GarageServer::Welcome(Peer& peer, bool seed)
 	for (const auto& [key, text] : m_records)
 		welcome.Str(key).Str(text);
 	// Their backpack as they left it, and where they stood.
-	const auto& account = *peer.account;
-	welcome.Str(account.layout).Int(account.placed).Num(account.x).Num(account.y).Num(account.z).Num(account.yaw).Num(account.pitch);
+	const auto& profile = *peer.profile;
+	welcome.Str(profile.layout).Int(profile.placed).Num(profile.x).Num(profile.y).Num(profile.z).Num(profile.yaw).Num(profile.pitch);
 	peer.connection->Send(welcome.Text());
 	peer.state = PeerState::PLAYING;
 }
@@ -405,9 +413,9 @@ bool GarageServer::SaveAll()
 		Log("Couldn't save the garage: " + error);
 		saved = false;
 	}
-	if (m_accounts.IsDirty() && !m_accounts.Save(error))
+	if (m_profiles.IsDirty() && !m_profiles.Save(error))
 	{
-		Log("Couldn't save the accounts: " + error);
+		Log("Couldn't save the profiles: " + error);
 		saved = false;
 	}
 	return saved;

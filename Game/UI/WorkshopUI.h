@@ -82,6 +82,8 @@ private:
 	// The Parts tab, or with hardware the Hardware tab: nuts and bolts by size.
 	void DrawPartsStore(Workshop& workshop, bool hardware);
 	void DrawToolStore(Workshop& workshop);
+	// How many of a tool the shop has, and the button to buy one (another one, if it has some).
+	void DrawToolBuy(Workshop& workshop, size_t toolIndex);
 	void DrawMachineStore(Workshop& workshop);
 	void DrawFurnitureStore(Workshop& workshop);
 	void DrawUpgradeStore(Workshop& workshop);
@@ -111,7 +113,7 @@ private:
 	void DrawToolCell(Workshop& workshop, const std::function<bool(const MeasuringTool&)>& canDo, const char* prefix = "") const;
 	void DrawAssemblyTab(Workshop& workshop);
 	// The parts fitted to the engine, by position; picks the one the stand screen inspects.
-	pPart DrawAssemblySlots(Workshop& workshop);
+	void DrawAssemblySlots(Workshop& workshop);
 	void DrawAssemblyChecks(Workshop& workshop);
 	void DrawDynoTab(Workshop& workshop);
 	void DrawLog(Workshop& workshop);
@@ -138,7 +140,6 @@ private:
 	Units::System		m_units = Units::System::METRIC;
 	bool				m_xray = false;
 	uint32_t			m_selectedPartId = 0;
-	uint32_t			m_standPartId = 0;		// the fitted part the stand screen shows (0: the engine checks)
 	std::string			m_selectedFeature = "";
 	bool				m_scrollToDetail = false;	// a feature was just opened: bring its details into view
 	int					m_selectedMachine = -1;

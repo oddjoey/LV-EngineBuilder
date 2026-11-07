@@ -3,23 +3,18 @@
 #include <map>
 #include <string>
 
-// The players' accounts on this server, kept in one file beside the garage. A password is never
+// Every player's account, kept by the account server in one file. A password is never
 // kept, only a salted PBKDF2-SHA256 hash of it.
 class Accounts
 {
 public:
 	struct Account
 	{
-		int id = 0;					// the player's number in the garage, for good
+		int id = 0;					// the player's number in every garage, for good
 		std::string username = "";	// as they typed it when they made the account
 		std::string salt = "";		// hex
 		std::string hash = "";		// hex
 		long long iterations = 0;
-		// What's theirs to come back to: how their backpack and hotbar were laid out, and where they
-		// stood (the things in them are in the garage, carried by them).
-		std::string layout = "";
-		bool placed = false;
-		float x = 0.f, y = 0.f, z = 0.f, yaw = 0.f, pitch = 0.f;
 	};
 
 	bool Load(const std::string& path, std::string& error);

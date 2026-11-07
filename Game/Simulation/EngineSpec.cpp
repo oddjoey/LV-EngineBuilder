@@ -123,6 +123,9 @@ const EngineSpec& EngineSpec::InlineFour()
 		s.rodClearance = { 0.020, 0.051 };
 		s.rodSideClearance = { 0.15, 0.25 };
 		s.maxRodSideClearance = 0.30;
+		s.timingBeltDeflection = { 6.0, 7.0 };
+		s.fanBeltDeflectionNew = { 8.5, 10.5 };
+		s.fanBeltDeflectionUsed = { 10.0, 12.0 };
 		s.ringGap = { 0.25, 0.35 };
 		s.quench = { 0.89, 1.02 };
 		s.compressionRatio = { 8.6, 9.6 };

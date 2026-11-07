@@ -19,6 +19,8 @@ enum class Sound
 	BREAKER_BAR,	// a long pull, then the bolt cracks free
 	TORQUE_CLICK,	// the torque wrench letting go at its setting
 	SOCKET_CLINK,	// a socket on or off a drive
+	IMPACT,			// a cordless impact wrench hammering
+	CORDLESS_RATCHET,	// a cordless ratchet's motor
 	MEASURE,		// a gauge's beep
 	CRATE_OPEN,
 	CASH,			// money changing hands

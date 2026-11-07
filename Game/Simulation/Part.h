@@ -89,6 +89,8 @@ enum class PartType
 	EXHAUST_PIPE,
 	ALTERNATOR,
 	DRIVE_BELT,
+	// Appended later: the spring-loaded pulley that keeps the drive belt tight.
+	DRIVE_BELT_TENSIONER,
 
 	COUNT
 };

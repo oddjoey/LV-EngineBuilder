@@ -7,6 +7,7 @@
 
 #include "LV/Engine/Objects/ObjectManager.h"
 #include "../Save/SaveText.h"
+#include "ClientHandshake.h"
 #include "../Simulation/Workshop.h"
 #include "../World/FirstPersonController.h"
 #include "../World/ShopWorld.h"
@@ -18,32 +19,29 @@ namespace
 	constexpr float PRESENCE_INTERVAL = 0.05f;	// and where this player is
 	constexpr float PROFILE_INTERVAL = 1.f;		// and how their backpack is laid out
 	constexpr float CONNECT_TIMEOUT = 6.f;
-	// Each server's identity, from the first time it was joined.
-	constexpr const char* KNOWN_SERVERS_FILE = "known_servers.txt";
-	constexpr float EYE_HEIGHT = 1.68f;
-
-	// Each player's colour: their overalls and their name. Hues spread round the wheel, so however
-	// many are in the garage, neighbours in the list never look alike.
-	glm::vec4 PlayerColor(int id)
-	{
-		float hue = std::fmod(0.08f + id * 0.618034f, 1.f);
-		float r = 0.f, g = 0.f, b = 0.f;
-		ImGui::ColorConvertHSVtoRGB(hue, 0.6f, 0.95f, r, g, b);
-		return { r, g, b, 1.f };
-	}
-
-	glm::quat ViewRotation(float yaw, float pitch)
-	{
-		return glm::angleAxis(yaw, glm::vec3(0.f, 1.f, 0.f)) * glm::angleAxis(pitch, glm::vec3(1.f, 0.f, 0.f));
-	}
 }
 
-bool NetSession::Join(const std::string& address, uint16_t port, const std::string& username, const std::string& password,
-	bool newAccount, std::string& error)
+glm::vec4 NetSession::PlayerColor(int id)
+{
+	// Hues spread round the wheel, so however many are in the garage, neighbours in the list never
+	// look alike.
+	float hue = std::fmod(0.08f + id * 0.618034f, 1.f);
+	float r = 0.f, g = 0.f, b = 0.f;
+	ImGui::ColorConvertHSVtoRGB(hue, 0.6f, 0.95f, r, g, b);
+	return { r, g, b, 1.f };
+}
+
+bool NetSession::Join(const std::string& address, uint16_t port, const std::string& ticket, const std::string& signature, std::string& error)
 {
 	if (m_role != Role::OFFLINE)
 	{
 		error = "Already in a garage.";
+		return false;
+	}
+	auto read = NetProtocol::ReadTicket(ticket);
+	if (!read)
+	{
+		error = "You're not logged in.";
 		return false;
 	}
 	m_keyExchange = Net::KeyExchange::Create();
@@ -58,14 +56,14 @@ bool NetSession::Join(const std::string& address, uint16_t port, const std::stri
 		error = std::format("Couldn't reach {}: {}.", address, error);
 		return false;
 	}
-	// Keys first: the log in only goes once the connection is encrypted.
-	m_connection->Send(Writer().Word("secure").Int(NetProtocol::VERSION).Word(m_keyExchange->PublicKey()).Text());
-	m_password = password;
-	m_newAccount = newAccount;
+	// Keys first: the ticket only goes once the connection is encrypted.
+	ClientHandshake::Start(*m_connection, *m_keyExchange);
+	m_ticket = ticket;
+	m_ticketSignature = signature;
 
 	m_role = Role::CONNECTING;
 	m_server = std::format("{}:{}", address, port);
-	m_localName = username;
+	m_localName = read->username;
 	m_localId = -1;
 	m_connectTime = 0.f;
 	m_welcomeReady = false;
@@ -95,8 +93,6 @@ void NetSession::Leave(ShopWorld& world)
 		m_connection->Flush();
 	m_connection.reset();
 	m_keyExchange.reset();
-	std::fill(m_password.begin(), m_password.end(), '\0');
-	m_password.clear();
 	m_role = Role::OFFLINE;
 	m_localId = 0;
 	m_shadow.clear();
@@ -163,7 +159,7 @@ void NetSession::Update(float deltaTime, Workshop& workshop, ShopWorld& world, c
 	if (m_presenceTimer >= PRESENCE_INTERVAL)
 	{
 		m_presenceTimer = 0.f;
-		m_connection->Send(PresenceMessage(player));
+		m_connection->Send(PresenceMessage(player, world));
 	}
 	// The backpack's layout, kept with the account whenever it changes.
 	m_profileTimer += deltaTime;
@@ -276,40 +272,14 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 
 bool NetSession::Secure(Reader& in, ShopWorld& world)
 {
-	std::string serverKey = in.Next();
-	std::string identity = in.Next();
-	std::string signature = in.Next();
-	const std::string& clientKey = m_keyExchange->PublicKey();
-
-	// The server proves it holds its identity key by signing both sides' keys: someone in between
-	// swapping keys can't.
-	if (in.Failed() || !Net::VerifySignature(identity, Net::HandshakeTranscript(clientKey, serverKey), signature))
+	if (std::string error = ClientHandshake::Finish(in, *m_connection, *m_keyExchange, m_server); !error.empty())
 	{
-		Disconnect(world, std::format("{} couldn't prove who it is, so you weren't logged in.", m_server));
+		Disconnect(world, error);
 		return false;
 	}
-	// And it's the server that was at this address before.
-	std::string fingerprint = Net::Fingerprint(identity);
-	if (Net::KnownHosts(KNOWN_SERVERS_FILE).Check(m_server, fingerprint) == Net::KnownHosts::Result::CHANGED)
-	{
-		Disconnect(world, std::format("{} isn't the server that was there before: its identity has changed, so you weren't "
-			"logged in. If its owner changed it on purpose, delete its line from {} and join again.", m_server, KNOWN_SERVERS_FILE));
-		return false;
-	}
-
-	std::unique_ptr<Net::Cipher> sending, receiving;
-	if (!m_keyExchange->Derive(serverKey, false, clientKey, serverKey, sending, receiving))
-	{
-		Disconnect(world, std::format("Couldn't make a safe connection to {}.", m_server));
-		return false;
-	}
-	m_connection->Encrypt(std::move(sending), std::move(receiving));
 	m_keyExchange.reset();
-
-	// Safe now: the log in, and the password forgotten here.
-	m_connection->Send(Writer().Word("hello").Int(NetProtocol::VERSION).Int(m_newAccount).Str(m_localName).Str(m_password).Text());
-	std::fill(m_password.begin(), m_password.end(), '\0');
-	m_password.clear();
+	// Safe now: the ticket, the account server's word for who we are.
+	m_connection->Send(Writer().Word("hello").Int(NetProtocol::VERSION).Str(m_ticket).Str(m_ticketSignature).Text());
 	return true;
 }
 
@@ -429,11 +399,14 @@ std::vector<NetSession::Op> NetSession::Diff(const StateRecords& now) const
 	return ops;
 }
 
-std::string NetSession::PresenceMessage(const FirstPersonController& player) const
+std::string NetSession::PresenceMessage(const FirstPersonController& player, const ShopWorld& world) const
 {
 	glm::vec3 feet = player.GetFeetPosition();
 	Writer out;
-	out.Word("presence").Int(m_localId).Str(m_localName).Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch());
+	out.Word("presence").Int(m_localId).Str(m_localName).Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch())
+		.Int(world.ArmsOut()).Int(player.IsCrouching() ? 1 : 0);
+	const auto& look = world.GetPlayerLook();
+	out.Int(look.fur).Int(look.skin).Int(look.cap).Int(look.tail ? 1 : 0);
 	return out.Text();
 }
 
@@ -448,6 +421,13 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	float z = static_cast<float>(in.Num());
 	float yaw = static_cast<float>(in.Num());
 	float pitch = static_cast<float>(in.Num());
+	int arms = static_cast<int>(in.Int());
+	bool crouching = in.Int() != 0;
+	MonkeyLook look;
+	look.fur = static_cast<uint32_t>(in.Int()) & 0xFFFFFF;
+	look.skin = static_cast<uint32_t>(in.Int()) & 0xFFFFFF;
+	look.cap = static_cast<uint32_t>(in.Int()) & 0xFFFFFF;
+	look.tail = in.Int() != 0;
 	if (in.Failed() || id == m_localId || id < 1)
 		return;
 
@@ -458,12 +438,13 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	remote.feet = { x, y, z };
 	remote.yaw = yaw;
 	remote.pitch = pitch;
-	if (!remote.avatar)
-	{
-		remote.avatar = world.Spawn(ShopModels::PLAYER, "", remote.feet, yaw);
-		remote.avatar->SetTint(PlayerColor(id));
-		remote.avatar->SetPickable(false);
-	}
+	remote.arms = std::clamp(arms, 0, 2);
+	remote.crouching = crouching;
+	if (!remote.avatar.IsSpawned())
+		remote.avatar.Spawn(world, remote.feet, yaw, look);
+	else if (!(remote.look == look))
+		remote.avatar.SetLook(look);
+	remote.look = look;
 }
 
 void NetSession::SetClock(float time, float& timeOfDay)
@@ -479,8 +460,7 @@ void NetSession::RemoveRemote(int id, ShopWorld& world)
 	auto it = m_remotes.find(id);
 	if (it == m_remotes.end())
 		return;
-	if (it->second.avatar)
-		ObjectManager::Get()->RemoveObject(it->second.avatar);
+	it->second.avatar.Remove();
 	m_remotes.erase(it);
 	world.m_remoteHands.erase(id);
 }
@@ -490,25 +470,22 @@ void NetSession::MoveAvatars(float deltaTime, ShopWorld& world)
 	float ease = 1.f - std::exp(-12.f * deltaTime);
 	for (auto& [id, remote] : m_remotes)
 	{
-		if (!remote.avatar)
+		if (!remote.avatar.IsSpawned())
 			continue;
 		if (!remote.placed)
 		{
 			remote.shownFeet = remote.feet;
 			remote.shownYaw = remote.yaw;
+			remote.shownPitch = remote.pitch;
 			remote.placed = true;
 		}
 		remote.shownFeet += (remote.feet - remote.shownFeet) * ease;
 		float turn = std::remainder(remote.yaw - remote.shownYaw, glm::two_pi<float>());
 		remote.shownYaw += turn * ease;
-		remote.avatar->SetPosition(remote.shownFeet);
-		remote.avatar->SetRotation(ShopLayout::Yaw(remote.shownYaw));
-
-		// What they hold is held out in front of them, a little to the right.
-		glm::quat view = ViewRotation(remote.shownYaw, remote.pitch);
-		glm::vec3 eye = remote.shownFeet + glm::vec3(0.f, EYE_HEIGHT, 0.f);
-		glm::vec3 hand = eye + view * glm::vec3(0.22f, -0.3f, -0.5f);
-		world.m_remoteHands[id] = { hand, remote.shownYaw };
+		remote.shownPitch += (remote.pitch - remote.shownPitch) * ease;
+		remote.avatar.Pose(deltaTime, remote.shownFeet, remote.shownYaw, remote.shownPitch, remote.crouching, remote.arms);
+		// What they hold is in their right hand.
+		world.m_remoteHands[id] = { remote.avatar.GetHand(), remote.shownYaw };
 	}
 }
 
@@ -518,9 +495,9 @@ void NetSession::DrawNameTags(const ShopWorld& world, const FirstPersonControlle
 	glm::vec3 eye = player.GetEyePosition();
 	for (const auto& [id, remote] : m_remotes)
 	{
-		if (!remote.avatar || !remote.placed)
+		if (!remote.avatar.IsSpawned() || !remote.placed)
 			continue;
-		glm::vec3 head = remote.shownFeet + glm::vec3(0.f, 2.05f, 0.f);
+		glm::vec3 head = remote.avatar.GetEye() + glm::vec3(0.f, 0.37f, 0.f);
 		float distance = glm::length(head - eye);
 		if (distance > 30.f || glm::dot(head - eye, player.GetForward()) <= 0.f)
 			continue;

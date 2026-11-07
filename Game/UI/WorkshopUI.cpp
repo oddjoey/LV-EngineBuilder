@@ -1532,7 +1532,7 @@ std::string WorkshopUI::CartLineName(const CartLine& line) const
 				name += " " + SizeClassLabel(line.order.sizeOffset);
 			return name;
 		}
-		case CartLine::Kind::TOOL:			return ToolCatalog::All()[line.index].name;
+		case CartLine::Kind::TOOL:			return ToolCatalog::Of(line.index).name;
 		case CartLine::Kind::MACHINE:		return MachineCatalog::All()[line.index].name;
 		case CartLine::Kind::ENGINE_STAND:	return "Engine stand";
 		case CartLine::Kind::FURNITURE:		return FurnitureCatalog::All()[line.index].name;
@@ -1562,7 +1562,7 @@ void WorkshopUI::AddToCart(const CartLine& line)
 			existing.order.quantity = (std::min)(existing.order.quantity + line.order.quantity, 99);
 			return;
 		}
-		if (line.kind == CartLine::Kind::ENGINE_STAND || (line.kind == CartLine::Kind::FURNITURE && existing.index == line.index))
+		if (line.kind == CartLine::Kind::ENGINE_STAND || ((line.kind == CartLine::Kind::FURNITURE || line.kind == CartLine::Kind::TOOL) && existing.index == line.index))
 		{
 			existing.quantity += line.quantity;
 			return;
@@ -1573,15 +1573,19 @@ void WorkshopUI::AddToCart(const CartLine& line)
 
 void WorkshopUI::AddToCartButton(Workshop& workshop, const CartLine& line, const char* label)
 {
-	// One of a kind (a tool, a machine) can only be in the cart once; stands only up to the room left.
+	// One of a kind (a machine, an upgrade) can only be in the cart once; tools and stands only up to the
+	// room left.
 	std::optional<std::string> problem;
-	if ((line.kind == CartLine::Kind::TOOL || line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::UPGRADE) && InCart(line.kind, line.index) > 0)
+	if ((line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::UPGRADE) && InCart(line.kind, line.index) > 0)
 		problem = "In the cart.";
 	else
 	{
+		CartLine withMore = line;
+		if (line.kind == CartLine::Kind::TOOL)
+			withMore.quantity += InCart(line.kind, line.index);
 		auto withIt = m_cart;
-		withIt.push_back(line);
-		problem = workshop.CartLineProblem(line, withIt);
+		withIt.push_back(withMore);
+		problem = workshop.CartLineProblem(withMore, withIt);
 	}
 
 	ImGui::BeginDisabled(problem.has_value());
@@ -1617,9 +1621,9 @@ void WorkshopUI::DrawCart(Workshop& workshop)
 		ImGui::TextUnformatted(CartLineName(line).c_str());
 		ImGui::TextColored(COLOR_GOOD, "$%.0f", workshop.LineTotal(line));
 
-		// Parts, stands and cores come in quantities; tools and machines are one each.
+		// Parts, stands, furniture and tools come in quantities; machines are one each.
 		int* quantity = line.kind == CartLine::Kind::PART ? &line.order.quantity
-			: line.kind == CartLine::Kind::ENGINE_STAND || line.kind == CartLine::Kind::FURNITURE ? &line.quantity : nullptr;
+			: line.kind == CartLine::Kind::ENGINE_STAND || line.kind == CartLine::Kind::FURNITURE || line.kind == CartLine::Kind::TOOL ? &line.quantity : nullptr;
 		if (quantity)
 		{
 			ImGui::SameLine(110.f);
@@ -1764,7 +1768,7 @@ std::string WorkshopUI::ToolHint(Workshop& workshop, int toolIndex) const
 	(void)workshop;
 	if (toolIndex < 0)
 		return "no tool owned";
-	return ToolCatalog::All()[toolIndex].name;
+	return ToolCatalog::Of(toolIndex).name;
 }
 
 void WorkshopUI::DrawToolCell(Workshop& workshop, const std::function<bool(const MeasuringTool&)>& canDo, const char* prefix) const
@@ -1829,10 +1833,13 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 			"Sockets and drives",
 			"Wrenches",
 			"Torque",
+			"Cordless: tools, batteries and chargers",
 			"Manuals",
 		};
 		auto shelfOf = [](const MeasuringTool& tool) {
 			if (tool.manual)
+				return 9;
+			if (tool.powered || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
 				return 8;
 			auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
 			switch (tool.handKind)
@@ -1866,6 +1873,9 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 		for (size_t i : order)
 		{
 			const auto& tool = tools[i];
+			// Sold only in their set.
+			if (tool.partOf >= 0)
+				continue;
 			if (int thisShelf = shelfOf(tool); thisShelf != shelf)
 			{
 				if (shelf >= 0)
@@ -1875,7 +1885,8 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 			}
 			if (StoreCard(tool.name.c_str(), tool.name.c_str(), std::format("${:.0f}", tool.price), m_selectedTool == static_cast<int>(i), workshop.OwnsTool(i),
 				[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawTool(drawList, tool, min, size); },
-				tool.manual ? std::vector<float>{} : std::vector<float>{ Ratings::ToolPrecision(tool), Ratings::ToolSpeed(tool) }))
+				tool.manual || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER ? std::vector<float>{}
+					: std::vector<float>{ Ratings::ToolPrecision(tool), Ratings::ToolSpeed(tool) }))
 				m_selectedTool = static_cast<int>(i);
 		}
 	}
@@ -1900,13 +1911,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 				"and troubleshooting. Dimensions are shown in the units you play in.");
 			ImGui::PopTextWrapPos();
 			ImGui::Spacing();
-			CartLine line;
-			line.kind = CartLine::Kind::TOOL;
-			line.index = static_cast<size_t>(m_selectedTool);
-			if (workshop.OwnsTool(m_selectedTool))
-				ImGui::TextColored(COLOR_GOOD, "Owned.");
-			else
-				AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", tool.price).c_str());
+			DrawToolBuy(workshop, static_cast<size_t>(m_selectedTool));
 			ImGui::EndChild();
 			return;
 		}
@@ -1923,19 +1928,30 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 				Ratings::Bar("Precision", Ratings::ToolPrecision(tool));
 				ImGui::Text("Accurate to about +/- %.0f%%, up to %.0f Nm. Drives a socket.", tool.torqueError * 100.0, tool.maxTorque);
 			}
+			if (tool.TurnSeconds() > 0.0)
+			{
+				Ratings::Bar("Speed", Ratings::ToolSpeed(tool));
+				ImGui::Text("About %.1f s a nut or bolt (hold the left mouse button).", tool.TurnSeconds());
+			}
 			ImGui::PushTextWrapPos(0.f);
-			ImGui::TextDisabled("Every nut and bolt on the engine needs a socket (driven by a ratchet or a torque wrench) or a wrench of its size, "
-				"and a torque wrench to be done up to spec. How close the torque wrench gets "
-				"is how tight they really are, and the dyno finds out.");
+			if (tool.powered)
+				ImGui::Text("Turns up to %.0f Nm. Uses about %.2f Ah of a battery pack for each nut or bolt (more for the tight ones): "
+					"buy a pack and a charger to go with it.", tool.maxTorque, tool.drawAh);
+			else if (tool.handKind == HandToolKind::BATTERY)
+				ImGui::Text("Holds %.0f Ah: about %.0f nuts and bolts with the impact wrench. Takes %.0f minutes on the 2 A charger, %.0f on the 6 A.",
+					tool.capacityAh, tool.capacityAh / 0.08, tool.capacityAh / 2.0, tool.capacityAh / 6.0);
+			else if (tool.handKind == HandToolKind::CHARGER)
+				ImGui::Text("Charges at %.0f A: a 4 Ah pack from flat in %.0f minutes. Set it down, then hold a pack and press E on it. "
+					"E on the charger takes the pack back off.", tool.chargeAmps, 4.0 / tool.chargeAmps);
+			if (tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
+				ImGui::TextDisabled("Hold a cordless tool and press E on a pack to clip it on; C takes it back off.");
+			else
+				ImGui::TextDisabled("Every nut and bolt on the engine needs a socket (driven by a ratchet, impact or torque wrench) or a wrench of "
+					"its size, and a torque wrench to be done up to spec. How close the torque wrench gets "
+					"is how tight they really are, and the dyno finds out.");
 			ImGui::PopTextWrapPos();
 			ImGui::Spacing();
-			CartLine line;
-			line.kind = CartLine::Kind::TOOL;
-			line.index = static_cast<size_t>(m_selectedTool);
-			if (workshop.OwnsTool(m_selectedTool))
-				ImGui::TextColored(COLOR_GOOD, "Owned.");
-			else
-				AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", tool.price).c_str());
+			DrawToolBuy(workshop, static_cast<size_t>(m_selectedTool));
 			ImGui::EndChild();
 			return;
 		}
@@ -1967,15 +1983,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 		ImGui::PopTextWrapPos();
 
 		ImGui::Spacing();
-		if (workshop.OwnsTool(m_selectedTool))
-			ImGui::TextColored(COLOR_GOOD, "Owned. Unpack it at the door if it hasn't been yet.");
-		else
-		{
-			CartLine line;
-			line.kind = CartLine::Kind::TOOL;
-			line.index = static_cast<size_t>(m_selectedTool);
-			AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", tool.price).c_str());
-		}
+		DrawToolBuy(workshop, static_cast<size_t>(m_selectedTool));
 	}
 	ImGui::EndChild();
 }
@@ -2262,35 +2270,21 @@ void WorkshopUI::DrawAssemblyTab(Workshop& workshop)
 	}
 	ImGui::Separator();
 
-	pPart selected = nullptr;
+	// What's fitted down the side, the engine's checks beside it. Parts are looked at on the bench.
 	if (ImGui::BeginChild("Fitted", { 300.f, 0.f }, ImGuiChildFlags_Borders))
-		selected = DrawAssemblySlots(workshop);
+		DrawAssemblySlots(workshop);
 	ImGui::EndChild();
 
 	ImGui::SameLine();
 
-	if (ImGui::BeginChild("Inspector", { 0.f, 0.f }, ImGuiChildFlags_Borders))
-	{
-		// Nothing is machined on the engine.
-		m_selectedPartMachine = -1;
-		if (selected)
-			DrawPartInspector(workshop, selected);
-		else
-			DrawAssemblyChecks(workshop);
-	}
+	if (ImGui::BeginChild("Checks", { 0.f, 0.f }, ImGuiChildFlags_Borders))
+		DrawAssemblyChecks(workshop);
 	ImGui::EndChild();
 }
 
-pPart WorkshopUI::DrawAssemblySlots(Workshop& workshop)
+void WorkshopUI::DrawAssemblySlots(Workshop& workshop)
 {
 	const auto& assembly = workshop.GetAssembly();
-	pPart selected = nullptr;
-
-	if (ImGui::Selectable("Engine checks", m_standPartId == 0))
-	{
-		m_standPartId = 0;
-		m_selectedFeature.clear();
-	}
 
 	bool any = false;
 	for (size_t slotIndex = 0; slotIndex < static_cast<size_t>(AssemblySlot::COUNT); slotIndex++)
@@ -2313,13 +2307,7 @@ pPart WorkshopUI::DrawAssemblySlots(Workshop& workshop)
 			PartIcons::Icon(part->GetType(), ImGui::GetTextLineHeight() * 1.3f);
 			ImGui::SameLine();
 			std::string position = assembly.SlotCount(slot) > 1 ? assembly.PositionName(slot, index) + ": " : "";
-			if (ImGui::Selectable(std::format("{}#{} {}", position, part->GetId(), part->GetName()).c_str(), m_standPartId == part->GetId()))
-			{
-				m_standPartId = part->GetId();
-				m_selectedFeature.clear();
-			}
-			if (m_standPartId == part->GetId())
-				selected = part;
+			ImGui::Text("%s#%u %s", position.c_str(), part->GetId(), part->GetName().c_str());
 			ImGui::PopID();
 		}
 	}
@@ -2331,10 +2319,6 @@ pPart WorkshopUI::DrawAssemblySlots(Workshop& workshop)
 		ImGui::TextDisabled("Nothing fitted yet. Start with the block: carry it to the stand and press E.");
 		ImGui::PopTextWrapPos();
 	}
-	// The part that was being looked at came off.
-	if (!selected)
-		m_standPartId = 0;
-	return selected;
 }
 
 void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
@@ -2347,8 +2331,8 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 	// it, and the true value in X-ray mode.
 	auto checkRow = [&](const std::string& label, AssemblyCheck check, int index, bool rod, const Range& target, std::optional<double> truth)
 	{
-		// Installed height is a size; everything else here is a small clearance.
-		auto format = [&](double value) { return check == AssemblyCheck::INSTALLED_HEIGHT ? Size(value) : Deviation(value); };
+		// Installed height and belt deflection are sizes; everything else here is a small clearance.
+		auto format = [&](double value) { return check == AssemblyCheck::INSTALLED_HEIGHT || check == AssemblyCheck::BELT_DEFLECTION ? Size(value) : Deviation(value); };
 
 		ImGui::PushID(label.c_str());
 		ImGui::TableNextRow();
@@ -2526,6 +2510,17 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 			for (bool exhaust : { false, true })
 				checkRow(std::format("{} {}", FeatureNames::ValveSide(exhaust), cylinder + 1), AssemblyCheck::INSTALLED_HEIGHT,
 					EngineAssembly::SpringIndex(cylinder, exhaust), false, spec.installedHeightRange, assembly.InstalledHeight(cylinder, exhaust));
+		ImGui::EndTable();
+	}
+
+	ImGui::SeparatorText("Belt deflection (belt tension gauge, mm)");
+	if (beginTable("Belts"))
+	{
+		auto fanBelt = assembly.Get(AssemblySlot::DRIVE_BELT, 0);
+		bool runIn = fanBelt && fanBelt->GetCondition() != PartCondition::NEW;
+		checkRow("Timing belt (2 kg)", AssemblyCheck::BELT_DEFLECTION, 0, false, spec.timingBeltDeflection, assembly.BeltDeflection(false));
+		checkRow(runIn ? "Fan belt (10 kg, used)" : "Fan belt (10 kg, new)", AssemblyCheck::BELT_DEFLECTION, 1, false,
+			runIn ? spec.fanBeltDeflectionUsed : spec.fanBeltDeflectionNew, assembly.BeltDeflection(true));
 		ImGui::EndTable();
 	}
 
@@ -2971,4 +2966,23 @@ void WorkshopUI::DrawLog(Workshop& workshop)
 		}
 	}
 	ImGui::EndChild();
+}
+
+void WorkshopUI::DrawToolBuy(Workshop& workshop, size_t toolIndex)
+{
+	// How many the shop has, and another to buy (for a second bench, or a friend in the garage).
+	const auto& tool = ToolCatalog::Of(toolIndex);
+	int owned = workshop.ToolCount(toolIndex);
+	if (owned > 0)
+		ImGui::TextColored(COLOR_GOOD, owned == 1 ? "You have one." : "You have %d.", owned);
+	if (owned >= Workshop::MAX_TOOL_COPIES)
+	{
+		ImGui::TextDisabled("That's as many as the shop has room for.");
+		return;
+	}
+	CartLine line;
+	line.kind = CartLine::Kind::TOOL;
+	line.index = toolIndex;
+	std::string label = owned > 0 ? std::format("Buy another (${:.0f})", tool.price) : std::format("Add to cart (${:.0f})", tool.price);
+	AddToCartButton(workshop, line, label.c_str());
 }

@@ -212,6 +212,12 @@ namespace GarageLayout
 	};
 	constexpr float STREET_LIGHT_HEIGHT = 5.6f;
 	inline constexpr glm::vec3 DOOR_LIGHT = { -1.5f, 3.2f, HALF_DEPTH + WALL + 0.15f };
+
+	// The menu's view: a camera circling the garage from high over the lot, looking in at it.
+	inline constexpr glm::vec3 MENU_ORBIT_CENTER = { 3.f, 2.f, 1.f };
+	constexpr float MENU_ORBIT_RADIUS = 22.f;
+	constexpr float MENU_ORBIT_HEIGHT = 9.f;
+	constexpr float MENU_ORBIT_SPEED = 0.04f;		// radians a second
 }
 
 // The inside of the buildings as they stand, upgrades and all: where the interior lighting applies,

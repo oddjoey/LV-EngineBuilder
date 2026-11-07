@@ -112,6 +112,11 @@ struct EngineSpec
 	Range rodClearance = {};
 	Range rodSideClearance = {};		// big end side play on the crank pin
 	double maxRodSideClearance = 0.0;	// past this, replace the rod
+	// Belt deflection, mm, pushed in the middle of a run: the timing belt under 2 kg, the fan belt under
+	// 10 kg (looser once it's run in).
+	Range timingBeltDeflection = {};
+	Range fanBeltDeflectionNew = {};
+	Range fanBeltDeflectionUsed = {};
 	Range ringGap = {};
 	Range quench = {};
 	Range compressionRatio = {};

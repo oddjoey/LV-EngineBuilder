@@ -323,6 +323,7 @@ namespace PartIcons
 				drawList->AddCircle(p(0.50f, 0.50f), size * 0.12f, color, 20, line * 1.5f);
 				break;
 			case PartType::BELT_TENSIONER:
+			case PartType::DRIVE_BELT_TENSIONER:
 				// The sprung arm from its pivot to the pulley.
 				drawList->AddLine(p(0.26f, 0.70f), p(0.62f, 0.38f), color, line * 3.f);
 				drawList->AddCircleFilled(p(0.26f, 0.70f), size * 0.08f, color, 16);

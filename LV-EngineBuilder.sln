@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LV-EngineBuilder", "LV-Engi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LV-EngineServer", "Server\LV-EngineServer.vcxproj", "{3F9B6D27-1C84-4E5A-B0D3-8A62E4C1F795}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LV-AccountServer", "AccountServer\LV-AccountServer.vcxproj", "{5B2E8F41-7A93-4C06-9D2B-E1F4A6C83D27}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,10 @@ Global
 		{3F9B6D27-1C84-4E5A-B0D3-8A62E4C1F795}.Debug|x64.Build.0 = Debug|x64
 		{3F9B6D27-1C84-4E5A-B0D3-8A62E4C1F795}.Release|x64.ActiveCfg = Release|x64
 		{3F9B6D27-1C84-4E5A-B0D3-8A62E4C1F795}.Release|x64.Build.0 = Release|x64
+		{5B2E8F41-7A93-4C06-9D2B-E1F4A6C83D27}.Debug|x64.ActiveCfg = Debug|x64
+		{5B2E8F41-7A93-4C06-9D2B-E1F4A6C83D27}.Debug|x64.Build.0 = Debug|x64
+		{5B2E8F41-7A93-4C06-9D2B-E1F4A6C83D27}.Release|x64.ActiveCfg = Release|x64
+		{5B2E8F41-7A93-4C06-9D2B-E1F4A6C83D27}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

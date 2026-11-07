@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 
 #include "Random.h"
 
@@ -29,6 +30,20 @@ double MeasuringTool::Read(double trueValue) const
 	if (resolution > 0.0)
 		reading = std::round(reading / resolution) * resolution;
 	return reading;
+}
+
+double MeasuringTool::TurnSeconds() const
+{
+	switch (handKind)
+	{
+		case HandToolKind::WRENCHES:
+		case HandToolKind::COMBINATION_WRENCH:	return 4.0;
+		case HandToolKind::BREAKER_BAR:		return 3.0;
+		case HandToolKind::TORQUE_WRENCH:	return 2.5;
+		case HandToolKind::RATCHET:			return powered ? 1.0 : 2.0;
+		case HandToolKind::IMPACT:			return 0.4;
+		default:							return 0.0;
+	}
 }
 
 namespace ToolCatalog
@@ -213,7 +228,7 @@ namespace ToolCatalog
 				HandToolKind::SOCKETS, 90.0, { 8, 10, 12, 13, 14, 15, 17, 19 });
 			hand("Large Socket Set 21-36 mm", "Big sockets: 21, 22, 24, 27, 30, 32 and 36 mm, for the crank pulley bolt and the like.",
 				HandToolKind::SOCKETS, 70.0, { 21, 22, 24, 27, 30, 32, 36 });
-			hand("Combination Wrench Set 8-19 mm", "Open end and ring spanners, 8 to 19 mm. Turns a nut or bolt without a ratchet, but no torque reading.",
+			hand("Combination Wrench Set 8-19 mm", "Open end and ring spanners, 8 to 19 mm, in their tray: take out the one a nut or bolt needs. Turns it without a ratchet, but slowly, and with no torque reading.",
 				HandToolKind::WRENCHES, 80.0, { 8, 10, 12, 13, 14, 15, 17, 19 });
 			hand("Beam Torque Wrench", "A needle against a scale. Cheap, but only good to about 10%.", HandToolKind::TORQUE_WRENCH, 45.0, {}, 0.10, 150.0);
 			hand("Click Torque Wrench", "Clicks at the set torque. Good to about 4%, up to 210 Nm.", HandToolKind::TORQUE_WRENCH, 160.0, {}, 0.04, 210.0);
@@ -248,6 +263,77 @@ namespace ToolCatalog
 			aligner.price = 180.0;
 			aligner.hoursPerUse = 0.15;
 			list.push_back(aligner);
+
+			// Cordless tools, their battery packs and chargers. (Added last, so saved tool lists keep their
+			// order.) Every cordless tool takes every pack.
+			auto cordless = [&](const char* name, const char* description, HandToolKind kind, double price, double maxTorque, double drawAh) {
+				MeasuringTool tool;
+				tool.name = name;
+				tool.description = description;
+				tool.handKind = kind;
+				tool.price = price;
+				tool.powered = true;
+				tool.maxTorque = maxTorque;
+				tool.drawAh = drawAh;
+				list.push_back(tool);
+			};
+			cordless("3/8in Cordless Ratchet", "Drives the sockets with a motor: twice as quick as the hand ratchet, but it stalls past 70 Nm. "
+				"Runs off a battery pack.", HandToolKind::RATCHET, 160.0, 70.0, 0.03);
+			cordless("1/2in Cordless Impact Wrench", "Hammers nuts and bolts in and out faster than anything, up to 400 Nm. It runs them up "
+				"tighter than it should, so finish with a torque wrench. Runs off a battery pack.", HandToolKind::IMPACT, 260.0, 400.0, 0.06);
+			auto battery = [&](const char* name, double price, double capacityAh) {
+				MeasuringTool tool;
+				tool.name = name;
+				tool.description = std::format("An 18 V pack for the cordless tools, holding {:.0f} Ah: the bigger it is, the longer it lasts "
+					"between charges, and the longer it takes to charge.", capacityAh);
+				tool.handKind = HandToolKind::BATTERY;
+				tool.price = price;
+				tool.capacityAh = capacityAh;
+				list.push_back(tool);
+			};
+			battery("18V 2.0 Ah Battery", 45.0, 2.0);
+			battery("18V 4.0 Ah Battery", 80.0, 4.0);
+			battery("18V 6.0 Ah Battery", 120.0, 6.0);
+			auto charger = [&](const char* name, const char* description, double price, double amps) {
+				MeasuringTool tool;
+				tool.name = name;
+				tool.description = description;
+				tool.handKind = HandToolKind::CHARGER;
+				tool.price = price;
+				tool.chargeAmps = amps;
+				list.push_back(tool);
+			};
+			charger("Battery Charger 2 A", "Charges one battery pack at 2 A: a 4 Ah pack takes two minutes. Set it down somewhere, then hold a "
+				"pack and press E on it.", 40.0, 2.0);
+			charger("Rapid Charger 6 A", "Charges one battery pack at 6 A, three times as fast as the standard charger.", 110.0, 6.0);
+
+			// Added after the cordless tools.
+			MeasuringTool beltGauge;
+			beltGauge.name = "Belt Tension Gauge";
+			beltGauge.description = "Pushes the middle of a belt's run with a set load (2 kg for the timing belt, 10 kg for the fan belt) and reads how far it gives.";
+			beltGauge.assemblyChecks = { AssemblyCheck::BELT_DEFLECTION };
+			beltGauge.resolution = 0.5;
+			beltGauge.sigma = 0.2;
+			beltGauge.price = 45.0;
+			beltGauge.hoursPerUse = 0.05;
+			list.push_back(beltGauge);
+
+			// The combination wrenches, one tool each, so one at a time comes out of the set and goes on a nut
+			// or bolt. They come with the set (and only with it).
+			size_t wrenchSet = 0;
+			for (size_t i = 0; i < list.size(); i++)
+				if (list[i].handKind == HandToolKind::WRENCHES)
+					wrenchSet = i;
+			for (int size : list[wrenchSet].sizes)
+			{
+				MeasuringTool wrench;
+				wrench.name = std::format("{} mm Combination Wrench", size);
+				wrench.description = std::format("An open end and a ring, both {} mm. Out of the combination wrench set.", size);
+				wrench.handKind = HandToolKind::COMBINATION_WRENCH;
+				wrench.sizes = { size };
+				wrench.partOf = static_cast<int>(wrenchSet);
+				list.push_back(wrench);
+			}
 
 			// A new shop starts with the bare minimum to strip and rebuild an engine: a ratchet and sockets for
 			// every nut and bolt (the crank pulley bolt is 22 mm), the cheapest torque wrench that reaches the

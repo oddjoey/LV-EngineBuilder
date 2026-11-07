@@ -13,6 +13,7 @@
 #include "../Simulation/EngineSpec.h"
 #include "../Simulation/MeasuringTool.h"
 #include "../Simulation/PartCatalog.h"
+#include "../World/ShopAssets.h"
 
 // The service manual's diagrams and graphs. They're drawn, not pictures: shapes and lines in the
 // book's inks, and every graph plotted from the engine's own spec, so a figure never disagrees with
@@ -27,18 +28,22 @@ namespace
 		auto linear = [](int value) { return static_cast<int>(std::pow(value / 255.0, 2.2) * 255.0 + 0.5); };
 		return IM_COL32(linear(r), linear(g), linear(b), a);
 	}
-	const ImU32 INK = Shade(30, 27, 24);
-	const ImU32 INK_FAINT = Shade(120, 110, 96);
-	const ImU32 ACCENT = Shade(28, 48, 100);
-	const ImU32 METAL = Shade(178, 182, 188);
-	const ImU32 METAL_DARK = Shade(120, 126, 134);
-	const ImU32 FILL = Shade(222, 228, 238);
-	const ImU32 OIL = Shade(214, 166, 50);
-	const ImU32 GOOD = Shade(70, 140, 80);
-	const ImU32 GOOD_FILL = Shade(70, 140, 80, 60);
-	const ImU32 BAD = Shade(170, 52, 40);
-	const ImU32 BAD_FILL = Shade(170, 52, 40, 45);
-	const ImU32 GAUGE = Shade(60, 160, 80);		// Plastigauge green
+	// The book's inks, for a cream page or (dark mode) a charcoal one: set with the page's.
+	ImU32 INK = 0;
+	ImU32 INK_FAINT = 0;
+	ImU32 ACCENT = 0;
+	ImU32 METAL = 0;
+	ImU32 METAL_DARK = 0;
+	ImU32 FILL = 0;
+	ImU32 OIL = 0;
+	ImU32 GOOD = 0;
+	ImU32 GOOD_FILL = 0;
+	ImU32 BAD = 0;
+	ImU32 BAD_FILL = 0;
+	ImU32 GAUGE = 0;		// Plastigauge green
+	ImU32 PAPER = 0;		// the page itself, for shapes cut out of what's behind them
+	ImU32 GRID = 0;			// a graph's grid lines
+	ImU32 BELT = 0;
 
 	ImVec2 operator+(ImVec2 a, ImVec2 b) { return { a.x + b.x, a.y + b.y }; }
 	ImVec2 operator-(ImVec2 a, ImVec2 b) { return { a.x - b.x, a.y - b.y }; }
@@ -107,13 +112,13 @@ namespace
 		for (float x = x0; x <= x1 + xStep * 0.01f; x += xStep)
 		{
 			ImVec2 at = plot.At(x, y0);
-			drawList->AddLine({ at.x, plot.min.y }, at, Shade(214, 205, 182), 1.f);
+			drawList->AddLine({ at.x, plot.min.y }, at, GRID, 1.f);
 			Text(drawList, { at.x, at.y + 3.f }, INK_FAINT, std::vformat(xFormat, std::make_format_args(x)), label, 0.5f);
 		}
 		for (float y = y0; y <= y1 + yStep * 0.01f; y += yStep)
 		{
 			ImVec2 at = plot.At(x0, y);
-			drawList->AddLine(at, { plot.max.x, at.y }, Shade(214, 205, 182), 1.f);
+			drawList->AddLine(at, { plot.max.x, at.y }, GRID, 1.f);
 			Text(drawList, { at.x - 4.f, at.y }, INK_FAINT, std::vformat(yFormat, std::make_format_args(y)), label, 1.f, 0.5f);
 		}
 		drawList->AddLine(plot.At(x0, y0), plot.At(x1, y0), INK, 1.5f);
@@ -122,36 +127,14 @@ namespace
 		Text(drawList, { plot.min.x + 4.f, plot.min.y }, INK, yLabel, label, 0.f);
 		return plot;
 	}
-
-	// Smallest convex outline round a set of points (for a belt round its pulleys).
-	std::vector<ImVec2> Hull(std::vector<ImVec2> points)
-	{
-		std::sort(points.begin(), points.end(), [](ImVec2 a, ImVec2 b) { return a.x < b.x || (a.x == b.x && a.y < b.y); });
-		auto cross = [](ImVec2 o, ImVec2 a, ImVec2 b) { return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x); };
-		std::vector<ImVec2> hull(points.size() * 2);
-		size_t k = 0;
-		for (size_t i = 0; i < points.size(); i++)
-		{
-			while (k >= 2 && cross(hull[k - 2], hull[k - 1], points[i]) <= 0.f)
-				k--;
-			hull[k++] = points[i];
-		}
-		for (size_t i = points.size() - 1, t = k + 1; i > 0; i--)
-		{
-			while (k >= t && cross(hull[k - 2], hull[k - 1], points[i - 1]) <= 0.f)
-				k--;
-			hull[k++] = points[i - 1];
-		}
-		hull.resize(k > 0 ? k - 1 : 0);
-		return hull;
-	}
 }
 
 float ServiceManual::FigureLines(Figure figure)
 {
 	switch (figure)
 	{
-		case Figure::TOOL_RESOLUTION:	return 15.f;
+		case Figure::TOOL_RESOLUTION:
+		case Figure::BELT_ROUTING:		return 15.f;
 		case Figure::SPRING_CURVE:
 		case Figure::CAM_PROFILE:
 		case Figure::COMPRESSION_GRAPH:
@@ -233,7 +216,7 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 			ImVec2 top = { min.x + width * 0.75f, centre.y - fontSize * 0.5f };
 			float radius = (std::min)(width * 0.16f, height * 0.36f);
 			drawList->AddCircleFilled(top, radius + 12.f, METAL, 48);
-			drawList->AddCircleFilled(top, radius, Shade(244, 238, 222), 48);
+			drawList->AddCircleFilled(top, radius, PAPER, 48);
 			Dimension(drawList, { top.x - radius + 2.f, top.y }, { top.x + radius - 2.f, top.y }, ACCENT, arrow);
 			Dimension(drawList, { top.x, top.y - radius + 2.f }, { top.x, top.y + radius - 2.f }, ACCENT, arrow);
 			Text(drawList, { top.x + radius * 0.5f, top.y - 4.f }, INK, "X", label, 0.5f, 1.f);
@@ -299,7 +282,7 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 			ImVec2 middle = { min.x + width * 0.36f, centre.y };
 			float radius = height * 0.42f;
 			drawList->AddCircleFilled(middle, radius + 14.f, METAL, 64);
-			drawList->AddCircleFilled(middle, radius, Shade(244, 238, 222), 64);
+			drawList->AddCircleFilled(middle, radius, PAPER, 64);
 			float gapAngle = 0.12f;
 			drawList->PathArcTo(middle, radius - 5.f, -PI * 0.5f + gapAngle, PI * 1.5f - gapAngle, 64);
 			drawList->PathStroke(ACCENT, 0, 7.f);
@@ -321,7 +304,7 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 			float radius = height * 0.44f;
 			drawList->AddCircleFilled(middle, radius, METAL_DARK, 64);
 			drawList->AddCircleFilled(middle, radius * 0.86f, OIL, 64);
-			drawList->AddCircleFilled(middle, radius * 0.8f, Shade(244, 238, 222), 64);
+			drawList->AddCircleFilled(middle, radius * 0.8f, PAPER, 64);
 			drawList->AddCircleFilled(middle, radius * 0.72f, METAL, 64);
 			drawList->AddLine({ middle.x - radius, middle.y }, { middle.x + radius, middle.y }, INK_FAINT, 1.f);
 			struct Callout { float radius; float angle; const char* text; };
@@ -502,41 +485,76 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 			break;
 		}
 		case Figure::BELT_ROUTING:
+		case Figure::DRIVE_BELT_ROUTING:
 		{
-			// From the front: the crank sprocket at the bottom, the cam sprocket (twice its size) at the
-			// top, the idler and tensioner, and the belt round the lot. The marks line up at TDC.
-			float unit = (std::min)(width * 0.5f, height) / 10.f;
-			ImVec2 crank = { centre.x - unit * 2.f, max.y - unit * 2.f }, cam = { centre.x - unit * 1.f, min.y + unit * 3.f };
-			ImVec2 idler = { centre.x + unit * 2.f, centre.y + unit * 0.5f }, tensioner = { centre.x - unit * 3.6f, centre.y + unit * 0.5f };
-			float crankRadius = unit * 1.3f, camRadius = unit * 2.6f, idlerRadius = unit * 0.8f;
-			std::vector<ImVec2> rim;
-			auto sample = [&](ImVec2 c, float r) { for (int i = 0; i < 36; i++) rim.push_back(c + ImVec2(std::cos(i * PI / 18.f), std::sin(i * PI / 18.f)) * (r + 3.f)); };
-			sample(crank, crankRadius);
-			sample(cam, camRadius);
-			sample(idler, idlerRadius);
-			sample(tensioner, idlerRadius);
-			auto belt = Hull(rim);
-			drawList->AddPolyline(belt.data(), static_cast<int>(belt.size()), Shade(40, 40, 44), ImDrawFlags_Closed, 5.f);
-			for (auto [where, r, name] : { std::tuple{ crank, crankRadius, "Crank" }, std::tuple{ cam, camRadius, "Cam" }, std::tuple{ idler, idlerRadius, "Idler" },
-				std::tuple{ tensioner, idlerRadius, "Tensioner" } })
+			// From the front, exactly as the engine has it (EngineLayout): the pulleys, the belt round them,
+			// and an arrow where its deflection is checked. The timing belt's marks line up at TDC.
+			bool timing = figure == Figure::BELT_ROUTING;
+			const auto& pulleys = timing ? EngineLayout::TimingPulleys() : EngineLayout::DrivePulleys();
+			glm::vec2 low = { FLT_MAX, FLT_MAX }, high = { -FLT_MAX, -FLT_MAX }, hub = {};
+			for (const auto& pulley : pulleys)
 			{
+				low = glm::min(low, pulley.centre - glm::vec2(pulley.radius));
+				high = glm::max(high, pulley.centre + glm::vec2(pulley.radius));
+				hub += pulley.centre / static_cast<float>(pulleys.size());
+			}
+			// Fitted in, with room either side for the names.
+			float scale = (std::min)((width - fontSize * 18.f) / (high.x - low.x), (height - fontSize * 2.f) / (high.y - low.y));
+			glm::vec2 middle = (low + high) * 0.5f;
+			auto at = [&](glm::vec2 point) { return ImVec2(centre.x + (point.x - middle.x) * scale, centre.y - (point.y - middle.y) * scale); };
+
+			for (const auto& pulley : pulleys)
+			{
+				ImVec2 where = at(pulley.centre);
+				float r = pulley.radius * scale;
 				drawList->AddCircleFilled(where, r, METAL, 40);
 				drawList->AddCircle(where, r, METAL_DARK, 40, 1.5f);
 				drawList->AddCircleFilled(where, r * 0.2f, METAL_DARK, 16);
-				bool leftSide = where.x < centre.x - unit * 2.5f;
-				Text(drawList, where + ImVec2(leftSide ? -(r + 8.f) : r + 8.f, 0.f), INK, name, label, leftSide ? 1.f : 0.f, 0.5f);
 			}
-			// Timing marks: a notch on each sprocket against a pointer on the casting.
-			for (auto [where, r] : { std::pair{ crank, crankRadius }, std::pair{ cam, camRadius } })
+			std::vector<ImVec2> belt;
+			for (const auto& point : EngineLayout::BeltPath(pulleys, 3.f / scale))
+				belt.push_back(at(point));
+			drawList->AddPolyline(belt.data(), static_cast<int>(belt.size()), BELT, ImDrawFlags_Closed, timing ? 6.f : 5.f);
+			for (const auto& pulley : pulleys)
 			{
-				ImVec2 notch = { where.x, where.y - r };
-				drawList->AddTriangleFilled(notch + ImVec2(-5.f, 0.f), notch + ImVec2(5.f, 0.f), notch + ImVec2(0.f, 8.f), BAD);
-				drawList->AddTriangleFilled(notch + ImVec2(-5.f, -14.f), notch + ImVec2(5.f, -14.f), notch + ImVec2(0.f, -6.f), BAD);
+				ImVec2 where = at(pulley.centre);
+				float r = pulley.radius * scale;
+				bool leftSide = pulley.centre.x < middle.x || (pulley.centre.x == middle.x && timing);
+				Text(drawList, where + ImVec2(leftSide ? -(r + 10.f) : r + 10.f, 0.f), INK, pulley.name, label, leftSide ? 1.f : 0.f, 0.5f);
 			}
-			Text(drawList, { max.x - fontSize * 0.5f, min.y + fontSize * 0.3f }, BAD, "Marks lined up:", label, 1.f);
-			Text(drawList, { max.x - fontSize * 0.5f, min.y + fontSize * 1.3f }, BAD, "No. 1 at TDC", label, 1.f);
-			Text(drawList, { max.x - fontSize * 0.5f, max.y - fontSize * 1.1f }, INK_FAINT, "Cam turns once", label, 1.f, 1.f);
-			Text(drawList, { max.x - fontSize * 0.5f, max.y - fontSize * 0.1f }, INK_FAINT, "for two of the crank", label, 1.f, 1.f);
+
+			// The deflection check: an arrow pushing on the run from outside the belt.
+			glm::vec2 check = EngineLayout::BeltRunMiddle(pulleys, timing ? EngineLayout::TIMING_CHECK_RUN : EngineLayout::DRIVE_CHECK_RUN);
+			glm::vec2 outward = glm::normalize(check - hub);
+			ImVec2 tip = at(check + outward * (6.f / scale)), tail = at(check + outward * (34.f / scale));
+			ImVec2 along = ImVec2(tip.x - tail.x, tip.y - tail.y) * (1.f / (std::max)(1.f, std::hypot(tip.x - tail.x, tip.y - tail.y)));
+			ImVec2 side = { -along.y, along.x };
+			drawList->AddLine(tail, tip - along * 8.f, BAD, 2.5f);
+			drawList->AddTriangleFilled(tip, tip - along * 10.f + side * 6.f, tip - along * 10.f - side * 6.f, BAD);
+			Text(drawList, tail + ImVec2(outward.x >= 0.f ? 6.f : -6.f, -2.f), BAD, timing ? "6 - 7 mm at 2 kg" : "8.5 - 10.5 mm at 10 kg", label,
+				outward.x >= 0.f ? 0.f : 1.f, 1.f);
+
+			if (timing)
+			{
+				// The marks: a notch at the top of the cam pulley, and one low on the crank pulley's right,
+				// each against its pointer.
+				const auto& cam = pulleys[0];
+				const auto& crank = pulleys[1];
+				auto mark = [&](const EngineLayout::BeltPulley& pulley, float angle) {
+					glm::vec2 out = { std::cos(angle), std::sin(angle) };
+					ImVec2 rim = at(pulley.centre + out * pulley.radius), beyond = at(pulley.centre + out * (pulley.radius + 22.f / scale));
+					drawList->AddCircle(rim, 5.f, BAD, 16, 2.f);
+					drawList->AddLine(rim, beyond, BAD, 1.5f);
+				};
+				mark(cam, glm::half_pi<float>());
+				mark(crank, -0.9f);
+				Text(drawList, { max.x - fontSize * 0.5f, min.y + fontSize * 0.3f }, BAD, "Marks lined up:", label, 1.f);
+				Text(drawList, { max.x - fontSize * 0.5f, min.y + fontSize * 1.3f }, BAD, "No. 1 at TDC", label, 1.f);
+				Text(drawList, { max.x - fontSize * 0.5f, max.y - fontSize * 1.1f }, INK_FAINT, "Cam turns once", label, 1.f, 1.f);
+				Text(drawList, { max.x - fontSize * 0.5f, max.y - fontSize * 0.1f }, INK_FAINT, "for two of the crank", label, 1.f, 1.f);
+			}
+			else
+				Text(drawList, { min.x + fontSize * 0.5f, min.y + fontSize * 0.3f }, INK_FAINT, "Seen from the front", label);
 			break;
 		}
 		case Figure::TORQUE_ACCURACY:
@@ -644,4 +662,23 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 			break;
 		}
 	}
+}
+
+void ServiceManual::SetFigureInks(bool dark)
+{
+	INK = dark ? Shade(228, 222, 208) : Shade(30, 27, 24);
+	INK_FAINT = dark ? Shade(150, 142, 128) : Shade(120, 110, 96);
+	ACCENT = dark ? Shade(140, 168, 230) : Shade(28, 48, 100);
+	METAL = dark ? Shade(150, 154, 160) : Shade(178, 182, 188);
+	METAL_DARK = dark ? Shade(96, 101, 108) : Shade(120, 126, 134);
+	FILL = dark ? Shade(56, 62, 74) : Shade(222, 228, 238);
+	OIL = Shade(214, 166, 50);
+	GOOD = dark ? Shade(110, 190, 120) : Shade(70, 140, 80);
+	GOOD_FILL = dark ? Shade(110, 190, 120, 60) : Shade(70, 140, 80, 60);
+	BAD = dark ? Shade(225, 95, 80) : Shade(170, 52, 40);
+	BAD_FILL = dark ? Shade(225, 95, 80, 50) : Shade(170, 52, 40, 45);
+	GAUGE = Shade(60, 160, 80);
+	PAPER = dark ? Shade(34, 33, 36) : Shade(244, 238, 222);
+	GRID = dark ? Shade(64, 61, 56) : Shade(214, 205, 182);
+	BELT = dark ? Shade(150, 150, 156) : Shade(40, 40, 44);
 }

@@ -102,6 +102,7 @@ PartType EngineAssembly::SlotPartType(AssemblySlot slot)
 		case AssemblySlot::EXHAUST_PIPE:	return PartType::EXHAUST_PIPE;
 		case AssemblySlot::ALTERNATOR:		return PartType::ALTERNATOR;
 		case AssemblySlot::DRIVE_BELT:		return PartType::DRIVE_BELT;
+		case AssemblySlot::DRIVE_BELT_TENSIONER:	return PartType::DRIVE_BELT_TENSIONER;
 		case AssemblySlot::COUNT:			return PartType::BLOCK;
 		default:
 			if (const auto* holes = Holes(slot))
@@ -384,21 +385,17 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			needed.push_back({ A::ROCKER_SHAFT, index % 2 });
 			break;
 
-		// Timing drive: sprockets on the crank (in front of the pump) and the cam, the idlers, the
-		// belt round the lot with the marks lined up, then the tensioner to take up the slack.
+		// Timing drive: pulleys on the crank (in front of the pump) and the cam, the belt round them with
+		// the marks lined up, then the spring-loaded idler pulley onto its back to take up the slack.
 		case A::CRANK_SPROCKET:
 			one(A::OIL_PUMP);
 			break;
 		case A::CAM_SPROCKET:
 			all(A::CAM_CAP);
 			break;
-		case A::BELT_IDLER:
-			one(A::HEAD_BOLT);
-			break;
 		case A::TIMING_BELT:
 			one(A::CRANK_SPROCKET);
 			one(A::CAM_SPROCKET);
-			all(A::BELT_IDLER);
 			break;
 		case A::BELT_TENSIONER:
 			one(A::TIMING_BELT);
@@ -492,7 +489,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			break;
 
 		// Accessory drive: the alternator on its bracket at the front, then the V-belt round the crank
-		// pulley, the water pump and the alternator.
+		// pulley, the water pump and the alternator (its pivot sets the tension).
 		case A::ALTERNATOR:
 			one(A::TIMING_COVER);
 			break;
@@ -505,6 +502,10 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			break;
 	}
 
+	// The leads only push onto the plugs and the cap, over the valve cover: they need those there, not
+	// bolted down, so the cover's (and the distributor's) bolts can be undone with them on.
+	if (slot == A::PLUG_LEAD)
+		return needed;
 	return withFasteners();
 }
 
@@ -647,6 +648,42 @@ std::optional<double> EngineAssembly::RodSideClearance(int cylinder) const
 	if (!width || !pin || !Get(AssemblySlot::ROD_CAP, cylinder))
 		return std::nullopt;
 	return pin->Size() - width->Size();
+}
+
+std::optional<double> EngineAssembly::BeltDeflection(bool fanBelt) const
+{
+	// A nut or bolt done up at all (snugged or torqued).
+	auto boltedUp = [&](AssemblySlot slot, int count) {
+		for (int index = 0; index < count; index++)
+			if (auto bolt = Get(slot, index); !bolt || bolt->GetTightness() == FastenerTightness::LOOSE)
+				return false;
+		return true;
+	};
+	if (fanBelt)
+	{
+		auto belt = Get(AssemblySlot::DRIVE_BELT, 0);
+		if (!belt || !Get(AssemblySlot::CRANK_PULLEY, 0) || !Get(AssemblySlot::WATER_PUMP, 0) || !Get(AssemblySlot::ALTERNATOR, 0))
+			return std::nullopt;
+		// Each belt sits its own way within its range, the same every time it's checked: a new one about
+		// the middle of the new figure, a used one stretched to about the middle of the used one.
+		double spread = static_cast<double>((belt->GetId() * 2654435761u) % 1000u) / 1000.0 - 0.5;
+		double deflection = belt->GetCondition() == PartCondition::NEW ? 9.5 + spread * 1.6 : 11.0 + spread * 3.0;
+		// Swung out on its pivot and bolted there it pulls the belt tight; loose, it hangs.
+		if (!boltedUp(AssemblySlot::ALTERNATOR_BOLT, SlotCount(AssemblySlot::ALTERNATOR_BOLT)))
+			deflection += 6.0;
+		return deflection;
+	}
+	auto belt = FindFeature(AssemblySlot::TIMING_BELT, 0, FeatureNames::BELT_TOOTH_HEIGHT);
+	auto spring = FindFeature(AssemblySlot::BELT_TENSIONER, 0, FeatureNames::TENSIONER_TRAVEL);
+	if (!belt || !spring)
+		return std::nullopt;
+	// Set right, 6.5 mm. The further the idler's spring has had to travel, the less it has left to pull
+	// with; worn teeth are a stretched belt.
+	double deflection = 6.5 + (spring->Size() - 7.5) * 0.2 + (std::max)(0.0, 1.95 - belt->Size()) * 6.0;
+	// Until the idler's bolted, nothing holds it against the belt.
+	if (!boltedUp(AssemblySlot::BELT_IDLER_BOLT, SlotCount(AssemblySlot::BELT_IDLER_BOLT)))
+		deflection += 4.0;
+	return (std::max)(deflection, 3.0);
 }
 
 std::optional<double> EngineAssembly::PistonToWall(int cylinder) const

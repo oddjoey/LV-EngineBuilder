@@ -147,24 +147,7 @@ void ShopWorld::BuildOutdoors()
 		m_lampHeads.push_back(lamp);
 	}
 
-	// A customer's car on the drive, cars parked along the street, the bins out back, a few drums
-	// by the side wall.
-	struct Car { glm::vec2 position; float yaw; glm::vec3 color; };
-	const Car cars[] = {
-		{ { -1.5f, 11.2f }, glm::half_pi<float>(), { 0.62f, 0.12f, 0.1f } },
-		{ { 9.f, 24.f }, glm::pi<float>(), { 0.2f, 0.32f, 0.55f } },
-		{ { -35.f, 20.f }, 0.f, { 0.85f, 0.85f, 0.82f } },
-		{ { 40.f, 24.f }, glm::pi<float>(), { 0.25f, 0.4f, 0.28f } },
-	};
-	for (const auto& car : cars)
-	{
-		glm::vec3 position = { car.position.x, 0.f, car.position.y };
-		scenery(ShopModels::CAR_BODY, ShopTextures::PAINT, position, car.yaw)->SetTint(glm::vec4(car.color, 1.f));
-		scenery(ShopModels::CAR_TRIM, ShopTextures::RUBBER, position, car.yaw);
-		bool alongZ = std::abs(std::sin(car.yaw)) > 0.5f;
-		m_sceneryObstacles.push_back(Footprint(car.position, alongZ ? glm::vec2(0.95f, 2.2f) : glm::vec2(2.2f, 0.95f)));
-	}
-
+	// The bins out back, and a few drums by the side wall.
 	scenery(ShopModels::DUMPSTER, ShopTextures::PAINT, { -4.5f, 0.f, -7.3f });
 	m_sceneryObstacles.push_back(Footprint({ -4.5f, -7.3f }, { 1.0f, 0.65f }));
 	const glm::vec3 drumColors[] = { { 0.2f, 0.35f, 0.6f }, { 0.7f, 0.2f, 0.15f }, { 0.2f, 0.35f, 0.6f } };

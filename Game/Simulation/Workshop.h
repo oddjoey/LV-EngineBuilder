@@ -29,7 +29,7 @@ struct CartLine
 	Kind kind = Kind::PART;
 	PartOrder order = {};		// PART: what, and how many (order.quantity)
 	size_t index = 0;			// TOOL / MACHINE / FURNITURE / UPGRADE: which one
-	int quantity = 1;			// ENGINE_STAND / FURNITURE: how many
+	int quantity = 1;			// ENGINE_STAND / FURNITURE / TOOL: how many
 };
 
 struct AssemblyReading
@@ -135,7 +135,11 @@ public:
 	bool SellPart(const pPart& part);
 
 	// Equipment
-	bool OwnsTool(size_t toolIndex) const;
+	// An id is one copy of a tool (ToolCatalog::IdOf): owned when the shop has at least that many.
+	bool OwnsTool(size_t toolId) const;
+	// How many of a tool the shop has.
+	int ToolCount(size_t toolIndex) const;
+	static constexpr int MAX_TOOL_COPIES = 8;
 	bool OwnsMachine(size_t machineIndex) const;
 	bool BuyTool(size_t toolIndex);
 	bool BuyMachine(size_t machineIndex);
@@ -222,7 +226,7 @@ private:
 	std::vector<std::string>					m_log = {};
 	PlayerStats									m_stats = {};
 	std::vector<pPart>							m_inventory = {};
-	std::vector<bool>							m_ownedTools = {};
+	std::vector<int>							m_toolCounts = {};	// how many of each tool
 	std::vector<bool>							m_ownedMachines = {};
 	std::vector<size_t>							m_furniture = {};
 	std::vector<bool>							m_upgrades = {};

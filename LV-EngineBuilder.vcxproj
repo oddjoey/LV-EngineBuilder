@@ -96,7 +96,8 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
+      <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -156,11 +157,13 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="Game\Audio\GameAudio.cpp" />
     <ClCompile Include="Game\World\ShopLighting.cpp" />
     <ClCompile Include="Game\World\ShopOutdoors.cpp" />
-    <ClCompile Include="Game\World\ShopHouse.cpp" />
     <ClCompile Include="Game\World\ShopWorld.cpp" />
     <ClCompile Include="Game\World\ShopWorldOutdoors.cpp" />
     <ClCompile Include="Game\World\ShopWorldUpgrades.cpp" />
     <ClCompile Include="Game\World\ShopWorldTools.cpp" />
+    <ClCompile Include="Game\World\ShopWorldPaint.cpp" />
+    <ClCompile Include="Game\World\WallPaint.cpp" />
+    <ClCompile Include="Game\UI\RankUI.cpp" />
     <ClCompile Include="Game\World\PlayerAvatar.cpp" />
     <ClCompile Include="Game\Net\NetSession.cpp" />
     <ClCompile Include="Game\Net\NetState.cpp" />
@@ -193,6 +196,7 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="LV\Engine\Objects\ObjectManager.cpp" />
     <ClCompile Include="LV\Engine\Utility\InputManager.cpp" />
     <ClCompile Include="LV\Engine\Audio\AudioManager.cpp" />
+    <ClCompile Include="LV\Engine\Audio\AudioManagerMac.cpp" />
     <ClCompile Include="LV\Engine\Utility\PerformanceManager.cpp" />
     <ClCompile Include="LV\Engine\Utility\Settings.cpp" />
     <ClCompile Include="LV\Engine\Utility\Utility.cpp" />
@@ -279,7 +283,6 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClInclude Include="Game\UI\WorkshopUI.h" />
     <ClInclude Include="Game\World\FirstPersonController.h" />
     <ClInclude Include="Game\World\GarageLayout.h" />
-    <ClInclude Include="Game\World\HouseLayout.h" />
     <ClInclude Include="Game\World\ProceduralTextures.h" />
     <ClInclude Include="Game\World\ShopAssets.h" />
     <ClInclude Include="Game\Audio\GameAudio.h" />
@@ -287,6 +290,11 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClInclude Include="Game\World\ShopLighting.h" />
     <ClInclude Include="Game\World\ShopWorld.h" />
     <ClInclude Include="Game\World\PlayerAvatar.h" />
+    <ClInclude Include="Game\World\WallPaint.h" />
+    <ClInclude Include="Game\UI\RankUI.h" />
+    <ClInclude Include="Game\LocalTime.h" />
+    <ClInclude Include="Game\Simulation\ShopRank.h" />
+    <ClInclude Include="Game\Simulation\Skills.h" />
     <ClInclude Include="Game\World\MonkeyLook.h" />
     <ClInclude Include="Game\UI\MonkeyUI.h" />
     <ClInclude Include="Game\World\ShopWorldShared.h" />

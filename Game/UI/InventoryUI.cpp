@@ -265,8 +265,6 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 	if (ImGui::BeginChild("BackpackSide", { 0.f, 0.f }, ImGuiChildFlags_Borders))
 	{
 		DrawDetails(world, workshop, player, shown);
-		ImGui::Spacing();
-		DrawPlayerStats(world, workshop);
 	}
 	ImGui::EndChild();
 }
@@ -354,7 +352,8 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 	{
 		const auto& tool = ToolCatalog::Of(info.toolIndex);
 		Ratings::Bar("Precision", Ratings::ToolPrecision(tool), 160.f);
-		Ratings::Bar("Speed", Ratings::ToolSpeed(tool), 160.f);
+		if (tool.TurnSeconds() > 0.0)
+			Ratings::Bar("Speed", Ratings::ToolSpeed(tool), 160.f);
 		if (tool.resolution > 0.0)
 			ImGui::Text("Reads to %s, repeatable to %s", Units::FormatSize(tool.resolution, m_units).c_str(),
 				Units::FormatDeviation(tool.sigma, m_units).c_str());
@@ -373,8 +372,6 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 
 		row("Material");
 		ImGui::TextUnformatted(GetMaterial(part.GetMaterial()).name);
-		row("Quality");
-		ImGui::TextUnformatted(PartQualityName(part.GetQuality()));
 		row("Condition");
 		if (part.GetCondition() == PartCondition::DAMAGED)
 			ImGui::TextColored({ 1.f, 0.45f, 0.4f, 1.f }, "%s", PartConditionName(part.GetCondition()));
@@ -447,8 +444,8 @@ void InventoryUI::DrawPlayerStats(ShopWorld& world, Workshop& workshop)
 	};
 	auto money = [](double amount) { return std::format("${:.0f}", amount); };
 
-	ImGui::SeparatorText("Player stats");
-	if (!ImGui::BeginTable("PlayerStats", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+	// Kept narrow on the wide Stats tab, so each figure stays next to its name.
+	if (!ImGui::BeginTable("PlayerStats", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp, { (std::min)(ImGui::GetContentRegionAvail().x, 520.f), 0.f }))
 		return;
 	ImGui::TableSetupColumn("Stat", ImGuiTableColumnFlags_WidthStretch, 2.f);
 	ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 1.f);
@@ -461,7 +458,6 @@ void InventoryUI::DrawPlayerStats(ShopWorld& world, Workshop& workshop)
 	row("Profit", std::format("{}{}", profit < 0.0 ? "-" : "", money(std::abs(profit))), profit < 0.0 ? bad : good);
 
 	section("Shop");
-	row("Hours on the clock", std::format("{:.1f} h", workshop.GetHours()));
 	row("Parts bought", std::to_string(stats.partsBought));
 	row("Parts sold", std::to_string(stats.partsSold));
 	row("Parts fitted", std::to_string(stats.partsFitted));

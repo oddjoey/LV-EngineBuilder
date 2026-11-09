@@ -6,6 +6,7 @@
 
 #include "LV/Engine/Utility/InputManager.h"
 #include "../Controls.h"
+#include "../Net/NetProtocol.h"
 
 namespace
 {
@@ -482,7 +483,16 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 				{
 					ImGui::SeparatorText(std::format("In the garage at {} ({})", context.server, context.players.size()).c_str());
 					for (const auto& player : context.players)
-						ImGui::BulletText("%s", player.c_str());
+					{
+						ImGui::Bullet();
+						if (!player.prefix.empty())
+						{
+							constexpr uint32_t RGB = NetProtocol::PREFIX_COLOR;
+							ImGui::TextColored({ ((RGB >> 16) & 0xFF) / 255.f, ((RGB >> 8) & 0xFF) / 255.f, (RGB & 0xFF) / 255.f, 1.f }, "%s", player.prefix.c_str());
+							ImGui::SameLine();
+						}
+						ImGui::TextUnformatted(player.name.c_str());
+					}
 					if (BigButton("Leave the garage"))
 						action = Action::LEAVE;
 					ImGui::TextDisabled("The garage is saved by its server.");

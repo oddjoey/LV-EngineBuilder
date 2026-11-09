@@ -1,5 +1,7 @@
 #include "AccountServer.h"
 
+#include "../Game/LocalTime.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -15,8 +17,7 @@ namespace
 
 	void Log(const std::string& text)
 	{
-		auto now = std::chrono::zoned_time(std::chrono::current_zone(), std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now()));
-		std::printf("[%s] %s\n", std::format("{:%Y-%m-%d %H:%M:%S}", now).c_str(), text.c_str());
+		std::printf("[%s] %s\n", LocalTimeText(std::chrono::system_clock::now(), "%Y-%m-%d %H:%M:%S").c_str(), text.c_str());
 		std::fflush(stdout);
 	}
 }

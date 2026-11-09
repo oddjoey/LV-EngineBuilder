@@ -30,7 +30,12 @@ enum class HandToolKind
 	IMPACT,			// a cordless impact wrench: drives sockets, the quickest of all, off a battery
 	BATTERY,		// a battery pack for the cordless tools
 	CHARGER,		// charges a battery pack set on it
-	COMBINATION_WRENCH	// one wrench out of its set, used on its own
+	COMBINATION_WRENCH,	// one wrench out of its set, used on its own
+	MARKER,			// a paint marker: draws lines on the walls and floor
+	SPRAY_CAN,		// spray paint: on the walls and floor, or a coat over a part or tool
+	THINNER,		// a rag and paint thinner: wipes paint off
+	PIN_PRESS,		// presses a piston pin into a piston on its rod, or out of it
+	RING_COMPRESSOR	// squeezes a piston's ring in, for it to go down the bore
 };
 
 struct MeasuringTool
@@ -46,8 +51,11 @@ struct MeasuringTool
 	double resolution = 0.0;	// smallest increment the tool can show
 	double sigma = 0.0;			// repeatability error, 1 standard deviation
 	double price = 0.0;
-	double hoursPerUse = 0.0;
 	bool ownedAtStart = false;
+	// The shop rank (see ShopRank) the store sells it from: the better tools are earned.
+	int rank = 1;
+	// A perk (a SkillKind) the shop needs before the store sells it, or -1.
+	int skill = -1;
 
 	// Hand tools only.
 	HandToolKind handKind = HandToolKind::NONE;
@@ -64,6 +72,9 @@ struct MeasuringTool
 	double chargeAmps = 0.0;		// chargers: how fast they charge
 	// A book (the factory service manual): held and read, used on nothing.
 	bool manual = false;
+	// Paint: the colour a marker or spray can puts on (RGB).
+	uint32_t paintColor = 0;
+	bool Paints() const { return handKind == HandToolKind::MARKER || handKind == HandToolKind::SPRAY_CAN || handKind == HandToolKind::THINNER; }
 	bool IsHandTool() const { return handKind != HandToolKind::NONE; }
 	// Spanners and the like: how many seconds the button is held to run a typical nut or bolt in or
 	// out. A combination wrench is the slowest, a ratchet quicker, a cordless impact quickest.
@@ -72,7 +83,8 @@ struct MeasuringTool
 	bool CanMeasure(const Feature& feature) const;
 	bool CanCheck(AssemblyCheck check) const;
 	// A reading as the tool would display it: true value plus error, snapped to the resolution.
-	double Read(double trueValue) const;
+	// scatter scales its repeatability (Steady Hands makes it less than 1).
+	double Read(double trueValue, double scatter = 1.0) const;
 };
 
 namespace ToolCatalog

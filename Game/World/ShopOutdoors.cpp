@@ -98,14 +98,9 @@ namespace
 			if (window.wall == wall)
 				openings.push_back({ window.u0, window.u1, window.v0, window.v1 });
 		if (wall == Wall::FRONT)
-		{
 			openings.push_back({ DOOR_MIN_X, DOOR_MAX_X, 0.f, DOOR_HEIGHT });
-			openings.push_back({ SIDE_DOOR_MIN_X, SIDE_DOOR_MAX_X, 0.f, SIDE_DOOR_HEIGHT });
-		}
 		if (wall == Wall::LEFT && g_variant.bay)
 			openings.push_back({ -BAY_OPENING_HALF, BAY_OPENING_HALF, 0.f, BAY_OPENING_HEIGHT });
-		if (wall == Wall::RIGHT)
-			openings.push_back({ HOUSE_LINK_MIN_Z, HOUSE_LINK_MAX_Z, 0.f, HOUSE_DOOR_HEIGHT });
 		std::sort(openings.begin(), openings.end(), [](const Opening& a, const Opening& b) { return a.u0 < b.u0; });
 		return openings;
 	}
@@ -189,18 +184,12 @@ namespace
 						if (wall == Wall::FRONT)
 						{
 							WallBox(shell, span, from, DOOR_MIN_X - 0.08f, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
-							WallBox(shell, span, DOOR_MAX_X + 0.08f, SIDE_DOOR_MIN_X - 0.02f, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
-							WallBox(shell, span, SIDE_DOOR_MAX_X + 0.02f, to, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
+							WallBox(shell, span, DOOR_MAX_X + 0.08f, to, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
 						}
 						else if (wall == Wall::LEFT && bay)
 						{
 							WallBox(shell, span, from, -BAY_OPENING_HALF - 0.02f, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
 							WallBox(shell, span, BAY_OPENING_HALF + 0.02f, to, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
-						}
-						else if (wall == Wall::RIGHT)
-						{
-							WallBox(shell, span, from, HOUSE_LINK_MIN_Z - 0.06f, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
-							WallBox(shell, span, HOUSE_LINK_MAX_Z + 0.06f, to, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
 						}
 						else
 							WallBox(shell, span, from, to, 0.f, 1.f, -0.02f, 0.f, TRIM_GREEN);
@@ -273,15 +262,6 @@ namespace
 					WallBox(frames, front, DOOR_MIN_X - 0.1f, DOOR_MAX_X + 0.1f, DOOR_HEIGHT, DOOR_HEIGHT + 0.1f, WALL, WALL + 0.04f, FRAME_GREY);
 					for (float u : { DOOR_MIN_X - 0.1f, DOOR_MAX_X })
 						WallBox(frames, front, u, u + 0.1f, 0.f, DOOR_HEIGHT, WALL, WALL + 0.04f, FRAME_GREY);
-					// The people door: its frame, and the door itself standing open against the inside of the wall.
-					WallBox(frames, front, SIDE_DOOR_MIN_X - 0.08f, SIDE_DOOR_MAX_X + 0.08f, SIDE_DOOR_HEIGHT, SIDE_DOOR_HEIGHT + 0.08f, WALL, WALL + 0.03f, FRAME_GREY);
-					for (float u : { SIDE_DOOR_MIN_X - 0.08f, SIDE_DOOR_MAX_X })
-						WallBox(frames, front, u, u + 0.08f, 0.f, SIDE_DOOR_HEIGHT, WALL, WALL + 0.03f, FRAME_GREY);
-					Box(frames, { SIDE_DOOR_MIN_X + 0.02f, SIDE_DOOR_HEIGHT * 0.5f - 0.02f, HALF_DEPTH - 0.45f }, { 0.045f, SIDE_DOOR_HEIGHT - 0.04f, 0.9f }, { 0.42f, 0.5f, 0.46f });
-					// The door into the house: a casing round it on this side (the house trims its own).
-					WallBox(frames, SpanOf(Wall::RIGHT), HOUSE_LINK_MIN_Z - 0.06f, HOUSE_LINK_MAX_Z + 0.06f, HOUSE_DOOR_HEIGHT, HOUSE_DOOR_HEIGHT + 0.06f, -0.02f, 0.f, FRAME_GREY);
-					for (float u : { HOUSE_LINK_MIN_Z - 0.06f, HOUSE_LINK_MAX_Z })
-						WallBox(frames, SpanOf(Wall::RIGHT), u, u + 0.06f, 0.f, HOUSE_DOOR_HEIGHT, -0.02f, 0.f, FRAME_GREY);
 
 					for (float x : { -outerX, outerX })
 						for (float z : { -outerZ, outerZ })
@@ -328,6 +308,47 @@ namespace
 		g_variant = {};
 	}
 
+	// Sand over the parts of `within` outside every one of `holes`, as a few boxes, its top 5 mm under the
+	// paving. Cut into a grid on every rectangle's edges, cell by cell, a row's neighbours run together.
+	void SandBoxes(MeshBuilder& builder, const std::vector<Paved>& within, const std::vector<Paved>& holes)
+	{
+		std::vector<float> xs, zs;
+		for (const auto* list : { &within, &holes })
+			for (const auto& rect : *list)
+			{
+				xs.insert(xs.end(), { rect.min.x, rect.max.x });
+				zs.insert(zs.end(), { rect.min.y, rect.max.y });
+			}
+		for (auto* edges : { &xs, &zs })
+		{
+			std::sort(edges->begin(), edges->end());
+			edges->erase(std::unique(edges->begin(), edges->end()), edges->end());
+		}
+		auto inside = [](const std::vector<Paved>& rects, glm::vec2 point) {
+			return std::any_of(rects.begin(), rects.end(), [&](const Paved& rect) {
+				return point.x > rect.min.x && point.x < rect.max.x && point.y > rect.min.y && point.y < rect.max.y;
+			});
+		};
+		for (size_t row = 0; row + 1 < zs.size(); row++)
+			for (size_t column = 0; column + 1 < xs.size();)
+			{
+				auto sand = [&](size_t at) {
+					glm::vec2 middle = { (xs[at] + xs[at + 1]) * 0.5f, (zs[row] + zs[row + 1]) * 0.5f };
+					return inside(within, middle) && !inside(holes, middle);
+				};
+				if (!sand(column))
+				{
+					column++;
+					continue;
+				}
+				size_t end = column + 1;
+				while (end + 1 < xs.size() && sand(end))
+					end++;
+				Box(builder, { (xs[column] + xs[end]) * 0.5f, -0.055f, (zs[row] + zs[row + 1]) * 0.5f }, { xs[end] - xs[column], 0.1f, zs[row + 1] - zs[row] });
+				column = end;
+			}
+	}
+
 	void LoadLot(const std::function<void(const std::string&, const MeshBuilder&)>& add)
 	{
 		{
@@ -336,13 +357,29 @@ namespace
 			add(ShopModels::SKY_DOME, sky);
 		}
 		{
+			// Sand as far as the eye can see, but not under the shack's floor, the paving or the highway: only 5 mm
+			// below them, it would show through them from any distance. Where the side bay's floor and drive go,
+			// sand of its own, there until the bay is built.
+			const float outerX = HALF_WIDTH + WALL, outerZ = HALF_DEPTH + WALL;
+			std::vector<Paved> covered(std::begin(PAVED), std::end(PAVED));
+			covered.push_back({ { -outerX, -outerZ }, { outerX, outerZ } });
+			for (float start : { HIGHWAY_NEAR_Z, HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN })
+				covered.push_back({ { -HIGHWAY_HALF_LENGTH, start }, { HIGHWAY_HALF_LENGTH, start + HIGHWAY_CARRIAGEWAY } });
+			const std::vector<Paved> bay = { { { BAY_MIN_X, -BAY_HALF_DEPTH }, { -outerX, BAY_HALF_DEPTH } }, BAY_DRIVE, BAY_DRIVE_LINK };
+			std::vector<Paved> notOpen = covered;
+			notOpen.insert(notOpen.end(), bay.begin(), bay.end());
+
 			MeshBuilder ground;
 			ground.SetUVScale(0.3f);
-			Box(ground, { 0.f, -0.055f, 0.f }, { 400.f, 0.1f, 400.f });
+			SandBoxes(ground, { { { -1200.f, -1200.f }, { 1200.f, 1200.f } } }, notOpen);
 			add(ShopModels::GROUND, ground);
+			MeshBuilder baySand;
+			baySand.SetUVScale(0.3f);
+			SandBoxes(baySand, bay, covered);
+			add(ShopModels::BAY_SAND, baySand);
 		}
 		{
-			// The drive, sidewalks, paths and patio (see GarageLayout::PAVED).
+			// The drive down to the highway and the apron round the shack (see GarageLayout::PAVED).
 			MeshBuilder paving;
 			paving.SetUVScale(0.5f);
 			for (const auto& paved : PAVED)
@@ -353,113 +390,110 @@ namespace
 			add(ShopModels::PAVING, paving);
 		}
 		{
+			// The highway's two carriageways, shoulders and all, with sand between them.
 			MeshBuilder road;
 			road.SetUVScale(0.25f);
-			Box(road, { 0.f, -0.05f, (STREET_NEAR_Z + STREET_FAR_Z) * 0.5f }, { STREET_HALF_LENGTH * 2.f, 0.1f, STREET_FAR_Z - STREET_NEAR_Z });
+			for (float start : { HIGHWAY_NEAR_Z, HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN })
+				Box(road, { 0.f, -0.04f, start + HIGHWAY_CARRIAGEWAY * 0.5f }, { HIGHWAY_HALF_LENGTH * 2.f, 0.1f, HIGHWAY_CARRIAGEWAY });
 			add(ShopModels::ROAD, road);
 		}
 		{
+			// Each carriageway: solid white along its outside edge, solid yellow along the median, and dashes
+			// between its two lanes.
 			MeshBuilder markings;
 			const glm::vec3 yellow = { 0.85f, 0.68f, 0.18f };
 			const glm::vec3 white = { 0.85f, 0.85f, 0.82f };
-			float middle = (STREET_NEAR_Z + STREET_FAR_Z) * 0.5f;
-			for (float x = -STREET_HALF_LENGTH; x < STREET_HALF_LENGTH; x += 6.f)
-				Box(markings, { x + 1.5f, 0.002f, middle }, { 3.f, 0.004f, 0.12f }, yellow);
-			for (float z : { STREET_NEAR_Z + 0.25f, STREET_FAR_Z - 0.25f })
-				Box(markings, { 0.f, 0.002f, z }, { STREET_HALF_LENGTH * 2.f, 0.004f, 0.1f }, white);
+			float length = HIGHWAY_HALF_LENGTH * 2.f;
+			for (bool farSide : { false, true })
+			{
+				float start = farSide ? HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN : HIGHWAY_NEAR_Z;
+				float outside = farSide ? start + HIGHWAY_CARRIAGEWAY - HIGHWAY_SHOULDER : start + HIGHWAY_SHOULDER;
+				float median = farSide ? start + HIGHWAY_SHOULDER : start + HIGHWAY_CARRIAGEWAY - HIGHWAY_SHOULDER;
+				Box(markings, { 0.f, 0.012f, outside }, { length, 0.004f, 0.15f }, white);
+				Box(markings, { 0.f, 0.012f, median }, { length, 0.004f, 0.15f }, yellow);
+				float between = (outside + median) * 0.5f;
+				for (float x = -HIGHWAY_HALF_LENGTH; x < HIGHWAY_HALF_LENGTH; x += 12.f)
+					Box(markings, { x + 1.5f, 0.012f, between }, { 3.f, 0.004f, 0.15f }, white);
+			}
 			add(ShopModels::ROAD_MARKINGS, markings);
 		}
 		{
-			// Board fences round the lots (see GarageLayout::FENCES), posts every 2.5 m.
-			MeshBuilder fence;
-			fence.SetUVScale(1.f);
-			const glm::vec3 boards = { 0.78f, 0.72f, 0.64f };
-			const glm::vec3 posts = { 0.62f, 0.56f, 0.48f };
-			constexpr float HEIGHT_BOARDS = 1.6f;
-			auto run = [&](glm::vec2 from, glm::vec2 to) {
-				glm::vec2 delta = to - from;
-				float length = glm::length(delta);
-				int panels = (std::max)(1, static_cast<int>(std::round(length / 2.5f)));
-				glm::vec2 step = delta / static_cast<float>(panels);
-				bool alongX = std::abs(delta.x) > std::abs(delta.y);
-				for (int i = 0; i < panels; i++)
+			// A saguaro: a ribbed trunk and two arms bent up, one higher than the other.
+			MeshBuilder cactus;
+			cactus.SetUVScale(2.f);
+			const glm::vec3 green = { 0.32f, 0.48f, 0.27f };
+			cactus.SetColor(green).AddCylinder({ 0.f, 1.6f, 0.f }, 0.2f, 3.2f, 10);
+			cactus.SetColor(green).AddSphere({ 0.f, 3.2f, 0.f }, 0.2f, 4, 10);
+			for (auto [side, height, reach, rise] : { std::tuple{ 1.f, 1.3f, 0.55f, 1.1f }, std::tuple{ -1.f, 1.9f, 0.45f, 0.8f } })
+			{
+				Box(cactus, { side * reach * 0.5f, height, 0.f }, { reach, 0.24f, 0.24f }, green);
+				cactus.SetColor(green).AddCylinder({ side * reach, height + rise * 0.5f, 0.f }, 0.14f, rise, 8);
+				cactus.SetColor(green).AddSphere({ side * reach, height + rise, 0.f }, 0.14f, 4, 8);
+			}
+			add(ShopModels::CACTUS, cactus);
+
+			// A boulder: a lumpy, squashed ball, half sunk in the sand.
+			MeshBuilder boulder;
+			boulder.SetUVScale(1.f);
+			boulder.SetColor({ 0.62f, 0.45f, 0.34f });
+			boulder.SetTransform(glm::scale(glm::mat4(1.f), { 1.3f, 0.7f, 1.f })).AddSphere({ 0.f, 0.2f, 0.f }, 0.8f, 4, 7);
+			boulder.SetTransform(glm::scale(glm::translate(glm::mat4(1.f), { 0.6f, 0.f, 0.3f }), { 0.9f, 0.6f, 0.8f })).AddSphere({ 0.f, 0.15f, 0.f }, 0.55f, 4, 6);
+			boulder.ResetTransform();
+			add(ShopModels::BOULDER, boulder);
+
+			// Dry scrub: a few tufts of grey-green twigs.
+			MeshBuilder scrub;
+			scrub.SetUVScale(2.f);
+			scrub.SetColor({ 0.55f, 0.55f, 0.4f });
+			for (auto [x, z, r] : { std::tuple{ 0.f, 0.f, 0.45f }, std::tuple{ 0.35f, 0.2f, 0.3f }, std::tuple{ -0.3f, 0.25f, 0.32f }, std::tuple{ 0.1f, -0.35f, 0.28f } })
+				scrub.AddSphere({ x, r * 0.6f, z }, r, 3, 6);
+			add(ShopModels::SCRUB, scrub);
+		}
+		{
+			// The mountains round the horizon: a ring of unit radius about the origin, scaled out to the edge of the
+			// view and kept centred on the camera (see ShopLighting), so they're always far off. A tall, jagged range
+			// at the back, and lower foothills in front of it. Every face looks in, towards the middle.
+			MeshBuilder mountains;
+			mountains.SetUVScale(60.f);
+			auto hash = [](int i, int seed) {
+				uint32_t h = static_cast<uint32_t>(i) * 374761393u + static_cast<uint32_t>(seed) * 668265263u;
+				h = (h ^ (h >> 13)) * 1274126177u;
+				return static_cast<float>((h ^ (h >> 16)) & 0xFFFF) / 65535.f;
+			};
+			auto inward = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+				glm::vec3 normal = glm::cross(b - a, c - a);
+				if (glm::dot(normal, glm::vec3(a.x + b.x + c.x, 0.f, a.z + b.z + c.z)) > 0.f)
+					std::swap(b, c);
+				mountains.AddFlatTriangle(a, b, c);
+			};
+			auto range = [&](float radius, float low, float high, int peaks, int seed, const glm::vec3& rock, const glm::vec3& foot) {
+				for (int i = 0; i < peaks; i++)
 				{
-					glm::vec2 center = from + step * (i + 0.5f);
-					glm::vec3 size = alongX ? glm::vec3(std::abs(step.x), HEIGHT_BOARDS, 0.04f) : glm::vec3(0.04f, HEIGHT_BOARDS, std::abs(step.y));
-					Box(fence, { center.x, HEIGHT_BOARDS * 0.5f + 0.05f, center.y }, size, boards);
-				}
-				for (int i = 0; i <= panels; i++)
-				{
-					glm::vec2 post = from + step * static_cast<float>(i);
-					Box(fence, { post.x, 0.9f, post.y }, { 0.1f, 1.8f, 0.1f }, posts);
+					// Each peak with the saddle after it, its height between low and high, sharper the higher it is.
+					float a0 = glm::two_pi<float>() * i / peaks, a1 = glm::two_pi<float>() * (i + 0.5f + (hash(i, seed) - 0.5f) * 0.4f) / peaks;
+					float a2 = glm::two_pi<float>() * (i + 1) / peaks;
+					float peak = low + (high - low) * std::pow(hash(i, seed + 1), 1.5f);
+					float saddle = low * 0.6f + (peak - low) * 0.25f * hash(i, seed + 2);
+					float nextSaddle = low * 0.6f + (low + (high - low) * std::pow(hash(i + 1, seed + 1), 1.5f) - low) * 0.25f * hash(i + 1, seed + 2);
+					auto at = [&](float angle, float r, float y) { return glm::vec3(std::sin(angle) * r, y, std::cos(angle) * r); };
+					glm::vec3 base0 = at(a0, radius, -0.02f), base1 = at(a1, radius, -0.02f), base2 = at(a2, radius, -0.02f);
+					glm::vec3 top0 = at(a0, radius * 1.01f, saddle), top1 = at(a1, radius * 1.02f, peak), top2 = at(a2, radius * 1.01f, nextSaddle);
+					glm::vec3 skirt0 = at(a0, radius * 0.96f, -0.02f), skirt1 = at(a1, radius * 0.95f, -0.02f), skirt2 = at(a2, radius * 0.96f, -0.02f);
+					mountains.SetColor(rock);
+					inward(skirt0, skirt1, top1);
+					inward(skirt0, top1, top0);
+					inward(skirt1, skirt2, top2);
+					inward(skirt1, top2, top1);
+					mountains.SetColor(foot);
+					inward(base0, base1, skirt1);
+					inward(base0, skirt1, skirt0);
+					inward(base1, base2, skirt2);
+					inward(base1, skirt2, skirt1);
 				}
 			};
-			for (const auto& fenceRun : FENCES)
-				run(fenceRun.from, fenceRun.to);
-			add(ShopModels::FENCE, fence);
-		}
-		{
-			MeshBuilder trunk;
-			trunk.SetUVScale(2.f);
-			trunk.SetColor(WHITE).AddCylinder({ 0.f, 1.6f, 0.f }, 0.17f, 3.2f, 10);
-			trunk.SetTransform(glm::rotate(glm::translate(glm::mat4(1.f), { 0.35f, 2.6f, 0.f }), -0.7f, { 0.f, 0.f, 1.f }));
-			trunk.AddCylinder({}, 0.07f, 1.2f, 8);
-			trunk.ResetTransform();
-			add(ShopModels::TREE_TRUNK, trunk);
-
-			MeshBuilder crown;
-			crown.SetUVScale(0.6f);
-			crown.SetColor(WHITE);
-			crown.AddSphere({ 0.f, 4.3f, 0.f }, 1.9f, 7, 10);
-			crown.AddSphere({ 1.0f, 3.7f, 0.4f }, 1.35f, 6, 9);
-			crown.AddSphere({ -0.9f, 3.9f, -0.5f }, 1.45f, 6, 9);
-			crown.AddSphere({ 0.2f, 5.3f, -0.2f }, 1.25f, 6, 9);
-			add(ShopModels::TREE_CROWN, crown);
-
-			MeshBuilder pine;
-			pine.SetUVScale(0.6f);
-			pine.SetColor({ 0.75f, 0.85f, 0.8f });
-			pine.AddCone({ 0.f, 1.1f, 0.f }, 1.9f, 3.0f, 10);
-			pine.AddCone({ 0.f, 2.7f, 0.f }, 1.5f, 2.7f, 10);
-			pine.AddCone({ 0.f, 4.2f, 0.f }, 1.05f, 2.4f, 10);
-			add(ShopModels::PINE_CROWN, pine);
-		}
-		{
-			// A house: front on +Z, centred on its footprint.
-			constexpr float HALF_LENGTH = 5.f;
-			constexpr float HALF_DEPTH_HOUSE = 3.5f;
-			constexpr float WALL_HEIGHT = 3.f;
-			constexpr float RIDGE = 5.1f;
-			float slope = (RIDGE - WALL_HEIGHT) / HALF_DEPTH_HOUSE;
-
-			MeshBuilder walls;
-			walls.SetUVScale(0.6f);
-			Box(walls, { 0.f, WALL_HEIGHT * 0.5f, 0.f }, { HALF_LENGTH * 2.f, WALL_HEIGHT, HALF_DEPTH_HOUSE * 2.f });
-			Gables(walls, HALF_LENGTH, HALF_DEPTH_HOUSE, WALL_HEIGHT, RIDGE);
-			Box(walls, { 2.8f, 4.2f, -1.f }, { 0.6f, 1.6f, 0.6f });	// chimney
-			add(ShopModels::HOUSE_WALLS, walls);
-
-			MeshBuilder roof;
-			roof.SetUVScale(0.6f);
-			GableRoof(roof, HALF_LENGTH * 2.f + 0.6f, HALF_DEPTH_HOUSE, RIDGE, slope, 0.45f, 0.12f);
-			add(ShopModels::HOUSE_ROOF, roof);
-
-			MeshBuilder trim;
-			const glm::vec3 pane = { 0.16f, 0.20f, 0.25f };
-			const glm::vec3 frame = { 0.92f, 0.92f, 0.88f };
-			for (float side : { 1.f, -1.f })
-				for (float x : { -3.2f, 3.2f, -0.f })
-				{
-					if (side > 0.f && x == 0.f)
-						continue;	// the front door goes there
-					float z = side * (HALF_DEPTH_HOUSE + 0.02f);
-					Box(trim, { x, 1.65f, z }, { 1.5f, 1.3f, 0.04f }, frame);
-					Box(trim, { x, 1.65f, z + side * 0.01f }, { 1.3f, 1.1f, 0.04f }, pane);
-				}
-			Box(trim, { 0.f, 1.1f, HALF_DEPTH_HOUSE + 0.02f }, { 1.2f, 2.2f, 0.04f }, frame);
-			Box(trim, { 0.f, 1.05f, HALF_DEPTH_HOUSE + 0.03f }, { 1.0f, 2.1f, 0.04f }, { 0.36f, 0.16f, 0.12f });
-			Box(trim, { 0.f, 0.08f, HALF_DEPTH_HOUSE + 0.6f }, { 2.0f, 0.16f, 1.2f }, { 0.6f, 0.6f, 0.58f });	// step
-			add(ShopModels::HOUSE_TRIM, trim);
+			range(1.f, 0.07f, 0.26f, 72, 11, { 0.66f, 0.47f, 0.37f }, { 0.74f, 0.6f, 0.46f });
+			range(0.86f, 0.025f, 0.08f, 96, 23, { 0.76f, 0.6f, 0.45f }, { 0.82f, 0.7f, 0.54f });
+			add(ShopModels::MOUNTAINS, mountains);
 		}
 		{
 			// Pole with an arm reaching over the road (+Z); the glowing head is its own model.
@@ -467,8 +501,8 @@ namespace
 			const glm::vec3 grey = { 0.42f, 0.44f, 0.46f };
 			pole.SetColor(grey).AddCylinder({ 0.f, STREET_LIGHT_HEIGHT * 0.5f, 0.f }, 0.08f, STREET_LIGHT_HEIGHT, 10);
 			pole.SetColor(grey).AddCylinder({ 0.f, 0.3f, 0.f }, 0.16f, 0.6f, 10);
-			Box(pole, { 0.f, STREET_LIGHT_HEIGHT - 0.05f, 0.6f }, { 0.08f, 0.08f, 1.2f }, grey);
-			Box(pole, { 0.f, STREET_LIGHT_HEIGHT - 0.07f, 1.15f }, { 0.34f, 0.1f, 0.6f }, grey);
+			Box(pole, { 0.f, STREET_LIGHT_HEIGHT - 0.05f, STREET_LIGHT_REACH * 0.5f }, { 0.08f, 0.08f, STREET_LIGHT_REACH + 0.1f }, grey);
+			Box(pole, { 0.f, STREET_LIGHT_HEIGHT - 0.07f, STREET_LIGHT_REACH }, { 0.34f, 0.1f, 0.6f }, grey);
 			add(ShopModels::STREET_LIGHT, pole);
 
 			MeshBuilder head;
@@ -590,13 +624,16 @@ namespace
 
 			MeshBuilder floor;
 			floor.SetUVScale(0.5f);
-			Box(floor, { middleX, -0.048f, 0.f }, { width, 0.1f, BAY_HALF_DEPTH * 2.f });
+			Box(floor, { middleX, -0.044f, 0.f }, { width, 0.1f, BAY_HALF_DEPTH * 2.f });
 			add(ShopModels::BAY_FLOOR, floor);
 
 			MeshBuilder drive;
 			drive.SetUVScale(0.5f);
-			glm::vec2 middle = (BAY_DRIVE.min + BAY_DRIVE.max) * 0.5f, size = BAY_DRIVE.max - BAY_DRIVE.min;
-			Box(drive, { middle.x, -0.05f, middle.y }, { size.x, 0.1f, size.y });
+			for (const auto& paved : { BAY_DRIVE, BAY_DRIVE_LINK })
+			{
+				glm::vec2 middle = (paved.min + paved.max) * 0.5f, size = paved.max - paved.min;
+				Box(drive, { middle.x, -0.044f, middle.y }, { size.x, 0.1f, size.y });
+			}
 			add(ShopModels::BAY_DRIVE, drive);
 		}
 
@@ -801,5 +838,4 @@ void ShopAssets::LoadOutdoors()
 	LoadGarage(add);
 	LoadLot(add);
 	LoadUpgrades(add);
-	LoadHouse();
 }

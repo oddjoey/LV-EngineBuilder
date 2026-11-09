@@ -41,7 +41,7 @@ pPart PartFactory::Create(PartType type, const EngineSpec& spec, PartQuality qua
 std::vector<pPart> PartFactory::CreateCompanions(const pPart& part, const EngineSpec& spec)
 {
 	// What comes in the same box: a rod's cap, a block's main caps, a head's cam caps, a bearing's
-	// other shell.
+	// other shell, a piston's pin.
 	std::vector<pPart> companions;
 	auto make = [&](PartType type) {
 		auto companion = Create(type, spec, part->GetQuality(), part->GetCondition() == PartCondition::DAMAGED ? PartCondition::USED : part->GetCondition(),
@@ -78,6 +78,7 @@ std::vector<pPart> PartFactory::CreateCompanions(const pPart& part, const Engine
 		}
 		case PartType::MAIN_BEARING:	make(PartType::MAIN_BEARING_LOWER); break;
 		case PartType::ROD_BEARING:		make(PartType::ROD_BEARING_LOWER); break;
+		case PartType::PISTON:			make(PartType::PISTON_PIN); break;
 		default:						break;
 	}
 	return companions;
@@ -628,6 +629,7 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::FLYWHEEL:
 		case PartType::EXHAUST_MANIFOLD:		material = MaterialType::GREY_IRON; break;
 		case PartType::SPARK_PLUG:				material = MaterialType::SPARK_PLUG_ALLOY; break;
+		case PartType::PISTON_PIN:				material = MaterialType::HARDENED_STEEL; break;
 		case PartType::ROD_CAP:					material = MaterialType::POWDER_METAL; break;
 		case PartType::MAIN_CAP:				material = MaterialType::NODULAR_IRON; break;
 		case PartType::CAM_CAP:					material = MaterialType::ALUMINUM_A356; break;
@@ -768,54 +770,3 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 	return part;
 }
 
-std::vector<std::string> PartFactory::QualityNotes(PartType type, PartQuality quality)
-{
-	std::vector<std::string> notes;
-	// What every part's quality changes: how tightly it's made, and what it costs.
-	switch (quality)
-	{
-		case PartQuality::BUDGET:
-			notes.push_back("Made to looser tolerances: sizes scatter about 1.6x wider than OEM, and some land outside spec. Measure before you fit.");
-			break;
-		case PartQuality::OEM:
-			notes.push_back("The factory part: made to hold its tolerance band.");
-			break;
-		case PartQuality::PERFORMANCE:
-			notes.push_back("Made to tighter tolerances: sizes held about 40% closer to the middle of the band than OEM.");
-			break;
-	}
-
-	// And what it changes for this part in particular.
-	bool performance = quality == PartQuality::PERFORMANCE;
-	switch (type)
-	{
-		case PartType::CRANKSHAFT:
-			notes.push_back(performance ? "Forged 4340 steel: far stronger than the cast nodular iron crank." : "Cast nodular iron.");
-			break;
-		case PartType::CONNECTING_ROD:
-			notes.push_back(performance ? "Forged 4340 steel: stronger than powder-metal rods." : "Powder-metal (sintered) steel.");
-			break;
-		case PartType::CAMSHAFT:
-			notes.push_back(performance ? "Forged steel, ground with about 0.6 mm more lobe lift: more airflow, more power." : "Cast nodular iron, stock lift.");
-			break;
-		case PartType::PISTON:
-			notes.push_back(quality == PartQuality::BUDGET ? "Cast aluminium: the weakest alloy."
-				: quality == PartQuality::OEM ? "Hypereutectic (high-silicon) aluminium: stronger, and grows little with heat."
-				: "Forged 2618 aluminium: the strongest, but it grows more when hot, so it needs more piston-to-wall clearance.");
-			break;
-		case PartType::PISTON_RING:
-			notes.push_back(performance ? "File-fit: left deliberately tight so you gap each ring to its own bore (ring filer needed)."
-				: "Pre-gapped: the end gap lands wherever it lands in your bore.");
-			break;
-		case PartType::INTAKE_VALVE:
-			notes.push_back(performance ? "Forged steel instead of powder metal." : "Powder-metal steel.");
-			break;
-		case PartType::VALVE_SPRING:
-			if (performance)
-				notes.push_back("About 15% stiffer: more seat pressure, so the valves don't float at high rpm.");
-			break;
-		default:
-			break;
-	}
-	return notes;
-}

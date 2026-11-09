@@ -13,7 +13,6 @@ namespace Ratings
 	float ToolPrecision(const MeasuringTool& tool);
 	float ToolSpeed(const MeasuringTool& tool);
 	float MachineAccuracy(const Machine& machine);
-	float MachineSpeed(const Machine& machine);
 	// Negative when the machine doesn't leave a finish worth rating.
 	float MachineFinish(const Machine& machine);
 

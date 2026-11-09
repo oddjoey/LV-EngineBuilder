@@ -74,7 +74,7 @@ const EngineSpec& EngineSpec::InlineFour()
 		s.gasketThickness = Tolerance::Bilateral(0.70, 0.02);
 		s.gasketBore = 82.5;
 
-		s.camJournals = 5;
+		s.camJournals = 4;
 		s.camBore = Tolerance::Limits(28.985, 29.006);
 		s.camJournal = Tolerance::Limits(28.930, 28.950);
 		// Lobe height 39.440 - 39.450 mm, worn out below 39.140. The lift (and so the base circle) is the LV-16's own.

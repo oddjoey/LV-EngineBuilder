@@ -1,10 +1,12 @@
 #include "MeasuringTool.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
 
 #include "Random.h"
+#include "Skills.h"
 
 bool MeasuringTool::CanMeasure(const Feature& feature) const
 {
@@ -24,9 +26,9 @@ bool MeasuringTool::CanCheck(AssemblyCheck check) const
 	return std::find(assemblyChecks.begin(), assemblyChecks.end(), check) != assemblyChecks.end();
 }
 
-double MeasuringTool::Read(double trueValue) const
+double MeasuringTool::Read(double trueValue, double scatter) const
 {
-	double reading = Random::Normal(trueValue, sigma);
+	double reading = Random::Normal(trueValue, sigma * scatter);
 	if (resolution > 0.0)
 		reading = std::round(reading / resolution) * resolution;
 	return reading;
@@ -60,7 +62,6 @@ namespace ToolCatalog
 			caliper.resolution = 0.01;
 			caliper.sigma = 0.010;
 			caliper.price = 40.0;
-			caliper.hoursPerUse = 0.05;
 			list.push_back(caliper);
 
 			MeasuringTool micrometer;
@@ -70,7 +71,6 @@ namespace ToolCatalog
 			micrometer.resolution = 0.001;
 			micrometer.sigma = 0.0012;
 			micrometer.price = 350.0;
-			micrometer.hoursPerUse = 0.15;
 			list.push_back(micrometer);
 
 			MeasuringTool telescoping;
@@ -81,7 +81,6 @@ namespace ToolCatalog
 			telescoping.resolution = 0.01;
 			telescoping.sigma = 0.006;
 			telescoping.price = 60.0;
-			telescoping.hoursPerUse = 0.2;
 			list.push_back(telescoping);
 
 			MeasuringTool boreGauge;
@@ -92,7 +91,6 @@ namespace ToolCatalog
 			boreGauge.resolution = 0.001;
 			boreGauge.sigma = 0.0015;
 			boreGauge.price = 450.0;
-			boreGauge.hoursPerUse = 0.25;
 			list.push_back(boreGauge);
 
 			MeasuringTool smallHole;
@@ -103,7 +101,6 @@ namespace ToolCatalog
 			smallHole.resolution = 0.005;
 			smallHole.sigma = 0.004;
 			smallHole.price = 45.0;
-			smallHole.hoursPerUse = 0.15;
 			list.push_back(smallHole);
 
 			MeasuringTool smallBore;
@@ -114,7 +111,6 @@ namespace ToolCatalog
 			smallBore.resolution = 0.001;
 			smallBore.sigma = 0.0012;
 			smallBore.price = 380.0;
-			smallBore.hoursPerUse = 0.15;
 			list.push_back(smallBore);
 
 			MeasuringTool runout;
@@ -124,7 +120,6 @@ namespace ToolCatalog
 			runout.resolution = 0.002;
 			runout.sigma = 0.002;
 			runout.price = 140.0;
-			runout.hoursPerUse = 0.1;
 			list.push_back(runout);
 
 			MeasuringTool springTester;
@@ -134,7 +129,6 @@ namespace ToolCatalog
 			springTester.resolution = 1.0;
 			springTester.sigma = 1.5;
 			springTester.price = 250.0;
-			springTester.hoursPerUse = 0.05;
 			list.push_back(springTester);
 
 			MeasuringTool straightedge;
@@ -144,7 +138,6 @@ namespace ToolCatalog
 			straightedge.resolution = 0.01;
 			straightedge.sigma = 0.005;
 			straightedge.price = 80.0;
-			straightedge.hoursPerUse = 0.1;
 			list.push_back(straightedge);
 
 			MeasuringTool burette;
@@ -154,7 +147,6 @@ namespace ToolCatalog
 			burette.resolution = 0.1;
 			burette.sigma = 0.05;
 			burette.price = 90.0;
-			burette.hoursPerUse = 0.2;
 			list.push_back(burette);
 
 			MeasuringTool profilometer;
@@ -164,7 +156,6 @@ namespace ToolCatalog
 			profilometer.resolution = 0.01;
 			profilometer.sigma = 0.02;
 			profilometer.price = 1500.0;
-			profilometer.hoursPerUse = 0.1;
 			list.push_back(profilometer);
 
 			MeasuringTool plastigauge;
@@ -174,7 +165,6 @@ namespace ToolCatalog
 			plastigauge.resolution = 0.0125;
 			plastigauge.sigma = 0.005;
 			plastigauge.price = 15.0;
-			plastigauge.hoursPerUse = 0.3;
 			list.push_back(plastigauge);
 
 			MeasuringTool feeler;
@@ -184,7 +174,6 @@ namespace ToolCatalog
 			feeler.resolution = 0.025;
 			feeler.sigma = 0.004;
 			feeler.price = 25.0;
-			feeler.hoursPerUse = 0.1;
 			list.push_back(feeler);
 
 			MeasuringTool dialIndicator;
@@ -194,7 +183,6 @@ namespace ToolCatalog
 			dialIndicator.resolution = 0.01;
 			dialIndicator.sigma = 0.004;
 			dialIndicator.price = 120.0;
-			dialIndicator.hoursPerUse = 0.2;
 			list.push_back(dialIndicator);
 
 			MeasuringTool heightMic;
@@ -204,7 +192,6 @@ namespace ToolCatalog
 			heightMic.resolution = 0.01;
 			heightMic.sigma = 0.008;
 			heightMic.price = 90.0;
-			heightMic.hoursPerUse = 0.1;
 			list.push_back(heightMic);
 
 			// Hand tools, for every nut and bolt on the engine. (After the measuring tools, so saved
@@ -251,7 +238,6 @@ namespace ToolCatalog
 			square.resolution = 0.1;
 			square.sigma = 0.05;
 			square.price = 25.0;
-			square.hoursPerUse = 0.05;
 			list.push_back(square);
 
 			MeasuringTool aligner;
@@ -261,7 +247,6 @@ namespace ToolCatalog
 			aligner.resolution = 0.01;
 			aligner.sigma = 0.005;
 			aligner.price = 180.0;
-			aligner.hoursPerUse = 0.15;
 			list.push_back(aligner);
 
 			// Cordless tools, their battery packs and chargers. (Added last, so saved tool lists keep their
@@ -315,7 +300,6 @@ namespace ToolCatalog
 			beltGauge.resolution = 0.5;
 			beltGauge.sigma = 0.2;
 			beltGauge.price = 45.0;
-			beltGauge.hoursPerUse = 0.05;
 			list.push_back(beltGauge);
 
 			// The combination wrenches, one tool each, so one at a time comes out of the set and goes on a nut
@@ -335,14 +319,95 @@ namespace ToolCatalog
 				list.push_back(wrench);
 			}
 
-			// A new shop starts with the bare minimum to strip and rebuild an engine: a ratchet and sockets for
-			// every nut and bolt (the crank pulley bolt is 22 mm), the cheapest torque wrench that reaches the
-			// crank pulley bolt's torque, a caliper, and the service manual (hung on the tool board with the rest).
+			// Paint, for decorating the shop: markers draw on the walls and floor, spray cans spray them
+			// (or coat a part or a tool all over), and a rag with thinner wipes it off. (Added after the
+			// wrenches, so saved tool lists keep their order.)
+			auto paint = [&](HandToolKind kind, const std::string& name, const std::string& description, double price, uint32_t color) {
+				MeasuringTool tool;
+				tool.name = name;
+				tool.description = description;
+				tool.handKind = kind;
+				tool.price = price;
+				tool.paintColor = color;
+				list.push_back(tool);
+			};
+			for (auto [color, rgb] : std::initializer_list<std::pair<const char*, uint32_t>>{
+				{ "Black", 0x1A1A1A }, { "White", 0xF2F2EE }, { "Red", 0xC8231E }, { "Silver", 0xB4B8BC }, { "Yellow", 0xF0C814 } })
+			{
+				std::string lower = color;
+				lower[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(lower[0])));
+				paint(HandToolKind::MARKER, std::format("Paint Marker ({})", color), std::format("A {} paint marker. Aim at a wall or the floor and hold the left button "
+					"to draw; the mouse wheel sets how thick the line is.", lower), 6.0, rgb);
+			}
+			for (auto [color, rgb] : std::initializer_list<std::pair<const char*, uint32_t>>{
+				{ "Red", 0xC8231E }, { "Black", 0x1A1A1A }, { "White", 0xF2F2EE }, { "Blue", 0x1E5AC8 }, { "Green", 0x28962D },
+				{ "Yellow", 0xF0C814 }, { "Orange", 0xE66E14 }, { "Purple", 0x7832AA }, { "Pink", 0xE65A9B }, { "Silver", 0xB4B8BC } })
+				paint(HandToolKind::SPRAY_CAN, std::format("Spray Paint ({})", color), "A can of spray paint. Hold the left button to spray "
+					"the wall or floor it's pointed at (the mouse wheel sets how wide), or to give a part or tool a coat of it.", 9.0, rgb);
+			paint(HandToolKind::THINNER, "Rag & Paint Thinner", "Hold the left button to wipe paint off the walls and floor (the mouse wheel sets how wide), or strip a "
+				"coat off a part or tool.", 12.0, 0);
+			// The Showroom Paint perk's colours.
+			for (auto [color, rgb] : std::initializer_list<std::pair<const char*, uint32_t>>{
+				{ "Gold", 0xD4A52A }, { "Chrome", 0xDCE0E6 }, { "Candy Teal", 0x12A89A } })
+			{
+				paint(HandToolKind::SPRAY_CAN, std::format("Spray Paint ({})", color), "Showroom spray paint. Hold the left button to spray "
+					"the wall or floor it's pointed at (the mouse wheel sets how wide), or to give a part or tool a coat of it.", 18.0, rgb);
+				list.back().skill = static_cast<int>(SkillKind::SHOWROOM_PAINT);
+			}
+
+			// The big combination wrenches, for the crank pulley bolt (22 mm) and the like, and the wrenches out
+			// of the set. (After the paint, so saved tool lists keep their order.)
+			hand("Combination Wrench Set 21-24 mm", "Big open end and ring spanners, 21, 22 and 24 mm, in their tray: the crank pulley bolt is 22. "
+				"Slow, and with no torque reading.", HandToolKind::WRENCHES, 45.0, { 21, 22, 24 });
+			size_t bigWrenchSet = list.size() - 1;
+			for (int size : list[bigWrenchSet].sizes)
+			{
+				MeasuringTool wrench;
+				wrench.name = std::format("{} mm Combination Wrench", size);
+				wrench.description = std::format("An open end and a ring, both {} mm. Out of the big combination wrench set.", size);
+				wrench.handKind = HandToolKind::COMBINATION_WRENCH;
+				wrench.sizes = { size };
+				wrench.partOf = static_cast<int>(bigWrenchSet);
+				list.push_back(wrench);
+			}
+
+			// The press for the piston pins (a piston goes onto its rod off the engine, held by its pin) and the compressor
+			// that squeezes its ring in to go down the bore. (Last, so saved tool lists keep their order.)
+			hand("Piston Pin Press", "A C-frame press with a screw and a pusher: with the piston sat on its rod, hold the left button to press "
+				"a pin through the piston and the rod's small end, the right button to press it out again.", HandToolKind::PIN_PRESS, 40.0);
+			hand("Piston Ring Compressor", "A spring-steel band ratcheted round the piston: hold the left button on a ringed piston on its rod to "
+				"squeeze its ring into its groove, so it slides down the bore; the right button lets it off.", HandToolKind::RING_COMPRESSOR, 25.0);
+
+			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
+			// the pin press and ring compressor, and the service manual (hung on the tool board with the rest). Everything else is bought.
 			for (auto& tool : list)
-				for (const char* starter : { "3/8in Ratchet", "Metric Socket Set 8-19 mm", "Large Socket Set 21-36 mm", "Beam Torque Wrench",
-					"Digital Caliper", "LV-16 Factory Service Manual" })
+				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual", "Piston Pin Press", "Piston Ring Compressor" })
 					if (tool.name == starter)
 						tool.ownedAtStart = true;
+
+			// Ratchets, sockets and whatever drives a socket wait for the Sockets & Ratchets perk, but for the
+			// beam torque wrench and the sockets it needs: from the start, a bolt can be torqued to spec.
+			for (auto& tool : list)
+			{
+				bool drivesSockets = tool.handKind == HandToolKind::RATCHET || tool.handKind == HandToolKind::BREAKER_BAR || tool.handKind == HandToolKind::SOCKETS
+					|| tool.handKind == HandToolKind::TORQUE_WRENCH || tool.handKind == HandToolKind::IMPACT;
+				bool fromStart = tool.name == "Beam Torque Wrench" || tool.name == "Metric Socket Set 8-19 mm";
+				if (drivesSockets && !fromStart)
+					tool.skill = static_cast<int>(SkillKind::SOCKETS);
+			}
+
+			// The better tools wait for the shop's rank: precision gauges, the better torque wrenches, and
+			// cordless power (with the batteries and chargers that go with it).
+			for (auto& tool : list)
+				for (auto [name, rank] : std::initializer_list<std::pair<const char*, int>>{
+					{ "Outside Micrometer Set", 2 }, { "Valve Spring Tester", 2 }, { "Dial Indicator & Deck Bridge", 2 },
+					{ "Installed Height Micrometer", 2 }, { "Click Torque Wrench", 2 },
+					{ "Dial Bore Gauge", 3 }, { "Dial Small-Bore Gauge", 3 }, { "3/8in Cordless Ratchet", 3 },
+					{ "18V 2.0 Ah Battery", 3 }, { "Battery Charger 2 A", 3 },
+					{ "Digital Torque Wrench", 4 }, { "1/2in Cordless Impact Wrench", 4 }, { "18V 4.0 Ah Battery", 4 },
+					{ "Surface Profilometer", 5 }, { "18V 6.0 Ah Battery", 5 }, { "Rapid Charger 6 A", 5 } })
+					if (tool.name == name)
+						tool.rank = rank;
 
 			return list;
 		}();

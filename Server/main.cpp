@@ -3,9 +3,13 @@
 //   LV-EngineServer [--config server.cfg] [--port 27616]
 //
 // Runs until Ctrl+C (or the console closing), then saves the garage.
+#ifdef _WIN32
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#else
+#include <csignal>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -19,6 +23,7 @@ namespace
 {
 	std::atomic<bool> s_running = true;
 
+#ifdef _WIN32
 	BOOL WINAPI OnConsoleEvent(DWORD)
 	{
 		s_running = false;
@@ -26,6 +31,13 @@ namespace
 		std::this_thread::sleep_for(std::chrono::seconds(3));
 		return TRUE;
 	}
+#else
+	// Ctrl+C, or being told to stop: the loop finishes and it saves.
+	void OnSignal(int)
+	{
+		s_running = false;
+	}
+#endif
 }
 
 int main(int argc, char** argv)
@@ -52,7 +64,12 @@ int main(int argc, char** argv)
 		std::fprintf(stderr, "%s\n", error.c_str());
 		return 1;
 	}
+#ifdef _WIN32
 	SetConsoleCtrlHandler(OnConsoleEvent, TRUE);
+#else
+	std::signal(SIGINT, OnSignal);
+	std::signal(SIGTERM, OnSignal);
+#endif
 
 	// Every couple of milliseconds: changes are passed on as soon as they come in.
 	auto last = std::chrono::steady_clock::now();

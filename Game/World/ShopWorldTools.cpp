@@ -137,7 +137,8 @@ namespace
 			const auto* holes = EngineAssembly::Holes(slot);
 			if (!holes || holes->parent != capType)
 				continue;
-			for (int hole = index * holes->perParent; hole < (index + 1) * holes->perParent; hole++)
+			int first = holes->throughAll ? 0 : index * holes->perParent;
+			for (int hole = first; hole < first + holes->perParent; hole++)
 			{
 				auto fastener = assembly.Get(slot, hole);
 				if (!fastener || fastener->GetTightness() != FastenerTightness::TORQUED)
@@ -331,7 +332,7 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 
 	for (const auto& [ref, visual] : m_items)
 	{
-		if (!visual.part || !visual.object->IsVisible() || visual.place == ItemPlace::HAND || visual.place == ItemPlace::CARRIED)
+		if (!visual.part || !visual.object->IsVisible() || visual.place == ItemPlace::HAND || visual.place == ItemPlace::CARRIED || visual.place == ItemPlace::ATTACHED)
 			continue;
 		if (glm::length(visual.object->GetPosition() - eye) > MEASURE_DISTANCE + 0.5f)
 			continue;
@@ -560,6 +561,9 @@ std::optional<size_t> ShopWorld::FindFitTarget(const Workshop& workshop, const F
 			auto slot = static_cast<AssemblySlot>(slotIndex);
 			if (EngineAssembly::SlotPartType(slot) != held.part->GetType())
 				continue;
+			// Bearing shells go on in their rods and caps, never by themselves.
+			if (EngineAssembly::CarriedBy(slot))
+				continue;
 			bool fastener = EngineAssembly::Holes(slot) != nullptr;
 			for (int index = 0; index < assembly.SlotCount(slot); index++)
 			{
@@ -696,7 +700,7 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 	if (part)
 	{
 		bool damaged = part->GetCondition() == PartCondition::DAMAGED;
-		lines.push_back({ std::format("{}, {}", PartQualityName(part->GetQuality()), PartConditionName(part->GetCondition())), damaged ? red : dim });
+		lines.push_back({ PartConditionName(part->GetCondition()), damaged ? red : dim });
 		if (damaged)
 			lines.push_back({ part->GetDamageReason(), red });
 	}
@@ -710,6 +714,7 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 			auto tightness = part->GetTightness();
 			lines.push_back(tightness == FastenerTightness::TORQUED ? std::pair{ std::string("Torqued"), green }
 				: tightness == FastenerTightness::SNUG ? std::pair{ std::string("Snugged up by feel, not torqued"), amber }
+				: PartWayDoneUp(*part) ? std::pair{ std::format("{:.0f}% done up", m_fastenerTurns.at(part->GetId()) * 100.f), amber }
 				: std::pair{ std::string("Finger tight"), amber });
 		}
 		// The tools for the job.
@@ -841,6 +846,10 @@ bool ShopWorld::StationFits(const Station& station, const glm::vec3& position, f
 	for (const auto& other : m_stations)
 	{
 		if (other.object == station.object || !other.present)
+			continue;
+		// The hoist's legs run in under an engine stand or the dyno, to get its hook over the engine.
+		auto under = [](StationType hoist, StationType over) { return hoist == StationType::HOIST && (over == StationType::ENGINE_STAND || over == StationType::DYNO); };
+		if (under(station.type, other.type) || under(other.type, station.type))
 			continue;
 		auto bounds = WorldBounds(other.object);
 		bool overlaps = footprint.min.x < bounds.max.x - 0.01f && bounds.min.x < footprint.max.x - 0.01f
@@ -1036,7 +1045,7 @@ void ShopWorld::DrawHotbar(const Workshop& workshop) const
 	}
 
 	// The item in hand, with what can be done with it beside it, centred over the hotbar.
-	std::string carried = m_carriedPackage && m_packages.contains(m_carriedPackage) ? "Delivery" : "";
+	std::string carried = m_carriedPackage && m_packages.contains(m_carriedPackage) ? DescribeItem(ItemRef::Package(m_carriedPackage), workshop).name : "";
 	if (auto held = GetHeld(); held || !carried.empty())
 	{
 		auto name = held ? DescribeItem(held->ref, workshop).name : carried;
@@ -1073,7 +1082,7 @@ void ShopWorld::DrawPackageLabels(const Workshop& workshop, const FirstPersonCon
 	for (const auto& [id, package] : m_packages)
 	{
 		// The one being aimed at is named by the prompt instead.
-		if ((m_hover && m_hover->kind == TargetKind::PACKAGE && m_hover->packageId == id) || id == m_carriedPackage)
+		if ((m_hover && m_hover->kind == TargetKind::PACKAGE && m_hover->packageId == id) || IsCarried(id) || m_remoteStowedPackages.contains(id))
 			continue;
 
 		// On the middle of the package, so the tags on a stack don't overlap.
@@ -1168,6 +1177,26 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		drawList->AddCircleFilled(center, 2.f, m_hover || m_measureTarget ? IM_COL32(255, 210, 90, 255) : white);
 	}
 
+	// Paint in hand: a ring on the wall the size it'll go on.
+	if (m_paintCursor && !IsLookingBack())
+	{
+		constexpr int SEGMENTS = 40;
+		glm::vec3 u = m_paintCursor->plane.U(), v = m_paintCursor->plane.V();
+		std::vector<ImVec2> ring;
+		for (int i = 0; i < SEGMENTS; i++)
+		{
+			float angle = glm::two_pi<float>() * i / SEGMENTS;
+			glm::vec3 point = m_paintCursor->point + (u * std::cos(angle) + v * std::sin(angle)) * m_paintCursor->radius;
+			if (auto screen = ProjectToScreen(point, player))
+				ring.push_back({ screen->x, screen->y });
+		}
+		if (ring.size() == SEGMENTS)
+		{
+			drawList->AddPolyline(ring.data(), SEGMENTS, IM_COL32(0, 0, 0, 150), ImDrawFlags_Closed, 3.f);
+			drawList->AddPolyline(ring.data(), SEGMENTS, IM_COL32(255, 255, 255, 220), ImDrawFlags_Closed, 1.5f);
+		}
+	}
+
 	// Faint dots on everything the tool in hand can measure from here...
 	for (const auto& point : m_measurePoints)
 		if (auto screen = ProjectToScreen(point, player))
@@ -1213,13 +1242,14 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		if (auto screen = ProjectToScreen(*m_spannerTarget, player))
 			drawList->AddCircle({ screen->x, screen->y }, 10.f, IM_COL32(255, 255, 255, 230), 24, 2.f);
 
-	// Turning a nut or bolt: a ring round the crosshair fills as it goes.
-	if (m_turning && m_turning->progress > 0.f)
+	// Turning a nut or bolt, or pressing a pin: a ring round the crosshair fills as it goes.
+	float ring = m_pressAimed && m_pressProgress > 0.f ? m_pressProgress : m_turning ? m_turning->progress : 0.f;
+	if (ring > 0.f)
 	{
 		constexpr float RING = 16.f;
 		float start = -glm::half_pi<float>();
 		drawList->AddCircle(center, RING, IM_COL32(0, 0, 0, 120), 40, 5.f);
-		drawList->PathArcTo(center, RING, start, start + glm::two_pi<float>() * (std::min)(m_turning->progress, 1.f), 40);
+		drawList->PathArcTo(center, RING, start, start + glm::two_pi<float>() * (std::min)(ring, 1.f), 40);
 		drawList->PathStroke(IM_COL32(255, 210, 120, 240), 0, 3.f);
 	}
 	if (!m_prompt.empty())
@@ -1262,7 +1292,6 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		ShadowText(drawList, { center.x, 40.f }, IM_COL32(255, 120, 90, 255), std::format("{:.0f} rpm", m_engineRpm), true);
 
 	ShadowText(drawList, { 16.f, 12.f }, IM_COL32(140, 230, 140, 255), std::format("${:.0f}", workshop.GetMoney()), false);
-	ShadowText(drawList, { 90.f, 12.f }, white, std::format("{:.1f} h on the clock", workshop.GetHours()), false);
 	if (!m_packages.empty())
 		ShadowText(drawList, { 16.f, 32.f }, IM_COL32(230, 190, 120, 255), std::format("{} deliver{} waiting by the door", m_packages.size(), m_packages.size() == 1 ? "y" : "ies"), false);
 
@@ -1290,6 +1319,11 @@ std::string ShopWorld::SpannerLabel(size_t toolIndex) const
 		case HandToolKind::IMPACT:			return socket + pack;
 		case HandToolKind::COMBINATION_WRENCH:	return std::format("{} mm", tool.sizes.front());
 		case HandToolKind::BATTERY:			return BatteryLabel(toolIndex) + " charged";
+		case HandToolKind::MARKER:			return "[LMB] Draw";
+		case HandToolKind::SPRAY_CAN:		return "[LMB] Spray";
+		case HandToolKind::THINNER:			return "[LMB] Wipe off paint";
+		case HandToolKind::PIN_PRESS:		return "[LMB] Press a pin in   [RMB] Press one out";
+		case HandToolKind::RING_COMPRESSOR:	return "[LMB] Squeeze a ring in   [RMB] Let it off";
 		default:							return "";
 	}
 }
@@ -1462,81 +1496,239 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 	auto tightness = part->GetTightness();
 	std::string position = assembly.PositionName(target->slot, target->index);
 
-	// The button is held to turn it, and let go before the next one.
-	bool holding = Controls::Held(input, Control::PRIMARY);
-	if (!holding)
+	// Held to turn it: LMB does it up, RMB undoes it. Let go part way and it stays part way
+	// (m_fastenerTurns); once one is done, the button is let go before the next.
+	bool tightenHeld = Controls::Held(input, Control::PRIMARY);
+	bool loosenHeld = Controls::Held(input, Control::SET_DOWN);
+	if (!tightenHeld && !loosenHeld)
 		m_turnDone = false;
-	auto stop = [&] { m_turning.reset(); return false; };
 
-	// A torque wrench only ever does up; anything else snugs a loose one and undoes a tight one.
+	// How far it's done up, 0 finger tight to 1 done up. Snugged by feel, a torque wrench still has the last
+	// of it to go.
 	bool torqueWrench = tool.handKind == HandToolKind::TORQUE_WRENCH;
-	bool tightening = torqueWrench || tightness == FastenerTightness::LOOSE;
-	std::string state = tightness == FastenerTightness::TORQUED ? "torqued" : tightness == FastenerTightness::SNUG ? "snugged up by feel, not torqued" : "finger tight";
-	if (torqueWrench && tightness == FastenerTightness::TORQUED)
-	{
-		m_prompt = std::format("{}: already torqued", position);
-		return stop();
-	}
-	std::optional<std::string> problem = workshop.TurningProblem(target->slot, target->index, toolIndex, size, tightening);
-	// A cordless tool needs a pack with something left in it.
-	std::optional<size_t> battery = tool.powered ? BatteryOn(toolIndex) : std::nullopt;
-	if (!problem && tool.powered && !battery)
-		problem = std::format("There's no battery on the {}: look at a pack and press [E] to clip one on.", tool.name);
-	else if (!problem && battery && BatteryCharge(*battery) <= 0.f)
-		problem = std::format("The {} is flat: put it on a charger.", ToolCatalog::Of(*battery).name);
-	if (problem)
-	{
-		m_prompt = std::format("{} ({})", position, state);
-		m_secondaryPrompt = *problem;
-		// Clicking says why.
-		if (Controls::Pressed(input, Control::PRIMARY))
-			Toast(*problem);
-		return stop();
-	}
-	std::string spec = std::format("{:.0f} Nm", holes->torqueNm);
-	m_prompt = torqueWrench ? std::format("[LMB] Hold to torque {} to {}", position, spec)
-		: tightening ? std::format("[LMB] Hold to snug up {} (spec {}: a torque wrench does it properly)", position, spec)
-		: std::format("[LMB] Hold to loosen {}", position);
-	m_secondaryPrompt = std::format("It's {}.", state);
-	if (!holding || m_turnDone)
-		return stop();
+	constexpr float SNUG_SHARE = 0.7f;
+	auto turned = m_fastenerTurns.find(part->GetId());
+	float doneUp = turned != m_fastenerTurns.end() ? turned->second
+		: tightness == FastenerTightness::LOOSE ? 0.f : tightness == FastenerTightness::SNUG && torqueWrench ? SNUG_SHARE : 1.f;
+	bool canTighten = torqueWrench ? tightness != FastenerTightness::TORQUED || doneUp < 1.f : tightness == FastenerTightness::LOOSE;
+	bool canLoosen = tightness != FastenerTightness::LOOSE || doneUp > 0.f;
 
-	// Turning: as long as the tool takes for each of them (bigger nuts and bolts a little longer), the
-	// tool heard all the while. Looking away, or at another, starts again.
+	// Why the tool can't turn it each way, if it can't (a cordless tool needs a pack with something in it).
+	std::optional<size_t> battery = tool.powered ? BatteryOn(toolIndex) : std::nullopt;
+	auto problemWith = [&](bool tightening) -> std::optional<std::string> {
+		if (auto problem = workshop.TurningProblem(target->slot, target->index, toolIndex, size, tightening))
+			return problem;
+		if (tool.powered && !battery)
+			return std::format("There's no battery on the {}: look at a pack and press [E] to clip one on.", tool.name);
+		if (battery && BatteryCharge(*battery) <= 0.f)
+			return std::format("The {} is flat: put it on a charger.", ToolCatalog::Of(*battery).name);
+		return std::nullopt;
+	};
+	auto tightenProblem = canTighten ? problemWith(true) : std::nullopt;
+	auto loosenProblem = canLoosen ? problemWith(false) : std::nullopt;
+
+	std::string state = doneUp > 0.f && doneUp < 1.f && tightness == FastenerTightness::LOOSE ? std::format("{:.0f}% done up", doneUp * 100.f)
+		: tightness == FastenerTightness::TORQUED ? "torqued" : tightness == FastenerTightness::SNUG ? "snugged up by feel, not torqued" : "finger tight";
+	std::string spec = std::format("{:.0f} Nm", holes->torqueNm);
+	std::vector<std::string> actions;
+	if (canTighten && !tightenProblem)
+		actions.push_back(torqueWrench ? std::format("[LMB] Hold to torque to {}", spec)
+			: std::format("[LMB] Hold to snug up (spec {}: a torque wrench does it properly)", spec));
+	if (canLoosen && !loosenProblem)
+		actions.push_back("[RMB] Hold to loosen");
+	m_prompt = std::format("{} ({})", position, state);
+	for (const auto& action : actions)
+		m_prompt += "   " + action;
+	m_secondaryPrompt = tightenProblem ? *tightenProblem : loosenProblem ? *loosenProblem
+		: !canTighten && !canLoosen ? std::string("Finger tight: it comes off by hand ([E] on it).") : std::string();
+
+	// Turned part way, the ring round the crosshair shows how far.
+	bool same = m_turning && m_turning->fastener.engine == target->engine && m_turning->fastener.slot == target->slot
+		&& m_turning->fastener.index == target->index;
+	if (!same)
+		m_turning = Turning{ *target, true, { target->index } };
+	m_turning->progress = doneUp > 0.f && doneUp < 1.f ? doneUp : 0.f;
+
+	int direction = tightenHeld == loosenHeld ? 0 : tightenHeld ? 1 : -1;
+	// Clicking a way it can't go says why.
+	bool pressed = Controls::Pressed(input, direction > 0 ? Control::PRIMARY : Control::SET_DOWN);
+	if (direction != 0 && pressed)
+	{
+		std::optional<std::string> why = direction > 0 ? (!canTighten ? std::optional<std::string>(torqueWrench ? "It's torqued already." : "It's done up already: a torque wrench takes it to spec.") : tightenProblem)
+			: (!canLoosen ? std::optional<std::string>("It's finger tight already: [E] takes it off.") : loosenProblem);
+		if (why)
+			Toast(*why);
+	}
+	if (direction == 0 || m_turnDone || (direction > 0 ? !canTighten || tightenProblem : !canLoosen || loosenProblem))
+		return direction < 0;
+
+	// Turning, as long as the tool takes for each of them (bigger nuts and bolts a little longer), the
+	// tool heard all the while.
 	Sound turning = tool.handKind == HandToolKind::IMPACT ? Sound::IMPACT : tool.powered ? Sound::CORDLESS_RATCHET
 		: tool.handKind == HandToolKind::BREAKER_BAR ? Sound::BREAKER_BAR : wrench ? Sound::WRENCH : Sound::RATCHET;
-	bool same = m_turning && m_turning->fastener.engine == target->engine && m_turning->fastener.slot == target->slot
-		&& m_turning->fastener.index == target->index && m_turning->tightening == tightening;
-	if (!same)
-		m_turning = Turning{ *target, tightening, { target->index } };
 	const auto& fastener = PartCatalog::Get(part->GetType()).fastener;
-	double seconds = tool.TurnSeconds() * (0.6 + fastener.headMm / 30.0);
-	m_turning->progress += static_cast<float>(deltaTime / seconds);
+	double seconds = tool.TurnSeconds() * (0.6 + fastener.headMm / 30.0) * workshop.TurnTimeFactor();
 	m_turning->soundTimer -= deltaTime;
 	if (m_turning->soundTimer <= 0.f)
 	{
 		Cue(turning, target->position);
 		m_turning->soundTimer = tool.handKind == HandToolKind::IMPACT ? 0.45f : tool.powered ? 0.6f : 0.7f;
 	}
-	if (m_turning->progress < 1.f)
-		return false;
-
-	// Done, and a cordless tool's pack the emptier for it (the tight ones take more of it).
-	m_turning.reset();
-	m_turnDone = true;
-	if (!(tightening ? workshop.TightenFastener(target->slot, target->index, toolIndex, size) : workshop.LoosenFastener(target->slot, target->index, toolIndex, size)))
-		return true;
-	if (battery)
-	{
+	// A cordless tool's pack is the emptier for each one done up or broken loose (the tight ones take more of it).
+	auto drawPack = [&]() {
+		if (!battery)
+			return;
 		auto& pack = m_batteries[*battery];
-		double used = tool.drawAh * (0.5 + holes->torqueNm / 60.0);
+		double used = tool.drawAh * (0.5 + holes->torqueNm / 60.0) * workshop.BatteryUseFactor();
 		pack.charge = (std::max)(0.f, pack.charge - static_cast<float>(used / ToolCatalog::Of(*battery).capacityAh));
+		if (pack.charge <= 0.f)
+			Toast(std::format("The {} has gone flat.", ToolCatalog::Of(*battery).name));
+	};
+
+	if (direction < 0)
+	{
+		// Undoing a done-up one cracks it loose first: from then on it's no longer tight.
+		if (tightness != FastenerTightness::LOOSE)
+		{
+			if (!workshop.LoosenFastener(target->slot, target->index, toolIndex, size))
+				return true;
+			drawPack();
+			doneUp = 1.f;
+		}
+		doneUp -= static_cast<float>(deltaTime / seconds);
+		if (doneUp > 0.f)
+		{
+			m_fastenerTurns[part->GetId()] = doneUp;
+			m_turning->progress = doneUp;
+			return true;
+		}
+		m_fastenerTurns.erase(part->GetId());
+		m_turning->progress = 0.f;
+		m_turnDone = true;
+		Toast(std::format("Undid {}: it comes off by hand now.", position));
+		return true;
 	}
+
+	doneUp += static_cast<float>(deltaTime / seconds);
+	if (doneUp < 1.f)
+	{
+		m_fastenerTurns[part->GetId()] = doneUp;
+		m_turning->progress = doneUp;
+		return false;
+	}
+	m_fastenerTurns.erase(part->GetId());
+	m_turning->progress = 0.f;
+	m_turnDone = true;
+	if (!workshop.TightenFastener(target->slot, target->index, toolIndex, size))
+		return true;
+	drawPack();
 	if (torqueWrench)
 		Cue(Sound::TORQUE_CLICK, target->position);
-	Toast(std::format("{} {}.", torqueWrench ? "Torqued" : tightening ? "Snugged up" : "Loosened", position));
-	if (battery && BatteryCharge(*battery) <= 0.f)
-		Toast(std::format("The {} has gone flat.", ToolCatalog::Of(*battery).name));
+	Toast(std::format("{} {}.", torqueWrench ? "Torqued" : "Snugged up", position));
+	return true;
+}
+
+bool ShopWorld::UpdatePinPress(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime)
+{
+	m_pressAimed = false;
+	auto kind = ToolCatalog::Of(toolIndex).handKind;
+	if (kind != HandToolKind::PIN_PRESS && kind != HandToolKind::RING_COMPRESSOR)
+		return false;
+	bool compressor = kind == HandToolKind::RING_COMPRESSOR;
+	// The piston aimed at, on a loose rod that isn't in your hand.
+	glm::vec3 eye = player.GetEyePosition(), forward = player.GetForward();
+	ItemVisual* target = nullptr;
+	float best = 0.12f;
+	for (auto& [ref, visual] : m_items)
+	{
+		if (!visual.part || visual.part->GetType() != PartType::PISTON || visual.place != ItemPlace::ATTACHED || !visual.object->IsVisible())
+			continue;
+		const ItemVisual* rod = Find(ItemRef::Part(visual.hostPart));
+		if (!rod || !rod->part || rod->part->GetType() != PartType::CONNECTING_ROD || rod->place == ItemPlace::HAND)
+			continue;
+		glm::vec3 at = visual.object->GetPosition();
+		float along = glm::dot(at - eye, forward);
+		if (along <= 0.f || along > INTERACT_DISTANCE)
+			continue;
+		float off = glm::length(at - (eye + forward * along));
+		if (off < best)
+		{
+			best = off;
+			target = &visual;
+		}
+	}
+	if (!target)
+		return false;
+	m_spannerTarget = target->object->GetPosition();
+
+	// Held: LMB presses a pin in or squeezes the ring, RMB the other way. Let go part way and it stays part way, on that
+	// piston, with that tool, that way; once one is done, the button is let go before the next.
+	auto piston = target->part;
+	if (m_pressPiston != piston->GetId() || m_pressTool != kind)
+	{
+		m_pressPiston = piston->GetId();
+		m_pressTool = kind;
+		m_pressProgress = 0.f;
+	}
+	m_pressAimed = true;
+	bool ringed = workshop.RingOn(*piston) != nullptr;
+	bool done = compressor ? workshop.RingsCompressed(*piston) : workshop.PinIn(*piston) != nullptr;
+	bool pressIn = Controls::Held(input, Control::PRIMARY), pressOut = Controls::Held(input, Control::SET_DOWN);
+	if (!pressIn && !pressOut)
+		m_pressDone = false;
+	if (compressor)
+		m_prompt = std::format("{} on its rod ({})   {}", piston->GetName(), !ringed ? "no ring on" : done ? "ring squeezed in" : "ring not squeezed",
+			done ? "[RMB] Hold to let the compressor off" : ringed ? "[LMB] Hold to squeeze its ring in" : "");
+	else
+		m_prompt = std::format("{} on its rod ({})   {}", piston->GetName(), done ? "pinned" : "no pin in",
+			done ? "[RMB] Hold to press the pin out" : "[LMB] Hold to press a pin in");
+	// What has to be there to do it.
+	std::optional<std::string> missing = !compressor && !done && !workshop.LoosePin() ? std::optional<std::string>("There's no loose piston pin: each piston comes with one.")
+		: compressor && !ringed ? std::optional<std::string>("Fit a piston ring onto it first.") : std::nullopt;
+	if (missing)
+		m_secondaryPrompt = *missing;
+
+	int direction = pressIn == pressOut ? 0 : pressIn ? 1 : -1;
+	if (direction != 0 && Controls::Pressed(input, direction > 0 ? Control::PRIMARY : Control::SET_DOWN) && (direction > 0) == done)
+		Toast(compressor ? (done ? "Its ring is squeezed in already: the right button lets the compressor off." : "The compressor isn't on it: the left button squeezes the ring in.")
+			: (done ? "Its pin is in already: the right button presses it out." : "There's no pin in it: the left button presses one in."));
+	if (direction == 0 || m_pressDone || (direction > 0) == done || (direction > 0 && missing))
+		return direction < 0;
+	if (direction != m_pressDirection)
+	{
+		m_pressDirection = direction;
+		m_pressProgress = 0.f;
+	}
+
+	// Screwed down (or ratcheted tight) a turn at a time, the tool heard as it goes.
+	const float seconds = compressor ? 1.2f : 2.f;
+	float before = m_pressProgress;
+	m_pressProgress += deltaTime / (seconds * static_cast<float>(workshop.TurnTimeFactor()));
+	if (std::floor(before * 4.f) != std::floor(m_pressProgress * 4.f))
+		Cue(compressor ? Sound::RATCHET : Sound::WRENCH, m_spannerTarget.value_or(glm::vec3(0.f)), 0.7f);
+	if (m_pressProgress < 1.f)
+		return direction < 0;
+
+	m_pressProgress = 0.f;
+	m_pressDone = true;
+	if (compressor)
+	{
+		workshop.CompressRings(piston, direction > 0);
+		return direction < 0;
+	}
+	if (direction > 0)
+	{
+		if (workshop.PressPinIn(piston))
+			Cue(Sound::FIT_PART, target->object->GetPosition());
+		return false;
+	}
+	// Out: the pin into the hand (or the backpack), or left lying there with no room.
+	auto pin = workshop.PressPinOut(piston);
+	if (ItemVisual* visual = pin ? Find(ItemRef::Part(pin->GetId())) : nullptr)
+	{
+		PlaceInWorld(*visual, target->object->GetPosition() + glm::vec3(0.f, 0.03f, 0.f), {});
+		PickUp(workshop, *visual);
+	}
 	return true;
 }
 

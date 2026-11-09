@@ -14,18 +14,19 @@
 namespace
 {
 	// Where the joints are on the torso model (feet at the origin, facing -Z), left side first.
-	constexpr glm::vec3 PELVIS = { 0.f, 0.84f, 0.f };
-	constexpr glm::vec3 NECK = { 0.f, 1.53f, 0.f };
-	constexpr glm::vec3 SHOULDER[2] = { { -0.27f, 1.41f, 0.f }, { 0.27f, 1.41f, 0.f } };
+	constexpr glm::vec3 PELVIS = { 0.f, 0.52f, 0.f };
+	constexpr glm::vec3 NECK = { 0.f, 0.97f, 0.f };
+	constexpr glm::vec3 SHOULDER[2] = { { -0.22f, 0.9f, 0.f }, { 0.22f, 0.9f, 0.f } };
 	constexpr float HIP_X[2] = { -0.1f, 0.1f };
-	constexpr float THIGH_LENGTH = 0.42f;		// hip to knee, and the shin knee to the floor
-	constexpr float EYE_ABOVE_NECK = 0.15f;
-	constexpr float HAND_REACH = 0.66f;			// shoulder to the middle of the hand
-	constexpr float STEP_LENGTH = 0.9f;			// metres a foot moves on, each step
+	constexpr float THIGH_LENGTH = 0.26f;		// hip to knee, and the shin knee to the floor
+	constexpr float EYE_ABOVE_NECK = 0.28f;
+	constexpr float HAND_REACH = 0.46f;			// shoulder to the middle of the hand
+	constexpr float STEP_LENGTH = 0.6f;			// metres a foot moves on, each step
 	constexpr float WALK_SPEED = 2.6f;			// FirstPersonController's
-	// Crouched, the hips come down this far and the back leans forward this far (radians): the eyes
-	// end up about where FirstPersonController's crouched ones are.
-	constexpr float CROUCH_DROP = 0.6f;
+	// Crouched, the hips come down this far and the back leans forward this far (radians). The monkey is
+	// built small, with a big head (ShopAssets), so its eyes are below FirstPersonController's, standing
+	// or crouched.
+	constexpr float CROUCH_DROP = 0.3f;
 	constexpr float CROUCH_LEAN = 0.35f;
 	const glm::vec3 X_AXIS = { 1.f, 0.f, 0.f };
 
@@ -50,6 +51,7 @@ void PlayerAvatar::Spawn(ShopWorld& world, const glm::vec3& feet, float yaw, con
 	m_tail = spawn(ShopModels::PLAYER_TAIL);
 	m_head = spawn(ShopModels::PLAYER_HEAD);
 	m_face = spawn(ShopModels::PLAYER_FACE);
+	m_eyes = spawn(ShopModels::PLAYER_EYES);
 	m_cap = spawn(ShopModels::PLAYER_CAP);
 	for (int side = 0; side < 2; side++)
 	{
@@ -66,7 +68,7 @@ void PlayerAvatar::Spawn(ShopWorld& world, const glm::vec3& feet, float yaw, con
 
 std::vector<pObject*> PlayerAvatar::Pieces()
 {
-	return { &m_torso, &m_belly, &m_tail, &m_head, &m_face, &m_cap, &m_arm[0], &m_arm[1], &m_paw[0], &m_paw[1],
+	return { &m_torso, &m_belly, &m_tail, &m_head, &m_face, &m_eyes, &m_cap, &m_arm[0], &m_arm[1], &m_paw[0], &m_paw[1],
 		&m_thigh[0], &m_thigh[1], &m_shin[0], &m_shin[1], &m_foot[0], &m_foot[1] };
 }
 
@@ -185,6 +187,7 @@ void PlayerAvatar::Pose(float deltaTime, const glm::vec3& feet, float yaw, float
 	ride(m_belly, m_torso);
 	ride(m_tail, m_torso);
 	ride(m_face, m_head);
+	ride(m_eyes, m_head);
 	ride(m_cap, m_head);
 	for (int side = 0; side < 2; side++)
 	{
@@ -202,6 +205,7 @@ std::vector<PlayerAvatar::StandingPiece> PlayerAvatar::Standing(const MonkeyLook
 		{ ShopModels::PLAYER_BELLY, glm::mat4(1.f), skin },
 		{ ShopModels::PLAYER_HEAD, at(NECK), fur },
 		{ ShopModels::PLAYER_FACE, at(NECK), skin },
+		{ ShopModels::PLAYER_EYES, at(NECK), glm::vec3(1.f) },
 		{ ShopModels::PLAYER_CAP, at(NECK), cap },
 	};
 	if (look.tail)

@@ -31,6 +31,8 @@ struct WalkSurface
 class FirstPersonController
 {
 public:
+	// Walking and running speed, times this (the Long Legs perk).
+	void SetSpeedScale(float scale) { m_speedScale = scale; }
 	void SetPosition(const glm::vec3& feetPosition);
 	void SetYaw(float yaw);
 	void SetPitch(float pitch);
@@ -65,6 +67,7 @@ private:
 	float			m_pitch = 0.f;
 	float			m_eyeHeight = STAND_EYE_HEIGHT;
 	float			m_radius = 0.28f;
+	float			m_speedScale = 1.f;
 	float			m_walkSpeed = 2.6f;
 	float			m_runSpeed = 4.8f;
 	float			m_crouchSpeed = 1.3f;

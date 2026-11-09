@@ -37,6 +37,7 @@ public:
 	struct PlayerInfo
 	{
 		int id = 0;
+		std::string prefix = "";	// the server's, e.g. "[Owner]", shown in NetProtocol::PREFIX_COLOR; empty for none
 		std::string name = "";
 		bool local = false;
 	};
@@ -44,6 +45,10 @@ public:
 	// Each player's colour: their overalls (theirs to everyone else, and their own sleeve and body in
 	// first person) and their name over their head.
 	static glm::vec4 PlayerColor(int id);
+	// "[Owner] joey", for text that's all one colour.
+	static std::string FullName(const std::string& prefix, const std::string& name) { return prefix.empty() ? name : prefix + " " + name; }
+	// NetProtocol::PREFIX_COLOR, for ImGui; white over a player whose own colour is too near it to tell apart.
+	static uint32_t PrefixColor(int id);
 
 	// Starts connecting to a garage server, with the ticket from logging in (see AccountLogin). The
 	// garage arrives a moment later: see TakeWelcome.
@@ -82,6 +87,7 @@ private:
 
 	struct Remote
 	{
+		std::string prefix = "";
 		std::string name = "";
 		glm::vec3 feet = {};
 		float yaw = 0.f;
@@ -125,6 +131,7 @@ private:
 	std::string									m_ticketSignature = "";
 	int											m_localId = 0;
 	std::string									m_localName = "";
+	std::string									m_localPrefix = "";
 	float										m_connectTime = 0.f;
 	std::map<int, Remote>						m_remotes = {};
 	// The garage as last sent or received. Local changes are measured against it.

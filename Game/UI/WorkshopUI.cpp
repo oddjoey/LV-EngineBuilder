@@ -248,11 +248,6 @@ void WorkshopUI::SetUnits(Units::System units)
 	m_units = units;
 }
 
-Units::System WorkshopUI::GetUnits() const
-{
-	return m_units;
-}
-
 bool WorkshopUI::IsUsable(const Part& part) const
 {
 	return !m_isUsable || m_isUsable(part.GetId());
@@ -284,9 +279,9 @@ void WorkshopUI::Draw(Workshop& workshop)
 	// station. The window is named after what it shows.
 	if (m_currentTab == WorkshopTab::BACKPACK)
 	{
-		// Never so small that the grid and hotbar crowd the item and stats panel beside them off
+		// Never so small that the monkey, grid and hotbar crowd the item panel beside them off
 		// the window (a size saved from an older, narrower layout included).
-		ImGui::SetNextWindowSizeConstraints({ 1000.f, 600.f }, { FLT_MAX, FLT_MAX });
+		ImGui::SetNextWindowSizeConstraints({ 1200.f, 600.f }, { FLT_MAX, FLT_MAX });
 		if (ImGui::Begin("Inventory###Inventory", &m_open) && m_backpackContents)
 			m_backpackContents();
 		ImGui::End();
@@ -333,15 +328,23 @@ void WorkshopUI::DrawStatusBar(Workshop& workshop)
 {
 	// Not the engine's name: there'll be more than one kind of engine.
 	ImGui::TextColored(COLOR_GOOD, "$%.0f", workshop.GetMoney());
-	ImGui::SameLine(0.f, 30.f);
-	ImGui::Text("Shop clock: %.1f h", workshop.GetHours());
 
+	// The shop's rank, and how far it is to the next.
 	ImGui::SameLine(0.f, 30.f);
-	int units = static_cast<int>(m_units);
-	ImGui::RadioButton("Metric", &units, static_cast<int>(Units::System::METRIC));
-	ImGui::SameLine();
-	ImGui::RadioButton("Imperial", &units, static_cast<int>(Units::System::IMPERIAL));
-	m_units = static_cast<Units::System>(units);
+	int rank = workshop.Rank();
+	double reputation = workshop.GetStats().reputation;
+	ImGui::Text("Rank %d: %s", rank, ShopRank::Info(rank).name);
+	if (rank < ShopRank::MaxRank())
+	{
+		const auto& here = ShopRank::Info(rank);
+		const auto& next = ShopRank::Info(rank + 1);
+		ImGui::SameLine();
+		ImGui::ProgressBar(static_cast<float>((reputation - here.reputation) / (next.reputation - here.reputation)), { 120.f, 0.f },
+			std::format("{:.0f} / {:.0f}", reputation, next.reputation).c_str());
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("Reputation. Sell good engines (and run clean dyno pulls) to reach rank %d, %s: a $%.0f bonus and better tools in the store.",
+				rank + 1, next.name, next.bonus);
+	}
 
 	if (m_xray)
 	{
@@ -457,15 +460,12 @@ void WorkshopUI::DrawMachineTab(Workshop& workshop)
 {
 	const auto& machine = MachineCatalog::All()[m_activeMachine];
 
-	// The machine itself: what it does, how long it takes.
+	// The machine itself: what it does.
 	ItemIcons::MachineIcon(machine, 56.f);
 	ImGui::SameLine();
 	ImGui::BeginGroup();
 	ImGui::Text("%s", machine.name.c_str());
-	std::string timeText = machine.hoursPerMm > 0.0
-		? std::format("{:.1f} h setup + {:.0f} h per mm removed", machine.hoursPerUse, machine.hoursPerMm)
-		: std::format("{:.1f} h per job", machine.hoursPerUse);
-	ImGui::TextDisabled("%s   |   leaves %.2f um Ra   |   %s", Machining::OperationName(machine.operation), machine.finishRa, timeText.c_str());
+	ImGui::TextDisabled("%s   |   leaves %.2f um Ra", Machining::OperationName(machine.operation), machine.finishRa);
 	ImGui::PushTextWrapPos(0.f);
 	ImGui::TextDisabled("%s", machine.description.c_str());
 	ImGui::PopTextWrapPos();
@@ -560,8 +560,7 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 	ImGui::SameLine();
 	ImGui::BeginGroup();
 	ImGui::Text("%s", part->GetName().c_str());
-	ImGui::TextDisabled("#%u  |  %s  |  %s  |  %s", part->GetId(), GetMaterial(part->GetMaterial()).name,
-		PartQualityName(part->GetQuality()), PartConditionName(part->GetCondition()));
+	ImGui::TextDisabled("#%u  |  %s  |  %s", part->GetId(), GetMaterial(part->GetMaterial()).name, PartConditionName(part->GetCondition()));
 	ImGui::EndGroup();
 
 	if (part->GetCondition() == PartCondition::DAMAGED)
@@ -1194,22 +1193,6 @@ void WorkshopUI::DrawMachiningPanel(Workshop& workshop, Part& part, const Featur
 		}
 	}
 
-	// Hones charge time by the stock taken off, so estimate it from the player's own reading.
-	if (machine.hoursPerMm > 0.0)
-	{
-		auto reading = part.GetReading(feature.name);
-		if (reading && reading->hasSize && !reading->stale)
-		{
-			double stock = Units::FromDisplay(m_machineParameter, m_units) - FromReading(feature, *reading).Size();
-			if (stock > 0.0)
-				ImGui::Text("About %s off: roughly %.1f h", Deviation(stock).c_str(), machine.hoursPerUse + stock * machine.hoursPerMm);
-			else
-				ImGui::TextDisabled("That target is smaller than your last reading.");
-		}
-		else
-			ImGui::TextDisabled("Measure it first to estimate how long this will take.");
-	}
-
 	if (machine.operation == MachineOperation::LINE_BORE)
 	{
 		ImGui::PushTextWrapPos(0.f);
@@ -1219,8 +1202,7 @@ void WorkshopUI::DrawMachiningPanel(Workshop& workshop, Part& part, const Featur
 		ImGui::PopTextWrapPos();
 	}
 	ImGui::TextColored(COLOR_WARN, "Material only comes off. This can't be undone.");
-	std::string timeText = machine.hoursPerMm > 0.0 ? std::format("{:.1f} h + {:.0f} h/mm", machine.hoursPerUse, machine.hoursPerMm) : std::format("{:.1f} h", machine.hoursPerUse);
-	if (ImGui::Button(std::format("{} ({})", Machining::OperationName(machine.operation), timeText).c_str()))
+	if (ImGui::Button(Machining::OperationName(machine.operation)))
 	{
 		auto result = workshop.MachineFeature(m_selectedMachine, part, feature.name, Units::FromDisplay(m_machineParameter, m_units));
 		m_lastMachiningMessage = result.message;
@@ -1314,7 +1296,7 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 			drawList->PopClipRect();
 			if (hovered && textSize.x > CARD_WIDTH - 8.f)
 				ImGui::SetTooltip("%s", name);
-			double cheapest = PartFactory::PriceWithCompanions(type, PartQuality::BUDGET,
+			double cheapest = PartFactory::PriceWithCompanions(type, PartQuality::OEM,
 				Workshop::SoldUsed(type) ? PartCondition::USED : PartCondition::NEW, workshop.GetSpec());
 			// Cents for the small stuff, so a bolt isn't "from $0".
 			std::string from = cheapest < 10.0 ? std::format("from ${:.2f}", cheapest) : std::format("from ${:.0f}", cheapest);
@@ -1344,31 +1326,6 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 	ImGui::TextDisabled("%s", PartIcons::Description(m_order.type));
 	ImGui::PopTextWrapPos();
 	ImGui::Separator();
-
-	// Each quality with what one costs; hovering one (or picking it) says what it gets you for this part.
-	int quality = static_cast<int>(m_order.quality);
-	for (auto option : { PartQuality::BUDGET, PartQuality::OEM, PartQuality::PERFORMANCE })
-	{
-		if (option != PartQuality::BUDGET)
-			ImGui::SameLine();
-		double each = PartFactory::PriceWithCompanions(m_order.type, option, m_order.condition, workshop.GetSpec());
-		std::string label = std::format("{} ({})", PartQualityName(option), each < 10.0 ? std::format("${:.2f}", each) : std::format("${:.0f}", each));
-		ImGui::RadioButton(label.c_str(), &quality, static_cast<int>(option));
-		if (ImGui::IsItemHovered())
-		{
-			ImGui::BeginTooltip();
-			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.f);
-			for (const auto& note : PartFactory::QualityNotes(m_order.type, option))
-				ImGui::BulletText("%s", note.c_str());
-			ImGui::PopTextWrapPos();
-			ImGui::EndTooltip();
-		}
-	}
-	m_order.quality = static_cast<PartQuality>(quality);
-	ImGui::PushTextWrapPos(0.f);
-	for (const auto& note : PartFactory::QualityNotes(m_order.type, m_order.quality))
-		ImGui::BulletText("%s", note.c_str());
-	ImGui::PopTextWrapPos();
 
 	if (Workshop::SoldUsed(m_order.type))
 	{
@@ -1404,17 +1361,6 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 	ImGui::InputInt("Quantity", &m_order.quantity);
 	m_order.quantity = std::clamp(m_order.quantity, 1, 16);
 
-	ImGui::PushTextWrapPos(0.f);
-	if (m_order.type == PartType::PISTON_RING && m_order.quality == PartQuality::PERFORMANCE)
-		ImGui::TextColored(COLOR_WARN, "Performance rings are file-fit: they arrive tight and must be gapped by hand.");
-	if (m_order.type == PartType::PISTON && m_order.quality == PartQuality::PERFORMANCE)
-		ImGui::TextColored(COLOR_WARN, "Forged 2618 pistons grow more when hot and need more cold clearance.");
-	if (m_order.type == PartType::CAMSHAFT && m_order.quality == PartQuality::PERFORMANCE)
-		ImGui::TextColored(COLOR_WARN, "Performance cam: more lift. Pair it with springs that can keep up.");
-	if (m_order.type == PartType::VALVE_SPRING && m_order.quality == PartQuality::PERFORMANCE)
-		ImGui::TextColored(COLOR_WARN, "Stiffer springs: higher seat pressure, so check installed height.");
-	ImGui::PopTextWrapPos();
-
 	ImGui::Spacing();
 	CartLine line;
 	line.kind = CartLine::Kind::PART;
@@ -1447,7 +1393,7 @@ void WorkshopUI::DrawStoreTab(Workshop& workshop)
 	}
 	if (category("Tools", StoreCategory::TOOLS))
 	{
-		DrawToolStore(workshop);
+		DrawToolStore(workshop, false);
 		ImGui::EndTabItem();
 	}
 	if (category("Machines", StoreCategory::MACHINES))
@@ -1460,9 +1406,9 @@ void WorkshopUI::DrawStoreTab(Workshop& workshop)
 		DrawFurnitureStore(workshop);
 		ImGui::EndTabItem();
 	}
-	if (category("Upgrades", StoreCategory::UPGRADES))
+	if (category("Paint", StoreCategory::PAINT))
 	{
-		DrawUpgradeStore(workshop);
+		DrawToolStore(workshop, true);
 		ImGui::EndTabItem();
 	}
 	m_requestedCategory = std::nullopt;
@@ -1526,7 +1472,7 @@ std::string WorkshopUI::CartLineName(const CartLine& line) const
 	{
 		case CartLine::Kind::PART:
 		{
-			std::string name = std::format("{} {}", line.order.condition == PartCondition::USED ? "Used" : PartQualityName(line.order.quality),
+			std::string name = std::format("{} {}", line.order.condition == PartCondition::USED ? "Used" : "New",
 				PartCatalog::StoreName(line.order.type));
 			if (Workshop::SizeOptions(line.order.type).size() > 1)
 				name += " " + SizeClassLabel(line.order.sizeOffset);
@@ -1536,7 +1482,8 @@ std::string WorkshopUI::CartLineName(const CartLine& line) const
 		case CartLine::Kind::MACHINE:		return MachineCatalog::All()[line.index].name;
 		case CartLine::Kind::ENGINE_STAND:	return "Engine stand";
 		case CartLine::Kind::FURNITURE:		return FurnitureCatalog::All()[line.index].name;
-		case CartLine::Kind::UPGRADE:		return UpgradeCatalog::All()[line.index].name;
+		case CartLine::Kind::DYNO:			return "Dyno";
+		case CartLine::Kind::HOIST:			return "Engine hoist";
 	}
 	return "";
 }
@@ -1556,7 +1503,7 @@ void WorkshopUI::AddToCart(const CartLine& line)
 	{
 		if (existing.kind != line.kind)
 			continue;
-		if (line.kind == CartLine::Kind::PART && existing.order.type == line.order.type && existing.order.quality == line.order.quality
+		if (line.kind == CartLine::Kind::PART && existing.order.type == line.order.type
 			&& existing.order.condition == line.order.condition && existing.order.sizeOffset == line.order.sizeOffset)
 		{
 			existing.order.quantity = (std::min)(existing.order.quantity + line.order.quantity, 99);
@@ -1573,10 +1520,10 @@ void WorkshopUI::AddToCart(const CartLine& line)
 
 void WorkshopUI::AddToCartButton(Workshop& workshop, const CartLine& line, const char* label)
 {
-	// One of a kind (a machine, an upgrade) can only be in the cart once; tools and stands only up to the
+	// One of a kind (a machine, the dyno) can only be in the cart once; tools and stands only up to the
 	// room left.
 	std::optional<std::string> problem;
-	if ((line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::UPGRADE) && InCart(line.kind, line.index) > 0)
+	if ((line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::DYNO || line.kind == CartLine::Kind::HOIST) && InCart(line.kind, line.index) > 0)
 		problem = "In the cart.";
 	else
 	{
@@ -1812,10 +1759,18 @@ void WorkshopUI::DrawToolCell(Workshop& workshop, const std::function<bool(const
 	}
 }
 
-void WorkshopUI::DrawToolStore(Workshop& workshop)
+void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 {
 	const auto& tools = ToolCatalog::All();
 	m_selectedTool = std::clamp(m_selectedTool, 0, static_cast<int>(tools.size()) - 1);
+	// The paint has a tab of its own: keep the selection on this tab's side.
+	if (tools[m_selectedTool].Paints() != paint || tools[m_selectedTool].partOf >= 0)
+		for (size_t i = 0; i < tools.size(); i++)
+			if (tools[i].Paints() == paint && tools[i].partOf < 0)
+			{
+				m_selectedTool = static_cast<int>(i);
+				break;
+			}
 
 	if (ImGui::BeginChild("ToolCatalogue", { ImGui::GetContentRegionAvail().x * 0.55f, 0.f }, ImGuiChildFlags_Borders))
 	{
@@ -1835,10 +1790,15 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 			"Torque",
 			"Cordless: tools, batteries and chargers",
 			"Manuals",
+			"Paint markers",
+			"Spray paint",
+			"Cleaning up",
 		};
 		auto shelfOf = [](const MeasuringTool& tool) {
 			if (tool.manual)
 				return 9;
+			if (tool.Paints())
+				return tool.handKind == HandToolKind::MARKER ? 10 : tool.handKind == HandToolKind::SPRAY_CAN ? 11 : 12;
 			if (tool.powered || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
 				return 8;
 			auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
@@ -1876,6 +1836,8 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 			// Sold only in their set.
 			if (tool.partOf >= 0)
 				continue;
+			if (tool.Paints() != paint)
+				continue;
 			if (int thisShelf = shelfOf(tool); thisShelf != shelf)
 			{
 				if (shelf >= 0)
@@ -1883,10 +1845,14 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 				ImGui::SeparatorText(SHELVES[thisShelf]);
 				shelf = thisShelf;
 			}
-			if (StoreCard(tool.name.c_str(), tool.name.c_str(), std::format("${:.0f}", tool.price), m_selectedTool == static_cast<int>(i), workshop.OwnsTool(i),
-				[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawTool(drawList, tool, min, size); },
-				tool.manual || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER ? std::vector<float>{}
-					: std::vector<float>{ Ratings::ToolPrecision(tool), Ratings::ToolSpeed(tool) }))
+			// One the shop hasn't the rank for yet shows the rank it needs, greyed.
+			bool locked = !workshop.ToolUnlocked(i);
+			std::string price = !locked ? std::format("${:.0f}", tool.price) : tool.skill >= 0 && workshop.SkillLevel(static_cast<SkillKind>(tool.skill)) == 0 ? std::string("Perk") : std::format("Rank {}", tool.rank);
+			if (StoreCard(tool.name.c_str(), tool.name.c_str(), price, m_selectedTool == static_cast<int>(i), workshop.OwnsTool(i),
+				[&](ImDrawList* drawList, ImVec2 min, float size) {
+					ItemIcons::DrawTool(drawList, tool, min, size, locked ? IM_COL32(120, 120, 120, 160) : PartIcons::DEFAULT_COLOR); },
+				tool.manual || tool.Paints() || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER ? std::vector<float>{}
+					: tool.TurnSeconds() > 0.0 ? std::vector<float>{ Ratings::ToolPrecision(tool), Ratings::ToolSpeed(tool) } : std::vector<float>{ Ratings::ToolPrecision(tool) }))
 				m_selectedTool = static_cast<int>(i);
 		}
 	}
@@ -1945,6 +1911,9 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 					"E on the charger takes the pack back off.", tool.chargeAmps, 4.0 / tool.chargeAmps);
 			if (tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
 				ImGui::TextDisabled("Hold a cordless tool and press E on a pack to clip it on; C takes it back off.");
+			else if (tool.Paints())
+				ImGui::TextDisabled("For decorating: the walls and the floor take paint from as far off as you can see them, the ring round the crosshair showing how big (the mouse wheel changes it), and a spray can "
+					"or the thinner works on any part or tool too. It never wears off, but thinner takes it back off.");
 			else
 				ImGui::TextDisabled("Every nut and bolt on the engine needs a socket (driven by a ratchet, impact or torque wrench) or a wrench of "
 					"its size, and a torque wrench to be done up to spec. How close the torque wrench gets "
@@ -1957,13 +1926,11 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 		}
 
 		Ratings::Bar("Precision", Ratings::ToolPrecision(tool));
-		Ratings::Bar("Speed", Ratings::ToolSpeed(tool));
 		ImGui::Spacing();
 		ImGui::Text("Reads to   %s", ToolPrecision(tool, tool.resolution).c_str());
 		ImGui::Text("Repeats to +/- %s", ToolPrecision(tool, tool.sigma * 2.0).c_str());
 		if (tool.minSize > 0.0 || tool.maxSize > 0.0)
 			ImGui::Text("Fits bores %s", tool.maxSize > 0.0 ? std::format("up to {:.0f} mm", tool.maxSize).c_str() : std::format("from {:.0f} mm", tool.minSize).c_str());
-		ImGui::Text("Time per check %.2f h", tool.hoursPerUse);
 
 		std::string uses;
 		for (auto kind : tool.kinds)
@@ -1991,12 +1958,25 @@ void WorkshopUI::DrawToolStore(Workshop& workshop)
 void WorkshopUI::DrawMachineStore(Workshop& workshop)
 {
 	const auto& machines = MachineCatalog::All();
-	m_selectedStoreMachine = std::clamp(m_selectedStoreMachine, 0, static_cast<int>(machines.size()) - 1);
+	// The dyno and the hoist have cards of their own, shown first and numbered after the machines.
+	const int DYNO = static_cast<int>(machines.size());
+	const int HOIST = DYNO + 1;
+	m_selectedStoreMachine = std::clamp(m_selectedStoreMachine, 0, HOIST);
 
 	if (ImGui::BeginChild("MachineCatalogue", { ImGui::GetContentRegionAvail().x * 0.55f, 0.f }, ImGuiChildFlags_Borders))
 	{
 		ImGui::TextDisabled("Machines are delivered in a crate and set up when it's opened. Press F on one to move it.");
 		ImGui::Spacing();
+		ImGui::SeparatorText("Testing");
+		if (StoreCard("Dyno", "Dyno", std::format("${:.0f}", Workshop::DynoPrice()), m_selectedStoreMachine == DYNO, workshop.OwnsDyno(),
+			[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawDyno(drawList, min, size); }, {}))
+			m_selectedStoreMachine = DYNO;
+		if (ImGui::GetCursorPosX() > ImGui::GetStyle().WindowPadding.x + 1.f)
+			ImGui::NewLine();
+		ImGui::SeparatorText("Lifting");
+		if (StoreCard("Engine hoist", "Engine hoist", std::format("${:.0f}", Workshop::HoistPrice()), m_selectedStoreMachine == HOIST, workshop.OwnsHoist(),
+			[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawHoist(drawList, min, size); }, {}))
+			m_selectedStoreMachine = HOIST;
 		// Grouped by the job they do, cheapest first within each, so the budget way and the proper
 		// way to do a job sit side by side.
 		auto group = [](MachineOperation operation) {
@@ -2039,7 +2019,7 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 			}
 			if (StoreCard(machine.name.c_str(), machine.name.c_str(), std::format("${:.0f}", machine.price), m_selectedStoreMachine == static_cast<int>(i),
 				workshop.OwnsMachine(i), [&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawMachine(drawList, machine, min, size); },
-				{ Ratings::MachineAccuracy(machine), Ratings::MachineSpeed(machine) }))
+				{ Ratings::MachineAccuracy(machine) }))
 				m_selectedStoreMachine = static_cast<int>(i);
 		}
 	}
@@ -2048,6 +2028,48 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 
 	if (ImGui::BeginChild("MachineDetail", { 0.f, 0.f }, ImGuiChildFlags_Borders))
 	{
+		if (m_selectedStoreMachine == HOIST)
+		{
+			ImGui::Text("Engine hoist");
+			DrawPreview(ShopModels::ENGINE_HOIST);
+			ImGui::PushTextWrapPos(0.f);
+			ImGui::TextDisabled("A shop crane on casters. Push it up to an engine stand or the dyno and press E to lift the engine off; push it "
+				"anywhere with the engine on its hook, and press E by a free stand or the dyno to lower it on. Nothing can be fitted to or "
+				"taken off an engine while it hangs.");
+			ImGui::PopTextWrapPos();
+			ImGui::Separator();
+			if (workshop.OwnsHoist())
+				ImGui::TextColored(COLOR_GOOD, "Owned. If it isn't set up yet, its crate is waiting by the roll-up door.");
+			else
+			{
+				CartLine line;
+				line.kind = CartLine::Kind::HOIST;
+				AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", Workshop::HoistPrice()).c_str());
+			}
+			ImGui::EndChild();
+			return;
+		}
+		if (m_selectedStoreMachine == DYNO)
+		{
+			ImGui::Text("Dyno");
+			DrawPreview(ShopModels::DYNO);
+			ImGui::PushTextWrapPos(0.f);
+			ImGui::TextDisabled("An engine dynamometer: bolt a finished engine to it and run it to redline, to see its power and torque, oil "
+				"pressure, blow-by and everything wrong with it before a buyer does. Each pull costs $%.0f in fuel. Without one, engines are sold "
+				"untested: the buyer runs it, and you find out what it made when they pay.", workshop.DynoCost());
+			ImGui::PopTextWrapPos();
+			ImGui::Separator();
+			if (workshop.OwnsDyno())
+				ImGui::TextColored(COLOR_GOOD, "Owned. If it isn't set up yet, its crate is waiting by the roll-up door.");
+			else
+			{
+				CartLine line;
+				line.kind = CartLine::Kind::DYNO;
+				AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", Workshop::DynoPrice()).c_str());
+			}
+			ImGui::EndChild();
+			return;
+		}
 		const auto& machine = machines[m_selectedStoreMachine];
 		ImGui::Text("%s", machine.name.c_str());
 		DrawPreview(ShopAssets::FixtureFor(machine).model);
@@ -2057,7 +2079,6 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 		ImGui::Separator();
 
 		Ratings::Bar("Accuracy", Ratings::MachineAccuracy(machine));
-		Ratings::Bar("Speed", Ratings::MachineSpeed(machine));
 		if (float finish = Ratings::MachineFinish(machine); finish >= 0.f)
 			Ratings::Bar("Finish", finish);
 		ImGui::Spacing();
@@ -2069,10 +2090,6 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 			ImGui::Text("Max per cut %s", Deviation(machine.maxRemoval).c_str());
 		else
 			ImGui::Text("Max per cut no limit");
-		if (machine.hoursPerMm > 0.0)
-			ImGui::Text("Time        %.1f h setup + %.0f h per mm removed", machine.hoursPerUse, machine.hoursPerMm);
-		else
-			ImGui::Text("Time per cut %.2f h", machine.hoursPerUse);
 
 		ImGui::Spacing();
 		if (workshop.OwnsMachine(m_selectedStoreMachine))
@@ -2158,83 +2175,41 @@ void WorkshopUI::DrawFurnitureStore(Workshop& workshop)
 	ImGui::EndChild();
 }
 
-void WorkshopUI::DrawUpgradeStore(Workshop& workshop)
+void WorkshopUI::DrawSellButton(Workshop& workshop)
 {
-	const auto& upgrades = UpgradeCatalog::All();
-	m_selectedStoreUpgrade = std::clamp(m_selectedStoreUpgrade, 0, static_cast<int>(upgrades.size()) - 1);
-
-	// A sketch of each: the bay off the side of the garage, a second floor on top, the lift's posts.
-	auto icon = [](ImDrawList* drawList, UpgradeKind kind, ImVec2 min, float size) {
-		auto p = [&](float x, float y) { return ImVec2(min.x + x * size, min.y + y * size); };
-		ImU32 color = PartIcons::DEFAULT_COLOR;
-		ImU32 dim = (color & 0x00FFFFFF) | (90u << IM_COL32_A_SHIFT);
-		float line = (std::max)(1.f, size * 0.045f);
-		auto house = [&](float x0, float x1, float floorY, float wallY, float ridgeY, bool filled) {
-			if (filled)
-				drawList->AddRectFilled(p(x0, wallY), p(x1, floorY), dim);
-			drawList->AddRect(p(x0, wallY), p(x1, floorY), color, 0.f, 0, line);
-			drawList->AddLine(p(x0 - 0.04f, wallY), p((x0 + x1) * 0.5f, ridgeY), color, line);
-			drawList->AddLine(p((x0 + x1) * 0.5f, ridgeY), p(x1 + 0.04f, wallY), color, line);
-		};
-		switch (kind)
-		{
-			case UpgradeKind::SIDE_BAY:
-				house(0.38f, 0.9f, 0.85f, 0.45f, 0.25f, false);
-				drawList->AddRectFilled(p(0.08f, 0.55f), p(0.38f, 0.85f), dim);
-				drawList->AddRect(p(0.08f, 0.55f), p(0.38f, 0.85f), color, 0.f, 0, line);
-				break;
-			case UpgradeKind::SECOND_STORY:
-				house(0.18f, 0.82f, 0.88f, 0.58f, 0.58f, false);
-				house(0.18f, 0.82f, 0.58f, 0.32f, 0.12f, true);
-				for (int step = 0; step < 4; step++)
-					drawList->AddLine(p(0.84f + step * 0.03f, 0.58f + step * 0.075f), p(0.9f + step * 0.03f, 0.58f + step * 0.075f), color, line);
-				break;
-			case UpgradeKind::POST_LIFT:
-				drawList->AddRectFilled(p(0.16f, 0.15f), p(0.26f, 0.88f), color);
-				drawList->AddRectFilled(p(0.74f, 0.15f), p(0.84f, 0.88f), color);
-				drawList->AddLine(p(0.16f, 0.12f), p(0.84f, 0.12f), color, line * 1.5f);
-				drawList->AddLine(p(0.26f, 0.55f), p(0.42f, 0.55f), color, line * 1.5f);
-				drawList->AddLine(p(0.58f, 0.55f), p(0.74f, 0.55f), color, line * 1.5f);
-				break;
-		}
-	};
-
-	if (ImGui::BeginChild("UpgradeCatalogue", { ImGui::GetContentRegionAvail().x * 0.55f, 0.f }, ImGuiChildFlags_Borders))
-	{
-		ImGui::TextDisabled("Building work is done as soon as it's paid for; the lift comes crated.");
-		ImGui::Spacing();
-		for (size_t i = 0; i < upgrades.size(); i++)
-		{
-			const auto& upgrade = upgrades[i];
-			if (StoreCard(upgrade.name.c_str(), upgrade.name.c_str(), std::format("${:.0f}", upgrade.price), m_selectedStoreUpgrade == static_cast<int>(i),
-				workshop.OwnsUpgrade(upgrade.kind), [&](ImDrawList* drawList, ImVec2 min, float size) { icon(drawList, upgrade.kind, min, size); }, {}))
-				m_selectedStoreUpgrade = static_cast<int>(i);
-		}
-	}
-	ImGui::EndChild();
+	// No price on the button: nobody knows what it's worth until the buyer has run it.
+	if (ImGui::Button("Sell the engine"))
+		workshop.SellEngine();
 	ImGui::SameLine();
+	ImGui::TextDisabled("The buyer runs it on their dyno, then pays for what it makes and how healthy it is.");
+}
 
-	if (ImGui::BeginChild("UpgradeDetail", { 0.f, 0.f }, ImGuiChildFlags_Borders))
+void WorkshopUI::DrawLastSale(const Workshop& workshop)
+{
+	const auto& sale = workshop.GetLastSale();
+	if (!sale.sold)
+		return;
+	const auto& pull = sale.pull;
+	ImGui::SeparatorText(std::format("Engine {}, sold", sale.engine + 1).c_str());
+	if (pull.failed)
 	{
-		const auto& upgrade = upgrades[m_selectedStoreUpgrade];
-		ImGui::Text("%s", upgrade.name.c_str());
-		if (upgrade.kind == UpgradeKind::POST_LIFT)
-			DrawPreview(ShopModels::POST_LIFT);
-		ImGui::PushTextWrapPos(0.f);
-		ImGui::TextDisabled("%s", upgrade.description.c_str());
-		ImGui::PopTextWrapPos();
-		ImGui::Separator();
-		if (workshop.OwnsUpgrade(upgrade.kind))
-			ImGui::TextColored(COLOR_GOOD, "Done.");
-		else
-		{
-			CartLine line;
-			line.kind = CartLine::Kind::UPGRADE;
-			line.index = static_cast<size_t>(m_selectedStoreUpgrade);
-			AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", upgrade.price).c_str());
-		}
+		ImGui::TextColored(COLOR_BAD, "It let go on the buyer's dyno at %.0f rpm. They took it as a core, for $%.0f.", pull.failureRpm, sale.price);
 	}
-	ImGui::EndChild();
+	else
+	{
+		ImGui::TextColored(COLOR_GOOD, "Sold for $%.0f (+%.0f reputation).", sale.price, sale.reputation);
+		ImGui::Text("%.0f hp at %.0f rpm, %.0f Nm at %.0f rpm, %.0f%% healthy.", pull.peakPowerKw * 1.341, pull.peakPowerRpm,
+			pull.peakTorqueNm, pull.peakTorqueRpm, pull.healthScore);
+		ImGui::TextDisabled("Oil pressure %.1f bar, blow-by %.1f%%, compression %.2f:1.", pull.oilPressureBar, pull.blowbyPercent, pull.compressionRatio);
+	}
+	// What the buyer's dyno sheet found.
+	ImGui::PushTextWrapPos(0.f);
+	for (const auto& finding : pull.findings)
+	{
+		ImVec4 color = finding.severity == FindingSeverity::FAILURE ? COLOR_BAD : finding.severity == FindingSeverity::WARNING ? COLOR_WARN : COLOR_DIM;
+		ImGui::TextColored(color, "%s", finding.message.c_str());
+	}
+	ImGui::PopTextWrapPos();
 }
 
 void WorkshopUI::DrawAssemblyTab(Workshop& workshop)
@@ -2245,7 +2220,8 @@ void WorkshopUI::DrawAssemblyTab(Workshop& workshop)
 	ImGui::SameLine(0.f, 20.f);
 	auto missing = assembly.MissingParts();
 	if (missing.empty())
-		ImGui::TextColored(COLOR_GOOD, "Long block complete. Check your clearances, then take it to the dyno.");
+		ImGui::TextColored(COLOR_GOOD, workshop.OwnsDyno() ? "Long block complete. Check your clearances, then take it to the dyno, or sell it."
+			: "Long block complete. Check your clearances, then sell it: the buyer runs it.");
 	else
 		ImGui::TextDisabled("%zu positions still empty. Carry a part to the stand and press E to fit it.", missing.size());
 
@@ -2268,6 +2244,11 @@ void WorkshopUI::DrawAssemblyTab(Workshop& workshop)
 			list += (list.empty() ? "" : ", ") + entry;
 		ImGui::TextColored(COLOR_WARN, "Next to fit: %s", list.c_str());
 	}
+	// A finished engine sells straight off its stand, untested; the last one sold from it, what it fetched.
+	if (missing.empty() && workshop.GetActiveEngine() != workshop.GetEngineOnDyno())
+		DrawSellButton(workshop);
+	if (workshop.GetLastSale().sold && workshop.GetLastSale().engine == workshop.GetActiveEngine() && assembly.GetAllParts().empty())
+		DrawLastSale(workshop);
 	ImGui::Separator();
 
 	// What's fitted down the side, the engine's checks beside it. Parts are looked at on the bench.
@@ -2763,6 +2744,7 @@ void WorkshopUI::DrawDynoTab(Workshop& workshop)
 			}
 			ImGui::PopID();
 		}
+		DrawLastSale(workshop);
 		return;
 	}
 
@@ -2926,18 +2908,12 @@ void WorkshopUI::DrawDynoTab(Workshop& workshop)
 
 	// Done with it: sell it from here, or put it back on a stand to work on.
 	ImGui::SeparatorText("Off the dyno");
-	double value = workshop.EstimateEngineValue();
-	ImGui::BeginDisabled(value <= 0.0);
-	if (ImGui::Button(std::format("Sell the engine (${:.0f})", value).c_str()))
-		workshop.SellEngine();
-	ImGui::EndDisabled();
-	if (value <= 0.0)
-	{
-		ImGui::SameLine();
-		ImGui::TextDisabled("Buyers want a clean pull of the engine as it sits now.");
-	}
 	if (workshop.GetEngineOnDyno() < 0)
+	{
+		DrawLastSale(workshop);
 		return;
+	}
+	DrawSellButton(workshop);
 	ImGui::TextUnformatted("Put it back on stand:");
 	for (int stand = 0; stand < workshop.GetEngineCount(); stand++)
 	{
@@ -2978,6 +2954,20 @@ void WorkshopUI::DrawToolBuy(Workshop& workshop, size_t toolIndex)
 	if (owned >= Workshop::MAX_TOOL_COPIES)
 	{
 		ImGui::TextDisabled("That's as many as the shop has room for.");
+		return;
+	}
+	if (!workshop.ToolUnlocked(toolIndex))
+	{
+		if (tool.skill >= 0 && workshop.SkillLevel(static_cast<SkillKind>(tool.skill)) == 0)
+		{
+			ImGui::TextColored(COLOR_WARN, "Locked: needs the %s perk.", Skills::Of(static_cast<SkillKind>(tool.skill)).name);
+			ImGui::TextDisabled("Spend skill points on it in the backpack's Rank & Skills tab.");
+		}
+		else
+		{
+			ImGui::TextColored(COLOR_WARN, "Locked: sold to rank %d shops (%s) and up.", tool.rank, ShopRank::Info(tool.rank).name);
+			ImGui::TextDisabled("Sell good engines to raise the shop's rank, or buy Supplier Connections in the Rank & Skills tab.");
+		}
 		return;
 	}
 	CartLine line;

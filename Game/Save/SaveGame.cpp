@@ -1,6 +1,7 @@
 #include "SaveGame.h"
 
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <format>
@@ -18,6 +19,7 @@
 #include "../World/ShopWorld.h"
 #include "../World/ShopWorldShared.h"
 #include "SaveText.h"
+#include "../LocalTime.h"
 
 namespace
 {
@@ -36,7 +38,15 @@ namespace
 	// lobes measured by height, not lift; and each part keeps count of what has been surfaced off its deck.
 	// 22: battery packs for the cordless tools. 23: a serpentine belt tensioner (since retired), a part slot
 	// before the nuts and bolts (which moved up one), and its bolt after them.
-	constexpr int VERSION = 23;
+	// 24: the shop's reputation (its rank). 25: the perks bought with skill points. 26: no shop clock (the
+	// hours went), and no Machinist's Eye perk (the eighth): its points go back to the shop.
+	// 27: the shack: half the size, no house (the bed is a cot in the shack), the dyno bought (and owned in
+	// older saves), and the upgrades are perks: Contractor Rates (the fourth) went, its points back to the shop.
+	// 28: the 4A-C's four cam journals (and caps), not five, and its five rocker shaft bolts through both shafts.
+	// 29: no cot (the station after the lift). 30: the engine hoist (a station after the extension's door), and
+	// which engine hangs from it. 31: bearing shells fitted into loose rods and caps. 32: pistons on loose rods, and
+	// the piston pins pressed into them (a part of their own). 33: rings fitted onto loose pistons.
+	constexpr int VERSION = 33;
 	constexpr const char* MAGIC = "LVSAVE";
 
 	constexpr int PART_TYPES = static_cast<int>(PartType::COUNT);
@@ -85,6 +95,30 @@ namespace
 	// its share of the spec.
 	constexpr double OLD_HEAD_BOLT_NM = 40.0;
 	// The torques that changed in version 21, as they were before.
+	// Before version 28 the cam ran in five journals, where it runs in four now (the middle one went), and the
+	// rocker shafts had three bolts each where five go through both now. Where an old journal (or the cap on it)
+	// is now, or -1 for the one that went.
+	int CamJournalBefore28(int journal)
+	{
+		constexpr int NOW[] = { 0, 1, -1, 2, 3 };
+		return journal >= 0 && journal < 5 ? NOW[journal] : -1;
+	}
+	// A cam journal's or cam bore's feature, or the cam clearance read on it, renumbered to match; empty for the
+	// journal that went. Anything else is left as it is.
+	std::string CamNameBefore28(const std::string& name)
+	{
+		for (const char* prefix : { "Cam Journal ", "Cam Bore ", "Cam journal " })
+		{
+			std::string start = prefix;
+			if (!name.starts_with(start) || name.size() <= start.size() || !std::isdigit(static_cast<unsigned char>(name[start.size()])))
+				continue;
+			int journal = name[start.size()] - '1';
+			int now = CamJournalBefore28(journal);
+			return now < 0 ? std::string() : start + std::to_string(now + 1) + name.substr(start.size() + 1);
+		}
+		return name;
+	}
+
 	const std::map<std::string, double> OLD_TORQUES_NM = {
 		{ "Head Bolt", 90.0 }, { "Main Cap Bolt", 65.0 }, { "Rod Nut", 45.0 }, { "Intake Manifold Nut", 22.0 },
 		{ "Oil Pump Bolt", 10.0 }, { "Crank Pulley Bolt", 145.0 }, { "Cam Sprocket Bolt", 60.0 }, { "Cam Cap Bolt", 10.0 },
@@ -105,6 +139,12 @@ namespace
 
 	void WriteItemRef(Writer& out, const ItemRef& ref)
 	{
+		// A delivery carried on the hotbar is saved as a package, where it was carried; its slot as empty.
+		if (ref.IsPackage())
+		{
+			out.Int(static_cast<int>(ItemRef::Kind::NONE)).Int(0);
+			return;
+		}
 		out.Int(static_cast<int>(ref.kind)).Int(ref.id);
 	}
 
@@ -133,8 +173,11 @@ namespace
 		int selectedSlot = 0;
 		std::map<size_t, int> toolSizes;
 		std::map<size_t, BatteryPack> batteries;
+		std::vector<std::pair<std::string, std::string>> paint;	// WallPaint's records
+		std::vector<std::pair<ItemRef, PaintCoat>> coats;
 		std::array<float, Workshop::MAX_ENGINES> engineRolls = {};
 		std::array<float, Workshop::MAX_ENGINES> crankAngles = {};
+		bool moveIn = false;	// from the old garage into the shack (see Load)
 		bool doorOpen = true;
 		glm::vec3 playerPosition = {};
 		float playerYaw = 0.f;
@@ -162,9 +205,12 @@ std::string SaveGame::LastSavedText()
 	auto written = std::filesystem::last_write_time(FILE_NAME, error);
 	if (error)
 		return "";
+#ifdef _WIN32
 	auto system = std::chrono::clock_cast<std::chrono::system_clock>(written);
-	auto local = std::chrono::current_zone()->to_local(std::chrono::floor<std::chrono::minutes>(system));
-	return std::format("{:%b %d, %H:%M}", local);
+#else
+	auto system = std::chrono::time_point_cast<std::chrono::system_clock::duration>(std::chrono::file_clock::to_sys(written));
+#endif
+	return LocalTimeText(system, "%b %d, %H:%M");
 }
 
 bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const FirstPersonController& player, float timeOfDay, std::string& error)
@@ -172,11 +218,11 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	Writer out;
 	out.Word(MAGIC).Int(VERSION).Line();
 	out.Word("time").Num(timeOfDay).Line();
-	out.Word("money").Num(workshop.m_money).Word("hours").Num(workshop.m_hours).Line();
+	out.Word("money").Num(workshop.m_money).Line();
 	const auto& stats = workshop.m_stats;
 	out.Word("stats").Num(stats.moneySpent).Num(stats.moneyEarned).Int(stats.partsBought).Int(stats.coresBought).Int(stats.partsSold)
 		.Int(stats.partsFitted).Int(stats.measurements).Int(stats.cuts).Int(stats.dynoPulls).Int(stats.dynoFailures).Int(stats.enginesSold)
-		.Num(stats.bestPowerKw).Num(stats.bestTorqueNm).Num(stats.bestEngineSale).Num(stats.metresWalked).Line();
+		.Num(stats.bestPowerKw).Num(stats.bestTorqueNm).Num(stats.bestEngineSale).Num(stats.metresWalked).Num(stats.reputation).Line();
 
 	out.Word("log").Int(workshop.m_log.size()).Line();
 	for (const auto& line : workshop.m_log)
@@ -186,6 +232,10 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	out.Word("tools").Int(workshop.m_toolCounts.size());
 	for (int count : workshop.m_toolCounts)
 		out.Int(count);
+	out.Line();
+	out.Word("skills").Int(workshop.m_skills.size());
+	for (int level : workshop.m_skills)
+		out.Int(level);
 	out.Line();
 	out.Word("machines").Int(workshop.m_ownedMachines.size());
 	for (bool owned : workshop.m_ownedMachines)
@@ -199,6 +249,8 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	for (bool done : workshop.m_upgrades)
 		out.Int(done);
 	out.Line();
+	out.Word("dyno").Int(workshop.m_ownsDyno).Line();
+	out.Word("hoist").Int(workshop.m_ownsHoist).Line();
 
 	// Parts: who they are, then every feature's true geometry, then what the player measured.
 	out.Word("parts").Int(workshop.m_inventory.size()).Line();
@@ -262,6 +314,18 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 			out.Int(static_cast<int>(finding.severity)).Str(finding.message).Line();
 	}
 	out.Word("dyno_engine").Int(workshop.m_engineOnDyno).Line();
+	out.Word("hoist_engine").Int(workshop.m_engineOnHoist).Line();
+	out.Word("shells").Int(workshop.m_shells.size());
+	for (const auto& [host, shell] : workshop.m_shells)
+		out.Int(host).Int(shell);
+	out.Line();
+	for (auto [word, fittings] : { std::pair{ "pistons", &workshop.m_pistons }, std::pair{ "pins", &workshop.m_pins }, std::pair{ "rings", &workshop.m_rings } })
+	{
+		out.Word(word).Int(fittings->size());
+		for (const auto& [host, fitted] : *fittings)
+			out.Int(host).Int(fitted);
+		out.Line();
+	}
 
 	// The 3D shop
 	out.Word("stations").Int(world.m_stations.size()).Line();
@@ -275,8 +339,9 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 		glm::vec3 position = visual.object->GetPosition();
 		// The index is the machine for a part set up in one, or the engine for a part fitted to one.
 		int placeIndex = visual.place == ItemPlace::STAND ? visual.engineIndex : visual.machineIndex;
-		// What another player is carrying goes back on the shelf or the tool board: only the host saves.
-		ItemPlace place = visual.place == ItemPlace::CARRIED ? ItemPlace::STORAGE : visual.place;
+		// What another player is carrying goes back on the shelf or the tool board: only the host saves. A shell
+		// in a rod or cap is saved as stored, and goes back in it (see the shells line).
+		ItemPlace place = visual.place == ItemPlace::CARRIED || visual.place == ItemPlace::ATTACHED ? ItemPlace::STORAGE : visual.place;
 		out.Int(static_cast<int>(place)).Int(placeIndex).Num(position.x).Num(position.y).Num(position.z).Num(visual.yaw).Line();
 	}
 
@@ -320,6 +385,15 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	out.Word("batteries").Int(world.m_batteries.size());
 	for (const auto& [tool, battery] : world.m_batteries)
 		out.Int(tool).Num(battery.charge).Int(battery.on);
+	out.Line();
+	// Paint on the walls and floor, a tile to a line, and the coats sprayed on parts and tools.
+	auto paint = world.m_paint.Records();
+	out.Word("paint").Int(paint.size()).Line();
+	for (const auto& [key, text] : paint)
+		out.Str(key).Str(text).Line();
+	out.Word("coats").Int(world.m_coats.size());
+	for (const auto& [ref, coat] : world.m_coats)
+		out.Int(static_cast<int>(ref.kind)).Int(ref.id).Int(coat.rgb).Num(coat.amount);
 	out.Line();
 
 	out.Word("engine").Int(world.m_engineRolls.size());
@@ -379,8 +453,11 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	double savedTime = in.Num();
 	in.Expect("money");
 	double money = in.Num();
-	in.Expect("hours");
-	double hours = in.Num();
+	if (version < 26)
+	{
+		in.Expect("hours");
+		in.Num();
+	}
 
 	PlayerStats stats;
 	if (version >= 4)
@@ -401,6 +478,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		stats.bestTorqueNm = in.Num();
 		stats.bestEngineSale = in.Num();
 		stats.metresWalked = in.Num();
+		if (version >= 24)
+			stats.reputation = in.Num();
 	}
 
 	in.Expect("log");
@@ -416,6 +495,31 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		int count = std::clamp(static_cast<int>(in.Int()), 0, Workshop::MAX_TOOL_COPIES);
 		if (i < tools.size())
 			tools[i] = count;
+	}
+	// Tools added since it was saved that every shop starts with (the piston pin press), it has too.
+	for (size_t i = toolCount; i < tools.size(); i++)
+		if (ToolCatalog::Of(i).ownedAtStart)
+			tools[i] = 1;
+	std::array<int, Skills::COUNT> skills = {};
+	if (version >= 25)
+	{
+		in.Expect("skills");
+		size_t skillCount = in.Count();
+		constexpr size_t RETIRED_MACHINIST = 7;
+		for (size_t i = 0; i < skillCount; i++)
+		{
+			int level = static_cast<int>(in.Int());
+			size_t skill = i;
+			if (version < 26 && i == RETIRED_MACHINIST)
+				continue;
+			if (version < 26 && i > RETIRED_MACHINIST)
+				skill--;
+			constexpr size_t RETIRED_CONTRACTOR = 3;
+			if (version < 27 && skill == RETIRED_CONTRACTOR)
+				continue;
+			if (skill < skills.size())
+				skills[skill] = std::clamp(level, 0, Skills::All()[skill].maxLevel);
+		}
 	}
 	std::vector<bool> machines(MachineCatalog::All().size(), false);
 	in.Expect("machines");
@@ -453,6 +557,19 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 				upgrades[i] = done;
 		}
 	}
+	// Before version 27 every shop had a dyno.
+	bool ownsDyno = true;
+	if (version >= 27)
+	{
+		in.Expect("dyno");
+		ownsDyno = in.Int() != 0;
+	}
+	bool ownsHoist = false;
+	if (version >= 30)
+	{
+		in.Expect("hoist");
+		ownsHoist = in.Int() != 0;
+	}
 
 	// Each part is rebuilt by the factory (which knows its specs and tolerances) and then given
 	// back its saved geometry, history and readings.
@@ -487,6 +604,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		std::string damage = in.Next();
 		uint32_t matchedTo = version >= 5 ? static_cast<uint32_t>(in.Int()) : 0;
 		int matchedPosition = version >= 5 ? static_cast<int>(in.Int()) : -1;
+		if (version < 28 && type == PartType::CAM_CAP)
+			matchedPosition = CamJournalBefore28(matchedPosition);
 		double torque = version >= 8 ? in.Num() : 0.0;
 		// Before version 11 a nut or bolt was always torqued as it went on.
 		auto tightness = version >= 11 ? in.Enumerated<FastenerTightness>(3) : torque > 0.0 ? FastenerTightness::TORQUED : FastenerTightness::LOOSE;
@@ -543,6 +662,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 				in.Fail("a machining operation is out of range");
 			if (lobeLiftToHeight(featureName))
 				featureValue += spec.CamBaseCircle();
+			if (version < 28)
+				featureName = CamNameBefore28(featureName);
 
 			// A feature the game no longer has is skipped rather than failing the whole load.
 			if (auto feature = part->FindFeature(featureName))
@@ -573,7 +694,10 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			reading.stale = in.Int() != 0;
 			if (lobeLiftToHeight(featureName))
 				reading.value += spec.CamBaseCircle();
-			part->m_readings[featureName] = reading;
+			if (version < 28)
+				featureName = CamNameBefore28(featureName);
+			if (!featureName.empty())
+				part->m_readings[featureName] = reading;
 		}
 
 		// Resizing a feature to a new spec: what was made for the old size keeps how far off spec it was,
@@ -705,6 +829,19 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 				slot++;
 			if (slot < 0 || slot >= static_cast<long long>(AssemblySlot::COUNT) || !partsById.contains(static_cast<uint32_t>(id)))
 				in.Fail("an engine on a stand refers to a missing part");
+			// Version 28: four cam caps (two bolts each), and five rocker shaft bolts through both shafts at the ends and
+			// between the cylinders (the first shaft's three are the middle ones). What has no place now comes off, loose.
+			if (version < 28 && slot == static_cast<long long>(AssemblySlot::CAM_CAP))
+				index = CamJournalBefore28(static_cast<int>(index));
+			else if (version < 28 && slot == static_cast<long long>(AssemblySlot::CAM_CAP_BOLT))
+			{
+				int cap = CamJournalBefore28(static_cast<int>(index / 2));
+				index = cap < 0 ? -1 : cap * 2 + index % 2;
+			}
+			else if (version < 28 && slot == static_cast<long long>(AssemblySlot::ROCKER_SHAFT_BOLT))
+				index = index / 3 == 0 ? index % 3 + 1 : -1;
+			if (index < 0)
+				continue;
 			engine.installed.push_back({ slot, index, id });
 			// Version 21 took the torques from the 4A-C: what was done up keeps its share of the spec.
 			if (version < 21 && !in.Failed())
@@ -724,7 +861,10 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			AssemblyReading reading;
 			reading.value = in.Num();
 			reading.stale = in.Int() != 0;
-			engine.readings[label] = reading;
+			if (version < 28)
+				label = CamNameBefore28(label);
+			if (!label.empty())
+				engine.readings[label] = reading;
 		}
 
 		auto& dyno = engine.dyno;
@@ -783,6 +923,37 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		in.Expect("dyno_engine");
 		engineOnDyno = static_cast<int>(in.Int());
 	}
+	int engineOnHoist = -1;
+	if (version >= 30)
+	{
+		in.Expect("hoist_engine");
+		engineOnHoist = static_cast<int>(in.Int());
+	}
+	std::map<uint32_t, uint32_t> shells;
+	if (version >= 31)
+	{
+		in.Expect("shells");
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			auto host = static_cast<uint32_t>(in.Int());
+			shells[host] = static_cast<uint32_t>(in.Int());
+		}
+	}
+	std::map<uint32_t, uint32_t> pistons, pins, rings;
+	if (version >= 32)
+		for (auto [word, fittings] : { std::pair{ "pistons", &pistons }, std::pair{ "pins", &pins }, std::pair{ "rings", &rings } })
+		{
+			if (word == std::string("rings") && version < 33)
+				continue;
+			in.Expect(word);
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+			{
+				auto host = static_cast<uint32_t>(in.Int());
+				(*fittings)[host] = static_cast<uint32_t>(in.Int());
+			}
+		}
 
 	SavedWorld saved;
 	in.Expect("stations");
@@ -801,10 +972,12 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	// come last, so the stations before them keep their places and the new ones their defaults.
 	// The shop's own equipment, then a station for each piece of furniture.
 	size_t expectedStations = world.m_fixedStations + furniture.size();
+	if (version < 30)
+		expectedStations -= 1;	// the engine hoist
 	if (version < 20)
 		expectedStations -= 1;	// the extension's roll-up door
-	if (version < 19)
-		expectedStations -= 1;	// the bed
+	if (version >= 19 && version < 29)
+		expectedStations += 1;	// the bed, later the cot, since gone
 	if (version < 13)
 		expectedStations -= 1;	// the post lift
 	if (version < 10)
@@ -817,13 +990,28 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		expectedStations -= Workshop::MAX_ENGINES - 1;
 	if (!in.Failed() && saved.stations.size() != expectedStations)
 		in.Fail("the shop's equipment list has changed since this was saved");
-	// The bed, then the extension's roll-up door, are the last of the shop's own stations: in older saves
-	// the furniture comes straight after whichever was last then, so it moves up to make room.
-	const size_t bedStation = world.m_fixedStations - 2;
-	const size_t bayDoorStation = world.m_fixedStations - 1;
-	for (auto [station, since] : { std::pair{ bedStation, 19 }, std::pair{ bayDoorStation, 20 } })
-		if (!in.Failed() && version < since && saved.stations.size() >= station)
-			saved.stations.insert(saved.stations.begin() + station, { world.m_stations[station].homePosition, world.m_stations[station].homeYaw, station == bedStation });
+	// The extension's roll-up door, then the engine hoist, are the last of the shop's own stations. From
+	// version 19 to 28 the bed (then the cot) came just before the door: it's gone, so what came after it
+	// moves down one. Before 20 there was no door, and before 30 no hoist: the furniture moves up to make
+	// room for them.
+	const size_t hoistStation = world.m_fixedStations - 1;
+	const size_t bayDoorStation = world.m_fixedStations - 2;
+	const size_t cotStation = bayDoorStation;	// where the bed was, in those saves
+	if (!in.Failed() && version >= 19 && version < 29 && saved.stations.size() > cotStation)
+		saved.stations.erase(saved.stations.begin() + cotStation);
+	if (!in.Failed() && version < 20 && saved.stations.size() >= bayDoorStation)
+		saved.stations.insert(saved.stations.begin() + bayDoorStation, { world.m_stations[bayDoorStation].homePosition, world.m_stations[bayDoorStation].homeYaw, false });
+	if (!in.Failed() && version < 30 && saved.stations.size() >= hoistStation)
+		saved.stations.insert(saved.stations.begin() + hoistStation, { world.m_stations[hoistStation].homePosition, world.m_stations[hoistStation].homeYaw, false });
+	// Before version 27 the shop was a garage twice the size, with the house beside it: everything moves into
+	// the shack, the equipment to its usual spots (furniture to where new furniture goes).
+	saved.moveIn = version < 27;
+	if (saved.moveIn)
+		for (size_t i = 0; i < saved.stations.size(); i++)
+		{
+			saved.stations[i].position = i < world.m_stations.size() ? world.m_stations[i].homePosition : ShopLayout::FURNITURE_HOME;
+			saved.stations[i].yaw = i < world.m_stations.size() ? world.m_stations[i].homeYaw : 0.f;
+		}
 
 	in.Expect("items");
 	saved.items.resize(in.Count());
@@ -834,6 +1022,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		item.machineIndex = static_cast<int>(in.Int());
 		item.position = ReadVec3(in);
 		item.yaw = static_cast<float>(in.Num());
+		// Whatever was lying about in the old garage goes back on the shelves.
+		if (saved.moveIn && item.place == ItemPlace::WORLD)
+			item.place = ItemPlace::STORAGE;
 	}
 
 	in.Expect("packages");
@@ -857,9 +1048,11 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			for (auto& station : package.stations)
 			{
 				station = static_cast<size_t>(in.Int());
-				if (version < 19 && station >= bedStation)
-					station++;
+				if (version >= 19 && version < 29 && station > cotStation)
+					station--;
 				if (version < 20 && station >= bayDoorStation)
+					station++;
+				if (version < 30 && station >= hoistStation)
 					station++;
 				if (station >= world.m_stations.size())
 					in.Fail("a delivery holds equipment the shop doesn't have");
@@ -907,6 +1100,24 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			battery.on = static_cast<int>(in.Int());
 		}
 	}
+	if (version >= 24)
+	{
+		in.Expect("paint");
+		saved.paint.resize(in.Count());
+		for (auto& [key, text] : saved.paint)
+		{
+			key = in.Next();
+			text = in.Next();
+		}
+		in.Expect("coats");
+		saved.coats.resize(in.Count());
+		for (auto& [ref, coat] : saved.coats)
+		{
+			ref = ReadItemRef(in);
+			coat.rgb = static_cast<uint32_t>(in.Int());
+			coat.amount = std::clamp(static_cast<float>(in.Num()), 0.f, 1.f);
+		}
+	}
 
 	in.Expect("engine");
 	size_t poses = version == 1 ? 1 : in.Count();
@@ -936,13 +1147,15 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 
 	// Everything parsed: now replace the career.
 	workshop.m_money = money;
-	workshop.m_hours = hours;
 	workshop.m_stats = stats;
 	workshop.m_log = log;
 	workshop.m_toolCounts = tools;
+	workshop.m_skills = skills;
 	workshop.m_ownedMachines = machines;
 	workshop.m_furniture = furniture;
 	workshop.m_upgrades = upgrades;
+	workshop.m_ownsDyno = ownsDyno;
+	workshop.m_ownsHoist = ownsHoist;
 	workshop.m_inventory = parts;
 	workshop.m_engines.clear();
 	for (const auto& saved_engine : engines)
@@ -961,7 +1174,47 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	workshop.m_activeEngine = std::clamp(activeEngine, 0, workshop.GetEngineCount() - 1);
 	// Only a finished engine can be on the dyno.
 	workshop.m_engineOnDyno = engineOnDyno >= 0 && engineOnDyno < workshop.GetEngineCount() && workshop.GetAssembly(engineOnDyno).IsComplete() ? engineOnDyno : -1;
+	workshop.m_engineOnHoist = workshop.m_ownsHoist && engineOnHoist >= 0 && engineOnHoist < workshop.GetEngineCount() && engineOnHoist != workshop.m_engineOnDyno
+		&& !workshop.GetAssembly(engineOnHoist).GetAllParts().empty() ? engineOnHoist : -1;
+	// Shells in loose rods and caps, as long as both are still the shop's and off the engines.
+	workshop.m_shells.clear();
+	for (const auto& [host, shell] : shells)
+		if (partsById.contains(host) && partsById.contains(shell) && workshop.EngineOf(*partsById.at(host)) < 0 && workshop.EngineOf(*partsById.at(shell)) < 0
+			&& Workshop::ShellFits(partsById.at(host)->GetType(), partsById.at(shell)->GetType()))
+			workshop.m_shells[host] = shell;
 	Part::s_nextId = (std::max)(Part::s_nextId, highestId + 1);
+	// Pistons on loose rods, and the pins in pistons (on the engines too).
+	workshop.m_pistons.clear();
+	for (const auto& [rod, piston] : pistons)
+		if (partsById.contains(rod) && partsById.contains(piston) && partsById.at(rod)->GetType() == PartType::CONNECTING_ROD
+			&& partsById.at(piston)->GetType() == PartType::PISTON && workshop.EngineOf(*partsById.at(rod)) < 0 && workshop.EngineOf(*partsById.at(piston)) < 0)
+			workshop.m_pistons[rod] = piston;
+	workshop.m_pins.clear();
+	for (const auto& [piston, pin] : pins)
+		if (partsById.contains(piston) && partsById.contains(pin) && partsById.at(piston)->GetType() == PartType::PISTON
+			&& partsById.at(pin)->GetType() == PartType::PISTON_PIN)
+			workshop.m_pins[piston] = pin;
+	workshop.m_rings.clear();
+	workshop.m_compressed.clear();
+	for (const auto& [piston, ring] : rings)
+		if (partsById.contains(piston) && partsById.contains(ring) && partsById.at(piston)->GetType() == PartType::PISTON
+			&& partsById.at(ring)->GetType() == PartType::PISTON_RING && workshop.EngineOf(*partsById.at(piston)) < 0 && workshop.EngineOf(*partsById.at(ring)) < 0)
+			workshop.m_rings[piston] = ring;
+	// Before version 32 the pins were part of the pistons: each piston gets one, pressed in if it's on an engine.
+	if (version < 32)
+	{
+		std::vector<pPart> pistonsOwned;
+		for (const auto& part : workshop.m_inventory)
+			if (part->GetType() == PartType::PISTON)
+				pistonsOwned.push_back(part);
+		for (const auto& piston : pistonsOwned)
+		{
+			auto pin = PartFactory::Create(PartType::PISTON_PIN, spec, piston->GetQuality(), PartCondition::USED);
+			workshop.m_inventory.push_back(pin);
+			if (workshop.EngineOf(*piston) >= 0)
+				workshop.m_pins[piston->GetId()] = pin->GetId();
+		}
+	}
 
 	// The stations go where the save has them before anything is laid out on them (or the parts would
 	// land on the shelves wherever they stood in the last game), and again after: the furniture's
@@ -983,7 +1236,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 				station.yaw = station.homeYaw;
 				station.present = station.type == StationType::ENGINE_STAND ? station.engineIndex < workshop.GetEngineCount()
 					: station.type == StationType::MACHINE ? workshop.OwnsMachine(static_cast<size_t>(station.machineIndex))
-					: station.type == StationType::LIFT ? workshop.OwnsUpgrade(UpgradeKind::POST_LIFT) : true;
+					: station.type == StationType::LIFT ? workshop.OwnsUpgrade(UpgradeKind::POST_LIFT)
+					: station.type == StationType::DYNO ? workshop.OwnsDyno()
+					: station.type == StationType::HOIST ? workshop.OwnsHoist() : true;
 			}
 			station.object->SetVisible(station.present);
 			station.object->SetPickable(station.present);
@@ -992,6 +1247,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	placeStations();
 	ResetWorld(workshop, world);
 	placeStations();
+	// The engines are already where they were: none swings onto the hoist as the game opens.
+	world.m_engineOnDyno = workshop.m_engineOnDyno;
+	world.m_engineOnHoist = workshop.m_engineOnHoist;
 
 	for (const auto& item : saved.items)
 	{
@@ -1036,8 +1294,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		}
 		if (items.empty() && saved_package.stations.empty())
 			continue;
-		auto object = saved_package.big ? world.Spawn(ShopModels::PACKAGE_CRATE, ShopTextures::WOOD, saved_package.position, saved_package.yaw)
-			: world.Spawn(ShopModels::PACKAGE_BOX, ShopTextures::CARDBOARD, saved_package.position, saved_package.yaw);
+		glm::vec3 position = saved.moveIn ? world.NextDeliverySpot() : saved_package.position;
+		auto object = saved_package.big ? world.Spawn(ShopModels::PACKAGE_CRATE, ShopTextures::WOOD, position, saved_package.yaw)
+			: world.Spawn(ShopModels::PACKAGE_BOX, ShopTextures::CARDBOARD, position, saved_package.yaw);
 		object->SetPickable(true);
 		Package package = { saved_package.id, object, items, saved_package.stations, saved_package.label, { {}, false } };
 		world.m_targets[object.get()] = { ShopWorld::TargetKind::PACKAGE, {}, package.id, 0 };
@@ -1085,12 +1344,19 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 
 	world.m_toolSizes = saved.toolSizes;
 	world.m_batteries = saved.batteries;
+	// Paint on the old garage's walls and floor doesn't fit the shack: it's left behind.
+	if (!saved.moveIn)
+		for (const auto& [key, text] : saved.paint)
+			if (WallPaint::IsKey(key))
+				world.m_paint.Apply(key, text);
+	for (const auto& [ref, coat] : saved.coats)
+		world.m_coats[ref] = coat;
 	world.m_engineRolls = saved.engineRolls;
 	world.m_crankAngles = saved.crankAngles;
 	world.SetDoorOpen(saved.doorOpen, true);
 	world.RebuildCollision();
 
-	player.SetPosition(saved.playerPosition);
+	player.SetPosition(saved.moveIn ? world.GetSpawnPosition() : saved.playerPosition);
 	player.SetYaw(saved.playerYaw);
 	player.SetPitch(saved.playerPitch);
 	timeOfDay = static_cast<float>(savedTime);
@@ -1126,6 +1392,10 @@ void SaveGame::StartNew(Workshop& workshop, ShopWorld& world, FirstPersonControl
 				station.present = station.engineIndex < workshop.GetEngineCount();
 			else if (station.type == StationType::LIFT)
 				station.present = workshop.OwnsUpgrade(UpgradeKind::POST_LIFT);
+			else if (station.type == StationType::DYNO)
+				station.present = workshop.OwnsDyno();
+			else if (station.type == StationType::HOIST)
+				station.present = workshop.OwnsHoist();
 			else
 				station.present = true;
 			station.object->SetVisible(station.present);
@@ -1164,9 +1434,14 @@ void SaveGame::ResetWorld(Workshop& workshop, ShopWorld& world)
 	world.m_equipped = {};
 	world.m_handEmpty = false;
 	world.m_engineOnDyno = -1;
+	world.m_engineOnHoist = -1;
+	world.m_swing = {};
 	world.m_toolSizes.clear();
 	world.m_batteries.clear();
 	world.m_move.reset();
+	world.m_paint.Clear();
+	world.m_coats.clear();
+	world.m_lastPaint.reset();
 	world.m_carriedPackage = 0;
 	world.m_nextPackageId = 1;
 	// Furniture is the workshop's: the pieces it has get stations of their own again.

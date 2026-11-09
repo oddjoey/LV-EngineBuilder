@@ -16,6 +16,7 @@
 #include "FrameProfiler.h"
 #include "Save/SaveGame.h"
 #include "UI/MonkeyUI.h"
+#include "UI/RankUI.h"
 #include "World/GarageLayout.h"
 
 namespace
@@ -82,7 +83,7 @@ namespace
 
 EngineBuilderGame::EngineBuilderGame()
 {
-	m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
+	m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 	m_settings = GameSettings::Load();
 	m_savedSettings = m_settings;
 }
@@ -110,22 +111,33 @@ void EngineBuilderGame::OnLoadAssets()
 	m_player.ApplyToCamera(*m_camera);
 
 	m_ui.SetPartAvailability([this](uint32_t partId) { return !m_world.IsPackaged(partId); });
-	// The backpack, and a tab beside it to dress your monkey.
+	// The backpack, a tab beside it to dress your monkey, and one for the shop's rank.
 	m_ui.SetBackpackContents([this] {
 		if (!ImGui::BeginTabBar("BackpackTabs"))
 			return;
+		// Your monkey down the left, as you're dressed, then the backpack.
 		if (ImGui::BeginTabItem("Backpack"))
 		{
+			if (ImGui::BeginChild("Monkey", { 270.f, 0.f }, ImGuiChildFlags_Borders))
+				MonkeyUI::Draw(m_settings.monkey, [this](const std::string& name) -> uint32_t {
+					try { return m_assets.Model(name); }
+					catch (const std::exception&) { return 0; }
+				}, m_workshop->SkillLevel(SkillKind::WARDROBE) > 0, m_workshop->SkillLevel(SkillKind::PREMIUM_COLORS) > 0);
+			ImGui::EndChild();
+			ImGui::SameLine();
 			m_inventoryUI.DrawContents(m_world, *m_workshop, m_player);
 			ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Monkey"))
+		if (ImGui::BeginTabItem("Stats"))
 		{
 			m_inventoryUI.CancelDrag();
-			MonkeyUI::Draw(m_settings.monkey, [this](const std::string& name) -> uint32_t {
-				try { return m_assets.Model(name); }
-				catch (const std::exception&) { return 0; }
-			});
+			m_inventoryUI.DrawPlayerStats(m_world, *m_workshop);
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem(m_workshop->SkillPoints() > 0 ? std::format("Rank & Skills ({})###Rank", m_workshop->SkillPoints()).c_str() : "Rank & Skills###Rank"))
+		{
+			m_inventoryUI.CancelDrag();
+			RankUI::Draw(*m_workshop);
 			ImGui::EndTabItem();
 		}
 		ImGui::EndTabBar();
@@ -164,8 +176,6 @@ void EngineBuilderGame::ApplySettings()
 	m_world.SetFieldOfView(m_settings.fieldOfView);
 	m_world.SetViewModelSettings({ m_settings.viewArm, m_settings.viewBody,
 		{ m_settings.viewHandRight, m_settings.viewHandUp, m_settings.viewHandForward }, m_settings.viewBodyBack });
-	if (!(m_world.GetPlayerLook() == m_settings.monkey))
-		m_world.SetPlayerLook(m_settings.monkey);
 }
 
 void EngineBuilderGame::ApplyVideoSettings(bool force)
@@ -195,6 +205,7 @@ void EngineBuilderGame::OnStart()
 	m_input = InputManager::Get();
 	m_input->SetCursorLocked(true);
 	// LV_PROFILE=1 in the environment starts with the frame profiler on.
+#ifdef _WIN32
 	char* profile = nullptr;
 	size_t length = 0;
 	if (_dupenv_s(&profile, &length, "LV_PROFILE") == 0 && profile)
@@ -202,6 +213,10 @@ void EngineBuilderGame::OnStart()
 		FrameProfiler::Get().SetEnabled(profile[0] == '1');
 		free(profile);
 	}
+#else
+	if (const char* profile = std::getenv("LV_PROFILE"))
+		FrameProfiler::Get().SetEnabled(profile[0] == '1');
+#endif
 	ApplyVideoSettings(true);
 	// Lordi's debug panels live in the dev menu (F3) instead of their own Home window.
 	IMGUIManager::Get()->SetDebugWindowEnabled(false);
@@ -296,6 +311,7 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	if (walking)
 	{
 		glm::vec3 before = m_player.GetFeetPosition();
+		m_player.SetSpeedScale(static_cast<float>(m_workshop->WalkSpeedFactor()));
 		m_player.Update(deltaTime, *m_input, m_world.GetObstacles(), m_world.GetRoomBounds(), m_world.GetWalkSurfaces());
 		glm::vec3 step = m_player.GetFeetPosition() - before;
 		m_workshop->AddDistanceWalked(glm::length(glm::vec2(step.x, step.z)));
@@ -326,6 +342,10 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	m_ui.Update(deltaTime);
 	m_world.SetEngineRpm(m_ui.GetLiveRpm(), m_ui.GetPullEngine());
 
+	// As the player dressed it, once the shop has the Wardrobe perk; the shop's monkey until then.
+	MonkeyLook worn = m_workshop->SkillLevel(SkillKind::WARDROBE) > 0 ? m_settings.monkey : MonkeyLook{};
+	if (!(m_world.GetPlayerLook() == worn))
+		m_world.SetPlayerLook(worn);
 	if (auto request = m_world.Update(deltaTime, *m_workshop, m_player, *m_input, walking))
 	{
 		if (request->storeCategory)
@@ -360,22 +380,6 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_audio.PlayInterface(Sound::PAGE_TURN, 0.8f);
 	}
 
-	// Bed: in the evening or the small hours, sleep through to seven and save; in the day, not yet.
-	if (m_world.TakeSleepRequest())
-	{
-		// The garage's server keeps the clock, the same for everyone in it. Offline (a debug build),
-		// the night can still be slept away, and the game is saved.
-		if (!m_offline)
-			m_world.Notify("The garage's clock is the server's: no sleeping the night away here.");
-		else if (m_timeOfDay >= 19.f || m_timeOfDay < 5.f)
-		{
-			m_timeOfDay = 7.f;
-			m_world.Notify(SaveOffline() ? "You slept till 7:00. Game saved." : "You slept till 7:00.");
-		}
-		else
-			m_world.Notify("It's too early to sleep. Come back after 19:00.");
-	}
-
 	// The sun keeps moving, even with the menus open.
 	// The dev menu can speed it up, or stop it. In a garage on a server it goes at the server's pace,
 	// and the server's time is the one that counts.
@@ -400,7 +404,7 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 void EngineBuilderGame::ReturnToMenu()
 {
 	m_offline = false;
-	m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
+	m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 	SaveGame::StartNew(*m_workshop, m_world, m_player);
 	m_timeOfDay = 9.5f;
 	Renderer::Get()->ResetTemporalHistory();
@@ -415,13 +419,13 @@ void EngineBuilderGame::PlayOffline()
 		return;
 
 	// The local save, as before there were servers, or a new shop if there isn't one.
-	auto workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
+	auto workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 	std::string error;
 	if (SaveGame::Exists() && SaveGame::Load(*workshop, m_world, m_player, m_timeOfDay, error))
 		m_workshop = std::move(workshop);
 	else
 	{
-		m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
+		m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 		SaveGame::StartNew(*m_workshop, m_world, m_player);
 		m_timeOfDay = 9.5f;
 	}
@@ -539,7 +543,7 @@ void EngineBuilderGame::UpdateNetwork(float deltaTime)
 	// garage's door or where they last stood in it.
 	if (m_net.TakeWelcome())
 	{
-		m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), 4000.0);
+		m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 		SaveGame::StartNew(*m_workshop, m_world, m_player);
 		m_net.ApplyWelcome(*m_workshop, m_world, m_player);
 		Renderer::Get()->ResetTemporalHistory();
@@ -612,9 +616,6 @@ void EngineBuilderGame::OnGUI()
 	if (m_manual.Draw(m_settings.imperialUnits, m_settings.darkMode))
 		m_audio.PlayInterface(Sound::PAGE_TURN, 0.7f);
 
-	// The workshop window has its own units toggle; keep the setting in step with it.
-	m_settings.imperialUnits = m_ui.GetUnits() == Units::System::IMPERIAL;
-
 	if (!InMenu() && !m_ui.IsOpen() && !m_manual.IsOpen() && !m_pauseMenu.IsOpen() && !m_console.IsOpen())
 		m_world.DrawHud(*m_workshop, m_player);
 	if (!m_pauseMenu.IsOpen())
@@ -658,7 +659,7 @@ void EngineBuilderGame::OnGUI()
 		context.username = m_login.GetIdentity().username;
 		context.server = m_net.GetServer();
 		for (const auto& player : m_net.GetPlayers())
-			context.players.push_back(std::format("{}{}", player.name, player.local ? " (you)" : ""));
+			context.players.push_back({ player.prefix, std::format("{}{}", player.name, player.local ? " (you)" : "") });
 
 		// The server list: asked for the first time the menu shows it, once logged in.
 		if (m_login.IsLoggedIn() && !m_servers.HasRefreshed() && !m_servers.IsRefreshing())

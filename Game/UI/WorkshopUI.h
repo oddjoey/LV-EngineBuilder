@@ -21,7 +21,7 @@ struct BenchItem
 	std::string location = "";
 	int machineIndex = -1;
 };
-enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, UPGRADES };
+enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, PAINT };
 
 // ImGui front end for the workshop. It only ever shows the player what they've measured;
 // the true geometry is visible only with the X-ray developer toggle.
@@ -57,8 +57,8 @@ public:
 	// What's on the workbench and in the machines, which is all the Bench tab shows.
 	void SetBenchContents(const std::function<std::vector<BenchItem>()>& benchContents);
 
+	// From Settings: the only place the units are chosen.
 	void SetUnits(Units::System units);
-	Units::System GetUnits() const;
 	// How the store finds an item's 3D model by name, for its turntable preview.
 	void SetModelLookup(const std::function<uint32_t(const std::string&)>& lookup);
 	// Developer x-ray: the parts' true geometry next to the player's readings.
@@ -81,12 +81,12 @@ private:
 	void DrawStoreTab(Workshop& workshop);
 	// The Parts tab, or with hardware the Hardware tab: nuts and bolts by size.
 	void DrawPartsStore(Workshop& workshop, bool hardware);
-	void DrawToolStore(Workshop& workshop);
+	// The tools, or (paint) the paint and what cleans it off, which has a tab of its own.
+	void DrawToolStore(Workshop& workshop, bool paint);
 	// How many of a tool the shop has, and the button to buy one (another one, if it has some).
 	void DrawToolBuy(Workshop& workshop, size_t toolIndex);
 	void DrawMachineStore(Workshop& workshop);
 	void DrawFurnitureStore(Workshop& workshop);
-	void DrawUpgradeStore(Workshop& workshop);
 	// Engine stands and whole cores, for building more engines at once.
 	void DrawStoreWindow(Workshop& workshop);
 	// The cart beside the catalogue: every line, its price, the total and the checkout button.
@@ -112,6 +112,9 @@ private:
 	// none, with every tool that can do it listed when hovered.
 	void DrawToolCell(Workshop& workshop, const std::function<bool(const MeasuringTool&)>& canDo, const char* prefix = "") const;
 	void DrawAssemblyTab(Workshop& workshop);
+	// Selling the active engine (it's priced once the buyer has run it), and what the last one sold made.
+	void DrawSellButton(Workshop& workshop);
+	void DrawLastSale(const Workshop& workshop);
 	// The parts fitted to the engine, by position; picks the one the stand screen inspects.
 	void DrawAssemblySlots(Workshop& workshop);
 	void DrawAssemblyChecks(Workshop& workshop);
@@ -135,7 +138,6 @@ private:
 	int							m_selectedTool = 0;
 	int							m_selectedStoreMachine = 0;
 	int							m_selectedStoreFurniture = 0;
-	int							m_selectedStoreUpgrade = 0;
 	WorkshopTab					m_currentTab = WorkshopTab::BENCH;
 	Units::System		m_units = Units::System::METRIC;
 	bool				m_xray = false;

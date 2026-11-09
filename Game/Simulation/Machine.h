@@ -15,8 +15,6 @@ struct Machine
 	double finishRa = 0.0;		// surface finish left behind
 	double maxRemoval = 0.0;	// most material one setup can take (0 = no limit)
 	double price = 0.0;
-	double hoursPerUse = 0.0;	// setting up, whatever the cut
-	double hoursPerMm = 0.0;	// on top of setup, for each mm of diameter removed
 	// Hand methods can't hold a depth: how far the stock really taken off strays from what was asked
 	// for, as a fraction (1 standard deviation). 0 for a machine that cuts what it's set to.
 	double removalError = 0.0;

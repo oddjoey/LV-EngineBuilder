@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "LV/Engine/Objects/Object.h"
@@ -17,6 +18,7 @@
 #include "GarageLayout.h"
 #include "PlayerAvatar.h"
 #include "ShopAssets.h"
+#include "WallPaint.h"
 
 class InputManager;
 
@@ -33,7 +35,7 @@ enum class StationType
 	DOOR,		// the roll-up door: opens and closes, never moves
 	FURNITURE,	// bought shelving, benches, seats and decorations (see FurnitureCatalog)
 	LIFT,		// the two-post lift upgrade: raised and lowered with E
-	BED			// in the house: sleep till morning
+	HOIST		// the engine hoist: lifts an engine off a stand or the dyno, and lowers it onto one
 };
 
 // Bounding box colours for the developer view (ImGui's packed ABGR).
@@ -84,7 +86,8 @@ enum class ItemPlace
 	WORLD,		// put down or dropped somewhere, under physics
 	PACKAGED,	// still in its delivery box
 	INVENTORY,	// in the backpack and not in hand
-	CARRIED		// another player has it, in a game over the network (never saved)
+	CARRIED,	// another player has it, in a game over the network (never saved)
+	ATTACHED	// a bearing shell fitted into a loose rod or cap (ItemVisual::hostPart), going about in it (saved as STORAGE)
 };
 
 // Just enough physics for things to fall, land and stack: no tumbling, no friction model.
@@ -113,8 +116,16 @@ struct ItemVisual
 	// A nut or bolt: how far out of its hole it was laid out (see FastenerRise).
 	float standRise = -1.f;
 	// CARRIED: which player has it (see NetSession), and whether it's in their hand.
+	uint32_t hostPart = 0;		// ATTACHED: the rod or cap it's fitted into
 	int carrier = -1;
 	bool carriedInHand = false;
+};
+
+// Spray paint over a part or tool: its colour (RGB) and how thick it's gone on, 0 to 1.
+struct PaintCoat
+{
+	uint32_t rgb = 0;
+	float amount = 0.f;
 };
 
 // A battery pack for the cordless tools: how full (0 to 1), and what it's on: a cordless tool or a
@@ -230,8 +241,6 @@ public:
 	// Sounds: what has happened since the last call that makes a noise, and where. And the things that
 	// hum or rumble while they run: whether they're going and where they are.
 	std::vector<SoundCue> TakeSoundCues();
-	// The player got into bed this frame: the game decides whether it's late enough to sleep.
-	bool TakeSleepRequest();
 	// The player opened the service manual in their hand this frame.
 	bool TakeReadRequest();
 	// A message along the bottom of the screen, like the shop's own.
@@ -418,7 +427,12 @@ private:
 	void ReorganizeShelves();
 	// Little icon labels over the deliveries, showing what's in each.
 	void DrawPackageLabels(const Workshop& workshop, const FirstPersonController& player) const;
-	void OpenPackage(Package& package);
+	// Opens a delivery where it stands or, given the player carrying it, into their backpack and hotbar,
+	// with whatever doesn't fit going on the floor at their feet.
+	void OpenPackage(Package& package, const FirstPersonController* player = nullptr);
+	// A clear patch of floor for a loose item (its model's bounds) near origin, at origin's height: out of
+	// the walls and on origin's side of them, not under a bench or shelf, and clear of the spots taken.
+	std::optional<glm::vec3> FloorSpotNear(const glm::vec3& origin, const ShopBox& localBounds, std::vector<std::pair<glm::vec2, float>>& taken) const;
 	void UpdateStations(const Workshop& workshop);
 	void UpdateEngineMotion(float deltaTime, const Workshop& workshop, const InputManager& input, bool playerHasControl);
 	void LayoutItems(const Workshop& workshop, const FirstPersonController& player);
@@ -445,6 +459,22 @@ private:
 	// with its flywheel end (cylinder 4) against the stand's mounting plate.
 	glm::vec3 StandToWorld(int engine, const glm::vec3& offset) const;
 	glm::quat StandRotation(int engine) const;
+	// Where an engine is: its deck's middle, and which way it's turned (StandToWorld is position +
+	// rotation * offset). Resting is where it sits, on its stand, the dyno or the hoist; CurrentPose eases
+	// it there from where it was, while it swings onto or off the hoist.
+	struct EnginePose
+	{
+		glm::vec3 position = {};
+		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+	};
+	EnginePose RestingPose(int engine) const;
+	EnginePose CurrentPose(int engine) const;
+	// What the hoist would lift or lower onto with E: a stand (its engine number), DYNO_TARGET, or nothing.
+	static constexpr int DYNO_TARGET = -2;
+	std::optional<int> HoistTarget(const Workshop& workshop) const;
+	glm::vec3 HoistHook() const;
+	// Follows the workshop's engines onto and off the dyno and the hoist (see m_engineOnDyno).
+	void SyncEngineMoves(const Workshop& workshop);
 	// The engine the player is looking at (its stand or a part on it), or -1.
 	int LookedAtEngine() const;
 	int LookedAtStandEngine() const;
@@ -497,6 +527,22 @@ private:
 	// A ratchet, breaker bar, torque wrench or the wrench set in hand: sockets go on from a set within
 	// reach, and nuts and bolts are done up or undone. True if it used this frame's E.
 	bool UpdateSpanner(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime);
+	// The piston pin press or ring compressor in hand: aimed at a piston on its loose rod, LMB held presses a pin in or
+	// squeezes its ring, RMB held the other way.
+	bool UpdatePinPress(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime);
+	// A marker, spray can or rag in hand: held down, it paints (or wipes) the wall or floor it's at, or (spray
+	// and rag) coats the part or tool. True while it's at work.
+	bool UpdatePaint(const FirstPersonController& player, const InputManager& input, size_t toolId, float deltaTime);
+	// The wall or floor face aimed at, within reach, if nothing's in the way.
+	struct PaintHit
+	{
+		WallPaint::Plane plane = {};
+		glm::vec3 point = {};
+		float distance = 0.f;
+	};
+	std::optional<PaintHit> FindPaintHit(const FirstPersonController& player, float reach) const;
+	// The marker's, spray can's or rag's size (0, 1, 2), for a paint tool.
+	static int PaintSizeIndex(const MeasuringTool& tool);
 	// Battery packs: clipped onto a cordless tool in hand (E on a pack, C takes it off), set on a
 	// charger (E on the charger with a pack in hand, E again takes it back), and charging there. True
 	// when the key was used.
@@ -539,6 +585,15 @@ private:
 	std::optional<UIRequest> Interact(Workshop& workshop);
 	std::optional<UIRequest> UseStation(Workshop& workshop, const Station& station);
 	void PickUp(Workshop& workshop, ItemVisual& visual);
+	// A nut or bolt turned in part way (m_fastenerTurns): it has to be undone before it comes off by hand.
+	bool PartWayDoneUp(const Part& part) const;
+	// Put together off the engine (Workshop::FitShell, FitPiston): the shell or piston in hand into or onto a loose
+	// rod or cap, or off one again (TakeOffWhat: its piston once unpinned, otherwise its shell).
+	bool CanFitOnto(const Workshop& workshop, const ItemVisual& host) const;
+	void FitOnto(Workshop& workshop, ItemVisual& host);
+	pPart TakeOffWhat(const Workshop& workshop, const Part& host) const;
+	pPart RingTarget(const Workshop& workshop, const Part& host) const;
+	void TakeOff(Workshop& workshop, ItemVisual& host);
 	void PlaceInWorld(ItemVisual& visual, const glm::vec3& position, const glm::vec3& velocity);
 	void SetPlace(ItemVisual& visual, ItemPlace place, int machineIndex = -1);
 	ItemVisual* FindItemAt(ItemPlace place, int machineIndex = -1);
@@ -570,7 +625,14 @@ private:
 	void StartMove(size_t stationIndex);
 	// Deliveries are carried in both hands: picked up with E, set down with RMB or dropped with G.
 	void PickUpPackage(uint32_t packageId);
+	// The delivery in hand: [F] opens it, [RMB] sets it down, [G] drops it.
 	void UpdateCarriedPackage(const FirstPersonController& player, const InputManager& input);
+	// Every delivery on the hotbar goes with you: the one in hand held out in front, the rest out of sight.
+	void PoseCarriedPackages(const FirstPersonController& player);
+	// Off the hotbar and into the shop, at position (moving at velocity).
+	void ReleasePackage(uint32_t packageId, const glm::vec3& position, const glm::vec3& velocity);
+	// On this player's hotbar, in hand or not.
+	bool IsCarried(uint32_t packageId) const;
 	// Puts everything riding on the station being moved back on it, wherever the station now is.
 	void CarryRiders(const Station& station);
 	bool IsRiding(const ItemRef& item, uint32_t packageId) const;
@@ -617,11 +679,25 @@ private:
 	std::vector<ShopBox>							m_upgradeSurfaces = {};	// the upstairs floor, for things set down there
 	std::vector<glm::vec3>							m_shopLamps = {};
 	bool											m_bayBuilt = false;
+	// Paint on the walls and floor, and the coats sprayed over parts and tools: colour (RGB) and how
+	// thick, 0 to 1.
+	WallPaint										m_paint = {};
+	std::unordered_map<ItemRef, PaintCoat, ItemRefHash>	m_coats = {};
+	std::optional<std::pair<WallPaint::Plane, glm::vec3>>	m_lastPaint = std::nullopt;	// where the marker was last frame, to draw on from
+	// How big a marker, spray can and rag go on, in metres (the scroll wheel changes them), and where the
+	// paint would go now, drawn as a ring on the wall round the crosshair.
+	std::array<float, 3>							m_paintRadius = { 0.004f, 0.12f, 0.05f };
+	struct PaintCursor
+	{
+		WallPaint::Plane plane = {};
+		glm::vec3 point = {};
+		float radius = 0.f;
+	};
+	std::optional<PaintCursor>						m_paintCursor = std::nullopt;
 	bool											m_upperBuilt = false;
 	bool											m_upgradesApplied = false;
 	uint64_t										m_syncedStock = 0;		// the parts and tools last synced (see Update)
 	size_t											m_liftStation = SIZE_MAX;
-	bool											m_sleepRequested = false;
 	bool											m_readRequested = false;
 	pObject											m_liftArms = nullptr;
 	float											m_liftHeight = 0.08f;
@@ -631,6 +707,7 @@ private:
 	float											m_doorAmount = 1.f;
 	// The extension's own roll-up door: there only once it's built, shut until it's opened.
 	size_t										m_bayDoorStation = SIZE_MAX;
+	size_t									m_hoistStation = SIZE_MAX;
 	bool											m_bayDoorOpen = false;
 	float											m_bayDoorAmount = 0.f;
 	std::unordered_map<ItemRef, ItemVisual, ItemRefHash>	m_items = {};
@@ -746,7 +823,15 @@ private:
 		float soundTimer = 0.f;
 	};
 	std::optional<Turning>							m_turning = std::nullopt;
+	// Nuts and bolts left turned part way (by part id): how far done up, 0 finger tight to 1 done up.
+	std::unordered_map<uint32_t, float>				m_fastenerTurns = {};
 	bool											m_turnDone = false;
+	float											m_pressProgress = 0.f;	// the pin press, as far as it went on m_pressPiston (0 to 1)
+	uint32_t									m_pressPiston = 0;
+	HandToolKind									m_pressTool = HandToolKind::NONE;
+	int											m_pressDirection = 0;	// 1 in, -1 out
+	bool											m_pressAimed = false;	// at a piston now: the ring shows how far
+	bool											m_pressDone = false;
 	bool											m_supportChanged = true;	// something was lifted, removed or moved
 	bool											m_recheckSupport = true;	// this frame, resting things check what's under them
 	// While the bodies are stepped: everything that can be stood on, with its box, gathered once for
@@ -755,13 +840,23 @@ private:
 	mutable bool									m_supportBoxesReady = false;
 	bool											m_steppingBodies = false;
 	bool											m_wasMoving = false;		// carrying equipment or a delivery last frame
-	uint32_t										m_carriedPackage = 0;		// the delivery in your arms, or 0
+	uint32_t										m_carriedPackage = 0;		// the delivery in your arms (its hotbar slot is picked), or 0
 	// In a game over the network: where each other player's hand is (what they hold is drawn there), and
 	// the deliveries they're carrying (moved by them, not by physics here). Kept by NetSession.
 	std::map<int, std::pair<glm::vec3, float>>		m_remoteHands = {};		// player: hand point and yaw
 	std::unordered_map<uint32_t, int>				m_remoteCarriedPackages = {};	// package: player
+	std::unordered_set<uint32_t>					m_remoteStowedPackages = {};	// carried by someone else, but on their hotbar, not in hand
 	bool											m_handEmpty = false;		// the selected slot's item put away with its number
 	int												m_engineOnDyno = -1;		// the Workshop's, kept here for posing it
+	int												m_engineOnHoist = -1;		// the same, for the hoist
+	// An engine going up onto the hoist or down off it: from where it was, over HOIST_SWING_SECONDS.
+	struct EngineSwing
+	{
+		int engine = -1;
+		EnginePose from = {};
+		float progress = 1.f;
+	};
+	EngineSwing									m_swing = {};
 	Readout											m_readout = {};
 	std::string										m_prompt = "";
 	std::string										m_secondaryPrompt = "";

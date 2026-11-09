@@ -62,7 +62,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 
 	if (glm::length(move) > 0.f)
 	{
-		float speed = m_crouching ? m_crouchSpeed : Controls::Held(input, Control::RUN) ? m_runSpeed : m_walkSpeed;
+		float speed = (m_crouching ? m_crouchSpeed : Controls::Held(input, Control::RUN) ? m_runSpeed : m_walkSpeed) * m_speedScale;
 		m_position += glm::normalize(move) * speed * deltaTime;
 	}
 

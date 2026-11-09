@@ -181,6 +181,50 @@ namespace ItemIcons
 				drawList->AddTriangleFilled(p(0.54f, 0.10f), p(0.36f, 0.38f), p(0.50f, 0.38f), color);
 				drawList->AddTriangleFilled(p(0.50f, 0.32f), p(0.64f, 0.32f), p(0.44f, 0.58f), color);
 				break;
+			case ToolShape::MARKER:
+			case ToolShape::SPRAY_CAN:
+			{
+				// In its own colour (greyed with the rest when the icon is): a marker on the slant, or a can.
+				ImU32 paint = IM_COL32((tool.paintColor >> 16) & 0xFF, (tool.paintColor >> 8) & 0xFF, tool.paintColor & 0xFF,
+					(color >> IM_COL32_A_SHIFT) & 0xFF);
+				if (ToolShapeFor(tool) == ToolShape::MARKER)
+				{
+					drawList->AddLine(p(0.22f, 0.78f), p(0.70f, 0.30f), paint, line * 4.f);
+					drawList->AddLine(p(0.70f, 0.30f), p(0.80f, 0.20f), color, line * 2.f);
+				}
+				else
+				{
+					drawList->AddRectFilled(p(0.30f, 0.30f), p(0.70f, 0.90f), paint, size * 0.05f);
+					drawList->AddRect(p(0.30f, 0.30f), p(0.70f, 0.90f), color, size * 0.05f, 0, line);
+					drawList->AddRectFilled(p(0.44f, 0.16f), p(0.56f, 0.30f), color);
+					for (float y : { 0.12f, 0.2f, 0.28f })
+						drawList->AddCircleFilled(p(0.72f, y), size * 0.025f, paint);
+				}
+				break;
+			}
+			case ToolShape::RAG:
+				// A tin with a rag over its lid.
+				drawList->AddRect(p(0.25f, 0.40f), p(0.75f, 0.88f), color, size * 0.04f, 0, line * 1.5f);
+				drawList->AddRectFilled(p(0.18f, 0.28f), p(0.82f, 0.40f), color, size * 0.03f);
+				drawList->AddLine(p(0.30f, 0.28f), p(0.36f, 0.18f), color, line);
+				drawList->AddLine(p(0.66f, 0.28f), p(0.60f, 0.18f), color, line);
+				break;
+			case ToolShape::PIN_PRESS:
+				// A C-frame with the screw through its top jaw, pressing down on a pin.
+				drawList->AddLine(p(0.25f, 0.2f), p(0.25f, 0.85f), color, line * 1.8f);
+				drawList->AddLine(p(0.25f, 0.2f), p(0.7f, 0.2f), color, line * 1.8f);
+				drawList->AddLine(p(0.25f, 0.85f), p(0.7f, 0.85f), color, line * 1.8f);
+				drawList->AddLine(p(0.62f, 0.08f), p(0.62f, 0.55f), color, line * 1.2f);
+				drawList->AddLine(p(0.5f, 0.08f), p(0.74f, 0.08f), color, line);
+				drawList->AddRectFilled(p(0.52f, 0.6f), p(0.72f, 0.75f), color, size * 0.02f);
+				break;
+			case ToolShape::RING_COMPRESSOR:
+				// The band, side on, and its ratchet key.
+				drawList->AddRect(p(0.15f, 0.35f), p(0.7f, 0.7f), color, size * 0.03f, 0, line * 1.6f);
+				drawList->AddRectFilled(p(0.7f, 0.45f), p(0.78f, 0.6f), color);
+				drawList->AddLine(p(0.78f, 0.52f), p(0.9f, 0.52f), color, line);
+				drawList->AddLine(p(0.9f, 0.4f), p(0.9f, 0.64f), color, line * 1.4f);
+				break;
 		}
 	}
 
@@ -256,8 +300,60 @@ namespace ItemIcons
 	{
 		if (isTool)
 			DrawTool(drawList, ToolCatalog::Of(toolIndex), min, size, color);
+		else if (toolIndex == PACKAGE)
+			DrawPackage(drawList, min, size, color);
 		else
 			PartIcons::Draw(drawList, partType, min, size, color);
+	}
+
+	void DrawPackage(ImDrawList* drawList, ImVec2 min, float size, ImU32 color)
+	{
+		// A taped-up cardboard box, seen from a corner above.
+		auto p = [&](float x, float y) { return ImVec2(min.x + x * size, min.y + y * size); };
+		float line = std::max(1.f, size * 0.045f);
+		ImU32 dim = (color & 0x00FFFFFF) | (90u << IM_COL32_A_SHIFT);
+		ImVec2 top[4] = { p(0.5f, 0.12f), p(0.9f, 0.3f), p(0.5f, 0.48f), p(0.1f, 0.3f) };
+		ImVec2 left[4] = { p(0.1f, 0.3f), p(0.5f, 0.48f), p(0.5f, 0.9f), p(0.1f, 0.72f) };
+		ImVec2 right[4] = { p(0.5f, 0.48f), p(0.9f, 0.3f), p(0.9f, 0.72f), p(0.5f, 0.9f) };
+		drawList->AddConvexPolyFilled(left, 4, dim);
+		drawList->AddConvexPolyFilled(right, 4, dim);
+		for (const ImVec2* face : { top, left, right })
+			drawList->AddPolyline(face, 4, color, ImDrawFlags_Closed, line);
+		drawList->AddLine(p(0.3f, 0.21f), p(0.7f, 0.39f), color, line * 1.4f);
+	}
+
+	void DrawDyno(ImDrawList* drawList, ImVec2 min, float size, ImU32 color)
+	{
+		// The dyno from the side: its bed, the absorber drum at one end, and a power curve over it.
+		auto p = [&](float x, float y) { return ImVec2(min.x + x * size, min.y + y * size); };
+		float line = std::max(1.f, size * 0.045f);
+		ImU32 dim = (color & 0x00FFFFFF) | (90u << IM_COL32_A_SHIFT);
+		drawList->AddRectFilled(p(0.08f, 0.72f), p(0.92f, 0.88f), dim);
+		drawList->AddRect(p(0.08f, 0.72f), p(0.92f, 0.88f), color, 0.f, 0, line);
+		drawList->AddCircle(p(0.72f, 0.6f), size * 0.13f, color, 0, line);
+		drawList->AddCircleFilled(p(0.72f, 0.6f), size * 0.04f, color);
+		drawList->AddRect(p(0.18f, 0.5f), p(0.5f, 0.72f), color, 0.f, 0, line);
+		const ImVec2 curve[] = { p(0.1f, 0.42f), p(0.25f, 0.3f), p(0.42f, 0.2f), p(0.6f, 0.15f), p(0.78f, 0.17f), p(0.9f, 0.24f) };
+		drawList->AddPolyline(curve, 6, color, ImDrawFlags_None, line);
+	}
+
+	void DrawHoist(ImDrawList* drawList, ImVec2 min, float size, ImU32 color)
+	{
+		// The hoist from the side: legs on casters, the mast, the boom out over the legs, and an engine on the hook.
+		auto p = [&](float x, float y) { return ImVec2(min.x + x * size, min.y + y * size); };
+		float line = std::max(1.f, size * 0.045f);
+		ImU32 dim = (color & 0x00FFFFFF) | (90u << IM_COL32_A_SHIFT);
+		drawList->AddLine(p(0.12f, 0.84f), p(0.9f, 0.84f), color, line * 1.4f);
+		for (float x : { 0.16f, 0.86f })
+			drawList->AddCircleFilled(p(x, 0.9f), size * 0.045f, color);
+		drawList->AddLine(p(0.22f, 0.84f), p(0.22f, 0.18f), color, line * 1.4f);
+		drawList->AddLine(p(0.16f, 0.2f), p(0.8f, 0.1f), color, line * 1.4f);
+		drawList->AddLine(p(0.26f, 0.74f), p(0.52f, 0.16f), color, line);
+		drawList->AddLine(p(0.78f, 0.11f), p(0.78f, 0.36f), color, line);
+		drawList->AddRectFilled(p(0.64f, 0.4f), p(0.92f, 0.64f), dim, size * 0.03f);
+		drawList->AddRect(p(0.64f, 0.4f), p(0.92f, 0.64f), color, size * 0.03f, 0, line);
+		drawList->AddLine(p(0.7f, 0.4f), p(0.78f, 0.36f), color, line);
+		drawList->AddLine(p(0.86f, 0.4f), p(0.78f, 0.36f), color, line);
 	}
 
 	void MachineIcon(const Machine& machine, float size, ImU32 color)

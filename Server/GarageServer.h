@@ -26,6 +26,8 @@ public:
 		int maxPlayers = 16;				// at once, 1 to NetProtocol::MAX_SLOTS
 		std::string garageFile = "garage.lvgarage";
 		std::string profilesFile = "profiles.lvprofiles";
+		// Prefixes put in front of players' names (see LoadPrefixes): read again whenever it changes.
+		std::string prefixesFile = "prefixes.txt";
 		// The account server's public identity (it writes the file out): log ins are checked against it.
 		std::string accountIdentityFile = "account_identity.txt";
 		std::string identityFile = "server_identity.key";
@@ -55,7 +57,8 @@ private:
 		Profiles::Profile* profile = nullptr;
 		int id = 0;			// the account's number
 		int slot = 0;		// see NetProtocol::MAX_SLOTS
-		std::string name = "";
+		std::string name = "";		// their username
+		std::string prefix = "";		// shown in front of their name, e.g. "[Owner]"; empty for none
 		float age = 0.f;
 	};
 
@@ -75,6 +78,12 @@ private:
 	int FreeSlot() const;
 	bool IsLoggedIn(int account) const;
 	bool SaveAll();
+	// The prefixes file: one player a line, username=prefix, e.g. "joey=[Owner]". Written with an
+	// example if there isn't one. True if what it says has changed since it was last read.
+	bool LoadPrefixes();
+	// Everyone playing whose prefix has changed is shown with the new one.
+	void RenamePlayers();
+	std::string PrefixOf(const std::string& username) const;
 
 	bool Load(std::string& error);
 	bool Save(std::string& error);
@@ -92,5 +101,9 @@ private:
 	float								m_timeOfDay = 9.5f;
 	float								m_clockTimer = 0.f;
 	float								m_saveTimer = 0.f;
+	// Lower-cased username to prefix.
+	std::map<std::string, std::string>	m_prefixes = {};
+	std::string							m_prefixesText = "";
+	float								m_prefixesTimer = 0.f;
 	bool								m_dirty = false;
 };

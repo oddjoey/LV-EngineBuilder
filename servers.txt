@@ -1,6 +1,0 @@
-# The account server everyone logs in to:
-account = localhost:44444
-# Garage servers the game can join, one per line:
-# address[:port] | region | name
-# The main menu lists each one with its ping and how many are in it.
-localhost:33333

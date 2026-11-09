@@ -9,7 +9,9 @@
 #define NOMINMAX
 
 // The same setup Graphics.h uses, so vulkan.hpp is only ever parsed one way.
+#ifdef _WIN32
 #define VK_USE_PLATFORM_WIN32_KHR
+#endif
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #define VULKAN_HPP_NO_CONSTRUCTORS

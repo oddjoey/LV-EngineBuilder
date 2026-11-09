@@ -19,16 +19,31 @@ namespace
 	constexpr float PRESENCE_INTERVAL = 0.05f;	// and where this player is
 	constexpr float PROFILE_INTERVAL = 1.f;		// and how their backpack is laid out
 	constexpr float CONNECT_TIMEOUT = 6.f;
+
+	// Hues spread round the wheel, so however many are in the garage, neighbours in the list never
+	// look alike.
+	float PlayerHue(int id)
+	{
+		return std::fmod(0.08f + id * 0.618034f, 1.f);
+	}
 }
 
 glm::vec4 NetSession::PlayerColor(int id)
 {
-	// Hues spread round the wheel, so however many are in the garage, neighbours in the list never
-	// look alike.
-	float hue = std::fmod(0.08f + id * 0.618034f, 1.f);
+	float hue = PlayerHue(id);
 	float r = 0.f, g = 0.f, b = 0.f;
 	ImGui::ColorConvertHSVtoRGB(hue, 0.6f, 0.95f, r, g, b);
 	return { r, g, b, 1.f };
+}
+
+uint32_t NetSession::PrefixColor(int id)
+{
+	constexpr uint32_t RGB = NetProtocol::PREFIX_COLOR;
+	float r = ((RGB >> 16) & 0xFF) / 255.f, g = ((RGB >> 8) & 0xFF) / 255.f, b = (RGB & 0xFF) / 255.f;
+	float hue = 0.f, saturation = 0.f, value = 0.f;
+	ImGui::ColorConvertRGBtoHSV(r, g, b, hue, saturation, value);
+	float apart = std::abs(std::remainder(PlayerHue(id) - hue, 1.f));
+	return apart < 0.06f ? IM_COL32(240, 240, 240, 255) : ImGui::ColorConvertFloat4ToU32({ r, g, b, 1.f });
 }
 
 bool NetSession::Join(const std::string& address, uint16_t port, const std::string& ticket, const std::string& signature, std::string& error)
@@ -64,6 +79,7 @@ bool NetSession::Join(const std::string& address, uint16_t port, const std::stri
 	m_role = Role::CONNECTING;
 	m_server = std::format("{}:{}", address, port);
 	m_localName = read->username;
+	m_localPrefix.clear();
 	m_localId = -1;
 	m_connectTime = 0.f;
 	m_welcomeReady = false;
@@ -114,9 +130,9 @@ std::vector<NetSession::PlayerInfo> NetSession::GetPlayers() const
 	std::vector<PlayerInfo> players;
 	if (m_role != Role::PLAYING)
 		return players;
-	players.push_back({ m_localId, m_localName, true });
+	players.push_back({ m_localId, m_localPrefix, m_localName, true });
 	for (const auto& [id, remote] : m_remotes)
-		players.push_back({ id, remote.name, false });
+		players.push_back({ id, remote.prefix, remote.name, false });
 	std::sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.id < b.id; });
 	return players;
 }
@@ -204,12 +220,17 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 			m_localId = static_cast<int>(in.Int());
 			m_slot = static_cast<int>(in.Int());
 			m_seed = in.Int() != 0;
+			// Who we're shown as here: the server's name for us, and any prefix.
+			m_localPrefix = in.Next();
+			if (std::string name = in.Next(); !name.empty())
+				m_localName = name;
 			float time = static_cast<float>(in.Num());
 			m_dayLengthMinutes = static_cast<float>(in.Num());
 			size_t players = in.Count();
 			for (size_t i = 0; i < players && !in.Failed(); i++)
 			{
 				int id = static_cast<int>(in.Int());
+				m_remotes[id].prefix = in.Next();
 				m_remotes[id].name = in.Next();
 			}
 			m_welcomeRecords.clear();
@@ -247,6 +268,26 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 		}
 		else if (type == "presence" && m_role == Role::PLAYING)
 			ReadPresence(message, world);
+		else if (type == "joined" || type == "name")
+		{
+			int id = static_cast<int>(in.Int());
+			std::string prefix = in.Next();
+			std::string name = in.Next();
+			if (in.Failed() || id < 1)
+				continue;
+			if (id == m_localId)
+			{
+				m_localPrefix = prefix;
+				m_localName = name;
+			}
+			else
+			{
+				if (type == "joined")
+					Notice(std::format("{} joined the garage.", FullName(prefix, name)));
+				m_remotes[id].prefix = prefix;
+				m_remotes[id].name = name;
+			}
+		}
 		else if (type == "clock")
 		{
 			float time = static_cast<float>(in.Num());
@@ -262,7 +303,7 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 			// What they carried is put down by the server, in a change that follows this.
 			int id = static_cast<int>(in.Int());
 			if (auto remote = m_remotes.find(id); remote != m_remotes.end())
-				Notice(std::format("{} left the garage.", remote->second.name));
+				Notice(std::format("{} left the garage.", FullName(remote->second.prefix, remote->second.name)));
 			RemoveRemote(id, world);
 		}
 	}
@@ -359,8 +400,8 @@ void NetSession::ApplyWelcome(Workshop& workshop, ShopWorld& world, FirstPersonC
 	m_syncTimer = 0.f;
 	m_presenceTimer = 0.f;
 	m_profileTimer = 0.f;
-	Notice(m_seed ? std::format("Welcome, {}. This is a brand new garage: it starts as a fresh shop.", m_localName)
-		: std::format("Welcome {}, {}.", m_welcomePlaced ? "back" : "to the garage", m_localName));
+	Notice(m_seed ? std::format("Welcome, {}. This is a brand new garage: it starts as a fresh shop.", FullName(m_localPrefix, m_localName))
+		: std::format("Welcome {}, {}.", m_welcomePlaced ? "back" : "to the garage", FullName(m_localPrefix, m_localName)));
 }
 
 bool NetSession::TakeDisconnected()
@@ -403,7 +444,7 @@ std::string NetSession::PresenceMessage(const FirstPersonController& player, con
 {
 	glm::vec3 feet = player.GetFeetPosition();
 	Writer out;
-	out.Word("presence").Int(m_localId).Str(m_localName).Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch())
+	out.Word("presence").Int(m_localId).Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch())
 		.Int(world.ArmsOut()).Int(player.IsCrouching() ? 1 : 0);
 	const auto& look = world.GetPlayerLook();
 	out.Int(look.fur).Int(look.skin).Int(look.cap).Int(look.tail ? 1 : 0);
@@ -415,7 +456,6 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	Reader in(message);
 	in.Expect("presence");
 	int id = static_cast<int>(in.Int());
-	std::string name = in.Next();
 	float x = static_cast<float>(in.Num());
 	float y = static_cast<float>(in.Num());
 	float z = static_cast<float>(in.Num());
@@ -431,10 +471,8 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	if (in.Failed() || id == m_localId || id < 1)
 		return;
 
+	// Their name came with welcome or joined.
 	auto& remote = m_remotes[id];
-	if (remote.name.empty())
-		Notice(std::format("{} joined the garage.", name));
-	remote.name = name;
 	remote.feet = { x, y, z };
 	remote.yaw = yaw;
 	remote.pitch = pitch;
@@ -497,17 +535,23 @@ void NetSession::DrawNameTags(const ShopWorld& world, const FirstPersonControlle
 	{
 		if (!remote.avatar.IsSpawned() || !remote.placed)
 			continue;
-		glm::vec3 head = remote.avatar.GetEye() + glm::vec3(0.f, 0.37f, 0.f);
+		glm::vec3 head = remote.avatar.GetEye() + glm::vec3(0.f, 0.45f, 0.f);	// just over the cap
 		float distance = glm::length(head - eye);
 		if (distance > 30.f || glm::dot(head - eye, player.GetForward()) <= 0.f)
 			continue;
 		auto screen = world.ProjectToScreen(head, player);
 		if (!screen)
 			continue;
-		ImVec2 size = ImGui::CalcTextSize(remote.name.c_str());
+		// Any prefix in its own colour, then the name in theirs.
+		std::string prefix = remote.prefix.empty() ? "" : remote.prefix + " ";
+		ImVec2 prefixSize = ImGui::CalcTextSize(prefix.c_str());
+		ImVec2 nameSize = ImGui::CalcTextSize(remote.name.c_str());
+		ImVec2 size = { prefixSize.x + nameSize.x, nameSize.y };
 		ImVec2 at = { screen->x - size.x * 0.5f, screen->y - size.y };
 		glm::vec4 color = PlayerColor(id);
 		drawList->AddRectFilled({ at.x - 5.f, at.y - 2.f }, { at.x + size.x + 5.f, at.y + size.y + 2.f }, IM_COL32(0, 0, 0, 140), 4.f);
-		drawList->AddText(at, ImGui::ColorConvertFloat4ToU32({ color.r, color.g, color.b, 1.f }), remote.name.c_str());
+		if (!prefix.empty())
+			drawList->AddText(at, PrefixColor(id), prefix.c_str());
+		drawList->AddText({ at.x + prefixSize.x, at.y }, ImGui::ColorConvertFloat4ToU32({ color.r, color.g, color.b, 1.f }), remote.name.c_str());
 	}
 }

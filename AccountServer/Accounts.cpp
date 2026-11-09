@@ -1,7 +1,14 @@
+// Passwords are hashed with PBKDF2-HMAC-SHA256: Windows' own cryptography there, OpenSSL elsewhere (macOS).
+#ifdef _WIN32
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
+#else
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+#endif
 
 #include "Accounts.h"
 
@@ -16,7 +23,6 @@
 #include "../Game/Net/NetProtocol.h"
 #include "../Game/Save/SaveText.h"
 
-#pragma comment(lib, "bcrypt.lib")
 
 namespace
 {
@@ -46,12 +52,17 @@ namespace
 	std::vector<unsigned char> RandomBytes(size_t count)
 	{
 		std::vector<unsigned char> bytes(count);
+#ifdef _WIN32
 		BCryptGenRandom(nullptr, bytes.data(), static_cast<ULONG>(count), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+#else
+		RAND_bytes(bytes.data(), static_cast<int>(count));
+#endif
 		return bytes;
 	}
 
 	std::string HashPassword(const std::string& password, const std::string& salt, long long iterations)
 	{
+#ifdef _WIN32
 		BCRYPT_ALG_HANDLE algorithm = nullptr;
 		if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_ALG_HANDLE_HMAC_FLAG) != 0)
 			return "";
@@ -63,6 +74,13 @@ namespace
 			hash.data(), static_cast<ULONG>(hash.size()), 0);
 		BCryptCloseAlgorithmProvider(algorithm, 0);
 		return status == 0 ? Hex(hash) : "";
+#else
+		auto saltBytes = Unhex(salt);
+		std::vector<unsigned char> hash(HASH_BYTES);
+		bool hashed = PKCS5_PBKDF2_HMAC(password.data(), static_cast<int>(password.size()), saltBytes.data(), static_cast<int>(saltBytes.size()),
+			static_cast<int>(iterations), EVP_sha256(), static_cast<int>(hash.size()), hash.data()) == 1;
+		return hashed ? Hex(hash) : "";
+#endif
 	}
 
 	// Compared in full whatever the difference, so the time taken doesn't hint at how close a guess was.

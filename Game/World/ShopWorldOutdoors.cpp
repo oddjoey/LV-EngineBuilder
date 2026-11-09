@@ -6,7 +6,6 @@
 
 #include "LV/Engine/Objects/ObjectManager.h"
 #include "GarageLayout.h"
-#include "HouseLayout.h"
 #include "ShopWorldShared.h"
 
 using namespace ShopLayout;
@@ -29,9 +28,10 @@ void ShopWorld::BuildOutdoors()
 	};
 
 	// The building
-	m_garageSiding = scenery(ShopModels::GARAGE_SIDING, ShopTextures::SIDING, {});
-	m_garageRoof = scenery(ShopModels::GARAGE_ROOF, ShopTextures::SHINGLES, {});
-	m_garageFrames = scenery(ShopModels::GARAGE_FRAMES, ShopTextures::PAINT, {});
+	m_garageSiding = scenery(ShopModels::GARAGE_SIDING, ShopTextures::PLANKS, {});
+	m_garageSiding->SetTint(WEATHERED_BOARDS);
+	m_garageRoof = scenery(ShopModels::GARAGE_ROOF, ShopTextures::SIDING, {});
+	m_garageFrames = scenery(ShopModels::GARAGE_FRAMES, ShopTextures::WOOD, {});
 	m_garageGlass = scenery(ShopModels::WINDOW_GLASS, "", {});
 	m_garageGlass->SetTint({ 0.8f, 0.9f, 0.95f, 0.18f })->SetCastsShadows(false);
 
@@ -42,106 +42,60 @@ void ShopWorld::BuildOutdoors()
 	door->SetCastsLampShadows(false);
 	m_doorStation = AddStation(StationType::DOOR, "Roll-up door", door, false);
 
-	// The house: shell, brick, roof, trim, glass and floor, a light in every room, and the furniture.
-	scenery(ShopModels::HOME_SHELL, ShopTextures::PLASTER, {});
-	scenery(ShopModels::HOME_BRICK, ShopTextures::BRICK, {});
-	scenery(ShopModels::HOME_ROOF, ShopTextures::SHINGLES, {});
-	scenery(ShopModels::HOME_FRAMES, ShopTextures::PAINT, {});
-	scenery(ShopModels::HOME_FLOOR, ShopTextures::WOOD, {});
-	scenery(ShopModels::HOME_GLASS, "", {})->SetTint({ 0.8f, 0.9f, 0.95f, 0.18f })->SetCastsShadows(false);
-	for (const auto& position : HOUSE_LAMPS)
-	{
-		auto light = scenery(ShopModels::HOME_LIGHT, "", position);
-		light->SetEmissive(1.4f);
-		light->SetCastsShadows(false);
-	}
-	const std::string materialTextures[] = { ShopTextures::WOOD, ShopTextures::PAINT, "", ShopTextures::FOLIAGE };
-	for (int material = 0; material < static_cast<int>(HouseLayout::Material::COUNT); material++)
-	{
-		scenery(ShopModels::HomeFurniture(material), materialTextures[material], {});
-		scenery(ShopModels::YardPieces(material), materialTextures[material], {});
-	}
-	for (const auto* pieces : { &HouseLayout::Furniture(), &HouseLayout::Yard() })
-		for (const auto& piece : *pieces)
-			if (piece.blocks)
-				m_sceneryObstacles.push_back({ { piece.min.x, piece.min.z }, { piece.max.x, piece.max.z }, piece.min.y, piece.max.y });
-
-	// The lot and the street
-	scenery(ShopModels::GROUND, ShopTextures::GRASS, {});
+	// The desert, the drive and the highway.
+	scenery(ShopModels::GROUND, ShopTextures::SAND, {});
 	scenery(ShopModels::PAVING, ShopTextures::CONCRETE, {});
 	scenery(ShopModels::ROAD, ShopTextures::ASPHALT, {});
 	scenery(ShopModels::ROAD_MARKINGS, "", {})->SetCastsShadows(false);
-	scenery(ShopModels::FENCE, ShopTextures::WOOD, {});
-	for (const auto& fence : FENCES)
-		m_sceneryObstacles.push_back({ glm::min(fence.from, fence.to) - glm::vec2(0.08f), glm::max(fence.from, fence.to) + glm::vec2(0.08f) });
 
-	struct Tree { glm::vec2 position; float scale; bool pine; };
-	const Tree trees[] = {
-		// The backyard and the front yard
-		{ { -14.f, -9.f }, 1.15f, false }, { { -9.5f, -11.5f }, 0.95f, true }, { { 4.f, -11.f }, 1.2f, false },
-		{ { 13.5f, -12.5f }, 1.05f, true }, { { 26.f, -4.f }, 0.9f, false }, { { -17.f, 1.5f }, 1.1f, true },
-		{ { -15.f, 10.5f }, 1.25f, false }, { { 14.f, 11.f }, 1.0f, false }, { { 24.f, 8.f }, 1.1f, true },
-		{ { -25.f, -20.f }, 1.3f, false }, { { 6.f, -24.f }, 1.15f, true }, { { 27.f, -24.f }, 1.2f, false },
-		{ { -27.f, -8.f }, 1.0f, true }, { { 18.f, -20.f }, 1.1f, false }, { { -8.f, -24.f }, 0.95f, false },
-		{ { 27.f, 12.f }, 1.0f, true },
-		// The neighbours'
-		{ { -38.f, -10.f }, 1.2f, false }, { { 52.f, -12.f }, 1.1f, true }, { { -55.f, 9.f }, 1.0f, false },
-		{ { 38.f, 10.f }, 1.15f, false }, { { 60.f, -6.f }, 1.25f, true }, { { -62.f, -15.f }, 1.1f, false },
-		// The park, and the lots across the street
-		{ { -15.f, 30.f }, 1.2f, false }, { { -6.f, 38.f }, 1.3f, false }, { { -16.f, 45.f }, 1.1f, true },
-		{ { 6.f, 31.f }, 1.0f, false }, { { 16.5f, 32.f }, 1.15f, true }, { { 17.f, 44.f }, 1.25f, false },
-		{ { -42.f, 44.f }, 1.1f, false }, { { -62.f, 42.f }, 1.2f, true }, { { 42.f, 44.f }, 1.0f, false },
-		{ { 62.f, 42.f }, 1.15f, false }, { { -24.f, 43.f }, 1.05f, true }, { { 24.f, 43.f }, 1.2f, false },
-		// Out past where you can walk
-		{ { -80.f, 10.f }, 1.4f, false }, { { 80.f, -5.f }, 1.3f, true }, { { -75.f, 55.f }, 1.2f, false },
-		{ { 78.f, 60.f }, 1.35f, false }, { { 0.f, 60.f }, 1.3f, true }, { { -40.f, 58.f }, 1.2f, false },
-		{ { 40.f, 58.f }, 1.25f, true }, { { -30.f, -38.f }, 1.3f, false }, { { 30.f, -40.f }, 1.2f, true },
-		{ { 0.f, -36.f }, 1.35f, false }, { { -60.f, -40.f }, 1.2f, false }, { { 60.f, -38.f }, 1.3f, true },
+	// Saguaros, boulders and scrub scattered over the sand, the same every game: thicker further out, and
+	// kept off the drive and the highway and out of the way of the shack (and its side bay).
+	auto hash = [](int i, int seed) {
+		uint32_t h = static_cast<uint32_t>(i) * 2654435761u + static_cast<uint32_t>(seed) * 2246822519u;
+		h = (h ^ (h >> 15)) * 2246822519u;
+		return static_cast<float>((h ^ (h >> 13)) & 0xFFFF) / 65535.f;
 	};
-	for (const auto& tree : trees)
+	for (int i = 0; i < 320; i++)
 	{
-		glm::vec3 position = { tree.position.x, 0.f, tree.position.y };
-		float yaw = tree.position.x * 1.7f + tree.position.y;
-		auto trunk = scenery(ShopModels::TREE_TRUNK, ShopTextures::BARK, position, yaw);
-		auto crown = scenery(tree.pine ? ShopModels::PINE_CROWN : ShopModels::TREE_CROWN, ShopTextures::FOLIAGE, position, yaw);
-		trunk->SetScale(glm::vec3(tree.scale));
-		crown->SetScale(glm::vec3(tree.scale));
-		m_sceneryObstacles.push_back(Footprint(tree.position, glm::vec2(0.25f * tree.scale)));
+		float angle = hash(i, 1) * glm::two_pi<float>();
+		float distance = 14.f + 150.f * std::sqrt(hash(i, 2));
+		glm::vec2 at = { std::sin(angle) * distance, std::cos(angle) * distance };
+		bool onHighway = at.y > HIGHWAY_NEAR_Z - 5.f && at.y < HIGHWAY_FAR_Z + 5.f;
+		bool onDrive = at.x > BAY_DOOR_MIN_X - 4.f && at.x < DRIVE_MAX_X + 4.f && at.y > 0.f && at.y < HIGHWAY_NEAR_Z;
+		bool byShack = at.x > BAY_MIN_X - 6.f && at.x < HALF_WIDTH + 8.f && at.y > -HALF_DEPTH - 8.f && at.y < HALF_DEPTH + 8.f;
+		if (onHighway || onDrive || byShack)
+			continue;
+		glm::vec3 position = { at.x, 0.f, at.y };
+		float scale = 0.7f + 0.6f * hash(i, 4);
+		float yaw = hash(i, 5) * glm::two_pi<float>();
+		float pick = hash(i, 3);
+		pObject piece;
+		if (pick < 0.3f)
+		{
+			piece = scenery(ShopModels::CACTUS, "", position, yaw);
+			m_sceneryObstacles.push_back(Footprint(at, glm::vec2(0.25f * scale)));
+		}
+		else if (pick < 0.55f)
+		{
+			piece = scenery(ShopModels::BOULDER, ShopTextures::ROCK, position, yaw);
+			m_sceneryObstacles.push_back(Footprint(at, glm::vec2(1.f * scale)));
+		}
+		else
+			piece = scenery(ShopModels::SCRUB, ShopTextures::FOLIAGE, position, yaw);
+		piece->SetScale(glm::vec3(scale));
 	}
 
-	// The neighbours either side face the street, as do the houses across it.
-	struct House { glm::vec2 position; float yaw; glm::vec3 tint; };
-	const House houses[] = {
-		{ { -45.f, 3.f }, 0.f, { 0.95f, 1.f, 1.f } },
-		{ { 45.f, 3.f }, 0.f, { 1.f, 0.92f, 0.88f } },
-		{ { -62.f, 3.f }, 0.f, { 1.05f, 1.f, 0.92f } },
-		{ { 62.f, 3.f }, 0.f, { 0.9f, 0.92f, 1.f } },
-		{ { -52.f, 38.f }, glm::pi<float>(), { 1.f, 1.f, 1.f } },
-		{ { -32.f, 38.f }, glm::pi<float>(), { 0.9f, 0.95f, 1.05f } },
-		{ { 32.f, 38.f }, glm::pi<float>(), { 1.05f, 0.95f, 0.9f } },
-		{ { 52.f, 38.f }, glm::pi<float>(), { 0.95f, 1.05f, 0.95f } },
-	};
-	for (const auto& house : houses)
-	{
-		glm::vec3 position = { house.position.x, 0.f, house.position.y };
-		scenery(ShopModels::HOUSE_WALLS, ShopTextures::BRICK, position, house.yaw)->SetTint(glm::vec4(house.tint, 1.f));
-		scenery(ShopModels::HOUSE_ROOF, ShopTextures::SHINGLES, position, house.yaw);
-		scenery(ShopModels::HOUSE_TRIM, ShopTextures::PAINT, position, house.yaw);
-		m_sceneryObstacles.push_back(Footprint(house.position, { 5.f, 3.5f }));
-	}
-
-	// Street lights, a lamp over the roll-up door and one on the porch.
+	// Lights along the highway, and a lamp over the roll-up door.
 	for (const auto& pole : STREET_LIGHTS)
 	{
 		scenery(ShopModels::STREET_LIGHT, ShopTextures::PAINT, pole);
-		auto head = scenery(ShopModels::LAMP_HEAD, "", pole + glm::vec3(0.f, STREET_LIGHT_HEIGHT - 0.13f, 1.15f));
+		auto head = scenery(ShopModels::LAMP_HEAD, "", pole + glm::vec3(0.f, STREET_LIGHT_HEIGHT - 0.13f, STREET_LIGHT_REACH));
 		head->SetCastsShadows(false);
 		m_lampHeads.push_back(head);
 		m_sceneryObstacles.push_back(Footprint({ pole.x, pole.z }, { 0.18f, 0.18f }));
 	}
-	for (const auto& position : { DOOR_LIGHT, PORCH_LIGHT })
 	{
-		auto lamp = scenery(ShopModels::LAMP_HEAD, "", position);
+		auto lamp = scenery(ShopModels::LAMP_HEAD, "", DOOR_LIGHT);
 		lamp->SetScale({ 1.4f, 1.f, 0.5f });
 		lamp->SetCastsShadows(false);
 		m_lampHeads.push_back(lamp);
@@ -205,25 +159,21 @@ Sound ShopWorld::FootstepAt(const glm::vec3& feet) const
 	using namespace GarageLayout;
 	ShopInterior interior = GetInterior();
 	glm::vec3 probe = feet + glm::vec3(0.f, 0.1f, 0.f);
-	// Floorboards through the house, tiles in the bathroom.
-	if (interior.InHouse(probe))
-	{
-		bool bathroom = feet.x > KITCHEN_X && feet.x < BATH_X && feet.z < HALL_Z;
-		return bathroom ? Sound::FOOTSTEP_CONCRETE : Sound::FOOTSTEP_WOOD;
-	}
 	if (interior.InGarage(probe))
 		return feet.y > 0.2f ? Sound::FOOTSTEP_WOOD : Sound::FOOTSTEP_CONCRETE;	// the stairs and the loft are wood
 	// Up the outside stairs and along the landing.
 	if (feet.y > 0.3f)
 		return Sound::FOOTSTEP_WOOD;
-	// The drive, sidewalks, paths, patio and the street itself.
+	// The drive, the apron and the highway sound hard; the sand soft.
+	auto on = [&](const Paved& paved) { return feet.x > paved.min.x && feet.x < paved.max.x && feet.z > paved.min.y && feet.z < paved.max.y; };
 	for (const auto& paved : PAVED)
-		if (feet.x > paved.min.x && feet.x < paved.max.x && feet.z > paved.min.y && feet.z < paved.max.y)
+		if (on(paved))
 			return Sound::FOOTSTEP_CONCRETE;
-	if (m_bayBuilt && feet.x > BAY_DRIVE.min.x && feet.x < BAY_DRIVE.max.x && feet.z > BAY_DRIVE.min.y && feet.z < BAY_DRIVE.max.y)
+	if (m_bayBuilt && (on(BAY_DRIVE) || on(BAY_DRIVE_LINK)))
 		return Sound::FOOTSTEP_CONCRETE;
-	bool street = feet.z >= STREET_NEAR_Z && feet.z <= STREET_FAR_Z;
-	return street ? Sound::FOOTSTEP_CONCRETE : Sound::FOOTSTEP_GRASS;
+	bool highway = (feet.z >= HIGHWAY_NEAR_Z && feet.z <= HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY)
+		|| (feet.z >= HIGHWAY_FAR_Z - HIGHWAY_CARRIAGEWAY && feet.z <= HIGHWAY_FAR_Z);
+	return highway ? Sound::FOOTSTEP_CONCRETE : Sound::FOOTSTEP_GRASS;
 }
 
 void ShopWorld::UpdateDoor(float deltaTime)

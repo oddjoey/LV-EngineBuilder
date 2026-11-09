@@ -59,6 +59,8 @@ private:
 		TORQUE_ACCURACY,
 		HEAD_BOLT_SEQUENCE,
 		MAIN_CAP_SEQUENCE,
+		ROCKER_SHAFT_SEQUENCE,
+		CAM_CAP_SEQUENCE,
 		COMPRESSION_GRAPH
 	};
 	// A turning 3D view of one of the shop's models, with a caption under it.

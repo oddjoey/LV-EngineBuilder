@@ -71,6 +71,11 @@ namespace PartIcons
 				drawList->PathArcTo(p(0.50f, 0.50f), size * 0.32f, -pi * 0.5f + 0.25f, pi * 1.5f - 0.25f, 32);
 				drawList->PathStroke(color, 0, line * 2.f);
 				break;
+			case PartType::PISTON_PIN:
+				// A hollow pin, end on and from the side.
+				drawList->AddRect(p(0.15f, 0.38f), p(0.85f, 0.62f), color, size * 0.04f, 0, line * 1.4f);
+				drawList->AddLine(p(0.15f, 0.5f), p(0.85f, 0.5f), color, line * 0.7f);
+				break;
 			case PartType::MAIN_BEARING:
 			case PartType::ROD_BEARING:
 			case PartType::MAIN_BEARING_LOWER:

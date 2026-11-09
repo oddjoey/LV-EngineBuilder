@@ -13,7 +13,12 @@ namespace ItemIcons
 	void DrawTool(ImDrawList* drawList, const MeasuringTool& tool, ImVec2 min, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
 	void DrawMachine(ImDrawList* drawList, const Machine& machine, ImVec2 min, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
 	void DrawFurniture(ImDrawList* drawList, const FurnitureInfo& furniture, ImVec2 min, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
-	// A part or a tool, whichever the item is.
+	// The toolIndex DrawItem takes (with isTool false) for a delivery being carried.
+	constexpr int PACKAGE = -2;
+	void DrawPackage(ImDrawList* drawList, ImVec2 min, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
+	void DrawDyno(ImDrawList* drawList, ImVec2 min, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
+	void DrawHoist(ImDrawList* drawList, ImVec2 min, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
+	// A part, a tool or a delivery, whichever the item is.
 	void DrawItem(ImDrawList* drawList, bool isTool, int toolIndex, PartType partType, ImVec2 min, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
 	void MachineIcon(const Machine& machine, float size, ImU32 color = PartIcons::DEFAULT_COLOR);
 }

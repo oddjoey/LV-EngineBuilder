@@ -28,4 +28,5 @@ public:
 	static std::string ClockText(float hours);
 private:
 	pObject		m_sky = nullptr;
+	pObject		m_mountains = nullptr;
 };

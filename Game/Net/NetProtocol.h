@@ -20,6 +20,10 @@
 // account's number is the player's id for good, so what's in their backpack stays theirs (carried by
 // them, in the garage's records) while they're away, and comes back with them.
 //
+// The names players are shown by are the server's: their username, and any prefix it gives them
+// (Server/GarageServer's prefixes file), sent with welcome, joined and name. The game shows a
+// prefix in front of the name, in PREFIX_COLOR.
+//
 // Messages, each one block of save text. Both servers start the same way:
 //   game -> server   secure <version> <key>                 starts the encrypted connection (LV/Engine/Networking/Crypto.h)
 //   server -> game   secure <key> <identity> <signature>    and everything after this, both ways, is encrypted
@@ -33,23 +37,25 @@
 //   game -> server   query                                  what the server is, for the server list (in the clear)
 //                    hello <version> "ticket" "signature"
 //                    ops <author> <sequence> <count> (<kind> "key" "text")...
-//                    presence <id> "name" <x> <y> <z> <yaw> <pitch> <arms> <crouching> <fur> <skin> <cap> <tail>
+//                    presence <id> <x> <y> <z> <yaw> <pitch> <arms> <crouching> <fur> <skin> <cap> <tail>
 //                                                           arms: 0 down, 1 the right one out (holding something), 2 both (carrying a delivery)
 //                    profile "layout"                       how their backpack and hotbar are laid out
 // 
 //   server -> game   info <version> "name" "region" <players> <max>
-//                    welcome <id> <slot> <seed> <time> <day length> <count> (<id> "name")...
+//                    welcome <id> <slot> <seed> "prefix" "name" <time> <day length> <count> (<id> "prefix" "name")...
 //                            <count> ("key" "text")... "layout" <placed> <x> <y> <z> <yaw> <pitch>
 //                    reject "why"
 //                    ops ...     (the same, with the author's number and sequence; author -1 is the server)
 //                    presence ...
 //                    clock <time> <day length>
+//                    joined <id> "prefix" "name"            someone else has come in
+//                    name <id> "prefix" "name"              a player's prefix has changed (anyone's, yours too)
 //                    left <id>
 
 namespace NetProtocol
 {
 	// Both ends have to be the same game: the records are its save text.
-	constexpr long long VERSION = 12;
+	constexpr long long VERSION = 24;
 	constexpr uint16_t DEFAULT_PORT = 33333;
 	constexpr uint16_t ACCOUNT_PORT = 44444;
 	constexpr const char* ACCOUNT_IP = "localhost";
@@ -63,6 +69,8 @@ namespace NetProtocol
 	constexpr size_t USERNAME_MAX = 20;
 	constexpr size_t PASSWORD_MIN = 6;
 	constexpr size_t PASSWORD_MAX = 64;
+	// A name's prefix ("[Owner]") is drawn in this, whatever colour the name is.
+	constexpr uint32_t PREFIX_COLOR = 0xF2C14E;
 
 	// Letters, digits, - and _: why not, or empty if it's fine.
 	inline std::string UsernameProblem(const std::string& username)
@@ -160,7 +168,7 @@ namespace NetProtocol
 		return !in.Failed();
 	}
 
-	// Records whose changes add up rather than replace (money, hours, the career tallies): two players
+	// Records whose changes add up rather than replace (money, the career tallies): two players
 	// spending at once both come off.
 	inline bool IsCounter(const std::string& key)
 	{

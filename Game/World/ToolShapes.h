@@ -40,7 +40,12 @@ enum class ToolShape
 	IMPACT,
 	BATTERY,
 	CHARGER,
-	WRENCH			// one combination wrench
+	WRENCH,			// one combination wrench
+	MARKER,
+	SPRAY_CAN,
+	RAG,			// the rag and thinner
+	PIN_PRESS,		// the piston pin press
+	RING_COMPRESSOR
 };
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
@@ -54,6 +59,11 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 		case HandToolKind::BATTERY:			return ToolShape::BATTERY;
 		case HandToolKind::CHARGER:			return ToolShape::CHARGER;
 		case HandToolKind::COMBINATION_WRENCH:	return ToolShape::WRENCH;
+		case HandToolKind::MARKER:			return ToolShape::MARKER;
+		case HandToolKind::SPRAY_CAN:		return ToolShape::SPRAY_CAN;
+		case HandToolKind::THINNER:			return ToolShape::RAG;
+		case HandToolKind::PIN_PRESS:		return ToolShape::PIN_PRESS;
+		case HandToolKind::RING_COMPRESSOR:	return ToolShape::RING_COMPRESSOR;
 		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
 		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
 		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
@@ -114,6 +124,11 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::BATTERY:			return { 1, 1 };
 		case ToolShape::CHARGER:			return { 2, 1 };
 		case ToolShape::WRENCH:			return { 1, 2 };
+		case ToolShape::MARKER:			return { 1, 1 };
+		case ToolShape::SPRAY_CAN:		return { 1, 2 };
+		case ToolShape::RAG:			return { 1, 1 };
+		case ToolShape::PIN_PRESS:		return { 2, 2 };
+		case ToolShape::RING_COMPRESSOR:	return { 2, 1 };
 	}
 	return { 1, 1 };
 }

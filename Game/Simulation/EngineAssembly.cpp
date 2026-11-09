@@ -1,5 +1,6 @@
 #include "EngineAssembly.h"
 
+#include <algorithm>
 #include <format>
 #include <numbers>
 #include <stdexcept>
@@ -155,7 +156,7 @@ int EngineAssembly::SlotCount(AssemblySlot slot) const
 		case AssemblySlot::CAMSHAFT:		return 1;
 		default:
 			if (const auto* holes = Holes(slot))
-				return holes->perParent * SlotCount(SlotFor(holes->parent));
+				return holes->Count(SlotCount(SlotFor(holes->parent)));
 			return PartCatalog::CountPerEngine(SlotPartType(slot), *m_spec);
 	}
 }
@@ -259,9 +260,16 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 
 	using A = AssemblySlot;
 
-	// A nut or bolt goes in once the part it holds is on.
+	// A nut or bolt goes in once the part it holds is on (all of them, for one through every one).
 	if (const auto* holes = Holes(slot))
-		return { { SlotFor(holes->parent), index / holes->perParent } };
+	{
+		if (!holes->throughAll)
+			return { { SlotFor(holes->parent), index / holes->perParent } };
+		std::vector<std::pair<AssemblySlot, int>> parents;
+		for (int parent = 0; parent < SlotCount(SlotFor(holes->parent)); parent++)
+			parents.push_back({ SlotFor(holes->parent), parent });
+		return parents;
+	}
 
 	// Everything else: what has to be there first, worked out below. A part only counts once it's
 	// bolted down, so its nuts and bolts are added afterwards.
@@ -277,7 +285,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 					continue;
 
 				for (int hole = 0; hole < holes->perParent; hole++)
-					expanded.push_back({ static_cast<A>(fastener), otherIndex * holes->perParent + hole });
+					expanded.push_back({ static_cast<A>(fastener), holes->throughAll ? hole : otherIndex * holes->perParent + hole });
 			}
 
 		return expanded;
@@ -289,8 +297,8 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			break;
 
 		// Bottom end: core plugs into the water jacket, the upper main shells in the block, the
-		// crank laid in them, then each journal's lower shell and the main cap over it. Once it's
-		// capped, the rear main seal is pressed over the flange.
+		// crank laid in them, then each journal's main cap with its lower shell in it (see GoesInWith).
+		// Once it's capped, the rear main seal is pressed over the flange.
 		case A::CORE_PLUG:
 		case A::MAIN_BEARING:
 			one(A::BLOCK);
@@ -302,7 +310,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			one(A::CRANKSHAFT);
 			break;
 		case A::MAIN_CAP:
-			needed.push_back({ A::MAIN_BEARING_LOWER, index });
+			one(A::CRANKSHAFT);
 			break;
 		case A::REAR_MAIN_SEAL:
 			all(A::MAIN_CAP);
@@ -313,13 +321,16 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			one(A::REAR_MAIN_SEAL);
 			break;
 
-		// Each cylinder, once the crank is capped: the piston down its bore, its ring, the rod onto
-		// the crank pin with its upper shell, then the lower shell and the rod cap.
-		case A::PISTON:
+		// Each cylinder, once the crank is capped: the rod, with its upper shell in it and its piston pinned on,
+		// down the bore onto the crank pin (see GoesInWith), the piston's ring, then the rod cap with the
+		// lower shell in it.
+		case A::CONNECTING_ROD:
 			all(A::MAIN_CAP);
 			break;
+		case A::PISTON:
+			needed.push_back({ A::CONNECTING_ROD, index });
+			break;
 		case A::PISTON_RING:
-		case A::CONNECTING_ROD:
 			needed.push_back({ A::PISTON, index });
 			break;
 		case A::ROD_BEARING:
@@ -329,7 +340,7 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			needed.push_back({ A::ROD_BEARING, index });
 			break;
 		case A::ROD_CAP:
-			needed.push_back({ A::ROD_BEARING_LOWER, index });
+			needed.push_back({ A::ROD_BEARING, index });
 			break;
 
 		// The oil pump slides over the crank snout, the pickup bolts to it.
@@ -514,6 +525,8 @@ std::string EngineAssembly::PositionName(AssemblySlot slot, int index) const
 	// Nuts and bolts are named for the hole they go in on their part.
 	if (const auto* holes = Holes(slot))
 	{
+		if (holes->throughAll)
+			return std::format("{} {}", AssemblySlotName(slot), index + 1);
 		std::string parent = PositionName(SlotFor(holes->parent), index / holes->perParent);
 		return holes->perParent > 1 ? std::format("{} {} on {}", AssemblySlotName(slot), index % holes->perParent + 1, parent)
 			: std::format("{} on {}", AssemblySlotName(slot), parent);
@@ -539,10 +552,53 @@ std::optional<std::string> EngineAssembly::MissingPrerequisite(AssemblySlot slot
 
 std::optional<std::string> EngineAssembly::RemovalBlockedBy(AssemblySlot slot, int index) const
 {
-	for (const auto& [other, otherIndex] : m_dependents[static_cast<size_t>(slot)][index])
-		if (Get(other, otherIndex))
-			return std::format("The {} has to come off first.", PositionName(other, otherIndex));
+	// What a rod or cap carries comes off in it; it comes off once nothing over it or them is on.
+	if (auto host = CarriedBy(slot); host && Get(*host, index))
+		return std::format("The {} comes off with the {}.", PositionName(slot, index), PositionName(*host, index));
+	// Everything it carries, and what that carries (a rod: its shell, its piston, the piston's ring).
+	std::vector<AssemblySlot> carried = GoesInWith(slot);
+	for (size_t i = 0; i < carried.size(); i++)
+		for (auto with : GoesInWith(carried[i]))
+			carried.push_back(with);
+	auto isCarried = [&](AssemblySlot other, int otherIndex) { return otherIndex == index && std::find(carried.begin(), carried.end(), other) != carried.end(); };
+	auto blocking = [&](AssemblySlot from) -> std::optional<std::string> {
+		for (const auto& [other, otherIndex] : m_dependents[static_cast<size_t>(from)][index])
+			if (Get(other, otherIndex) && !isCarried(other, otherIndex))
+				return std::format("The {} has to come off first.", PositionName(other, otherIndex));
+		return std::nullopt;
+	};
+	if (auto blocked = blocking(slot))
+		return blocked;
+	for (auto with : carried)
+		if (Get(with, index))
+			if (auto blocked = blocking(with))
+				return blocked;
 	return std::nullopt;
+}
+
+std::vector<AssemblySlot> EngineAssembly::GoesInWith(AssemblySlot host)
+{
+	switch (host)
+	{
+		case AssemblySlot::CONNECTING_ROD:	return { AssemblySlot::ROD_BEARING, AssemblySlot::PISTON };
+		case AssemblySlot::PISTON:			return { AssemblySlot::PISTON_RING };
+		case AssemblySlot::ROD_CAP:			return { AssemblySlot::ROD_BEARING_LOWER };
+		case AssemblySlot::MAIN_CAP:		return { AssemblySlot::MAIN_BEARING_LOWER };
+		default:							return {};
+	}
+}
+
+std::optional<AssemblySlot> EngineAssembly::CarriedBy(AssemblySlot slot)
+{
+	switch (slot)
+	{
+		case AssemblySlot::ROD_BEARING:
+		case AssemblySlot::PISTON:				return AssemblySlot::CONNECTING_ROD;
+		case AssemblySlot::PISTON_RING:			return AssemblySlot::PISTON;
+		case AssemblySlot::ROD_BEARING_LOWER:	return AssemblySlot::ROD_CAP;
+		case AssemblySlot::MAIN_BEARING_LOWER:	return AssemblySlot::MAIN_CAP;
+		default:								return std::nullopt;
+	}
 }
 
 pPart EngineAssembly::Remove(AssemblySlot slot, int index)

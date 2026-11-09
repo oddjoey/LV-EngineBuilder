@@ -48,9 +48,7 @@ namespace Ratings
 	float ToolSpeed(const MeasuringTool& tool)
 	{
 		// Spanners and the like by how long a nut or bolt takes.
-		if (tool.TurnSeconds() > 0.0)
-			return LinearScore(tool.TurnSeconds(), 0.4, 4.0);
-		return LinearScore(tool.hoursPerUse, 0.05, 0.4);
+		return LinearScore(tool.TurnSeconds(), 0.4, 4.0);
 	}
 
 	float MachineAccuracy(const Machine& machine)
@@ -61,13 +59,6 @@ namespace Ratings
 			case MachineOperation::FILE_RING:	return LogScore(machine.sigma, 0.002, 0.02);
 			default:							return LogScore(machine.sigma, 0.001, 0.012);
 		}
-	}
-
-	float MachineSpeed(const Machine& machine)
-	{
-		// Rate-based machines are judged on a typical 0.05 mm job.
-		double hours = machine.hoursPerUse + machine.hoursPerMm * 0.05;
-		return LinearScore(hours, 0.1, 1.2);
 	}
 
 	float MachineFinish(const Machine& machine)

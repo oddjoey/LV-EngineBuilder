@@ -139,7 +139,9 @@ float ServiceManual::FigureLines(Figure figure)
 		case Figure::CAM_PROFILE:
 		case Figure::COMPRESSION_GRAPH:
 		case Figure::TORQUE_ACCURACY:	return 13.f;
-		case Figure::MAIN_CAP_SEQUENCE:	return 7.f;
+		case Figure::MAIN_CAP_SEQUENCE:	return 8.f;
+		case Figure::ROCKER_SHAFT_SEQUENCE:
+		case Figure::CAM_CAP_SEQUENCE:	return 7.f;
 		case Figure::ASSEMBLY_FLOW:		return 12.f;
 		default:						return 11.f;
 	}
@@ -587,45 +589,98 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 		}
 		case Figure::HEAD_BOLT_SEQUENCE:
 		{
-			// The head from above, its four chambers, and the ten bolts numbered in the order they're
-			// tightened: from the middle outward, alternating sides.
+			// The head from above, its four chambers, and the ten bolts numbered in the factory's order, front on
+			// the left: the middle pair first, then working out to the ends, crossing from side to side.
 			ImVec2 headMin = { min.x + width * 0.08f, min.y + fontSize * 0.5f }, headMax = { max.x - width * 0.08f, max.y - fontSize * 1.8f };
 			drawList->AddRectFilled(headMin, headMax, FILL, 6.f);
 			drawList->AddRect(headMin, headMax, ACCENT, 6.f, 0, 2.f);
 			float pitch = (headMax.x - headMin.x) / 4.f;
 			for (int cylinder = 0; cylinder < 4; cylinder++)
 				drawList->AddCircle({ headMin.x + pitch * (cylinder + 0.5f), (headMin.y + headMax.y) * 0.5f }, (headMax.y - headMin.y) * 0.28f, INK_FAINT, 32, 1.f);
-			const int columnOrder[] = { 2, 1, 3, 0, 4 };
-			int number = 1;
-			for (int pair = 0; pair < 5; pair++)
-				for (int row : { 0, 1 })
+			// Each row front to back: five bolts along each side of the head.
+			const int order[2][5] = { { 8, 6, 1, 3, 9 }, { 10, 4, 2, 5, 7 } };
+			for (int side = 0; side < 2; side++)
+				for (int column = 0; column < 5; column++)
 				{
-					// Each pair of bolts across the head, alternating which side goes first, so it's pulled down evenly.
-					int column = columnOrder[pair];
-					int side = pair % 2 == 0 ? row : 1 - row;
 					ImVec2 at = { headMin.x + (headMax.x - headMin.x) * column / 4.f, side == 0 ? headMin.y + 16.f : headMax.y - 16.f };
 					at.x = std::clamp(at.x, headMin.x + 16.f, headMax.x - 16.f);
 					drawList->AddCircleFilled(at, 12.f, ACCENT, 20);
-					Text(drawList, at, IM_COL32(255, 255, 255, 255), std::to_string(number++), label, 0.5f, 0.5f);
+					Text(drawList, at, IM_COL32(255, 255, 255, 255), std::to_string(order[side][column]), label, 0.5f, 0.5f);
 				}
 			Text(drawList, { centre.x, max.y - fontSize * 0.2f }, INK_FAINT, "Front of engine: the timing belt end is on the left.", label, 0.5f, 1.f);
 			break;
 		}
 		case Figure::MAIN_CAP_SEQUENCE:
 		{
-			// The five main caps along the block's underside, tightened from the middle cap outward.
-			const int order[] = { 5, 3, 1, 2, 4 };
+			// The five main caps along the block's underside, front on the left, each with its two bolts:
+			// tightened from the middle cap outward, the rear one last. (Undone in the reverse order.)
+			const int order[5][2] = { { 7, 8 }, { 3, 4 }, { 1, 2 }, { 5, 6 }, { 9, 10 } };
 			float pitch = width / 5.f;
 			for (int cap = 0; cap < 5; cap++)
 			{
-				ImVec2 capMin = { min.x + pitch * cap + pitch * 0.15f, min.y + fontSize * 0.5f }, capMax = { min.x + pitch * (cap + 1) - pitch * 0.15f, max.y - fontSize * 1.8f };
+				ImVec2 capMin = { min.x + pitch * cap + pitch * 0.3f, min.y + fontSize * 0.5f }, capMax = { min.x + pitch * (cap + 1) - pitch * 0.3f, max.y - fontSize * 1.8f };
 				drawList->AddRectFilled(capMin, capMax, METAL, 4.f);
 				drawList->AddRect(capMin, capMax, METAL_DARK, 4.f, 0, 1.5f);
-				ImVec2 at = { (capMin.x + capMax.x) * 0.5f, (capMin.y + capMax.y) * 0.5f };
-				drawList->AddCircleFilled(at, 13.f, ACCENT, 20);
-				Text(drawList, at, IM_COL32(255, 255, 255, 255), std::to_string(order[cap]), label, 0.5f, 0.5f);
-				Text(drawList, { at.x, capMax.y + 3.f }, INK_FAINT, std::format("Cap {}", cap + 1), label * 0.9f, 0.5f);
+				float x = (capMin.x + capMax.x) * 0.5f;
+				for (int bolt = 0; bolt < 2; bolt++)
+				{
+					ImVec2 at = { x, bolt == 0 ? capMin.y + 14.f : capMax.y - 14.f };
+					drawList->AddCircleFilled(at, 12.f, ACCENT, 20);
+					Text(drawList, at, IM_COL32(255, 255, 255, 255), std::to_string(order[cap][bolt]), label, 0.5f, 0.5f);
+				}
+				Text(drawList, { x, capMax.y + 3.f }, INK_FAINT, std::format("Cap {}", cap + 1), label * 0.9f, 0.5f);
 			}
+			break;
+		}
+		case Figure::ROCKER_SHAFT_SEQUENCE:
+		{
+			// The two rocker shafts from above, front on the left, and the five bolts down through both of them:
+			// the middle one first, then working out, the rear side of each pair first.
+			const int order[] = { 5, 3, 1, 2, 4 };
+			float left = min.x + width * 0.06f, right = max.x - width * 0.06f;
+			float top = min.y + fontSize * 0.8f, bottom = max.y - fontSize * 2.2f;
+			for (float y : { top + (bottom - top) * 0.3f, top + (bottom - top) * 0.7f })
+			{
+				drawList->AddRectFilled({ left, y - 5.f }, { right, y + 5.f }, METAL, 4.f);
+				drawList->AddRect({ left, y - 5.f }, { right, y + 5.f }, METAL_DARK, 4.f, 0, 1.f);
+			}
+			for (int hole = 0; hole < 5; hole++)
+			{
+				float x = left + (right - left) * (0.04f + 0.92f * hole / 4.f);
+				drawList->AddRectFilled({ x - 9.f, top }, { x + 9.f, bottom }, FILL, 3.f);
+				ImVec2 at = { x, (top + bottom) * 0.5f };
+				drawList->AddCircleFilled(at, 12.f, ACCENT, 20);
+				Text(drawList, at, IM_COL32(255, 255, 255, 255), std::to_string(order[hole]), label, 0.5f, 0.5f);
+			}
+			Text(drawList, { centre.x, max.y - fontSize * 0.2f }, INK_FAINT, "Front of engine: the timing belt end is on the left.", label, 0.5f, 1.f);
+			break;
+		}
+		case Figure::CAM_CAP_SEQUENCE:
+		{
+			// The cam from above, front on the left, and its four caps: the two in the middle first (the front one
+			// of them before the rear), then the front cap, then the rear. Both bolts on a cap go down together.
+			const int order[] = { 3, 1, 2, 4 };
+			const float at[] = { 0.04f, 0.37f, 0.63f, 0.96f };	// the ends, and between cylinder 2's and 3's lobes
+			float left = min.x + width * 0.06f, right = max.x - width * 0.06f;
+			float top = min.y + fontSize * 0.8f, bottom = max.y - fontSize * 2.2f, middle = (top + bottom) * 0.5f;
+			drawList->AddRectFilled({ left, middle - 6.f }, { right, middle + 6.f }, METAL, 4.f);
+			for (int cylinder = 0; cylinder < 4; cylinder++)
+				for (float lobe : { -0.035f, 0.035f })
+				{
+					float x = left + (right - left) * ((cylinder + 0.5f) / 4.f + lobe);
+					drawList->AddRectFilled({ x - 5.f, middle - 11.f }, { x + 5.f, middle + 11.f }, METAL_DARK, 2.f);
+				}
+			for (int cap = 0; cap < 4; cap++)
+			{
+				float x = left + (right - left) * at[cap];
+				drawList->AddRectFilled({ x - 11.f, top }, { x + 11.f, bottom }, FILL, 3.f);
+				drawList->AddRect({ x - 11.f, top }, { x + 11.f, bottom }, ACCENT, 3.f, 0, 1.5f);
+				for (float y : { top + 9.f, bottom - 9.f })
+					drawList->AddCircle({ x, y }, 5.f, ACCENT, 12, 1.5f);
+				drawList->AddCircleFilled({ x, middle }, 12.f, ACCENT, 20);
+				Text(drawList, { x, middle }, IM_COL32(255, 255, 255, 255), std::to_string(order[cap]), label, 0.5f, 0.5f);
+			}
+			Text(drawList, { centre.x, max.y - fontSize * 0.2f }, INK_FAINT, "Front of engine: the cam sprocket end is on the left.", label, 0.5f, 1.f);
 			break;
 		}
 		case Figure::COMPRESSION_GRAPH:

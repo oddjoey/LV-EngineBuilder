@@ -33,7 +33,12 @@ struct PauseMenuContext
 	bool online = false;			// playing in a garage on a server: the server saves it
 	bool joining = false;			// connecting, or waiting for the garage to arrive
 	std::string server = "";		// the garage's server, "address:port"
-	std::vector<std::string> players = {};	// everyone in the garage
+	struct Player
+	{
+		std::string prefix = "";	// the server's, e.g. "[Owner]", in its own colour; empty for none
+		std::string name = "";
+	};
+	std::vector<Player> players = {};	// everyone in the garage
 	std::vector<Server> servers = {};		// from the server list
 	bool refreshingServers = false;
 	bool loggedIn = false;			// to the account server: only then are the garages shown

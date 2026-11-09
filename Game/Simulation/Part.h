@@ -91,6 +91,8 @@ enum class PartType
 	DRIVE_BELT,
 	// Appended later: the spring-loaded pulley that keeps the drive belt tight.
 	DRIVE_BELT_TENSIONER,
+	// Appended later still: the pin a piston pivots on in its rod's small end, pressed in with the Piston Pin Press.
+	PISTON_PIN,
 
 	COUNT
 };

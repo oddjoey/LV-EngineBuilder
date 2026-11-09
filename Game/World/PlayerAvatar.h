@@ -32,6 +32,8 @@ public:
 	// The middle of the right hand, where what's held goes, and the eyes, as last posed.
 	glm::vec3 GetHand() const { return m_hand; }
 	glm::vec3 GetEye() const { return m_eye; }
+	// Where its feet were, as last posed.
+	glm::vec3 GetFeet() const { return m_lastFeet; }
 
 	static glm::quat ViewRotation(float yaw, float pitch);
 	// The monkey stood still, for a picture of it: each piece's model, where it goes (feet at the origin) and
@@ -47,13 +49,14 @@ private:
 	// Every piece, to show, hide or remove them all.
 	std::vector<pObject*> Pieces();
 
-	// The jointed pieces, and what rides on each: the belly and tail on the torso, the face and cap on
-	// the head, a paw (hand) on each arm and a foot on each shin.
+	// The jointed pieces, and what rides on each: the belly and tail on the torso, the face, eyes and cap
+	// on the head, a paw (hand) on each arm and a foot on each shin.
 	pObject m_torso = nullptr;
 	pObject m_belly = nullptr;
 	pObject m_tail = nullptr;
 	pObject m_head = nullptr;
 	pObject m_face = nullptr;
+	pObject m_eyes = nullptr;
 	pObject m_cap = nullptr;
 	pObject m_arm[2] = { nullptr, nullptr };		// left, right
 	pObject m_paw[2] = { nullptr, nullptr };

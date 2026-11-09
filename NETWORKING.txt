@@ -1,0 +1,152 @@
+HOW THE GAME AND THE SERVERS TALK TO EACH OTHER
+===============================================
+
+The full list of messages is in the comment at the top of Game/Net/NetProtocol.h.
+
+
+1. THE THREE PROGRAMS
+---------------------
+
+LV-AccountServer (port 44444)
+    Keeps every account. Logs players in and hands out signed "tickets".
+
+LV-EngineServer (port 33333)
+    Holds one garage. It doesn't simulate anything: it keeps the garage as
+    text records, puts everyone's changes in one order and passes them on.
+    It also keeps the clock, saves to disk, and gives out name prefixes.
+
+The game
+    Runs the whole simulation itself. Each player's game is a full copy of
+    the shop that is kept in step with everyone else's.
+
+
+2. THE CONNECTION
+-----------------
+
+Transport (LV/Engine/Networking/Socket.h)
+    Plain TCP, where each message is a length-prefixed block. Every message
+    is a line of the same text format the save files use, for example:
+        presence 7 1.2 0 3.4 ...
+
+Encryption (LV/Engine/Networking/Crypto.h), done before anything private:
+    1. Each side makes a fresh P-256 key pair for this connection and sends
+       its public key.
+    2. The server also signs both keys with its permanent identity key.
+    3. Both sides work out the same shared secret and turn it into two
+       AES-256-GCM keys, one for each direction. From then on everything is
+       encrypted.
+    4. The game remembers each server's identity the first time it connects
+       (known_servers.txt). If a server at that address ever shows a
+       different identity, the game refuses it. That is what stops someone
+       pretending to be your server.
+
+
+3. LOGGING IN AND JOINING
+-------------------------
+
+1. The game logs in to the account server:
+       login "user" "password"
+   The account server answers with a ticket ("account 12, username joey,
+   good until X"), signed with its identity key. Tickets last 12 hours.
+
+2. The server list: the game sends each server in servers.txt a "query"
+   (not encrypted) and gets back "info": name, region, player count and
+   version. Timing the answer gives the ping.
+
+3. Joining a garage server: after the encrypted handshake, the game sends
+       hello <version> ticket signature
+   The garage server never contacts the account server. It checks the
+   signature against account_identity.txt, a copy of the account server's
+   public identity. A good signature proves the player is who the ticket
+   says.
+
+4. The server answers with "welcome", which contains:
+       - your id and slot, and your name and prefix
+       - the time of day
+       - who else is in the garage
+       - every record in the garage
+       - your saved backpack layout and where you were standing
+   Your game wipes its own shop and rebuilds it from those records.
+
+
+4. KEEPING EVERYONE IN SYNC: RECORDS AND OPS
+--------------------------------------------
+
+The shared shop is a dictionary of records: a key, and one line of save
+text. There is one for each part, tool, delivery and engine, plus counters
+such as money (see Game/Net/NetState.h).
+
+About 10 times a second, each game (NetSession::Sync):
+    1. Captures its whole shop as records and compares them with a "shadow"
+       copy of what the server last confirmed.
+    2. Sends only the differences, as a numbered "ops" batch. Each op either
+       SETs a record, ERASEs one, or ADDs to a counter.
+    3. Applies whatever batches have come in from the server since last
+       time.
+
+The server (GarageServer::ApplyOps) applies each batch to its copy and sends
+it on to everyone, including the player who sent it. So every game gets the
+same changes in the same order.
+
+When two players change the same record:
+    While your own change to a record is on its way, your game ignores other
+    players' changes to that record. The server put those before yours, and
+    yours replaces them once it comes back. So whichever change reaches the
+    server last wins.
+
+Money:
+    Money and the career tallies are counters. They are sent as amounts
+    added, like "+$50", rather than "set to $694". If two players spend at
+    the same moment, both amounts come off instead of one wiping out the
+    other.
+
+
+5. MESSAGES THAT AREN'T RECORDS
+-------------------------------
+
+presence (20 times a second)
+    Position, facing, arms, crouching and monkey colours. The server passes
+    it on to everyone else, and remembers where you stood in your profile.
+
+profile (once a second, when it has changed)
+    Your backpack and hotbar layout, kept by the server for when you come
+    back.
+
+clock (once a second)
+    The server's time of day, so the sun is in the same place for everyone.
+
+joined / name / left (when they happen)
+    A player arriving, getting a new prefix, or leaving. When someone
+    leaves, the server puts down any delivery they were carrying.
+
+
+6. WHAT IS SAVED WHERE
+----------------------
+
+Garage server:
+    garage.lvgarage       every record
+    profiles.lvprofiles   each player's layout and position
+    server_identity.key   the server's identity
+    prefixes.txt          name prefixes
+    It saves automatically every 30 seconds, and when the last player
+    leaves.
+
+Account server:
+    accounts.lvaccounts   the accounts
+    account_identity.key  its identity
+
+Game:
+    While playing online, nothing of the shop. The server saves it.
+
+
+7. WHAT THIS DESIGN MEANS
+-------------------------
+
+- No cheat protection on the shop: the server doesn't check whether changes
+  are allowed, so a modified game could give itself money. It's a design for
+  playing with friends that is cheap to run, with the game's rules living
+  only in the game. Only identity is protected: tickets, prefixes and server
+  identities.
+
+- Both ends must run the same NetProtocol::VERSION, because records are save
+  text. Any change to the save format or to the messages bumps the version.

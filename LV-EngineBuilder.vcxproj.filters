@@ -215,9 +215,6 @@
     <ClCompile Include="Game\World\ShopOutdoors.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
-    <ClCompile Include="Game\World\ShopHouse.cpp">
-      <Filter>Game\World</Filter>
-    </ClCompile>
     <ClCompile Include="Game\World\ShopWorld.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
@@ -229,6 +226,15 @@
     </ClCompile>
     <ClCompile Include="Game\World\ShopWorldTools.cpp">
       <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldPaint.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\WallPaint.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\RankUI.cpp">
+      <Filter>Game\UI</Filter>
     </ClCompile>
     <ClCompile Include="Game\UI\MonkeyUI.cpp">
       <Filter>Game\UI</Filter>
@@ -288,6 +294,9 @@
       <Filter>LV\Engine\Objects</Filter>
     </ClCompile>
     <ClCompile Include="LV\Engine\Audio\AudioManager.cpp">
+      <Filter>LV\Engine\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Audio\AudioManagerMac.cpp">
       <Filter>LV\Engine\Audio</Filter>
     </ClCompile>
     <ClCompile Include="LV\Engine\Utility\InputManager.cpp">
@@ -462,9 +471,6 @@
     <ClInclude Include="Game\World\GarageLayout.h">
       <Filter>Game\World</Filter>
     </ClInclude>
-    <ClInclude Include="Game\World\HouseLayout.h">
-      <Filter>Game\World</Filter>
-    </ClInclude>
     <ClInclude Include="Game\World\ProceduralTextures.h">
       <Filter>Game\World</Filter>
     </ClInclude>
@@ -491,6 +497,21 @@
     </ClInclude>
     <ClInclude Include="Game\World\PlayerAvatar.h">
       <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\WallPaint.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\RankUI.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\LocalTime.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\ShopRank.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\Skills.h">
+      <Filter>Game\Simulation</Filter>
     </ClInclude>
     <ClInclude Include="Game\World\ShopWorldShared.h">
       <Filter>Game\World</Filter>

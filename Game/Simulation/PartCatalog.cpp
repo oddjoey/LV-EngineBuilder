@@ -180,6 +180,9 @@ namespace
 			"The fan belt, 11 x 980 mm: off the crank pulley, up round the water pump and across to the alternator, whose pivot sets how tight it is. Old ones stretch, crack and glaze, so a rebuild gets a new one." },
 		{ PartType::DRIVE_BELT_TENSIONER,	"Belt Tensioner",			S::COOLING,		45.0,	0,				false,	false,	false,	false,	1, 2,
 			"A sprung pulley for a serpentine belt, from before the fan belt went back to a V-belt. Nothing takes one now.", nullptr, false },
+		{ PartType::PISTON_PIN,				"Piston Pin",				S::BOTTOM_END,	8.0,	PER_CYLINDER,	false,	false,	false,	false,	1, 1,
+			"Hardened steel pin the piston pivots on, through its bosses and the rod's small end. Pressed in with the Piston Pin Press, with the "
+			"piston on its rod. Comes with each piston.", nullptr, true },
 	};
 	static_assert(std::size(INFO) == static_cast<size_t>(PartType::COUNT), "Every part type needs a catalog row.");
 
@@ -203,7 +206,7 @@ namespace
 		{ "Carburettor Bolt",			PartType::CARBURETTOR,	4,	PartType::BOLT_M6,		9.0 },
 		{ "Fuel Pump Bolt",				PartType::FUEL_PUMP,		2,	PartType::BOLT_M6,		10.0 },
 		{ "Cam Cap Bolt",				PartType::CAM_CAP,			2,	PartType::BOLT_M6,		13.0 },
-		{ "Rocker Shaft Bolt",			PartType::ROCKER_SHAFT,		3,	PartType::BOLT_M8,		25.0 },
+		{ "Rocker Shaft Bolt",			PartType::ROCKER_SHAFT,		5,	PartType::BOLT_M8,		25.0,	true },
 		{ "Distributor Gear Bolt",		PartType::DISTRIBUTOR,		1,	PartType::BOLT_M10,		29.0 },
 		{ "Flywheel Bolt",				PartType::FLYWHEEL,			6,	PartType::BOLT_M10,		79.0 },
 		{ "Idler Pulley Bolt",			PartType::BELT_TENSIONER,	1,	PartType::BOLT_M10,		37.0 },
@@ -255,7 +258,7 @@ namespace PartCatalog
 			int count = 0;
 			for (const auto& holes : HOLES)
 				if (holes.size == type)
-					count += holes.perParent * CountPerEngine(holes.parent, spec);
+					count += holes.Count(CountPerEngine(holes.parent, spec));
 			return count;
 		}
 		switch (Get(type).perEngine)

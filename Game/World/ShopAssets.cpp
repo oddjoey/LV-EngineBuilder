@@ -4,23 +4,147 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "LV/Engine/Graphics/Models/MeshBuilder.h"
 #include "LV/Engine/Graphics/Models/ModelManager.h"
 #include "LV/Engine/Graphics/Models/TextureManager.h"
 #include "../Simulation/EngineAssembly.h"
 #include "../Simulation/PartCatalog.h"
+#include "GarageLayout.h"
 #include "ProceduralTextures.h"
 #include "ToolShapes.h"
 
 namespace
 {
 	const std::string MODEL_FOLDER = "Resources/Models/";
+
+	// Models are built up of pieces laid against each other, and a detail (a stripe, a label, trim) often
+	// ends flush with what it's on: two faces of different colours in one plane, which flicker as the
+	// depth test picks one then the other. Each later one of those is lifted off the face under it by a
+	// hair, scaled to the model so it holds from as far away as it'll be seen. Where three meet, the two lifted
+	// meet again, so it goes round again.
+	void SeparateCoplanarFaces(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, int rounds = 4)
+	{
+		struct Face { glm::vec3 normal; float distance; size_t first; };
+		std::vector<Face> faces;
+		glm::vec3 low(1e9f), high(-1e9f);
+		for (size_t i = 0; i + 2 < indices.size(); i += 3)
+		{
+			const glm::vec3& a = vertices[indices[i]].position;
+			glm::vec3 cross = glm::cross(vertices[indices[i + 1]].position - a, vertices[indices[i + 2]].position - a);
+			for (int k = 0; k < 3; k++)
+			{
+				low = glm::min(low, vertices[indices[i + k]].position);
+				high = glm::max(high, vertices[indices[i + k]].position);
+			}
+			float area = glm::length(cross);
+			if (area > 1e-10f)
+				faces.push_back({ cross / area, glm::dot(cross / area, a), i });
+		}
+		if (faces.empty())
+			return;
+		const float lift = std::clamp(glm::length(high - low) * 0.0002f, 0.0002f, 0.003f);
+
+		// Faces that look the same way, in the same plane, overlapping by more than an edge.
+		auto flat = [&](const Face& face, const glm::vec3& point) {
+			glm::vec3 u = glm::normalize(glm::cross(face.normal, std::abs(face.normal.x) < 0.9f ? glm::vec3(1.f, 0.f, 0.f) : glm::vec3(0.f, 1.f, 0.f)));
+			return glm::vec2(glm::dot(point, u), glm::dot(point, glm::cross(face.normal, u)));
+		};
+		auto overlap = [&](const Face& a, const Face& b) {
+			glm::vec2 one[3], two[3];
+			for (int k = 0; k < 3; k++)
+			{
+				one[k] = flat(a, vertices[indices[a.first + k]].position);
+				two[k] = flat(a, vertices[indices[b.first + k]].position);
+			}
+			// Shrunk a little, so ones that only share an edge don't count.
+			for (auto* triangle : { one, two })
+			{
+				glm::vec2 middle = (triangle[0] + triangle[1] + triangle[2]) / 3.f;
+				for (int k = 0; k < 3; k++)
+					triangle[k] = middle + (triangle[k] - middle) * 0.97f;
+			}
+			auto apart = [](const glm::vec2* edges, const glm::vec2* other) {
+				for (int k = 0; k < 3; k++)
+				{
+					glm::vec2 along = edges[(k + 1) % 3] - edges[k], axis = { -along.y, along.x };
+					float minA = 1e9f, maxA = -1e9f, minB = 1e9f, maxB = -1e9f;
+					for (int m = 0; m < 3; m++)
+					{
+						minA = (std::min)(minA, glm::dot(axis, edges[m]));
+						maxA = (std::max)(maxA, glm::dot(axis, edges[m]));
+						minB = (std::min)(minB, glm::dot(axis, other[m]));
+						maxB = (std::max)(maxB, glm::dot(axis, other[m]));
+					}
+					if (maxA <= minB || maxB <= minA)
+						return true;
+				}
+				return false;
+			};
+			return !apart(one, two) && !apart(two, one);
+		};
+
+		// Grouped by which way they face, then along that by plane.
+		std::map<std::array<int, 3>, std::vector<size_t>> byNormal;
+		for (size_t f = 0; f < faces.size(); f++)
+			byNormal[{ static_cast<int>(std::round(faces[f].normal.x * 1000.f)), static_cast<int>(std::round(faces[f].normal.y * 1000.f)),
+				static_cast<int>(std::round(faces[f].normal.z * 1000.f)) }].push_back(f);
+		std::vector<bool> lifted(vertices.size(), false);
+		std::vector<glm::vec3> offset(vertices.size(), glm::vec3(0.f));
+		for (auto& [key, group] : byNormal)
+		{
+			std::sort(group.begin(), group.end(), [&](size_t a, size_t b) { return faces[a].distance < faces[b].distance; });
+			for (size_t i = 0; i < group.size(); i++)
+				for (size_t j = i + 1; j < group.size() && faces[group[j]].distance - faces[group[i]].distance < 2e-5f; j++)
+				{
+					const Face& a = faces[(std::min)(group[i], group[j])];
+					const Face& later = faces[(std::max)(group[i], group[j])];
+					if (glm::length(vertices[indices[a.first]].color - vertices[indices[later.first]].color) < 1e-3f || !overlap(a, later))
+						continue;
+					for (int k = 0; k < 3; k++)
+					{
+						uint32_t vertex = indices[later.first + k];
+						lifted[vertex] = true;
+						offset[vertex] = later.normal * lift;
+					}
+				}
+		}
+		// The rest of each lifted face (the other half of its quad) goes with it.
+		bool spread = true;
+		while (spread)
+		{
+			spread = false;
+			for (const Face& face : faces)
+			{
+				uint32_t corner[3] = { indices[face.first], indices[face.first + 1], indices[face.first + 2] };
+				bool any = lifted[corner[0]] || lifted[corner[1]] || lifted[corner[2]];
+				bool all = lifted[corner[0]] && lifted[corner[1]] && lifted[corner[2]];
+				if (!any || all)
+					continue;
+				glm::vec3 shift = offset[lifted[corner[0]] ? corner[0] : lifted[corner[1]] ? corner[1] : corner[2]];
+				if (glm::dot(glm::normalize(shift), face.normal) < 0.999f)
+					continue;
+				for (uint32_t vertex : corner)
+					if (!lifted[vertex])
+					{
+						lifted[vertex] = true;
+						offset[vertex] = shift;
+						spread = true;
+					}
+			}
+		}
+		for (size_t v = 0; v < vertices.size(); v++)
+			vertices[v].position += offset[v];
+		if (rounds > 1 && std::find(lifted.begin(), lifted.end(), true) != lifted.end())
+			SeparateCoplanarFaces(vertices, indices, rounds - 1);
+	}
 }
 
 float EngineLayout::ValveLift(int cylinder, bool exhaust, float crankAngle)
@@ -175,8 +299,8 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 					add(FeatureNames::SeatRunout(cylinder, exhaust), { BoreX(cylinder), 0.002f, ValveZ(exhaust) });
 				}
 			}
-			for (int journal = 0; journal < 5; journal++)
-				add(FeatureNames::CamBore(journal), { MainX(journal), CAM_Y, 0.f });
+			for (int journal = 0; journal < CAM_JOURNALS; journal++)
+				add(FeatureNames::CamBore(journal), { CamJournalX(journal), CAM_Y, 0.f });
 			for (bool exhaust : { false, true })
 				add(FeatureNames::PortFace(exhaust), { 0.12f, PORT_Y, exhaust ? PORT_FACE_Z : -PORT_FACE_Z });
 			break;
@@ -184,8 +308,8 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 			add(FeatureNames::COMPRESSED_THICKNESS, { BLOCK_LENGTH * 0.45f, 0.001f, 0.09f });
 			break;
 		case PartType::CAMSHAFT:
-			for (int journal = 0; journal < 5; journal++)
-				add(FeatureNames::CamJournal(journal), { MainX(journal), 0.f, 0.f });
+			for (int journal = 0; journal < CAM_JOURNALS; journal++)
+				add(FeatureNames::CamJournal(journal), { CamJournalX(journal), 0.f, 0.f });
 			for (int cylinder = 0; cylinder < 4; cylinder++)
 				for (bool exhaust : { false, true })
 					add(FeatureNames::LobeHeight(cylinder, exhaust), { BoreX(cylinder) + (exhaust ? 0.016f : -0.016f), 0.f, 0.f });
@@ -473,6 +597,53 @@ void ShopAssets::LoadTools()
 				Box(builder, { 0.f, CHARGER_HEIGHT - 0.002f, 0.f }, { BATTERY_LENGTH * 0.7f, 0.004f, 0.034f }, orange);
 				Box(builder, { 0.05f, CHARGER_HEIGHT * 0.6f, 0.051f }, { 0.012f, 0.008f, 0.002f }, { 0.3f, 0.9f, 0.35f });
 				break;
+			case ToolShape::MARKER:
+			case ToolShape::SPRAY_CAN:
+			{
+				// Lying along X: a marker's barrel in its colour with a cap and nib; a can, its body in
+				// its colour, the shoulder, and the nozzle.
+				glm::vec3 color = { ((tool.paintColor >> 16) & 0xFF) / 255.f, ((tool.paintColor >> 8) & 0xFF) / 255.f, (tool.paintColor & 0xFF) / 255.f };
+				if (ToolShapeFor(tool) == ToolShape::MARKER)
+				{
+					Cylinder(builder, AlongX({ -0.01f, 0.f, 0.f }), 0.007f, 0.11f, color, 12);
+					Cylinder(builder, AlongX({ 0.055f, 0.f, 0.f }), 0.0075f, 0.025f, dark, 12);
+				}
+				else
+				{
+					Cylinder(builder, AlongX({ -0.015f, 0.f, 0.f }), 0.033f, 0.15f, color, 20);
+					Cylinder(builder, AlongX({ 0.07f, 0.f, 0.f }), 0.025f, 0.02f, steel, 20);
+					Box(builder, { 0.088f, 0.f, 0.f }, { 0.016f, 0.014f, 0.014f }, face);
+				}
+				break;
+			}
+			case ToolShape::RAG:
+				// A folded rag on a small tin of thinner.
+				Cylinder(builder, At({ 0.f, 0.04f, 0.f }), 0.035f, 0.08f, steel, 20);
+				Box(builder, { 0.f, 0.084f, 0.f }, { 0.08f, 0.008f, 0.06f }, { 0.85f, 0.8f, 0.7f });
+				break;
+			case ToolShape::PIN_PRESS:
+			{
+				// A C-frame lying on its side: the anvil cup at one jaw, the screw through the other with its
+				// pusher and a tommy bar through its head.
+				const glm::vec3 frame = { 0.2f, 0.32f, 0.62f };
+				Box(builder, { -0.06f, 0.012f, 0.f }, { 0.024f, 0.024f, 0.14f }, frame);
+				for (float z : { -0.06f, 0.06f })
+					Box(builder, { 0.f, 0.012f, z }, { 0.12f, 0.024f, 0.02f }, frame);
+				Cylinder(builder, AlongZ({ 0.045f, 0.012f, -0.045f }), 0.012f, 0.014f, steel, 16);
+				Cylinder(builder, AlongZ({ 0.045f, 0.012f, 0.085f }), 0.006f, 0.1f, steel, 12);
+				Cylinder(builder, AlongZ({ 0.045f, 0.012f, 0.03f }), 0.009f, 0.012f, steel, 16);
+				Cylinder(builder, AlongX({ 0.045f, 0.012f, 0.135f }), 0.003f, 0.07f, steel, 8);
+				break;
+			}
+			case ToolShape::RING_COMPRESSOR:
+			{
+				// A band of spring steel standing on its edge, its ratchet on one side with the key in it.
+				Tube(builder, At({ 0.f, 0.03f, 0.f }), 0.045f, 0.043f, 0.06f, steel, 0.f, glm::two_pi<float>(), 28);
+				Box(builder, { 0.054f, 0.03f, 0.f }, { 0.02f, 0.03f, 0.03f }, dark);
+				Cylinder(builder, AlongX({ 0.08f, 0.03f, 0.f }), 0.004f, 0.04f, steel, 8);
+				Box(builder, { 0.1f, 0.03f, 0.f }, { 0.008f, 0.008f, 0.05f }, dark);
+				break;
+			}
 		}
 		AddModel(ToolModelName(tool), builder);
 	}
@@ -593,7 +764,9 @@ void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder)
 		}
 	}
 
-	m_models[name] = modelManager->CreateModel(builder.Build(name))->GetIndex();
+	auto vertices = builder.GetVertices();
+	SeparateCoplanarFaces(vertices, builder.GetIndices());
+	m_models[name] = modelManager->CreateModel(::Model(name, vertices, builder.GetIndices()))->GetIndex();
 }
 
 uint32_t ShopAssets::TextureFor(const std::string& modelName, const std::string& fallbackTexture) const
@@ -712,8 +885,8 @@ std::vector<SurfaceOverlay> ShopAssets::OverlaysFor(PartType type)
 			overlays.push_back({ FeatureNames::DECK_FLATNESS, "Overlay: Head Deck", {} });
 			break;
 		case PartType::CAMSHAFT:
-			for (int journal = 0; journal < 5; journal++)
-				overlays.push_back({ FeatureNames::CamJournal(journal), "Overlay: Cam Journal", { MainX(journal), 0.f, 0.f } });
+			for (int journal = 0; journal < CAM_JOURNALS; journal++)
+				overlays.push_back({ FeatureNames::CamJournal(journal), "Overlay: Cam Journal", { CamJournalX(journal), 0.f, 0.f } });
 			break;
 		default:
 			break;
@@ -769,12 +942,11 @@ void ShopAssets::LoadTextures()
 	add(ShopTextures::PEGBOARD, ProceduralTextures::Pegboard());
 	add(ShopTextures::RUBBER, ProceduralTextures::Rubber());
 	add(ShopTextures::CARDBOARD, ProceduralTextures::Cardboard());
-	add(ShopTextures::GRASS, ProceduralTextures::Grass());
+	add(ShopTextures::SAND, ProceduralTextures::Sand());
 	add(ShopTextures::ASPHALT, ProceduralTextures::Asphalt());
 	add(ShopTextures::SIDING, ProceduralTextures::Siding());
-	add(ShopTextures::BRICK, ProceduralTextures::Brick());
-	add(ShopTextures::SHINGLES, ProceduralTextures::Shingles());
-	add(ShopTextures::BARK, ProceduralTextures::Bark());
+	add(ShopTextures::PLANKS, ProceduralTextures::Planks());
+	add(ShopTextures::ROCK, ProceduralTextures::Rock());
 	add(ShopTextures::FOLIAGE, ProceduralTextures::Foliage());
 
 	add(ShopTextures::HONED, ProceduralTextures::Honed());
@@ -785,6 +957,14 @@ void ShopAssets::LoadTextures()
 	add(ShopTextures::GROUND, ProceduralTextures::Ground());
 	add(ShopTextures::POLISHED, ProceduralTextures::Polished());
 	add(ShopTextures::SURFACE_GROUND, ProceduralTextures::SurfaceGround());
+
+	// Reserved: a tile's image is only made once WallPaint first paints it, so the pool costs nothing at
+	// start up. Clamped at their edges: a tile's paint mustn't blend into its opposite side at the seams.
+	for (int slot = 0; slot < ShopTextures::PAINT_TILE_POOL; slot++)
+	{
+		std::string name = ShopTextures::PaintTile(slot);
+		m_textures[name] = textureManager->ReserveTexture(name, ShopTextures::PAINT_TILE_PIXELS, ShopTextures::PAINT_TILE_PIXELS, true)->GetIndex();
+	}
 }
 
 void ShopAssets::LoadEnvironment()
@@ -794,8 +974,16 @@ void ShopAssets::LoadEnvironment()
 	{
 		MeshBuilder floor;
 		floor.SetUVScale(0.5f);
-		Box(floor, { 0.f, -0.05f, 0.f }, { 14.f, 0.1f, 10.f });
+		// Out to the walls' outside faces and no further, so it meets the drive and apron without overlapping them.
+		using namespace GarageLayout;
+		Box(floor, { 0.f, -0.05f, 0.f }, { (HALF_WIDTH + WALL) * 2.f, 0.1f, (HALF_DEPTH + WALL) * 2.f });
 		add(ShopModels::FLOOR, floor);
+	}
+	{
+		// Only its front face is seen: the back is against the wall.
+		MeshBuilder tile;
+		Box(tile, { 0.5f, 0.5f, 0.f }, { 1.f, 1.f, 0.0001f });
+		add(ShopModels::PAINT_TILE, tile);
 	}
 	{
 		MeshBuilder lamp;
@@ -890,6 +1078,42 @@ void ShopAssets::LoadEnvironment()
 		add(ShopModels::DYNO, dyno);
 	}
 	{
+		// A shop crane: two legs on casters, a mast, and a boom reaching out over the legs on a hydraulic
+		// ram, with a chain, the hook, and a leveller bar with a chain to each end of an engine. Its boom
+		// runs along +Z (see ShopLayout::HOIST_HOOK).
+		MeshBuilder hoist;
+		hoist.SetUVScale(3.f);
+		const glm::vec3 red = { 0.72f, 0.12f, 0.10f };
+		const glm::vec3 chrome = { 0.82f, 0.83f, 0.86f };
+		const glm::vec3 chain = { 0.38f, 0.38f, 0.40f };
+		// From a to b, both at x = 0: a square bar thick across.
+		auto beam = [&](const glm::vec3& a, const glm::vec3& b, float thick, const glm::vec3& color) {
+			glm::vec3 run = b - a;
+			hoist.SetTransform(glm::rotate(At((a + b) * 0.5f), std::atan2(-run.y, run.z), { 1.f, 0.f, 0.f })).SetColor(color);
+			hoist.AddBox({}, { thick, thick, glm::length(run) });
+			hoist.ResetTransform();
+		};
+		for (float x : { -0.36f, 0.36f })
+		{
+			Box(hoist, { x, 0.11f, 0.535f }, { 0.08f, 0.07f, 1.17f }, red);
+			for (float z : { -0.02f, 1.08f })
+				Cylinder(hoist, AlongX({ x, 0.04f, z }), 0.04f, 0.035f, RUBBER_BLACK, 12);
+		}
+		Box(hoist, { 0.f, 0.11f, -0.05f }, { 0.8f, 0.07f, 0.1f }, red);
+		Box(hoist, { 0.f, 0.8f, 0.f }, { 0.09f, 1.4f, 0.09f }, red);
+		Box(hoist, { 0.f, 0.24f, 0.09f }, { 0.1f, 0.2f, 0.16f }, red * 0.85f);
+		beam({ 0.f, 1.48f, -0.12f }, { 0.f, 1.80f, 1.02f }, 0.08f, red);
+		beam({ 0.f, 0.24f, 0.14f }, { 0.f, 0.95f, 0.28f }, 0.075f, DARK);
+		beam({ 0.f, 0.95f, 0.28f }, { 0.f, 1.56f, 0.40f }, 0.035f, chrome);
+		beam({ 0.f, 0.5f, 0.06f }, { 0.f, 0.85f, -0.45f }, 0.025f, STEEL_GREY);
+		Box(hoist, { 0.f, 1.71f, 1.0f }, { 0.02f, 0.14f, 0.02f }, chain);
+		Box(hoist, { 0.f, 1.625f, 1.0f }, { 0.045f, 0.035f, 0.025f }, DARK);
+		Box(hoist, { 0.f, 1.585f, 1.0f }, { 0.04f, 0.03f, 0.42f }, red);
+		for (float z : { 0.82f, 1.18f })
+			Box(hoist, { 0.f, 1.525f, z }, { 0.015f, 0.1f, 0.015f }, chain);
+		add(ShopModels::ENGINE_HOIST, hoist);
+	}
+	{
 		MeshBuilder desk;
 		desk.SetUVScale(2.f);
 		Box(desk, { 0.f, 0.74f, 0.f }, { 1.4f, 0.04f, 0.7f }, { 0.55f, 0.55f, 0.57f });
@@ -906,73 +1130,92 @@ void ShopAssets::LoadEnvironment()
 		// feet at the origin, facing -Z; the head turns about the neck, and the arms and legs swing from
 		// the shoulder and hip, hanging -Y. The fur, the bare skin (belly, face, hands, feet) and the cap
 		// are pieces of their own, all white, so each player's colours (MonkeyLook) are tinted on.
+		// Built cute: a big head on a small body with short legs, a big cap and a big curly tail. The
+		// joints match PlayerAvatar's.
 		const glm::vec3 detail = { 0.08f, 0.06f, 0.05f };	// eyes, nostrils and mouth: dark whatever the skin
 		MeshBuilder player;
 		player.SetUVScale(2.f);
-		Box(player, { 0.f, 1.14f, 0.01f }, { 0.4f, 0.6f, 0.26f });
-		Box(player, { 0.f, 1.5f, 0.f }, { 0.13f, 0.08f, 0.13f });
+		Box(player, { 0.f, 0.73f, 0.01f }, { 0.34f, 0.42f, 0.24f });
+		Box(player, { 0.f, 0.96f, 0.f }, { 0.12f, 0.05f, 0.12f });
 		add(ShopModels::PLAYER, player);
 
 		MeshBuilder belly;
-		Box(belly, { 0.f, 1.08f, -0.12f }, { 0.26f, 0.38f, 0.03f });
+		Box(belly, { 0.f, 0.71f, -0.115f }, { 0.22f, 0.28f, 0.03f });
 		add(ShopModels::PLAYER_BELLY, belly);
 
-		// The tail, curling up from the base of the back.
+		// The tail, thick and long, curling up from the base of the back and over.
 		MeshBuilder tail;
-		Box(tail, { 0.f, 0.86f, 0.17f }, { 0.04f, 0.04f, 0.1f });
-		Box(tail, { 0.f, 0.9f, 0.24f }, { 0.04f, 0.1f, 0.04f });
-		Box(tail, { 0.f, 0.97f, 0.21f }, { 0.04f, 0.04f, 0.08f });
+		Box(tail, { 0.f, 0.58f, 0.2f }, { 0.07f, 0.07f, 0.16f });
+		Box(tail, { 0.f, 0.69f, 0.3f }, { 0.07f, 0.24f, 0.07f });
+		Box(tail, { 0.f, 0.8f, 0.25f }, { 0.07f, 0.07f, 0.17f });
+		Box(tail, { 0.f, 0.75f, 0.19f }, { 0.07f, 0.1f, 0.07f });
 		add(ShopModels::PLAYER_TAIL, tail);
+
+		// The head, face and cap are drawn at a normal monkey's size about the neck and scaled up
+		// together, so the face stays where it belongs on the bigger head.
+		constexpr float HEAD = 1.9f;
+		auto headBox = [&](MeshBuilder& mesh, const glm::vec3& center, const glm::vec3& size, const glm::vec3& color = glm::vec3(1.f)) {
+			Box(mesh, center * HEAD, size * HEAD, color);
+		};
 
 		// The head: a furry skull with a heavy brow; the face is its own piece.
 		MeshBuilder head;
-		Box(head, { 0.f, 0.13f, 0.01f }, { 0.24f, 0.24f, 0.24f });
-		Box(head, { 0.f, 0.176f, -0.122f }, { 0.19f, 0.026f, 0.03f });
+		headBox(head, { 0.f, 0.13f, 0.01f }, { 0.24f, 0.24f, 0.24f });
+		headBox(head, { 0.f, 0.176f, -0.122f }, { 0.19f, 0.026f, 0.03f });
 		add(ShopModels::PLAYER_HEAD, head);
 
-		// The face: pale, the eyes under the brow, a muzzle with its nostrils and mouth, and the ears.
+		// The face: pale, a muzzle with its nostrils and mouth, and the ears. The eyes go on it.
 		MeshBuilder face;
-		Box(face, { 0.f, 0.11f, -0.115f }, { 0.18f, 0.16f, 0.02f });
+		headBox(face, { 0.f, 0.11f, -0.115f }, { 0.18f, 0.16f, 0.02f });
 		for (float side : { -1.f, 1.f })
 		{
-			Box(face, { side * 0.045f, 0.145f, -0.127f }, { 0.03f, 0.024f, 0.006f }, detail);
-			Box(face, { side * 0.016f, 0.075f, -0.177f }, { 0.012f, 0.01f, 0.004f }, detail);
-			Box(face, { side * 0.135f, 0.13f, 0.f }, { 0.04f, 0.07f, 0.05f });
+			headBox(face, { side * 0.016f, 0.075f, -0.177f }, { 0.012f, 0.01f, 0.004f }, detail);
+			headBox(face, { side * 0.135f, 0.13f, 0.f }, { 0.04f, 0.07f, 0.05f });
 		}
-		Box(face, { 0.f, 0.06f, -0.14f }, { 0.13f, 0.08f, 0.07f });
-		Box(face, { 0.f, 0.04f, -0.176f }, { 0.08f, 0.006f, 0.004f }, detail);
+		headBox(face, { 0.f, 0.06f, -0.14f }, { 0.13f, 0.08f, 0.07f });
+		headBox(face, { 0.f, 0.04f, -0.176f }, { 0.08f, 0.006f, 0.004f }, detail);
 		add(ShopModels::PLAYER_FACE, face);
 
-		// The cap, about the neck like the head, its peak to the front so you can tell which way it's
-		// looking.
+		// Big round eyes under the brow: the whites, dark pupils a little in and down, and a glint on each.
+		MeshBuilder eyes;
+		for (float side : { -1.f, 1.f })
+		{
+			headBox(eyes, { side * 0.048f, 0.135f, -0.1265f }, { 0.056f, 0.054f, 0.004f }, { 0.97f, 0.97f, 0.95f });
+			headBox(eyes, { side * 0.044f, 0.131f, -0.1292f }, { 0.032f, 0.038f, 0.002f }, detail);
+			headBox(eyes, { side * 0.05f, 0.142f, -0.1306f }, { 0.01f, 0.01f, 0.001f }, { 1.f, 1.f, 1.f });
+		}
+		add(ShopModels::PLAYER_EYES, eyes);
+
+		// The cap, about the neck like the head and bigger again than it, pulled down over the top of the head
+		// to just above the brow, and worn backwards: its peak out over the back of the neck.
 		MeshBuilder cap;
-		Box(cap, { 0.f, 0.27f, 0.01f }, { 0.26f, 0.07f, 0.26f });
-		Box(cap, { 0.f, 0.245f, -0.165f }, { 0.22f, 0.02f, 0.11f }, { 0.8f, 0.8f, 0.8f });
+		headBox(cap, { 0.f, 0.245f, 0.01f }, { 0.29f, 0.09f, 0.29f });
+		headBox(cap, { 0.f, 0.211f, 0.19f }, { 0.25f, 0.022f, 0.14f }, { 0.8f, 0.8f, 0.8f });
 		add(ShopModels::PLAYER_CAP, cap);
 
-		// Long furry arms from the shoulder, and the hands at the end of them.
+		// Short furry arms from the shoulder, and the hands at the end of them.
 		MeshBuilder arm;
 		arm.SetUVScale(2.f);
-		Box(arm, { 0.f, -0.31f, 0.f }, { 0.11f, 0.62f, 0.12f });
+		Box(arm, { 0.f, -0.21f, 0.f }, { 0.09f, 0.42f, 0.1f });
 		add(ShopModels::PLAYER_ARM, arm);
 
 		MeshBuilder hand;
-		Box(hand, { 0.f, -0.66f, 0.f }, { 0.09f, 0.1f, 0.1f });
+		Box(hand, { 0.f, -0.46f, 0.f }, { 0.09f, 0.09f, 0.09f });
 		add(ShopModels::PLAYER_HAND, hand);
 
-		// The legs bend at the knee: the thigh from the hip, the shin (and its long bare foot) from the knee.
+		// Short legs bend at the knee: the thigh from the hip, the shin (and its bare foot) from the knee.
 		MeshBuilder thigh;
 		thigh.SetUVScale(2.f);
-		Box(thigh, { 0.f, -0.21f, 0.f }, { 0.14f, 0.44f, 0.16f });
+		Box(thigh, { 0.f, -0.13f, 0.f }, { 0.13f, 0.28f, 0.15f });
 		add(ShopModels::PLAYER_THIGH, thigh);
 
 		MeshBuilder shin;
 		shin.SetUVScale(2.f);
-		Box(shin, { 0.f, -0.2f, 0.f }, { 0.13f, 0.4f, 0.15f });
+		Box(shin, { 0.f, -0.12f, 0.f }, { 0.12f, 0.24f, 0.14f });
 		add(ShopModels::PLAYER_SHIN, shin);
 
 		MeshBuilder foot;
-		Box(foot, { 0.f, -0.4f, -0.05f }, { 0.13f, 0.04f, 0.26f });
+		Box(foot, { 0.f, -0.24f, -0.04f }, { 0.12f, 0.04f, 0.2f });
 		add(ShopModels::PLAYER_FOOT, foot);
 	}
 	{
@@ -992,17 +1235,17 @@ void ShopAssets::LoadEnvironment()
 		MeshBuilder body;
 		body.SetUVScale(2.f);
 		for (float x : { -0.1f, 0.1f })
-			Box(body, { x, 0.42f, 0.f }, { 0.14f, 0.84f, 0.16f });
-		Box(body, { 0.f, 1.12f, 0.f }, { 0.4f, 0.6f, 0.26f });
-		Box(body, { 0.f, 1.44f, 0.f }, { 0.36f, 0.06f, 0.2f });
-		Box(body, { -0.27f, 1.1f, 0.f }, { 0.11f, 0.6f, 0.12f });
+			Box(body, { x, 0.26f, 0.f }, { 0.13f, 0.52f, 0.15f });
+		Box(body, { 0.f, 0.73f, 0.f }, { 0.34f, 0.42f, 0.24f });
+		Box(body, { 0.f, 0.96f, 0.f }, { 0.3f, 0.05f, 0.18f });
+		Box(body, { -0.22f, 0.69f, 0.f }, { 0.09f, 0.42f, 0.1f });
 		add(ShopModels::VIEW_BODY, body);
 
 		MeshBuilder bodySkin;
 		for (float x : { -0.1f, 0.1f })
-			Box(bodySkin, { x, 0.02f, -0.06f }, { 0.13f, 0.04f, 0.28f });
-		Box(bodySkin, { 0.f, 1.06f, -0.13f }, { 0.26f, 0.38f, 0.03f });
-		Box(bodySkin, { -0.27f, 0.75f, 0.f }, { 0.09f, 0.1f, 0.1f });
+			Box(bodySkin, { x, 0.02f, -0.04f }, { 0.12f, 0.04f, 0.2f });
+		Box(bodySkin, { 0.f, 0.71f, -0.115f }, { 0.22f, 0.28f, 0.03f });
+		Box(bodySkin, { -0.22f, 0.44f, 0.f }, { 0.09f, 0.09f, 0.09f });
 		add(ShopModels::VIEW_BODY_SKIN, bodySkin);
 	}
 }
@@ -1271,8 +1514,8 @@ void ShopAssets::LoadParts()
 			Box(head, { 0.f, HEAD_FLOOR_Y + railHeight * 0.5f, side * 0.1f }, { BLOCK_LENGTH, railHeight, 0.01f });
 			Box(head, { side * (halfLength - 0.005f), HEAD_FLOOR_Y + railHeight * 0.5f, 0.f }, { 0.01f, railHeight, 0.21f });
 		}
-		// Cam towers between the cylinders; the caps over the cam bores are parts of their own.
-		for (int journal = 0; journal < 5; journal++)
+		// Cam towers under the cam's journals; the caps over the cam bores are parts of their own.
+		for (int journal = 0; journal < CAM_JOURNALS; journal++)
 			Box(head, { CamTowerX(journal), (HEAD_FLOOR_Y + CAM_Y) * 0.5f, 0.f }, { 0.018f, CAM_Y - HEAD_FLOOR_Y, 0.05f });
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 		{
@@ -1291,8 +1534,8 @@ void ShopAssets::LoadParts()
 		MeshBuilder cam;
 		cam.SetUVScale(10.f);
 		Cylinder(cam, AlongX({ 0.f, 0.f, 0.f }), 0.010f, 0.42f, { 0.8f, 0.8f, 0.82f });
-		for (int journal = 0; journal < 5; journal++)
-			Cylinder(cam, AlongX({ MainX(journal), 0.f, 0.f }), 0.013f, 0.016f, WHITE, 24);
+		for (int journal = 0; journal < CAM_JOURNALS; journal++)
+			Cylinder(cam, AlongX({ CamJournalX(journal), 0.f, 0.f }), 0.013f, 0.016f, WHITE, 24);
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 			for (bool exhaust : { false, true })
 			{
@@ -1432,8 +1675,15 @@ void ShopAssets::LoadParts()
 		Cylinder(piston, At({ 0.f, -0.0275f, 0.f }), 0.0395f, 0.055f, WHITE, 32);
 		for (int groove = 0; groove < 3; groove++)
 			Tube(piston, At({ 0.f, -0.006f - groove * 0.005f, 0.f }), 0.0396f, 0.0367f, 0.0015f, DARK, 0.f, glm::two_pi<float>(), 32);
-		Cylinder(piston, AlongX({ 0.f, -PISTON_PIN_DEPTH, 0.f }), 0.0105f, 0.087f, STEEL_GREY);
 		add(PartType::PISTON, piston);
+	}
+	{
+		// Its pin, a part of its own: origin at its middle, along X through the piston's bosses (PISTON_PIN_DEPTH under
+		// the crown), its ends just showing.
+		MeshBuilder pin;
+		pin.SetUVScale(8.f);
+		Cylinder(pin, AlongX({}), 0.0105f, 0.087f, STEEL_GREY);
+		add(PartType::PISTON_PIN, pin);
 	}
 	{
 		MeshBuilder ring;
@@ -1482,7 +1732,7 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::CORE_PLUG:				return crossOver({ { (index - 1) * 0.12f, -0.09f, BLOCK_WIDTH * 0.5f + 0.0005f }, FACING_INTAKE });
 		case PartType::REAR_MAIN_SEAL:			return { { -FRONT_X + 0.001f, CRANK_Y, 0.f }, FACING_REAR };
 		case PartType::OIL_PUMP:				return { { FRONT_X - 0.001f, CRANK_Y, 0.f }, FACING_FRONT };
-		case PartType::OIL_PICKUP:				return { { FRONT_X - 0.009f, CRANK_Y - 0.05f, 0.f } };
+		case PartType::OIL_PICKUP:				return { { FRONT_X - 0.009f, CRANK_Y - 0.075f, 0.f } };	// its flange under the pump's lug
 		case PartType::OIL_PAN_GASKET:			return { { 0.f, PAN_RAIL_Y - 0.001f, 0.f } };
 		case PartType::OIL_PAN:					return { { 0.f, PAN_RAIL_Y - 0.002f, 0.f } };
 		case PartType::OIL_DRAIN_PLUG:			return { { 0.12f, PAN_RAIL_Y - 0.002f - OIL_PAN_DEPTH - 0.008f, 0.f } };
@@ -1594,11 +1844,13 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::OIL_PUMP, pump);
 	}
 	{
+		// The flange on top bolts up under the oil pump's lug; the tube runs down from it and back along the pan to
+		// the strainer.
 		MeshBuilder pickup;
 		Box(pickup, { 0.f, -0.003f, 0.f }, { 0.026f, 0.006f, 0.026f }, STEEL_GREY);
-		Cylinder(pickup, At({ 0.f, -0.045f, 0.f }), 0.008f, 0.08f, STEEL_GREY, 12);
-		Cylinder(pickup, AlongX({ 0.07f, -0.085f, 0.f }), 0.008f, 0.14f, STEEL_GREY, 12);
-		Cylinder(pickup, At({ 0.17f, -0.088f, 0.f }), 0.04f, 0.012f, DARK, 24);
+		Cylinder(pickup, At({ 0.f, -0.0325f, 0.f }), 0.008f, 0.055f, STEEL_GREY, 12);
+		Cylinder(pickup, AlongX({ 0.07f, -0.06f, 0.f }), 0.008f, 0.14f, STEEL_GREY, 12);
+		Cylinder(pickup, At({ 0.17f, -0.063f, 0.f }), 0.04f, 0.012f, DARK, 24);
 		add(PartType::OIL_PICKUP, pickup);
 	}
 	{
@@ -1809,6 +2061,50 @@ void ShopAssets::LoadAncillaries()
 		Cylinder(lead, At({ 0.f, 0.05f, 0.f }), 0.008f, 0.1f, BLACK, 12);
 		Box(lead, { 0.05f, 0.103f, 0.f }, { 0.1f, 0.005f, 0.005f }, BLACK);
 		add(PartType::PLUG_LEAD, lead);
+
+		// Fitted, each runs from its plug's boot back over the valve cover, side by side with the others,
+		// and down into its tower on the distributor cap: the towers in firing order (1-3-4-2) round the
+		// cap. Built from the plug terminal, where a lead is mounted (see the PLUG_LEAD mount).
+		constexpr int TOWER_OF_CYLINDER[4] = { 0, 3, 1, 2 };
+		constexpr float CAP_TOWER_TOP = 0.098f;		// the distributor's towers, out from its flange
+		constexpr float CAP_TOWER_RADIUS = 0.02f;
+		const glm::vec3 distributor = { -FRONT_X + 0.001f, CamAxisY(), 0.f };
+		auto run = [&](MeshBuilder& builder, const glm::vec3& from, const glm::vec3& to, float radius) {
+			glm::vec3 along = to - from;
+			float length = glm::length(along);
+			if (length < 1e-5f)
+				return;
+			glm::quat turn = glm::quat(glm::vec3(0.f, 1.f, 0.f), along / length);
+			// A little long, so the pieces meet at the bends.
+			builder.SetTransform(At((from + to) * 0.5f) * glm::mat4_cast(turn)).SetColor(BLACK).AddCylinder({}, radius, length + radius, 8);
+			builder.ResetTransform();
+		};
+		for (int cylinder = 0; cylinder < 4; cylinder++)
+		{
+			glm::vec3 terminal = { BoreX(cylinder), HEAD_DECK_Y + 0.093f, 0.f };
+			// The distributor stands out of the back of the head, +Y turned to +X: a tower's (x, z) round the
+			// cap comes out as (-y, z) behind it.
+			float angle = TOWER_OF_CYLINDER[cylinder] * glm::half_pi<float>();
+			glm::vec3 tower = distributor + glm::vec3(CAP_TOWER_TOP, -std::cos(angle) * CAP_TOWER_RADIUS, std::sin(angle) * CAP_TOWER_RADIUS) - terminal;
+			float lane = (cylinder - 1.5f) * 0.009f;
+			float overCover = 0.125f;
+			std::vector<glm::vec3> path = {
+				{ 0.f, 0.1f, 0.f },
+				{ 0.f, 0.117f, 0.f },
+				{ 0.015f, overCover, lane },
+				{ tower.x - 0.04f, overCover, lane },
+				{ tower.x + 0.02f, (overCover + tower.y) * 0.5f + 0.01f, (lane + tower.z) * 0.5f },
+				{ tower.x + 0.03f, tower.y, tower.z },
+				{ tower.x + 0.004f, tower.y, tower.z },
+			};
+			MeshBuilder fitted;
+			Cylinder(fitted, At({ 0.f, 0.05f, 0.f }), 0.008f, 0.1f, BLACK, 12);
+			for (size_t i = 0; i + 1 < path.size(); i++)
+				run(fitted, path[i], path[i + 1], 0.0035f);
+			// The boot over the tower.
+			run(fitted, { tower.x + 0.018f, tower.y, tower.z }, { tower.x, tower.y, tower.z }, 0.0065f);
+			AddModel(ShopModels::PlugLeadFitted(cylinder), fitted);
+		}
 	}
 	{
 		// Built standing up from its drive flange (+Y out of the back of the head): the aluminium body,

@@ -30,6 +30,13 @@ namespace
 	std::string StationKey(size_t station) { return std::format("s:{}", station); }
 	std::string ItemKey(const ItemRef& ref) { return std::format("i:{}:{}", static_cast<int>(ref.kind), ref.id); }
 	std::string PackageKey(uint32_t id) { return std::format("k:{}", id); }
+	// The paint sprayed over a part or tool ("o:kind:id"); paint on the walls is WallPaint's ("d:...").
+	std::string CoatKey(const ItemRef& ref) { return std::format("o:{}:{}", static_cast<int>(ref.kind), ref.id); }
+	// Which way the shop's stations are numbered ("s:N"), so a garage kept from before a change can be
+	// renumbered. 1: no cot (the station after the lift went). 2: the engine hoist, after the extension's
+	// door. Garages without it are older.
+	constexpr const char* LAYOUT_KEY = "g:layout";
+	constexpr long long STATION_LAYOUT = 2;
 
 	// "p:12" is part 12: the number after the prefix.
 	std::optional<uint32_t> KeyNumber(const std::string& key, const char* prefix)
@@ -111,7 +118,7 @@ namespace
 	}
 }
 
-// The tallies that add up: money, hours worked, and the career stats that count.
+// The tallies that add up: money and the career stats that count.
 struct NetState::Counter
 {
 	const char* key;
@@ -231,7 +238,6 @@ const std::vector<NetState::Counter>& NetState::Counters()
 {
 	static const std::vector<Counter> counters = {
 		{ "c:money", [](const Workshop& w, const ShopWorld&) { return w.m_money; }, [](Workshop& w, ShopWorld&, double v) { w.m_money = v; } },
-		{ "c:hours", [](const Workshop& w, const ShopWorld&) { return w.m_hours; }, [](Workshop& w, ShopWorld&, double v) { w.m_hours = v; } },
 		{ "c:spent", [](const Workshop& w, const ShopWorld&) { return w.m_stats.moneySpent; }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.moneySpent = v; } },
 		{ "c:earned", [](const Workshop& w, const ShopWorld&) { return w.m_stats.moneyEarned; }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.moneyEarned = v; } },
 		{ "c:bought", [](const Workshop& w, const ShopWorld&) { return double(w.m_stats.partsBought); }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.partsBought = int(v); } },
@@ -243,6 +249,7 @@ const std::vector<NetState::Counter>& NetState::Counters()
 		{ "c:pulls", [](const Workshop& w, const ShopWorld&) { return double(w.m_stats.dynoPulls); }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.dynoPulls = int(v); } },
 		{ "c:failures", [](const Workshop& w, const ShopWorld&) { return double(w.m_stats.dynoFailures); }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.dynoFailures = int(v); } },
 		{ "c:engines_sold", [](const Workshop& w, const ShopWorld&) { return double(w.m_stats.enginesSold); }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.enginesSold = int(v); } },
+		{ "c:reputation", [](const Workshop& w, const ShopWorld&) { return w.m_stats.reputation; }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.reputation = v; } },
 		{ "c:walked", [](const Workshop& w, const ShopWorld&) { return w.m_stats.metresWalked; }, [](Workshop& w, ShopWorld&, double v) { w.m_stats.metresWalked = v; } },
 		{ "c:deliveries", [](const Workshop&, const ShopWorld& s) { return double(s.m_deliveries); }, [](Workshop&, ShopWorld& s, double v) { s.m_deliveries = uint32_t(v); } },
 	};
@@ -361,6 +368,13 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		records["g:tools"] = out.Text();
 	}
 	{
+		// The perks the shop has bought with its skill points.
+		std::vector<int> skills(workshop.m_skills.begin(), workshop.m_skills.end());
+		Writer out;
+		WriteCounts(out, skills);
+		records["g:skills"] = out.Text();
+	}
+	{
 		Writer out;
 		WriteBools(out, workshop.m_ownedMachines);
 		records["g:machines"] = out.Text();
@@ -370,6 +384,8 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		WriteBools(out, workshop.m_upgrades);
 		records["g:upgrades"] = out.Text();
 	}
+	records["g:ownsdyno"] = Writer().Int(workshop.m_ownsDyno).Text();
+	records["g:ownshoist"] = Writer().Int(workshop.m_ownsHoist).Text();
 	{
 		Writer out;
 		out.Int(workshop.m_furniture.size());
@@ -378,6 +394,17 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		records["g:furniture"] = out.Text();
 	}
 	records["g:dyno"] = Writer().Int(workshop.m_engineOnDyno).Text();
+	records["g:hoist"] = Writer().Int(workshop.m_engineOnHoist).Text();
+	// What's fitted to what off the engines: shells in rods and caps, pistons on rods, pins in pistons.
+	for (auto [key, fittings] : { std::pair{ "g:shells", &workshop.m_shells }, std::pair{ "g:pistons", &workshop.m_pistons }, std::pair{ "g:pins", &workshop.m_pins }, std::pair{ "g:rings", &workshop.m_rings } })
+	{
+		Writer out;
+		out.Int(fittings->size());
+		for (const auto& [host, fitted] : *fittings)
+			out.Int(host).Int(fitted);
+		records[key] = out.Text();
+	}
+	records[LAYOUT_KEY] = Writer().Int(STATION_LAYOUT).Text();
 
 	for (const auto& part : workshop.m_inventory)
 		records[PartKey(part->GetId())] = PartText(*part);
@@ -398,7 +425,7 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		Writer out;
 		// What's in this player's backpack or hand is carried by them.
 		bool mine = visual.place == ItemPlace::INVENTORY || visual.place == ItemPlace::HAND;
-		ItemPlace place = mine ? ItemPlace::CARRIED : visual.place;
+		ItemPlace place = mine ? ItemPlace::CARRIED : visual.place == ItemPlace::ATTACHED ? ItemPlace::STORAGE : visual.place;
 		int index = place == ItemPlace::STAND ? visual.engineIndex : visual.machineIndex;
 		out.Int(static_cast<int>(place)).Int(index).Num(visual.yaw);
 		if (place == ItemPlace::WORLD)
@@ -416,9 +443,14 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 	{
 		Writer out;
 		bool big = package.object->GetModelIndex() == world.m_assets->Model(ShopModels::PACKAGE_CRATE);
-		int carrier = id == world.m_carriedPackage ? localPlayer : -1;
+		// Carried on our hotbar: in our hands, or put away out of sight.
+		int carrier = world.IsCarried(id) ? localPlayer : -1;
+		bool inHand = id == world.m_carriedPackage;
 		if (auto remote = world.m_remoteCarriedPackages.find(id); remote != world.m_remoteCarriedPackages.end())
+		{
 			carrier = remote->second;
+			inHand = !world.m_remoteStowedPackages.contains(id);
+		}
 		out.Int(big).Int(carrier);
 		WriteVec3(out, package.object->GetPosition());
 		WriteQuat(out, package.object->GetRotation());
@@ -429,6 +461,7 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		out.Int(package.stations.size());
 		for (size_t station : package.stations)
 			out.Int(station);
+		out.Int(inHand);
 		records[PackageKey(id)] = out.Text();
 	}
 
@@ -455,6 +488,12 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 			out.Num(world.m_engineRolls[engine]).Num(world.m_crankAngles[engine]);
 		records["w:engines"] = out.Text();
 	}
+	// Paint: on the walls and floor, and coats on parts and tools (in hundredths, so a coat going on
+	// isn't a change every sync).
+	for (auto& [key, text] : world.m_paint.Records())
+		records[key] = std::move(text);
+	for (const auto& [ref, coat] : world.m_coats)
+		records[CoatKey(ref)] = Writer().Int(coat.rgb).Int(std::lround(coat.amount * 100.f)).Text();
 	return records;
 }
 
@@ -469,6 +508,38 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			: change.key.starts_with("k:") ? packageChanges : other;
 		into[change.key] = change.text;
 	}
+	// A garage from before a change to the shop's stations is renumbered. Before the cot went it was the
+	// station after the lift, and those after it move down one; before the hoist, those after the
+	// extension's door move up one to make room for it.
+	const size_t hoistStation = world.m_fixedStations - 1;
+	const size_t cotStation = world.m_fixedStations - 2;
+	long long layout = STATION_LAYOUT;
+	if (full)
+	{
+		auto record = other.find(LAYOUT_KEY);
+		layout = record == other.end() || !record->second ? 0 : Reader(*record->second).Int();
+	}
+	auto renumber = [&](size_t index) -> std::optional<size_t> {
+		if (layout < 1)
+		{
+			if (index == cotStation)
+				return std::nullopt;
+			if (index > cotStation)
+				index--;
+		}
+		if (layout < 2 && index >= hoistStation)
+			index++;
+		return index;
+	};
+	if (layout < STATION_LAYOUT)
+	{
+		std::map<std::string, std::optional<std::string>> renumbered;
+		for (auto& [key, text] : stationChanges)
+			if (auto index = KeyNumber(key, "s:"))
+				if (auto now = renumber(*index))
+					renumbered[StationKey(*now)] = std::move(text);
+		stationChanges = std::move(renumbered);
+	}
 	// The whole shop: whatever isn't in it goes.
 	if (full)
 	{
@@ -480,6 +551,43 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			itemChanges.try_emplace(ItemKey(ref), std::nullopt);
 		for (const auto& [id, package] : world.m_packages)
 			packageChanges.try_emplace(PackageKey(id), std::nullopt);
+		for (const auto& key : world.m_paint.Keys())
+			other.try_emplace(key, std::nullopt);
+		for (const auto& [ref, coat] : world.m_coats)
+			other.try_emplace(CoatKey(ref), std::nullopt);
+	}
+
+	// Paint, on the walls and on what's been sprayed. Taken out of the rest, which only reads what's set.
+	for (auto it = other.begin(); it != other.end();)
+	{
+		const auto& [key, text] = *it;
+		if (WallPaint::IsKey(key))
+			world.m_paint.Apply(key, text);
+		else if (key.starts_with("o:"))
+		{
+			std::string fields = key.substr(2);
+			std::replace(fields.begin(), fields.end(), ':', ' ');
+			Reader keyIn(fields);
+			ItemRef ref;
+			ref.kind = keyIn.Enumerated<ItemRef::Kind>(3);
+			ref.id = static_cast<uint32_t>(keyIn.Int());
+			Reader in(text ? *text : "");
+			uint32_t rgb = text ? static_cast<uint32_t>(in.Int()) : 0;
+			float amount = text ? static_cast<float>(in.Int()) / 100.f : 0.f;
+			if (!keyIn.Failed())
+			{
+				if (!text || in.Failed() || amount <= 0.f)
+					world.m_coats.erase(ref);
+				else
+					world.m_coats[ref] = { rgb, amount };
+			}
+		}
+		else
+		{
+			++it;
+			continue;
+		}
+		it = other.erase(it);
 	}
 
 	// The money, tallies and what the shop owns.
@@ -502,10 +610,21 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		}
 		else if (key == "g:tools")
 			ReadCounts(in, workshop.m_toolCounts, Workshop::MAX_TOOL_COPIES);
+		else if (key == "g:skills")
+		{
+			std::vector<int> skills(workshop.m_skills.begin(), workshop.m_skills.end());
+			ReadCounts(in, skills, 10);
+			for (size_t i = 0; i < workshop.m_skills.size() && i < skills.size(); i++)
+				workshop.m_skills[i] = (std::min)(skills[i], Skills::All()[i].maxLevel);
+		}
 		else if (key == "g:machines")
 			ReadBools(in, workshop.m_ownedMachines);
 		else if (key == "g:upgrades")
 			ReadBools(in, workshop.m_upgrades);
+		else if (key == "g:ownsdyno")
+			workshop.m_ownsDyno = in.Int() != 0;
+		else if (key == "g:ownshoist")
+			workshop.m_ownsHoist = in.Int() != 0;
 		else if (key == "g:furniture")
 		{
 			std::vector<size_t> furniture;
@@ -517,6 +636,19 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		}
 		else if (key == "g:dyno")
 			workshop.m_engineOnDyno = static_cast<int>(in.Int());
+		else if (key == "g:hoist")
+			workshop.m_engineOnHoist = static_cast<int>(in.Int());
+		else if (key == "g:shells" || key == "g:pistons" || key == "g:pins" || key == "g:rings")
+		{
+			auto& fittings = key == "g:shells" ? workshop.m_shells : key == "g:pistons" ? workshop.m_pistons : key == "g:pins" ? workshop.m_pins : workshop.m_rings;
+			fittings.clear();
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+			{
+				auto host = static_cast<uint32_t>(in.Int());
+				fittings[host] = static_cast<uint32_t>(in.Int());
+			}
+		}
 	}
 
 	// Parts, changed where they are so the UI and the 3D shop keep hold of the same ones.
@@ -591,6 +723,8 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		workshop.m_activeEngine = std::clamp(workshop.m_activeEngine, 0, (std::max)(workshop.GetEngineCount() - 1, 0));
 		if (workshop.m_engineOnDyno >= workshop.GetEngineCount())
 			workshop.m_engineOnDyno = -1;
+		if (workshop.m_engineOnHoist >= workshop.GetEngineCount() || workshop.m_engineOnHoist == workshop.m_engineOnDyno)
+			workshop.m_engineOnHoist = -1;
 	}
 
 	// The building and furniture first: furniture brings stations with it.
@@ -699,6 +833,9 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		visual->carriedInHand = false;
 		if (place == ItemPlace::INVENTORY || place == ItemPlace::HAND)
 			place = ItemPlace::STORAGE;
+		// A bearing shell fitted into a rod or cap goes about in it (sent as stored).
+		if (place == ItemPlace::STORAGE && visual->part && workshop.HostOf(*visual->part))
+			place = ItemPlace::ATTACHED;
 		bool samePlace = visual->place == place && (place != ItemPlace::MACHINE || visual->machineIndex == index)
 			&& (place != ItemPlace::STAND || visual->engineIndex == index);
 		if (!samePlace)
@@ -722,9 +859,10 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		objectManager->RemoveObject(it->second.object);
 		world.m_packages.erase(it);
 		world.m_remoteCarriedPackages.erase(id);
-		if (world.m_carriedPackage == id)
+		world.m_remoteStowedPackages.erase(id);
+		if (world.IsCarried(id))
 		{
-			world.m_carriedPackage = 0;
+			world.m_inventory.Remove(ItemRef::Package(id));
 			world.SyncHand();
 		}
 	};
@@ -758,12 +896,18 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		std::vector<size_t> stations;
 		size_t stationCount = in.Count();
 		for (size_t i = 0; i < stationCount && !in.Failed(); i++)
-			stations.push_back(static_cast<size_t>(in.Int()));
+		{
+			size_t station = static_cast<size_t>(in.Int());
+			if (auto now = renumber(station))
+				stations.push_back(*now);
+		}
+		// Older records don't say: carried meant in their arms.
+		bool inHand = in.AtEnd() || in.Int() != 0;
 		if (in.Failed())
 			continue;
 
-		// Our own delivery in our arms stays there.
-		if (carrier == localPlayer && world.m_carriedPackage == *id)
+		// Our own delivery, in our arms or on our hotbar, stays there.
+		if (carrier == localPlayer && world.IsCarried(*id))
 			continue;
 		auto it = world.m_packages.find(*id);
 		if (it == world.m_packages.end())
@@ -775,10 +919,11 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		}
 		auto& package = it->second;
 		// Someone else took the one we were carrying.
-		if (world.m_carriedPackage == *id)
+		if (world.IsCarried(*id))
 		{
-			world.m_carriedPackage = 0;
+			world.m_inventory.Remove(ItemRef::Package(*id));
 			world.SyncHand();
+			package.object->SetVisible(true);
 		}
 		package.label = label;
 		package.items = items;
@@ -792,6 +937,12 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			world.m_remoteCarriedPackages[*id] = carrier;
 		else
 			world.m_remoteCarriedPackages.erase(*id);
+		// One they've put away on their hotbar isn't seen.
+		if (remote && !inHand)
+			world.m_remoteStowedPackages.insert(*id);
+		else
+			world.m_remoteStowedPackages.erase(*id);
+		package.object->SetVisible(!remote || inHand);
 		package.object->SetPickable(!remote);
 		package.object->SetCastsShadows(!remote);
 		// Crated equipment stays out of the shop until it's unpacked.
@@ -909,7 +1060,11 @@ void NetState::Stow(ShopWorld& world, ItemVisual& visual)
 
 std::string NetState::CaptureLayout(const ShopWorld& world)
 {
-	auto writeRef = [](Writer& out, const ItemRef& ref) { out.Int(static_cast<int>(ref.kind)).Int(ref.id); };
+	// A delivery on the hotbar is put down by the server when this player leaves: its slot comes back empty.
+	auto writeRef = [](Writer& out, const ItemRef& ref) {
+		ItemRef kept = ref.IsPackage() ? ItemRef{} : ref;
+		out.Int(static_cast<int>(kept.kind)).Int(kept.id);
+	};
 	Writer out;
 	const auto& grid = world.m_inventory.GetItems();
 	out.Int(grid.size());

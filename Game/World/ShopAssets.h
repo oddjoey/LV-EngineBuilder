@@ -50,9 +50,15 @@ namespace EngineLayout
 
 	inline float BoreX(int cylinder) { return (cylinder - 1.5f) * BORE_SPACING; }
 	inline float MainX(int journal) { return (journal - 2.f) * BORE_SPACING; }
-	// The head's cam towers (and the caps on them) sit over the main journals, pulled in at the ends
-	// to stay on the head.
-	inline float CamTowerX(int journal) { return glm::clamp(MainX(journal), -BLOCK_LENGTH * 0.5f + 0.02f, BLOCK_LENGTH * 0.5f - 0.02f); }
+	// The cam runs in four journals, as the 4A-C's does: one at each end, and one between the lobes of each of
+	// the middle two cylinders.
+	constexpr int CAM_JOURNALS = 4;
+	inline float CamJournalX(int journal) { return journal == 0 ? MainX(0) : journal == CAM_JOURNALS - 1 ? MainX(4) : BoreX(journal); }
+	// The head's cam towers (and the caps on them) sit under the journals, pulled in at the ends to stay on
+	// the head.
+	inline float CamTowerX(int journal) { return glm::clamp(CamJournalX(journal), -BLOCK_LENGTH * 0.5f + 0.02f, BLOCK_LENGTH * 0.5f - 0.02f); }
+	// The rocker shafts' five bolts, through both shafts: one at each end and one between each pair of cylinders.
+	inline float RockerBoltX(int hole) { return glm::clamp(MainX(hole), -BLOCK_LENGTH * 0.5f + 0.035f, BLOCK_LENGTH * 0.5f - 0.035f); }
 	inline float ValveZ(bool exhaust) { return exhaust ? VALVE_Z : -VALVE_Z; }
 	// Firing order 1-3-4-2 puts throws 1 and 4 up together, 2 and 3 down.
 	inline float ThrowSign(int cylinder) { return cylinder == 0 || cylinder == 3 ? 1.f : -1.f; }
@@ -151,6 +157,11 @@ namespace EngineLayout
 
 namespace ShopTextures
 {
+	// Paint on the walls and floor goes on tiles (see WallPaint), each with a texture of its own out of this
+	// pool, made clear and painted on as the game goes.
+	constexpr int PAINT_TILE_POOL = 1024;
+	constexpr int PAINT_TILE_PIXELS = 128;
+	inline std::string PaintTile(int slot) { return "Paint Tile " + std::to_string(slot); }
 	inline const std::string CONCRETE = "Concrete";
 	inline const std::string CAST_IRON = "Cast Iron";
 	inline const std::string ALUMINIUM = "Aluminium";
@@ -161,12 +172,11 @@ namespace ShopTextures
 	inline const std::string PEGBOARD = "Pegboard";
 	inline const std::string RUBBER = "Rubber";
 	inline const std::string CARDBOARD = "Cardboard";
-	inline const std::string GRASS = "Grass";
+	inline const std::string SAND = "Sand";
 	inline const std::string ASPHALT = "Asphalt";
 	inline const std::string SIDING = "Metal Siding";
-	inline const std::string BRICK = "Brick";
-	inline const std::string SHINGLES = "Shingles";
-	inline const std::string BARK = "Bark";
+	inline const std::string PLANKS = "Planks";
+	inline const std::string ROCK = "Rock";
 	inline const std::string FOLIAGE = "Foliage";
 
 	inline const std::string HONED = "Finish: Honed";
@@ -198,6 +208,7 @@ namespace ShopModels
 	inline const std::string BAY_EXTERIOR = "Side Bay Exterior";
 	inline const std::string BAY_FLOOR = "Side Bay Floor";
 	inline const std::string BAY_DRIVE = "Side Bay Drive";
+	inline const std::string BAY_SAND = "Side Bay Sand";	// where the bay's floor and drive go, till it's built
 	inline const std::string UPPER_SHELL = "Upper Story Shell";
 	inline const std::string UPPER_EXTERIOR = "Upper Story Exterior";
 	inline const std::string UPPER_ROOF = "Upper Story Roof";
@@ -213,18 +224,6 @@ namespace ShopModels
 	inline const std::string WINDOW_GLASS = "Window Glass";
 	inline const std::string ROLLUP_DOOR = "Roll-up Door";
 
-	// The house built onto the garage (see HouseLayout), and the yard and park round it.
-	inline const std::string HOME_SHELL = "Home Shell";
-	inline const std::string HOME_BRICK = "Home Brick";
-	inline const std::string HOME_ROOF = "Home Roof";
-	inline const std::string HOME_FRAMES = "Home Frames";
-	inline const std::string HOME_GLASS = "Home Glass";
-	inline const std::string HOME_FLOOR = "Home Floor";
-	inline const std::string HOME_LIGHT = "Home Ceiling Light";
-	inline const std::string HOME_BED = "Home Bed";
-	// One model per HouseLayout::Material.
-	inline std::string HomeFurniture(int material) { return "Home Furniture " + std::to_string(material); }
-	inline std::string YardPieces(int material) { return "Yard " + std::to_string(material); }
 
 	// Outdoors
 	inline const std::string SKY_DOME = "Sky Dome";
@@ -232,13 +231,11 @@ namespace ShopModels
 	inline const std::string PAVING = "Paving";
 	inline const std::string ROAD = "Road";
 	inline const std::string ROAD_MARKINGS = "Road Markings";
-	inline const std::string FENCE = "Fence";
-	inline const std::string TREE_TRUNK = "Tree Trunk";
-	inline const std::string TREE_CROWN = "Tree Crown";
-	inline const std::string PINE_CROWN = "Pine Crown";
-	inline const std::string HOUSE_WALLS = "House Walls";
-	inline const std::string HOUSE_ROOF = "House Roof";
-	inline const std::string HOUSE_TRIM = "House Trim";
+	// The desert: saguaros, boulders and scrub scattered over the sand, and the mountains round the horizon.
+	inline const std::string CACTUS = "Cactus";
+	inline const std::string BOULDER = "Boulder";
+	inline const std::string SCRUB = "Scrub";
+	inline const std::string MOUNTAINS = "Mountains";
 	inline const std::string STREET_LIGHT = "Street Light";
 	inline const std::string LAMP_HEAD = "Lamp Head";
 	inline const std::string DUMPSTER = "Dumpster";
@@ -250,9 +247,15 @@ namespace ShopModels
 	inline const std::string TOOL_BOARD_TOOLS = "Tool Board Tools";
 	inline const std::string ENGINE_STAND = "Engine Stand";
 	inline const std::string DYNO = "Dyno";
+	inline const std::string ENGINE_HOIST = "Engine Hoist";
 	inline const std::string COMPUTER_DESK = "Computer Desk";
 	inline const std::string PACKAGE_BOX = "Package: Box";
 	inline const std::string PACKAGE_CRATE = "Package: Crate";
+	// A paint tile: one metre square in X and Y, facing +Z, its texture across it once (scaled to the tile).
+	inline const std::string PAINT_TILE = "Paint Tile";
+	// A spark plug lead fitted to its cylinder (0-3): routed from the plug over the valve cover to its
+	// tower on the distributor cap. Off the engine, a lead is the plain Spark Plug Lead.
+	inline std::string PlugLeadFitted(int cylinder) { return "Spark Plug Lead, fitted " + std::to_string(cylinder + 1); }
 	// Another player, in a game over the network: the torso, and the parts that move on it. The fur, the
 	// bare skin and the cap are pieces of their own, each taking the player's colour for it (MonkeyLook).
 	inline const std::string PLAYER = "Player";
@@ -260,6 +263,8 @@ namespace ShopModels
 	inline const std::string PLAYER_BELLY = "Player Belly";
 	inline const std::string PLAYER_TAIL = "Player Tail";
 	inline const std::string PLAYER_FACE = "Player Face";
+	// The eyes: whites, pupils and a glint, in their own colours (never tinted), on the face.
+	inline const std::string PLAYER_EYES = "Player Eyes";
 	inline const std::string PLAYER_CAP = "Player Cap";
 	inline const std::string PLAYER_ARM = "Player Arm";
 	inline const std::string PLAYER_HAND = "Player Hand";
@@ -360,7 +365,6 @@ private:
 	void LoadTextures();
 	void LoadEnvironment();
 	void LoadOutdoors();
-	void LoadHouse();
 	void LoadMachines();
 	void LoadParts();
 	// Seals, gaskets and everything bolted around the long block.

@@ -4,7 +4,6 @@
 
 #include "LV/Engine/Objects/ObjectManager.h"
 #include "GarageLayout.h"
-#include "HouseLayout.h"
 #include "ShopWorldShared.h"
 
 using namespace ShopLayout;
@@ -40,9 +39,11 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper)
 		objectManager->RemoveObject(object);
 		object = Spawn(ShopModels::GarageVariant(base, bay, upper), texture, {});
 	};
-	variant(m_garageWalls, ShopModels::WALLS, ShopTextures::PLASTER);
-	variant(m_garageSiding, ShopModels::GARAGE_SIDING, ShopTextures::SIDING);
-	variant(m_garageFrames, ShopModels::GARAGE_FRAMES, ShopTextures::PAINT);
+	variant(m_garageWalls, ShopModels::WALLS, ShopTextures::PLANKS);
+	variant(m_garageSiding, ShopModels::GARAGE_SIDING, ShopTextures::PLANKS);
+	if (m_garageSiding)
+		m_garageSiding->SetTint(WEATHERED_BOARDS);
+	variant(m_garageFrames, ShopModels::GARAGE_FRAMES, ShopTextures::WOOD);
 	variant(m_garageGlass, ShopModels::WINDOW_GLASS, "");
 	if (m_garageGlass)
 		m_garageGlass->SetTint({ 0.8f, 0.9f, 0.95f, 0.18f })->SetCastsShadows(false);
@@ -60,22 +61,14 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper)
 	};
 	m_shopLamps.assign(std::begin(LAMPS), std::end(LAMPS));
 
-	// Walls: the front is split around the roll-up door, which gets its own box while it's down, and
-	// round the people door. The left wall is split round the opening into the side bay, if there is
-	// one, and the right one round the door through to the house. The house's walls are split round
-	// its doorways.
+	// Walls: the front is split around the roll-up door, which gets its own box while it's down. The left
+	// wall is split round the opening into the side bay, if there is one.
 	m_walls = {
 		{ { -outerX, 0.f, -outerZ }, { outerX, HEIGHT, -HALF_DEPTH } },
 		{ { -outerX, 0.f, HALF_DEPTH }, { DOOR_MIN_X, HEIGHT, outerZ } },
-		{ { DOOR_MAX_X, 0.f, HALF_DEPTH }, { SIDE_DOOR_MIN_X, HEIGHT, outerZ } },
-		{ { SIDE_DOOR_MAX_X, 0.f, HALF_DEPTH }, { outerX, HEIGHT, outerZ } },
-		{ { SIDE_DOOR_MIN_X, SIDE_DOOR_HEIGHT, HALF_DEPTH }, { SIDE_DOOR_MAX_X, HEIGHT, outerZ } },
-		{ { HALF_WIDTH, 0.f, -outerZ }, { outerX, HEIGHT, HOUSE_LINK_MIN_Z } },
-		{ { HALF_WIDTH, 0.f, HOUSE_LINK_MAX_Z }, { outerX, HEIGHT, outerZ } },
-		{ { HALF_WIDTH, HOUSE_DOOR_HEIGHT, HOUSE_LINK_MIN_Z }, { outerX, HEIGHT, HOUSE_LINK_MAX_Z } },
+		{ { DOOR_MAX_X, 0.f, HALF_DEPTH }, { outerX, HEIGHT, outerZ } },
+		{ { HALF_WIDTH, 0.f, -outerZ }, { outerX, HEIGHT, outerZ } },
 	};
-	for (const auto& solid : HouseLayout::WallSolids())
-		m_walls.push_back({ solid.min, solid.max });
 	if (bay)
 	{
 		m_walls.push_back({ { -outerX, 0.f, -outerZ }, { -HALF_WIDTH, HEIGHT, -BAY_OPENING_HALF } });
@@ -89,11 +82,15 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper)
 	m_upgradeSurfaces.clear();
 	std::vector<FloorObstacle> extraObstacles;
 
+	// Until the bay is built, sand where its floor and drive will go (the lot's sand leaves them out).
+	if (!bay)
+		m_upgradeObjects.push_back(Spawn(ShopModels::BAY_SAND, ShopTextures::SAND, {}));
 	if (bay)
 	{
 		m_upgradeObjects.push_back(Spawn(ShopModels::BAY_FLOOR, ShopTextures::CONCRETE, {}));
-		m_upgradeObjects.push_back(Spawn(ShopModels::BAY_SHELL, ShopTextures::PLASTER, {}));
-		m_upgradeObjects.push_back(Spawn(ShopModels::BAY_EXTERIOR, ShopTextures::SIDING, {}));
+		m_upgradeObjects.push_back(Spawn(ShopModels::BAY_SHELL, ShopTextures::PLANKS, {}));
+		m_upgradeObjects.push_back(Spawn(ShopModels::BAY_EXTERIOR, ShopTextures::PLANKS, {}));
+		m_upgradeObjects.back()->SetTint(WEATHERED_BOARDS);
 		m_upgradeObjects.push_back(Spawn(ShopModels::BAY_DRIVE, ShopTextures::CONCRETE, {}));
 		for (const auto& position : BAY_LAMPS)
 			lamp(position);
@@ -108,10 +105,11 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper)
 
 	if (upper)
 	{
-		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_SHELL, ShopTextures::PLASTER, {}));
-		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_EXTERIOR, ShopTextures::SIDING, {}));
-		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_ROOF, ShopTextures::SHINGLES, {}));
-		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_FRAMES, ShopTextures::PAINT, {}));
+		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_SHELL, ShopTextures::PLANKS, {}));
+		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_EXTERIOR, ShopTextures::PLANKS, {}));
+		m_upgradeObjects.back()->SetTint(WEATHERED_BOARDS);
+		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_ROOF, ShopTextures::SIDING, {}));
+		m_upgradeObjects.push_back(Spawn(ShopModels::UPPER_FRAMES, ShopTextures::WOOD, {}));
 		auto glass = Spawn(ShopModels::UPPER_GLASS, "", {});
 		glass->SetTint({ 0.8f, 0.9f, 0.95f, 0.18f })->SetCastsShadows(false);
 		m_upgradeObjects.push_back(glass);
@@ -195,9 +193,6 @@ ShopInterior ShopWorld::GetInterior() const
 	interior.min = { m_bayBuilt ? BAY_MIN_X : -HALF_WIDTH, -0.5f, -HALF_DEPTH };
 	interior.max = { HALF_WIDTH, m_upperBuilt ? UPPER_FLOOR_Y + UPPER_HEIGHT : HEIGHT, HALF_DEPTH };
 	interior.lamps = m_shopLamps;
-	interior.houseMin = { HALF_WIDTH + WALL, -0.5f, -HOUSE_HALF_DEPTH };
-	interior.houseMax = { HOUSE_MAX_X, HOUSE_HEIGHT, HOUSE_HALF_DEPTH };
-	interior.houseLamps.assign(std::begin(HOUSE_LAMPS), std::end(HOUSE_LAMPS));
 	return interior;
 }
 

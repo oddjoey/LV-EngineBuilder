@@ -174,8 +174,9 @@ void ServiceManual::Build(bool imperial)
 	figure("Walk / run", std::format("{}{}{}{} / {}", NameOf(Control::FORWARD), NameOf(Control::LEFT), NameOf(Control::BACK), NameOf(Control::RIGHT), NameOf(Control::RUN)));
 	figure("Jump / crouch", std::format("{} / {}", NameOf(Control::JUMP), NameOf(Control::CROUCH)));
 	figure("Use, pick up, fit", NameOf(Control::USE));
-	figure("Measure, or hold to turn a bolt", NameOf(Control::PRIMARY));
+	figure("Measure, or hold to do a bolt up", NameOf(Control::PRIMARY));
 	figure("Set down / drop", std::format("{} / {}", NameOf(Control::SET_DOWN), NameOf(Control::DROP)));
+	figure("Hold to undo a bolt (spanner in hand)", NameOf(Control::SET_DOWN));
 	figure("Hotbar", "1 - 0, mouse wheel");
 	figure("Backpack", NameOf(Control::BACKPACK));
 	figure("Move equipment", NameOf(Control::MOVE));
@@ -203,7 +204,7 @@ void ServiceManual::Build(bool imperial)
 	heading("Hand Tools");
 	for (const auto& tool : ToolCatalog::All())
 	{
-		if (!tool.IsHandTool() || tool.partOf >= 0)
+		if (!tool.IsHandTool() || tool.partOf >= 0 || tool.Paints())
 			continue;
 		std::vector<std::pair<std::string, std::string>> specs;
 		if (!tool.sizes.empty())
@@ -252,7 +253,8 @@ void ServiceManual::Build(bool imperial)
 		"machine's screen.");
 	step("Check the clearances with the parts together: piston to wall, bearing oil clearance, ring gap, cam clearance.");
 	step("Assemble on the engine stand in the order in chapter 10, torquing every bolt to chapter 11.");
-	step("Final checks (chapter 12), then run it on the dyno and sell it, or take it back to a stand to put right what the dyno found.");
+	step("Final checks (chapter 12), then sell it from its stand: the buyer runs it and pays for what it makes. With a dyno of your own, "
+		"run it first and put right what the dyno finds.");
 	heading("At the Workbench");
 	text("The workbench is where a part is read. Everything you learn about a part with your tools is written up there, feature by "
 		"feature, against this book's figures. Nowhere else shows a part's details: the engine stand lists what's fitted and the engine's "
@@ -261,7 +263,7 @@ void ServiceManual::Build(bool imperial)
 		"top counts, however it got there.", NameOf(Control::DROP)));
 	step(std::format("Look at the bench and press {} to open it. Every part on it is listed down the side; pick one to read it.",
 		NameOf(Control::USE)));
-	step("The header gives its number, material, quality and condition, and why it's damaged if it is. A nut or bolt also shows its "
+	step("The header gives its number, material and condition, and why it's damaged if it is. A nut or bolt also shows its "
 		"thread and head size, the hole it's in and how tight it was done up, or every hole it fits.");
 	step("Below that, the part's features (bores, journals, faces, gaps), grouped by area on a big part. Each row has the spec, your "
 		"last measured size and finish, a verdict, and which tools can measure it.");
@@ -283,8 +285,12 @@ void ServiceManual::Build(bool imperial)
 	heading("Taking an Engine Apart");
 	text("Work backwards through the assembly sequence: covers and manifolds first, then the timing belt, the head, the oil pan, the "
 		"rods and pistons, and finally the main caps and the crank. Each part comes off once what holds it is undone.");
-	step("Hold the socket set and a ratchet (or the wrench set). E on a nut or bolt puts the right socket on and loosens it.");
-	step("The crank pulley bolt is very tight: use the breaker bar.");
+	step(std::format("Hold the wrench set (or, with the Sockets & Ratchets perk, a socket set and a ratchet; the beam torque wrench and its sockets only do bolts up). E on a nut or bolt takes out the "
+		"right wrench, or puts the right socket on. Hold {} on it to undo it, {} to do it back up; let go part way and it stays part "
+		"way, and it only comes out by hand once it's undone all the way.", NameOf(Control::SET_DOWN), NameOf(Control::PRIMARY)));
+	step("The crank pulley bolt is 22 mm and very tight: the big wrench set turns it, a breaker bar more easily.");
+	step("Undo the head, main cap, rocker shaft and cam cap bolts in the reverse of their tightening order (chapter 11), a little at a "
+		"time, so nothing is left bearing on a few bolts.");
 	step("Take the part off with E once its fasteners are out. Keep the rod and main caps with their own rod and journal: they are "
 		"machined as a pair.");
 	note("Single-use parts (the head gasket, among others) are crushed or stretched once fitted. Never put one back on.");
@@ -379,13 +385,13 @@ void ServiceManual::Build(bool imperial)
 	text("Plastigauge is a soft thread that squashes flat between the journal and the bearing. How wide it spreads is the clearance.");
 	step("Fit the upper shells in the block and lay the crankshaft in them.", { PartType::MAIN_BEARING, PartType::CRANKSHAFT });
 	step("Hold the Plastigauge and lay a strip across the journal, along its length.");
-	step("Fit the lower shell and the main cap over it.", { PartType::MAIN_BEARING_LOWER, PartType::MAIN_CAP });
+	step("Fit the lower shell into the main cap, then the cap over the journal.", { PartType::MAIN_BEARING_LOWER, PartType::MAIN_CAP });
 	step("Torque the cap bolts to spec. Do not turn the crank while the strip is in.", { PartType::BOLT_M10 });
 	step("Undo the bolts and take the cap off. The flattened strip stays on the journal.");
 	step("Read its width against the scale on the packet: that is the oil clearance.");
 	illustrate(Figure::PLASTIGAUGE_SCALE, "The Plastigauge scale. Readings in red are outside the oil clearance spec.");
-	text("Rod bearings are checked the same way: the rod and its upper shell on the crank pin, a strip across the journal, then the lower "
-		"shell and rod cap, torqued and removed again.");
+	text("Rod bearings are checked the same way: the rod, with its upper shell in it, on the crank pin, a strip across the journal, then the "
+		"rod cap with its lower shell in it, torqued and removed again.");
 	note("Out of spec? Undersize shells close up a ground journal; a worn journal is ground and fitted with them.");
 	heading("The Crank Won't Turn");
 	text("The engine only turns over with every upper main shell, the crank, every lower shell and every main cap in place.");
@@ -487,13 +493,19 @@ void ServiceManual::Build(bool imperial)
 	step("Block on the stand. Core plugs.", { PartType::BLOCK, PartType::CORE_PLUG });
 	step("Upper main shells in the block, oiled.", { PartType::MAIN_BEARING });
 	step("Crankshaft into the shells.", { PartType::CRANKSHAFT });
-	step("Lower main shells and main caps, each to its own journal. Torque the main cap bolts.", { PartType::MAIN_BEARING_LOWER, PartType::MAIN_CAP, PartType::BOLT_M10 });
+	step("Lower main shells into the main caps, then each cap onto its own journal. Torque the main cap bolts.", { PartType::MAIN_BEARING_LOWER, PartType::MAIN_CAP, PartType::BOLT_M10 });
 	step("Rear main seal over the crank flange, then the flywheel on the flange, its bolts torqued.", { PartType::REAR_MAIN_SEAL, PartType::FLYWHEEL, PartType::BOLT_M10 });
 	step("Oil pump over the crank snout, then the pickup.", { PartType::OIL_PUMP, PartType::OIL_PICKUP });
 	heading("Pistons and Rods, Each Cylinder");
-	step("Piston down its bore, top ring gapped and fitted.", { PartType::PISTON, PartType::PISTON_RING });
-	step("Connecting rod onto the crank pin with its upper shell.", { PartType::CONNECTING_ROD, PartType::ROD_BEARING });
-	step("Lower rod shell and rod cap. Torque the rod nuts.", { PartType::ROD_BEARING_LOWER, PartType::ROD_CAP, PartType::NUT_M8 });
+	step("Off the engine: the piston onto its connecting rod, its pin pressed through both with the Piston Pin Press, the ring "
+		"(gapped) onto the piston, and the upper rod shell into the rod.", { PartType::PISTON, PartType::PISTON_PIN, PartType::PISTON_RING, PartType::ROD_BEARING });
+	step("Squeeze the ring into its groove with the Piston Ring Compressor, then the rod, piston and all, down the bore and onto "
+		"the crank pin.", { PartType::CONNECTING_ROD });
+	step("Lower rod shell into the rod cap, then the cap onto the rod. Torque the rod nuts.", { PartType::ROD_BEARING_LOWER, PartType::ROD_CAP, PartType::NUT_M8 });
+	note("Shells, pistons and rings go into and onto their rods, caps and pistons off the engine: hold one, aim at what it goes on (on "
+		"the bench, a shelf or the floor) and press E; R takes the last one off again. With the Piston Pin Press or the Piston Ring "
+		"Compressor in hand and aimed at the piston, hold the left button to press its pin in or squeeze its ring, the right to undo it. A rod "
+		"goes on only with its shell in and its piston pinned, ringed and squeezed, a cap only with its shell, and they come off with them.");
 	heading("Top End");
 	step("Head gasket, once every piston and rod is in.", { PartType::HEAD_GASKET });
 	step("Cylinder head. Torque the head bolts.", { PartType::CYLINDER_HEAD, PartType::BOLT_M12 });
@@ -526,16 +538,20 @@ void ServiceManual::Build(bool imperial)
 		"beam wrench is good to about 10%, a click wrench about 4%, a digital one about 2%.");
 	illustrate(Figure::TORQUE_ACCURACY, "Where a head bolt really ends up with each torque wrench.");
 	heading("Tightening Sequences");
-	text("Head bolts and main cap bolts are tightened from the middle outward, a little at a time, so the part is pulled down evenly.");
+	text("Head bolts, main cap bolts, rocker shaft bolts and cam cap bolts are done up in the order shown, from the middle outward, "
+		"a little at a time, so the part is pulled down evenly. They come undone in the reverse order.");
 	illustrate(Figure::HEAD_BOLT_SEQUENCE, "Head bolt sequence.");
-	illustrate(Figure::MAIN_CAP_SEQUENCE, "Main cap bolt sequence, cap 1 at the front.");
+	illustrate(Figure::MAIN_CAP_SEQUENCE, "Main cap bolt sequence, cap 1 at the front. To take the caps off, start at 10 and work back.");
+	illustrate(Figure::ROCKER_SHAFT_SEQUENCE, "Rocker shaft bolt sequence: five bolts down through both shafts.");
+	illustrate(Figure::CAM_CAP_SEQUENCE, "Cam cap bolt sequence: both bolts on a cap, a little at a time.");
 	heading("Fasteners");
 	for (const auto& holes : PartCatalog::Holes())
 	{
 		const auto& info = PartCatalog::Get(holes.size);
 		figure(std::format("{} ({} x{}, {} mm)", holes.name, info.fastener.thread, holes.perParent, info.fastener.headMm), torque(holes.torqueNm),
 			std::format("How tight to do up the {}, with a torque wrench on a {} mm socket. {} is the thread (M: metric, then its diameter in mm); "
-				"x{} is how many there are on each part.", holes.name, info.fastener.headMm, info.fastener.thread, holes.perParent));
+				"x{} is how many there are {}.", holes.name, info.fastener.headMm, info.fastener.thread, holes.perParent,
+				holes.throughAll ? "in all, each through every one of the parts it holds" : "on each part"));
 	}
 	note("Head bolts, main cap bolts and rod nuts carry the engine. Under-torqued, a cap walks and a gasket leaks; over-torqued, a bolt "
 		"stretches past its limit.");
@@ -554,6 +570,8 @@ void ServiceManual::Build(bool imperial)
 		"raises it; too high and the engine detonates.");
 	illustrate(Figure::COMPRESSION_GRAPH, "Compression ratio against metal taken off the block deck.");
 	heading("Dyno");
+	text("A new shop has no dyno: a finished engine is sold untested, and its figures come with the buyer's payment. A dyno is bought at "
+		"the parts computer.");
 	step("With the engine complete on its stand, open the dyno (E at the dyno cell) and move the engine onto it.");
 	step("Run a pull. The chart shows power and torque against rpm; the readout lists anything the engine is unhappy about.");
 	step("Sell it from the dyno, or put it back on a free stand to fix what it found.");

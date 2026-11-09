@@ -11,8 +11,6 @@ public:
 	// sizeOffset: oversize for pistons/rings (+0.25, +0.50...), journal undersize for bearings (-0.25...).
 	static pPart Create(PartType type, const EngineSpec& spec, PartQuality quality, PartCondition condition, double sizeOffset = 0.0);
 	static double Price(PartType type, PartQuality quality, PartCondition condition);
-	// What buying this quality of this part gets you, line by line, for the store to explain.
-	static std::vector<std::string> QualityNotes(PartType type, PartQuality quality);
 	// The parts that come with this one: a rod's cap and a block's main caps (matched to it), and a
 	// bearing's lower shell.
 	static std::vector<pPart> CreateCompanions(const pPart& part, const EngineSpec& spec);

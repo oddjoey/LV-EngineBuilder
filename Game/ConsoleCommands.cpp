@@ -146,7 +146,16 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Money: ${:.0f}", m_workshop->GetMoney()));
 	});
 
-	m_console.AddCommand("give", "give <part> [count] [new|used] [budget|oem|performance]",
+	m_console.AddCommand("rep", "rep <amount>", "Adds reputation (ranks up, with the bonuses, and earns skill points).", [this](const Console::Arguments& args) {
+		auto amount = args.empty() ? std::nullopt : Number(args[0]);
+		if (!amount || *amount <= 0.0)
+			return m_console.Error("Usage: rep <amount>");
+		m_workshop->DevAddReputation(*amount);
+		m_console.Print(std::format("Reputation: {:.0f} (rank {}, {} skill points to spend)", m_workshop->GetStats().reputation,
+			m_workshop->Rank(), m_workshop->SkillPoints()));
+	});
+
+	m_console.AddCommand("give", "give <part> [count] [new|used]",
 		"Delivers parts to the door for free. Names can be partial: give head bolt 10.", [this, partNames](const Console::Arguments& args) {
 		PartOrder order;
 		Console::Arguments nameWords;
@@ -159,12 +168,6 @@ void EngineBuilderGame::RegisterConsoleCommands()
 				order.condition = PartCondition::NEW;
 			else if (word == "used")
 				order.condition = PartCondition::USED;
-			else if (word == "budget")
-				order.quality = PartQuality::BUDGET;
-			else if (word == "oem")
-				order.quality = PartQuality::OEM;
-			else if (word == "performance")
-				order.quality = PartQuality::PERFORMANCE;
 			else
 				nameWords.push_back(arg);
 		}

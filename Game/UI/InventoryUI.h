@@ -11,8 +11,8 @@ class FirstPersonController;
 
 // The backpack tab: a Tarkov-style grid with drag and drop, R to turn an item while dragging,
 // the hotbar row (drag items on and off it, or press 1-0 over one), and dragging out of the window
-// to drop. Beside it, the item under the cursor (or the one clicked last) in detail, and the
-// player's career stats.
+// to drop. Beside it, the item under the cursor (or the one clicked last) in detail. The player's
+// career stats have a tab of their own.
 class InventoryUI
 {
 public:
@@ -20,12 +20,12 @@ public:
 	void DrawContents(ShopWorld& world, Workshop& workshop, const FirstPersonController& player);
 	void CancelDrag();
 	void SetUnits(Units::System units);
+	// The Stats tab: money in and out, work done, dyno results and the like, over the whole career.
+	void DrawPlayerStats(ShopWorld& world, Workshop& workshop);
 private:
 	// How full the backpack is, what's in it, and the tidy-up button.
 	void DrawSummary(ShopWorld& world, Workshop& workshop, float width);
 	void DrawDetails(ShopWorld& world, Workshop& workshop, const FirstPersonController& player, const ItemRef& item);
-	// Money in and out, work done, dyno results and the like, over the whole career.
-	void DrawPlayerStats(ShopWorld& world, Workshop& workshop);
 
 	ItemRef		m_dragging = {};
 	glm::ivec2	m_dragSize = {};		// as currently turned

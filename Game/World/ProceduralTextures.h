@@ -26,12 +26,11 @@ namespace ProceduralTextures
 	Image Cardboard();
 
 	// Outdoors
-	Image Grass();
+	Image Sand();
 	Image Asphalt();
 	Image Siding();		// corrugated metal, ribs running along V
-	Image Brick();
-	Image Shingles();
-	Image Bark();
+	Image Planks();		// rough-sawn boards side by side, running along V, for the shack
+	Image Rock();
 	Image Foliage();
 
 	// Machined and worn surface finishes. U runs around a bore or journal, V along it.

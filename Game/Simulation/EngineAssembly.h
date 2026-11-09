@@ -76,7 +76,7 @@ enum class AssemblySlot
 	DRIVE_BELT,
 	DRIVE_BELT_TENSIONER,	// added later still, so the nuts and bolts after it moved up one
 	// Nuts and bolts: one slot per set of holes (PartCatalog::Holes), taking that set's size. A
-	// hole's index / perParent is the index of the part it holds on.
+	// hole's index / perParent is the index of the part it holds on (or, for holes through all of them, it's just the hole).
 	HEAD_BOLT,
 	MAIN_CAP_BOLT,
 	ROD_NUT,
@@ -126,6 +126,11 @@ public:
 	static AssemblySlot SlotFor(PartType type);
 	// The set of holes a fastener slot is, or null.
 	static const FastenerHoles* Holes(AssemblySlot slot);
+	// What goes onto the engine in another part, put together off it: a connecting rod carries its upper bearing
+	// shell and its piston (pinned on), the piston its ring, and the rod and main caps their lower shells. GoesInWith is what a rod
+	// or cap carries (none for anything else); CarriedBy what carries a part, if anything does.
+	static std::vector<AssemblySlot> GoesInWith(AssemblySlot host);
+	static std::optional<AssemblySlot> CarriedBy(AssemblySlot slot);
 	int SlotCount(AssemblySlot slot) const;
 
 	bool Install(AssemblySlot slot, int index, const pPart& part, std::string& error);

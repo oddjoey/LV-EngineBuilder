@@ -51,6 +51,12 @@ struct FastenerHoles
 	int perParent = 0;					// holes per parent part
 	PartType size = PartType::BOLT_M6;
 	double torqueNm = 0.0;
+	// Each goes through every one of the parent parts at once (the rocker shafts' bolts hold both shafts down):
+	// perParent holes in all rather than on each, and every parent has to be on before any of them.
+	bool throughAll = false;
+
+	// How many there are on an engine with this many of the parent part.
+	int Count(int parents) const { return throughAll ? (parents > 0 ? perParent : 0) : perParent * parents; }
 };
 
 // Everything the game knows about a kind of part apart from its geometry.

@@ -11,17 +11,20 @@
 // Something the player can pick up: a part (by part id) or a measuring tool (by catalog index).
 struct ItemRef
 {
-	enum class Kind : uint8_t { NONE, PART, TOOL };
+	// A PACKAGE is a delivery carried on the hotbar (its id), never in the backpack.
+	enum class Kind : uint8_t { NONE, PART, TOOL, PACKAGE };
 
 	Kind kind = Kind::NONE;
 	uint32_t id = 0;
 
 	static ItemRef Part(uint32_t partId) { return { Kind::PART, partId }; }
 	static ItemRef Tool(uint32_t toolIndex) { return { Kind::TOOL, toolIndex }; }
+	static ItemRef Package(uint32_t packageId) { return { Kind::PACKAGE, packageId }; }
 
 	bool IsNone() const { return kind == Kind::NONE; }
 	bool IsPart() const { return kind == Kind::PART; }
 	bool IsTool() const { return kind == Kind::TOOL; }
+	bool IsPackage() const { return kind == Kind::PACKAGE; }
 	bool operator==(const ItemRef& other) const = default;
 };
 

@@ -267,16 +267,18 @@ namespace ProceduralTextures
 		});
 	}
 
-	Image Grass()
+	Image Sand()
 	{
 		return Generate([](float u, float v, int x, int y) {
-			float patches = Fbm(u, v, 3, 5, 201);
-			float blades = Hash(x, y, 202);
-			float clumps = Fbm(u, v, 24, 2, 203);
-			glm::vec3 lush = { 0.30f, 0.46f, 0.18f };
-			glm::vec3 dry = { 0.47f, 0.50f, 0.26f };
-			glm::vec3 color = glm::mix(lush, dry, glm::smoothstep(0.35f, 0.75f, patches));
-			return color * (0.78f + blades * 0.30f + (clumps - 0.5f) * 0.25f);
+			// Pale desert sand: wind ripples across it, darker drifts, and grains.
+			float drifts = Fbm(u, v, 3, 5, 201);
+			float warp = Fbm(u, v, 6, 3, 203);
+			float ripples = 0.5f + 0.5f * std::sin((v * 18.f + warp * 2.5f) * glm::two_pi<float>());
+			float grain = Hash(x, y, 202);
+			glm::vec3 pale = { 0.86f, 0.74f, 0.55f };
+			glm::vec3 dark = { 0.72f, 0.58f, 0.41f };
+			glm::vec3 color = glm::mix(dark, pale, glm::smoothstep(0.3f, 0.7f, drifts));
+			return color * (0.9f + ripples * 0.07f + (grain - 0.5f) * 0.12f);
 		});
 	}
 
@@ -302,44 +304,40 @@ namespace ProceduralTextures
 		});
 	}
 
-	Image Brick()
+	Image Planks()
 	{
 		return Generate([](float u, float v, int x, int y) {
-			// Running bond: 4 courses of 2 bricks, alternate courses offset by half a brick.
-			int course = y / 64;
-			int column = (x + (course % 2) * 64) / 128;
-			bool mortar = (y % 64) < 5 || ((x + (course % 2) * 64) % 128) < 5;
-			if (mortar)
-				return glm::vec3(0.62f, 0.60f, 0.56f) * (0.9f + Hash(x, y, 231) * 0.1f);
-			float brickTone = Hash(column, course, 232);
-			float speckle = Hash(x, y, 233);
-			float dirt = Fbm(u, v, 4, 3, 234);
-			glm::vec3 color = glm::mix(glm::vec3(0.55f, 0.24f, 0.17f), glm::vec3(0.66f, 0.34f, 0.22f), brickTone);
-			return color * (0.85f + speckle * 0.15f) * (0.9f + dirt * 0.15f);
+			// Eight boards across the tile, each its own shade, grain running down it and a dark gap between.
+			int board = static_cast<int>(u * 8.f) % 8;
+			float across = u * 8.f - std::floor(u * 8.f);
+			if (across < 0.035f || across > 0.975f)
+				return glm::vec3(0.16f, 0.11f, 0.07f);
+			float shade = Hash(board, 0, 241);
+			float warp = Fbm(u, v, 4, 4, 242);
+			float grain = 0.5f + 0.5f * std::sin((across * 6.f + warp * 3.f + board * 1.7f) * glm::two_pi<float>());
+			float fibre = Hash(x / 2, y / 8, 243);
+			float knot = std::max(0.f, 1.f - glm::length(glm::vec2(across - 0.5f, (v - Hash(board, 1, 244)) * 4.f)) * 6.f);
+			glm::vec3 light = glm::mix(glm::vec3(0.62f, 0.46f, 0.30f), glm::vec3(0.72f, 0.56f, 0.38f), shade);
+			glm::vec3 dark = light * 0.72f;
+			return glm::mix(glm::mix(dark, light, grain * 0.6f + fibre * 0.4f), glm::vec3(0.30f, 0.20f, 0.12f), knot * 0.8f);
 		});
 	}
 
-	Image Shingles()
+	Image Rock()
 	{
 		return Generate([](float u, float v, int x, int y) {
-			int row = y / 32;
-			int tab = (x + (row % 2) * 16) / 32;
-			float tone = 0.26f + Hash(tab, row, 241) * 0.10f + (Hash(x, y, 242) - 0.5f) * 0.06f;
-			if (y % 32 > 28)
-				tone *= 0.6f;	// the shadow line under each row
-			if ((x + (row % 2) * 16) % 32 < 2)
-				tone *= 0.75f;
-			return glm::vec3(tone * 1.05f, tone * 0.95f, tone * 0.9f);
-		});
-	}
-
-	Image Bark()
-	{
-		return Generate([](float u, float v, int x, int y) {
-			float furrows = Fbm(u, v, 3, 4, 251, 6.f);
-			float grain = Hash(x, y, 252);
-			float tone = 0.32f + (furrows - 0.5f) * 0.35f + (grain - 0.5f) * 0.06f;
-			return glm::vec3(tone, tone * 0.82f, tone * 0.65f);
+			// Weathered sandstone: bands of strata, cracks and lichen-dark patches.
+			float warp = Fbm(u, v, 3, 4, 231);
+			float strata = 0.5f + 0.5f * std::sin((v * 7.f + warp * 1.5f) * glm::two_pi<float>());
+			float blotch = Fbm(u, v, 8, 4, 232);
+			float crack = Fbm(u, v, 16, 2, 233);
+			float speckle = Hash(x, y, 234);
+			glm::vec3 light = { 0.80f, 0.62f, 0.48f };
+			glm::vec3 dark = { 0.58f, 0.40f, 0.30f };
+			glm::vec3 color = glm::mix(dark, light, strata * 0.6f + blotch * 0.4f);
+			if (std::abs(crack - 0.5f) < 0.015f)
+				color *= 0.6f;
+			return color * (0.9f + speckle * 0.15f);
 		});
 	}
 

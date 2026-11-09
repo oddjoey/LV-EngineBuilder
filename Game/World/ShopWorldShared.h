@@ -33,43 +33,53 @@ namespace ShopLayout
 	constexpr float VISUAL_RPM_SCALE = 0.09f;
 	constexpr float HAND_TURN_RPM = 40.f;
 
-	inline const glm::vec3 SPAWN_POSITION = { 0.f, 0.f, 3.f };
-	inline const FloorObstacle ROOM_BOUNDS = { { -7.f, -5.f }, { 7.f, 5.f } };
+	inline const glm::vec3 SPAWN_POSITION = { 0.4f, 0.f, 1.9f };
+	inline const FloorObstacle ROOM_BOUNDS = { { -5.f, -3.5f }, { 5.f, 3.5f } };
+	// The shack's outside boards, greyed by the weather (the lining inside is the same planks, new).
+	inline const glm::vec4 WEATHERED_BOARDS = { 0.78f, 0.76f, 0.72f, 1.f };
 
-	inline const glm::vec3 SHELF_POSITION = { 0.f, 0.f, -4.6f };
+	inline const glm::vec3 SHELF_POSITION = { -0.85f, 0.f, -3.1f };
 	// The second shelf, for the bolt-on parts, along the back wall to the right of the first.
-	inline const glm::vec3 SECOND_SHELF_POSITION = { 3.45f, 0.f, -4.6f };
+	inline const glm::vec3 SECOND_SHELF_POSITION = { 2.5f, 0.f, -3.1f };
 	// The line borer is too long for the machine row; it stands along the left wall.
-	inline const glm::vec3 LINE_BORER_POSITION = { -6.1f, 0.f, -0.6f };
-	inline const glm::vec3 SANDING_BENCH_POSITION = { -6.1f, 0.f, 0.9f };
+	inline const glm::vec3 LINE_BORER_POSITION = { -4.4f, 0.f, -1.2f };
+	inline const glm::vec3 SANDING_BENCH_POSITION = { -4.4f, 0.f, 0.2f };
 	// Where new furniture is set up, or the first free floor from there (see PlaceNewMachine).
-	inline const glm::vec3 FURNITURE_HOME = { 1.5f, 0.f, 1.5f };
+	inline const glm::vec3 FURNITURE_HOME = { -0.6f, 0.f, 1.6f };
 	// The lift goes in the middle of the side bay (or the first free floor, without one).
-	inline const glm::vec3 LIFT_HOME = { -10.f, 0.f, 0.f };
+	inline const glm::vec3 LIFT_HOME = { -7.5f, 0.f, 0.f };
 	inline const float SHELF_BOARDS[] = { 0.3f, 0.7f, 1.1f, 1.5f };	// the top one below the eyes, in reach
 	constexpr float SHELF_HALF_WIDTH = 1.5f;
 
 	inline const glm::vec3 RACK_POSITION = { -6.3f, 0.f, -0.2f };
 
-	inline const glm::vec3 BENCH_POSITION = { -3.4f, 0.f, -4.45f };
-	inline const glm::vec3 TOOL_BOARD_POSITION = { -3.4f, 1.65f, -4.97f };
-	inline const glm::vec3 STAND_POSITION = { 0.f, 0.f, -1.2f };
+	inline const glm::vec3 BENCH_POSITION = { -3.6f, 0.f, -2.95f };
+	inline const glm::vec3 TOOL_BOARD_POSITION = { -3.6f, 1.65f, -3.47f };
+	inline const glm::vec3 STAND_POSITION = { 0.f, 0.f, -1.0f };
 	// Where extra engine stands go when bought (stands 2 to 4), either side of the first and in front.
-	inline const glm::vec3 EXTRA_STAND_POSITIONS[] = { { 2.6f, 0.f, -1.2f }, { -2.4f, 0.f, -1.2f }, { 2.6f, 0.f, 1.2f } };
+	inline const glm::vec3 EXTRA_STAND_POSITIONS[] = { { 2.4f, 0.f, -1.0f }, { -2.4f, 0.f, -1.0f }, { 1.4f, 0.f, 1.3f } };
 	constexpr float STAND_MOUNT_HEIGHT = 1.05f;
 	constexpr float STAND_ROLL_PIVOT_Y = -0.13f;	// below the deck, about the block's middle
 	constexpr float STAND_ROLL_SPEED = 1.6f;		// radians per second
-	inline const glm::vec3 DYNO_POSITION = { -4.2f, 0.f, 3.2f };
+	inline const glm::vec3 DYNO_POSITION = { -2.6f, 0.f, 1.3f };
 	// Where an engine on the dyno sits, in the dyno's space: its crank on the absorber's axis, its
 	// flywheel end (engine +X) towards the absorber.
 	inline const glm::vec3 DYNO_MOUNT = { -0.35f, 0.90f, 0.f };
-	inline const glm::vec3 DESK_POSITION = { 2.6f, 0.f, 4.5f };
-	constexpr float MACHINE_ROW_X = 6.3f;
-	constexpr float MACHINE_ROW_START_Z = -4.72f;	// clear of the door into the house at the front end
+	inline const glm::vec3 DESK_POSITION = { 3.8f, 0.f, 3.1f };
+	// The engine hoist: home by the door. In its own space its boom reaches out along +Z; the hook hangs
+	// over the ends of its legs, and an engine on it hangs from the hook with its crank along the boom.
+	inline const glm::vec3 HOIST_HOME = { 2.6f, 0.f, 2.3f };
+	inline const glm::vec3 HOIST_HOOK = { 0.f, 1.62f, 1.0f };
+	inline const glm::vec3 HOIST_HANG = { 0.f, 1.27f, 1.0f };	// the engine's deck, under the hook
+	constexpr float HOIST_REACH = 1.2f;			// how far from the hook a stand or the dyno can be, across the floor
+	constexpr float HOIST_SWING_SECONDS = 1.4f;	// for an engine to go up onto it or down off it
+	// Down the right wall, from in front of the cot; those that don't fit there find free floor (PlaceNewMachine).
+	constexpr float MACHINE_ROW_X = 4.45f;
+	constexpr float MACHINE_ROW_START_Z = -1.0f;
 	constexpr float MACHINE_SPACING = 0.94f;
 
 	// Deliveries land inside the roll-up door.
-	inline const glm::vec3 DELIVERY_POINT = { -2.6f, 1.6f, 4.1f };
+	inline const glm::vec3 DELIVERY_POINT = { -0.2f, 1.6f, 2.5f };
 
 	inline const glm::vec4 DAMAGED_TINT = { 1.f, 0.55f, 0.5f, 1.f };
 
@@ -93,12 +103,6 @@ namespace ShopLayout
 	{
 		static const auto manager = ModelManager::Get();
 		return manager->PeekModel(object->GetModelIndex());
-	}
-
-	inline std::string StripTimestamp(const std::string& line)
-	{
-		auto end = line.find("] ");
-		return end == std::string::npos ? line : line.substr(end + 2);
 	}
 
 	inline std::string PartLabel(const Part& part)
@@ -127,6 +131,21 @@ namespace ShopLayout
 		bool anyEmpty = false;
 		std::string notYet = "";
 	};
+	// A bearing shell or piston isn't fitted to an engine by itself, but in or on its rod or cap: why not, or nullopt
+	// for anything else. (A piston pin never goes on by itself either: it's pressed into a piston on its rod.)
+	inline std::optional<std::string> ShellGoesInFirst(PartType type)
+	{
+		if (type == PartType::PISTON_PIN)
+			return std::string("A piston pin is pressed into a piston on its rod, off the engine, with the Piston Pin Press");
+		auto host = EngineAssembly::CarriedBy(EngineAssembly::SlotFor(type));
+		if (!host)
+			return std::nullopt;
+		if (type == PartType::PISTON)
+			return std::string("The piston goes onto a connecting rod off the engine, pinned, and on with it");
+		if (type == PartType::PISTON_RING)
+			return std::string("The ring goes onto its piston off the engine, and on with it, squeezed in the ring compressor");
+		return std::format("The {} goes into a {} off the engine, and on with it", PartTypeName(type), PartTypeName(EngineAssembly::SlotPartType(*host)));
+	}
 	inline FitSpot FindFitSpot(const EngineAssembly& assembly, PartType type)
 	{
 		FitSpot spot;
@@ -134,6 +153,9 @@ namespace ShopLayout
 		{
 			auto slotType = static_cast<AssemblySlot>(slot);
 			if (EngineAssembly::SlotPartType(slotType) != type)
+				continue;
+			// Bearing shells go on in their rods and caps, never by themselves.
+			if (EngineAssembly::CarriedBy(slotType))
 				continue;
 			for (int index = 0; index < assembly.SlotCount(slotType); index++)
 			{

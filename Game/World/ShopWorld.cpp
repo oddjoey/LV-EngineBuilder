@@ -16,6 +16,7 @@
 #include "../Controls.h"
 #include "../FrameProfiler.h"
 #include "../Simulation/Random.h"
+#include "../UI/ItemIcons.h"
 #include "../UI/PartIcons.h"
 #include "GarageLayout.h"
 #include "ShopWorldShared.h"
@@ -66,7 +67,7 @@ namespace
 	// middle of the hand: a part sits on top of it; a tool is held at its middle.
 	glm::vec3 OnAvatarHand(const ItemVisual& visual, const Model& model)
 	{
-		constexpr float HAND_HALF_HEIGHT = 0.05f;	// PlayerAvatar's hand
+		constexpr float HAND_HALF_HEIGHT = 0.045f;	// PlayerAvatar's hand
 		if (!visual.part)
 			return {};
 		float middle = (model.GetBoundsMin().y + model.GetBoundsMax().y) * 0.5f;
@@ -258,9 +259,10 @@ const Station* ShopWorld::FindStand(int engine) const
 void ShopWorld::Build(const ShopAssets& assets)
 {
 	m_assets = &assets;
+	m_paint.Build(assets);
 
 	Spawn(ShopModels::FLOOR, ShopTextures::CONCRETE, {});
-	m_garageWalls = Spawn(ShopModels::WALLS, ShopTextures::PLASTER, {});
+	m_garageWalls = Spawn(ShopModels::WALLS, ShopTextures::PLANKS, {});
 	for (const auto& lamp : GarageLayout::LAMPS)
 	{
 		auto object = Spawn(ShopModels::LAMP, ShopTextures::PAINT, lamp);
@@ -294,6 +296,10 @@ void ShopWorld::Build(const ShopAssets& assets)
 
 	auto dyno = AddStation(StationType::DYNO, "Dyno cell", Spawn(ShopModels::DYNO, ShopTextures::PAINT, DYNO_POSITION), true);
 	m_stations[dyno].localSurfaces.push_back({ { -0.8f, 0.f, -0.45f }, { 0.8f, 0.4f, 0.45f } });
+	// A new shop has no dyno: it's bought, and crated until then (see SyncMachines).
+	m_stations[dyno].present = false;
+	m_stations[dyno].object->SetVisible(false);
+	m_stations[dyno].object->SetPickable(false);
 
 	auto desk = AddStation(StationType::COMPUTER, "Parts computer", Spawn(ShopModels::COMPUTER_DESK, ShopTextures::PAINT, DESK_POSITION, glm::pi<float>()), true);
 	m_stations[desk].yaw = glm::pi<float>();
@@ -333,8 +339,6 @@ void ShopWorld::Build(const ShopAssets& assets)
 	m_stations[m_liftStation].object->SetPickable(false);
 	m_liftArms = Spawn(ShopModels::POST_LIFT_ARMS, ShopTextures::PAINT, LIFT_HOME);
 	m_liftArms->SetVisible(false);
-	// The bed came with the house, after the lift.
-	AddStation(StationType::BED, "Bed", Spawn(ShopModels::HOME_BED, ShopTextures::WOOD, GarageLayout::HOUSE_BED), false);
 	// Then the extension's roll-up door, there once the extension is (see UpdateDoor).
 	{
 		using namespace GarageLayout;
@@ -345,6 +349,11 @@ void ShopWorld::Build(const ShopAssets& assets)
 		bayDoor->SetVisible(false);
 		bayDoor->SetPickable(false);
 	}
+	// The engine hoist came last of all: crated until it's bought, like the dyno.
+	m_hoistStation = AddStation(StationType::HOIST, "Engine hoist", Spawn(ShopModels::ENGINE_HOIST, ShopTextures::PAINT, HOIST_HOME), true);
+	m_stations[m_hoistStation].present = false;
+	m_stations[m_hoistStation].object->SetVisible(false);
+	m_stations[m_hoistStation].object->SetPickable(false);
 	m_fixedStations = m_stations.size();
 
 	RebuildCollision();
@@ -407,7 +416,7 @@ const std::vector<FloorObstacle>& ShopWorld::GetObstacles() const
 FloorObstacle ShopWorld::GetRoomBounds() const
 {
 	using namespace GarageLayout;
-	return { { -WORLD_HALF_WIDTH, LOT_BACK_Z }, { WORLD_HALF_WIDTH, WORLD_FAR_Z } };
+	return { { -WORLD_HALF_WIDTH, WORLD_BACK_Z }, { WORLD_HALF_WIDTH, WORLD_FAR_Z } };
 }
 
 void ShopWorld::BuildViewModel()
@@ -474,11 +483,15 @@ void ShopWorld::CycleView()
 
 ShopWorld::CameraView ShopWorld::UpdateThirdPersonCamera(const FirstPersonController& player)
 {
-	constexpr float BACK = 2.2f;
+	constexpr float BACK = 1.9f;
 	constexpr float RIGHT = 0.45f;
-	constexpr float UP = 0.15f;
+	constexpr float UP = 0.2f;
 	constexpr float CLEARANCE = 0.2f;	// kept off whatever it's pulled in by
+	// Swung about the monkey's own eyes, which are well below the player's (it's small, with a big head):
+	// where they are on it as it was last posed, from where the player stands now so it doesn't lag.
 	glm::vec3 eye = player.GetEyePosition();
+	if (m_selfAvatar.IsSpawned() && m_selfAvatar.GetEye().y > m_selfAvatar.GetFeet().y)
+		eye = player.GetFeetPosition() + (m_selfAvatar.GetEye() - m_selfAvatar.GetFeet());
 	glm::quat look = player.GetRotation();
 	glm::vec3 forward = look * glm::vec3(0.f, 0.f, -1.f);
 	// Behind the right shoulder, or (looking back) out in front of the face.
@@ -498,7 +511,7 @@ ShopWorld::CameraView ShopWorld::UpdateThirdPersonCamera(const FirstPersonContro
 	// Aimed at the point where the player looks, as far off as they can reach, so the crosshair is on
 	// what they'd use.
 	// Looking back, it's on the face.
-	glm::vec3 aim = m_lookingBack ? eye - forward * 0.3f : eye + forward * INTERACT_DISTANCE;
+	glm::vec3 aim = m_lookingBack ? eye - forward * 0.3f : player.GetEyePosition() + forward * INTERACT_DISTANCE;
 	m_thirdPersonView = { position, glm::quatLookAt(glm::normalize(aim - position), glm::vec3(0.f, 1.f, 0.f)) };
 	return m_thirdPersonView;
 }
@@ -523,6 +536,14 @@ void ShopWorld::UpdateViewModel(const FirstPersonController& player)
 	{
 		m_heldInFront.push_back(held->object);
 		m_heldInFront.insert(m_heldInFront.end(), held->sockets.begin(), held->sockets.end());
+		// And what's fitted to it (a pin, to the piston on the rod in hand).
+		std::unordered_set<uint32_t> carried;
+		if (held->ref.IsPart())
+			carried.insert(held->ref.id);
+		for (int pass = 0; pass < 2; pass++)
+			for (const auto& [ref, visual] : m_items)
+				if (visual.place == ItemPlace::ATTACHED && carried.contains(visual.hostPart) && carried.insert(ref.id).second)
+					m_heldInFront.push_back(visual.object);
 		auto battery = held->ref.IsTool() ? BatteryOn(held->ref.id) : std::nullopt;
 		if (const ItemVisual* pack = battery ? Find(ItemRef::Tool(static_cast<uint32_t>(*battery))) : nullptr)
 			m_heldInFront.push_back(pack->object);
@@ -617,6 +638,14 @@ ItemInfo ShopWorld::DescribeItem(const ItemRef& item, const Workshop& workshop) 
 		info.toolIndex = static_cast<int>(item.id);
 		info.size = ToolGridSize(ToolShapeFor(tool));
 	}
+	else if (item.IsPackage())
+	{
+		auto it = m_packages.find(item.id);
+		info.name = it != m_packages.end() ? "Delivery: " + it->second.label : "Delivery";
+		info.description = "Carried in both arms. Set it down and open it to unpack it. Too big for the backpack.";
+		info.toolIndex = ItemIcons::PACKAGE;
+		info.size = { PlayerInventory::WIDTH + 1, PlayerInventory::HEIGHT + 1 };
+	}
 	else if (auto visual = Find(item); visual && visual->part)
 	{
 		const auto& part = *visual->part;
@@ -679,11 +708,6 @@ void ShopWorld::Notify(const std::string& message)
 	Toast(message);
 }
 
-bool ShopWorld::TakeSleepRequest()
-{
-	return std::exchange(m_sleepRequested, false);
-}
-
 bool ShopWorld::TakeReadRequest()
 {
 	return std::exchange(m_readRequested, false);
@@ -712,18 +736,8 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 			m_syncedStock = stock;
 		}
 		SyncStands(workshop);
-		// An engine coming off the dyno onto another stand takes its crank position with it, and sits
-		// upright there.
-		if (int nowOnDyno = workshop.GetEngineOnDyno(); nowOnDyno != m_engineOnDyno)
-		{
-			if (m_engineOnDyno >= 0 && nowOnDyno < 0)
-			{
-				int stand = std::clamp(workshop.GetActiveEngine(), 0, Workshop::MAX_ENGINES - 1);
-				m_crankAngles[stand] = m_crankAngles[std::clamp(m_engineOnDyno, 0, Workshop::MAX_ENGINES - 1)];
-				m_engineRolls[stand] = 0.f;
-			}
-			m_engineOnDyno = nowOnDyno;
-		}
+		SyncEngineMoves(workshop);
+		m_swing.progress = (std::min)(1.f, m_swing.progress + deltaTime / HOIST_SWING_SECONDS);
 		SyncUpgrades(workshop);
 		SyncFurniture(workshop);
 		SyncMachines(workshop);
@@ -752,7 +766,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 			if (visual.place == ItemPlace::WORLD && !IsRiding(ref, 0))
 				StepBody(visual.object, visual.body, deltaTime);
 		for (auto& [id, package] : m_packages)
-			if (id != m_carriedPackage && !m_remoteCarriedPackages.contains(id) && !IsRiding({}, id))
+			if (!IsCarried(id) && !m_remoteCarriedPackages.contains(id) && !IsRiding({}, id))
 				StepBody(package.object, package.body, deltaTime);
 		m_steppingBodies = false;
 	}
@@ -761,6 +775,8 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		PROFILE_SCOPE("world: layout");
 		UpdateSelfAvatar(deltaTime, player);
 		LayoutItems(workshop, player);
+		PoseCarriedPackages(player);
+		m_paint.Update(deltaTime);
 		UpdateViewModel(player);
 	}
 
@@ -768,7 +784,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	const auto& log = workshop.GetLog();
 	if (log.size() > m_seenLogSize)
 	{
-		Toast(StripTimestamp(log.back()));
+		Toast(log.back());
 		m_seenLogSize = log.size();
 	}
 	m_toastTime = (std::max)(0.f, m_toastTime - deltaTime);
@@ -790,6 +806,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	m_prompt.clear();
 	m_secondaryPrompt.clear();
 	m_heldHint.clear();
+	m_paintCursor.reset();
 	if (!playerHasControl)
 		return std::nullopt;
 
@@ -797,22 +814,6 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	{
 		UpdateMove(player, input);
 		return std::nullopt;
-	}
-
-	// Carrying a delivery: both hands are full, so it's set down or dropped before anything else.
-	if (m_carriedPackage)
-	{
-		UpdateCarriedPackage(player, input);
-		return std::nullopt;
-	}
-
-	{
-		PROFILE_SCOPE("world: hover");
-		UpdateHover(workshop, player);
-	}
-	{
-		PROFILE_SCOPE("world: empty holes");
-		MarkEmptyHoles(workshop, player);
 	}
 
 	// Hotbar: 1-9 and 0 pick a slot, and the wheel steps through them (down to the right, up to the
@@ -830,8 +831,27 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 			else
 				SelectHotbarSlot(slot);
 		}
-	if (float scroll = input.GetScrollDelta(); std::abs(scroll) >= 0.5f)
+	// Paint in hand: the wheel sizes it instead (see UpdatePaint).
+	bool sizingPaint = GetHeld() && GetHeld()->ref.IsTool() && ToolCatalog::Of(GetHeld()->ref.id).Paints();
+	if (float scroll = input.GetScrollDelta(); std::abs(scroll) >= 0.5f && !sizingPaint)
 		SelectHotbarSlot(m_handEmpty ? m_inventory.GetSelected() : m_inventory.GetSelected() + (scroll > 0.f ? -1 : 1));
+
+	// A delivery in hand fills both arms: it's set down or dropped (or another slot picked) before
+	// anything else is done.
+	if (m_carriedPackage)
+	{
+		UpdateCarriedPackage(player, input);
+		return std::nullopt;
+	}
+
+	{
+		PROFILE_SCOPE("world: hover");
+		UpdateHover(workshop, player);
+	}
+	{
+		PROFILE_SCOPE("world: empty holes");
+		MarkEmptyHoles(workshop, player);
+	}
 
 	if (Controls::Pressed(input, Control::MOVE) && m_hover && m_hover->kind == TargetKind::STATION && m_stations[m_hover->stationIndex].movable)
 	{
@@ -876,8 +896,14 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		return std::nullopt;
 	if (!held || !held->ref.IsTool())
 		m_turning.reset();
+	if (held && held->ref.IsTool() && UpdatePaint(player, input, held->ref.id, deltaTime))
+		return std::nullopt;
 	if (held && held->ref.IsTool() && UpdateSpanner(workshop, player, input, held->ref.id, deltaTime))
 		return std::nullopt;
+	if (held && held->ref.IsTool() && UpdatePinPress(workshop, player, input, held->ref.id, deltaTime))
+		return std::nullopt;
+	if (!held || !held->ref.IsTool())
+		m_pressAimed = false;
 
 	// What can be done with the item in hand, shown beside its name above the hotbar. Where the
 	// prompt already offers right-click (setting it down on the bench), it isn't repeated.
@@ -913,6 +939,17 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 			else
 				Toast("Nowhere to put it there.");
 		}
+	}
+
+	// R takes the bearing shell out of the rod or cap aimed at, or the one in hand.
+	if (!m_move && Controls::Pressed(input, Control::ROTATE))
+	{
+		ItemVisual* host = m_hover && m_hover->kind == TargetKind::ITEM ? Find(m_hover->item) : nullptr;
+		auto hasFitted = [&](const ItemVisual* visual) { return visual && visual->part && visual->place != ItemPlace::STAND && (TakeOffWhat(workshop, *visual->part) || workshop.PistonOn(*visual->part)); };
+		if (!hasFitted(host))
+			host = hasFitted(held) ? held : nullptr;
+		if (host)
+			TakeOff(workshop, *host);
 	}
 
 	bool clickInteracts = !held || !held->ref.IsTool();
@@ -1082,7 +1119,14 @@ void ShopWorld::SyncStands(const Workshop& workshop)
 			if (visual.place != ItemPlace::STAND || visual.engineIndex != engine)
 				SetPlace(visual, ItemPlace::STAND, engine);
 		}
-		else if (visual.place == ItemPlace::STAND)
+		else if (auto host = workshop.HostOf(*visual.part))
+		{
+			// A bearing shell fitted into a loose rod or cap goes about in it.
+			if (visual.place != ItemPlace::ATTACHED)
+				SetPlace(visual, ItemPlace::ATTACHED);
+			visual.hostPart = host->GetId();
+		}
+		else if (visual.place == ItemPlace::STAND || visual.place == ItemPlace::ATTACHED)
 			SetPlace(visual, ItemPlace::STORAGE);
 	}
 }
@@ -1095,7 +1139,9 @@ void ShopWorld::SyncMachines(const Workshop& workshop)
 		bool bought = (station.type == StationType::MACHINE && workshop.OwnsMachine(station.machineIndex))
 			|| (station.type == StationType::ENGINE_STAND && station.engineIndex < workshop.GetEngineCount())
 			|| station.type == StationType::FURNITURE
-			|| (station.type == StationType::LIFT && workshop.OwnsUpgrade(UpgradeKind::POST_LIFT));
+			|| (station.type == StationType::LIFT && workshop.OwnsUpgrade(UpgradeKind::POST_LIFT))
+			|| (station.type == StationType::DYNO && workshop.OwnsDyno())
+			|| (station.type == StationType::HOIST && workshop.OwnsHoist());
 		if (station.present || !bought || IsCrated(i))
 			continue;
 
@@ -1200,48 +1246,77 @@ void ShopWorld::CreatePackage(const std::vector<ItemRef>& items, const std::vect
 	Toast(std::format("Delivery at the door: {}", label));
 }
 
-void ShopWorld::OpenPackage(Package& package)
+void ShopWorld::OpenPackage(Package& package, const FirstPersonController* player)
 {
 	m_supportChanged = true;
 	auto bounds = WorldBounds(package.object);
 	glm::vec3 center = (bounds.min + bounds.max) * 0.5f;
 	Cue(Sound::CRATE_OPEN, center);
 
-	// Everything is laid out on the floor beside the pile, on the shop side, away from the door
-	// (a box opened at the top of a stack would otherwise rain parts out onto the driveway).
-	constexpr int PER_ROW = 4;
-	constexpr float SPACING = 0.45f;
-	int index = 0;
-	for (const auto& ref : package.items)
-	{
-		auto visual = Find(ref);
-		if (!visual)
-			continue;
-		glm::vec2 jitter = { static_cast<float>(Random::Uniform(-0.08, 0.08)), static_cast<float>(Random::Uniform(-0.08, 0.08)) };
-		glm::vec3 position = { center.x + (index % PER_ROW - (PER_ROW - 1) * 0.5f) * SPACING + jitter.x, 0.f,
-			bounds.min.z - 0.5f - (index / PER_ROW) * SPACING + jitter.y };
-		position.y = 0.05f - ModelOf(visual->object)->GetBoundsMin().y;
-		visual->yaw = static_cast<float>(Random::Uniform(-glm::pi<float>(), glm::pi<float>()));
-		PlaceInWorld(*visual, position, {});
-		index++;
-	}
-
-	// Equipment is set up where its crate stood if it fits there, otherwise at its usual spot.
-	// Copied out first: package refers into m_packages, which is about to lose it.
-	glm::vec3 floorSpot = { center.x, 0.f, center.z };
+	// Copied out first: package refers into m_packages, which is about to lose it. The box goes before
+	// anything's laid out, so it isn't in the way (or something to stack on).
 	uint32_t packageId = package.id;
+	auto items = package.items;
 	auto stations = package.stations;
 	std::string label = package.label;
 	m_targets.erase(package.object.get());
 	ObjectManager::Get()->RemoveObject(package.object);
 	m_packages.erase(packageId);
+	if (player)
+	{
+		m_inventory.Remove(ItemRef::Package(packageId));
+		m_carriedPackage = 0;
+	}
+
+	// Opened where it stood, it's laid out on the floor around it; opened in hand, it fills the hotbar, then
+	// the backpack, and what doesn't fit goes at your feet.
+	glm::vec3 origin = player ? player->GetFeetPosition() : glm::vec3(center.x, bounds.min.y, center.z);
+	std::vector<std::pair<glm::vec2, float>> taken;
+	int onFloor = 0;
+	for (const auto& ref : items)
+	{
+		auto visual = Find(ref);
+		if (!visual)
+			continue;
+		// What comes in a set comes in it: a wrench goes straight into its tray (see LayOutSetMembers).
+		if (ref.IsTool() && ToolCatalog::Of(ref.id).partOf >= 0)
+		{
+			SetPlace(*visual, ItemPlace::STORAGE);
+			continue;
+		}
+		if (player)
+		{
+			bool stowed = false;
+			if (auto slot = m_inventory.FreeHotbarSlot())
+				stowed = m_inventory.PutInHotbar(*slot, ref);
+			if (!stowed)
+				stowed = m_inventory.AddToBackpack(ref, GridSize(*visual));
+			if (stowed)
+			{
+				SetPlace(*visual, ItemPlace::INVENTORY);
+				continue;
+			}
+		}
+		auto model = ModelOf(visual->object);
+		auto spot = FloorSpotNear(origin, { model->GetBoundsMin(), model->GetBoundsMax() }, taken);
+		glm::vec3 position = spot.value_or(origin);
+		position.y += 0.05f - model->GetBoundsMin().y;
+		visual->yaw = static_cast<float>(Random::Uniform(-glm::pi<float>(), glm::pi<float>()));
+		PlaceInWorld(*visual, position, {});
+		onFloor++;
+	}
+	if (player)
+		SyncHand();
+
+	// Equipment is set up where its crate stood if it fits there, otherwise at its usual spot.
+	glm::vec3 floorSpot = { center.x, 0.f, center.z };
 
 	for (size_t stationIndex : stations)
 	{
 		auto& station = m_stations[stationIndex];
 		station.present = true;
 		station.yaw = 0.f;
-		if (StationFits(station, floorSpot, 0.f, nullptr))
+		if (StationFits(station, floorSpot, 0.f, player))
 			station.position = floorSpot;
 		else
 			PlaceNewMachine(station);
@@ -1251,8 +1326,68 @@ void ShopWorld::OpenPackage(Package& package)
 	if (!stations.empty())
 		RebuildCollision();
 
-	Toast(stations.empty() ? std::format("Unpacked {}.", label)
-		: std::format("Set up the {}. Press F on it to move it.", label));
+	if (!stations.empty())
+		Toast(std::format("Set up the {}. Press F on it to move it.", label));
+	else if (!player)
+		Toast(std::format("Unpacked {}.", label));
+	else if (onFloor > 0)
+		Toast(std::format("Unpacked {}: no room for {} of it, so it's at your feet.", label, onFloor));
+	else
+		Toast(std::format("Unpacked {} into your inventory.", label));
+}
+
+std::optional<glm::vec3> ShopWorld::FloorSpotNear(const glm::vec3& origin, const ShopBox& localBounds, std::vector<std::pair<glm::vec2, float>>& taken) const
+{
+	// Spots on a grid around origin, nearest first. Each is as wide as the item turned any way.
+	constexpr float SPACING = 0.3f;
+	constexpr int REACH = 8;
+	static const std::vector<glm::vec2> offsets = [] {
+		std::vector<glm::vec2> grid;
+		for (int x = -REACH; x <= REACH; x++)
+			for (int z = -REACH; z <= REACH; z++)
+				grid.push_back(glm::vec2(x, z) * SPACING);
+		std::stable_sort(grid.begin(), grid.end(), [](const glm::vec2& a, const glm::vec2& b) { return glm::length(a) < glm::length(b); });
+		return grid;
+	}();
+	float radius = (std::max)({ -localBounds.min.x, localBounds.max.x, -localBounds.min.z, localBounds.max.z, 0.05f });
+	float height = localBounds.max.y - localBounds.min.y;
+
+	FloorObstacle lot = GetRoomBounds();
+	ShopInterior interior = GetInterior();
+	glm::vec3 probe = origin + glm::vec3(0.f, 0.1f, 0.f);
+	for (const auto& offset : offsets)
+	{
+		glm::vec2 spot = glm::vec2(origin.x, origin.z) + offset;
+		if (spot.x - radius < lot.min.x || spot.x + radius > lot.max.x || spot.y - radius < lot.min.y || spot.y + radius > lot.max.y)
+			continue;
+		bool clear = true;
+		for (const auto& [other, otherRadius] : taken)
+			if (glm::length(spot - other) < radius + otherRadius + 0.02f)
+				clear = false;
+		if (!clear)
+			continue;
+
+		// Out of the walls, and the same side of them: in the shack if origin is, outside if it isn't.
+		glm::vec3 point = { spot.x, probe.y, spot.y };
+		if (interior.InGarage(point) != interior.InGarage(probe))
+			continue;
+		ShopBox box = { { spot.x - radius, origin.y + 0.05f, spot.y - radius }, { spot.x + radius, origin.y + 0.05f + height, spot.y + radius } };
+		if (InsideWalls(box))
+			continue;
+		glm::vec3 from = { origin.x, origin.y + 0.05f + (std::min)(height * 0.5f, 0.3f), origin.z };
+		glm::vec3 to = { spot.x, from.y, spot.y };
+		if (float distance = glm::length(to - from); distance > 1e-3f)
+			if (auto hit = WallHit(from, (to - from) / distance); hit && *hit < distance + radius)
+				continue;
+
+		// Not under a bench, shelf or stairs, where it would land out of reach.
+		if (SupportHeight(box, origin.y + 1.5f, nullptr) > origin.y + 0.3f)
+			continue;
+
+		taken.push_back({ spot, radius });
+		return glm::vec3(spot.x, origin.y, spot.y);
+	}
+	return std::nullopt;
 }
 
 void ShopWorld::SortForShelves(std::vector<ItemRef>& parts) const
@@ -1542,9 +1677,9 @@ void ShopWorld::UpdateEngineMotion(float deltaTime, const Workshop& workshop, co
 
 int ShopWorld::LookedAtEngine() const
 {
-	// Not the one on the dyno: it can't be rolled or turned by hand there.
+	// Not the one on the dyno or the hoist: it can't be rolled or turned by hand there.
 	int engine = LookedAtStandEngine();
-	return engine == m_engineOnDyno ? -1 : engine;
+	return engine == m_engineOnDyno || engine == m_engineOnHoist ? -1 : engine;
 }
 
 int ShopWorld::LookedAtStandEngine() const
@@ -1843,8 +1978,9 @@ ShopWorld::StandPose ShopWorld::FastenerPose(int engine, AssemblySlot slot, int 
 {
 	using namespace EngineLayout;
 	const auto& holes = *EngineAssembly::Holes(slot);
-	int parentIndex = index / holes.perParent;
-	int hole = index % holes.perParent;
+	// Holes through every parent are placed on the first.
+	int parentIndex = holes.throughAll ? 0 : index / holes.perParent;
+	int hole = holes.throughAll ? index : index % holes.perParent;
 	auto parent = PoseOnStand(engine, EngineAssembly::SlotFor(holes.parent), parentIndex);
 	// Turned over: the head under the part, the shank pointing up into it.
 	const glm::quat FLIPPED = glm::angleAxis(glm::pi<float>(), glm::vec3(1.f, 0.f, 0.f));
@@ -1906,8 +2042,13 @@ ShopWorld::StandPose ShopWorld::FastenerPose(int engine, AssemblySlot slot, int 
 			turn = FACING_FRONT;
 			break;
 		case AssemblySlot::ROCKER_SHAFT_BOLT:
-			// Down through the shaft between the cylinders.
-			local = { MainX(hole + 1), 0.008f, 0.f };
+			// Down through the shafts at each end and between the cylinders.
+			local = { RockerBoltX(hole), 0.008f, 0.f };
+			break;
+		// The pickup's, up through either side of its flange into the pump's lug, heads under the flange.
+		case AssemblySlot::OIL_PICKUP_BOLT:
+			local = { 0.f, -0.006f, hole == 0 ? -0.008f : 0.008f };
+			turn = FLIPPED;
 			break;
 		default:
 		{
@@ -1952,31 +2093,121 @@ namespace
 	// of the stand. The engine is turned end for end so its flywheel end (cylinder 4) is against the
 	// mounting plate and cylinder 1 hangs out at the front.
 	const glm::quat ENGINE_ON_STAND = glm::angleAxis(glm::pi<float>(), glm::vec3(0.f, 1.f, 0.f));
+	// On the hoist it hangs level, its crank along the boom.
+	const glm::quat ENGINE_ON_HOIST = glm::angleAxis(-glm::half_pi<float>(), glm::vec3(0.f, 1.f, 0.f));
+}
+
+ShopWorld::EnginePose ShopWorld::RestingPose(int engine) const
+{
+	if (engine == m_engineOnHoist && m_hoistStation < m_stations.size())
+	{
+		const Station& hoist = m_stations[m_hoistStation];
+		return { hoist.position + hoist.Rotation() * HOIST_HANG, hoist.Rotation() * ENGINE_ON_HOIST };
+	}
+	// On the dyno it's held level, the right way round.
+	if (engine == m_engineOnDyno)
+		if (const Station* dyno = FindStation(StationType::DYNO))
+			return { dyno->position + dyno->Rotation() * DYNO_MOUNT, dyno->Rotation() };
+	const Station* stand = FindStand(engine);
+	if (!stand)
+		return {};
+	// The stand's head rolls about an axis through the middle of the block, not its deck.
+	const glm::vec3 pivot = { 0.f, STAND_ROLL_PIVOT_Y, 0.f };
+	glm::quat roll = AboutX(m_engineRolls[std::clamp(engine, 0, Workshop::MAX_ENGINES - 1)]);
+	return { stand->Anchor() + stand->Rotation() * (ENGINE_ON_STAND * (pivot - roll * pivot)), stand->Rotation() * ENGINE_ON_STAND * roll };
+}
+
+ShopWorld::EnginePose ShopWorld::CurrentPose(int engine) const
+{
+	EnginePose resting = RestingPose(engine);
+	if (engine != m_swing.engine || m_swing.progress >= 1.f)
+		return resting;
+	// Lifted a little clear of everything on the way.
+	float t = glm::smoothstep(0.f, 1.f, m_swing.progress);
+	glm::vec3 position = glm::mix(m_swing.from.position, resting.position, t);
+	position.y += 0.12f * std::sin(t * glm::pi<float>());
+	return { position, glm::slerp(m_swing.from.rotation, resting.rotation, t) };
 }
 
 glm::quat ShopWorld::StandRotation(int engine) const
 {
-	// On the dyno it's held level, the right way round.
-	if (engine == m_engineOnDyno)
-		if (const Station* dyno = FindStation(StationType::DYNO))
-			return dyno->Rotation();
-	const Station* stand = FindStand(engine);
-	glm::quat standRotation = stand ? stand->Rotation() : glm::quat(1.f, 0.f, 0.f, 0.f);
-	return standRotation * ENGINE_ON_STAND * AboutX(m_engineRolls[std::clamp(engine, 0, Workshop::MAX_ENGINES - 1)]);
+	return CurrentPose(engine).rotation;
 }
 
 glm::vec3 ShopWorld::StandToWorld(int engine, const glm::vec3& offset) const
 {
-	if (engine == m_engineOnDyno)
-		if (const Station* dyno = FindStation(StationType::DYNO))
-			return dyno->position + dyno->Rotation() * (DYNO_MOUNT + offset);
-	// The stand's head rolls about an axis through the middle of the block, not its deck.
-	const glm::vec3 pivot = { 0.f, STAND_ROLL_PIVOT_Y, 0.f };
-	const Station* stand = FindStand(engine);
-	if (!stand)
-		return offset;
-	glm::vec3 rolled = pivot + AboutX(m_engineRolls[std::clamp(engine, 0, Workshop::MAX_ENGINES - 1)]) * (offset - pivot);
-	return stand->Anchor() + stand->Rotation() * (ENGINE_ON_STAND * rolled);
+	EnginePose pose = CurrentPose(engine);
+	return pose.position + pose.rotation * offset;
+}
+
+void ShopWorld::SyncEngineMoves(const Workshop& workshop)
+{
+	int nowOnDyno = workshop.GetEngineOnDyno(), nowOnHoist = workshop.GetEngineOnHoist();
+	if (nowOnDyno == m_engineOnDyno && nowOnHoist == m_engineOnHoist)
+		return;
+	// Onto or off the hoist, it swings from where it was: off its stand or the dyno, or down from the
+	// hook. One lowered onto another stand is that stand's engine now (the workshop's active one).
+	std::optional<EngineSwing> swing;
+	if (nowOnHoist != m_engineOnHoist)
+	{
+		int before = nowOnHoist >= 0 ? nowOnHoist : m_engineOnHoist;
+		int after = nowOnHoist >= 0 || nowOnDyno == m_engineOnHoist ? before : workshop.GetActiveEngine();
+		swing = EngineSwing{ after, CurrentPose(before), 0.f };
+	}
+	// One back onto a stand, off the dyno or the hoist, takes its crank position with it, and sits
+	// upright there.
+	int off = m_engineOnDyno >= 0 && nowOnDyno < 0 && nowOnHoist != m_engineOnDyno ? m_engineOnDyno
+		: m_engineOnHoist >= 0 && nowOnHoist < 0 && nowOnDyno != m_engineOnHoist ? m_engineOnHoist : -1;
+	if (off >= 0)
+	{
+		int stand = std::clamp(workshop.GetActiveEngine(), 0, Workshop::MAX_ENGINES - 1);
+		m_crankAngles[stand] = m_crankAngles[std::clamp(off, 0, Workshop::MAX_ENGINES - 1)];
+		m_engineRolls[stand] = 0.f;
+	}
+	m_engineOnDyno = nowOnDyno;
+	m_engineOnHoist = nowOnHoist;
+	if (swing)
+		m_swing = *swing;
+}
+
+glm::vec3 ShopWorld::HoistHook() const
+{
+	if (m_hoistStation >= m_stations.size())
+		return {};
+	const Station& hoist = m_stations[m_hoistStation];
+	return hoist.position + hoist.Rotation() * HOIST_HOOK;
+}
+
+std::optional<int> ShopWorld::HoistTarget(const Workshop& workshop) const
+{
+	if (m_hoistStation >= m_stations.size() || !m_stations[m_hoistStation].present)
+		return std::nullopt;
+	// The nearest stand or dyno under the hook's reach: with an engine on, one it can go onto; without,
+	// one with an engine to lift.
+	glm::vec3 hook = HoistHook();
+	bool hanging = workshop.GetEngineOnHoist() >= 0;
+	std::optional<int> best;
+	float nearest = HOIST_REACH;
+	auto consider = [&](int target, const glm::vec3& mount) {
+		float distance = glm::length(glm::vec2(mount.x - hook.x, mount.z - hook.z));
+		if (distance < nearest)
+		{
+			nearest = distance;
+			best = target;
+		}
+	};
+	for (const auto& station : m_stations)
+	{
+		if (station.type != StationType::ENGINE_STAND || !station.present || station.engineIndex >= workshop.GetEngineCount())
+			continue;
+		int engine = station.engineIndex;
+		if (hanging ? workshop.IsStandFreeForHoist(engine)
+			: engine != workshop.GetEngineOnDyno() && !workshop.GetAssembly(engine).GetAllParts().empty())
+			consider(engine, station.Anchor());
+	}
+	if (const Station* dyno = FindStation(StationType::DYNO); dyno && dyno->present && (workshop.GetEngineOnDyno() >= 0) != hanging)
+		consider(DYNO_TARGET, dyno->position + dyno->Rotation() * DYNO_MOUNT);
+	return best;
 }
 
 std::vector<BenchItem> ShopWorld::GetBenchItems() const
@@ -2103,6 +2334,19 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 
 	auto layout = [&](ItemVisual& visual)
 	{
+		// A spark plug lead on the engine runs all the way to its tower on the distributor cap.
+		if (visual.part && visual.part->GetType() == PartType::PLUG_LEAD)
+		{
+			uint32_t wanted = m_assets->PartModel(PartType::PLUG_LEAD);
+			if (visual.place == ItemPlace::STAND)
+				if (auto slot = FindInstalledSlot(workshop.GetAssembly(visual.engineIndex), visual.part))
+					wanted = m_assets->Model(ShopModels::PlugLeadFitted(std::clamp(slot->second, 0, 3)));
+			if (visual.object->GetModelIndex() != wanted)
+			{
+				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				visual.standSlot = { AssemblySlot::COUNT, -1 };
+			}
+		}
 		auto model = ModelOf(visual.object);
 		glm::vec4 tint = glm::vec4(1.f);
 		if (visual.part)
@@ -2110,6 +2354,12 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 			tint = m_assets->PartTint(visual.part->GetMaterial());
 			if (visual.part->GetCondition() == PartCondition::DAMAGED)
 				tint *= DAMAGED_TINT;
+		}
+		// Sprayed: the paint over it, as thick as it's gone on.
+		if (auto coat = m_coats.find(visual.ref); coat != m_coats.end())
+		{
+			glm::vec3 paint = { ((coat->second.rgb >> 16) & 0xFF) / 255.f, ((coat->second.rgb >> 8) & 0xFF) / 255.f, (coat->second.rgb & 0xFF) / 255.f };
+			tint = glm::vec4(glm::mix(glm::vec3(tint), paint * 1.6f, std::clamp(coat->second.amount, 0.f, 1.f)), tint.a);
 		}
 		visual.object->SetTint(tint);
 		visual.object->SetEmissive(0.f);
@@ -2187,6 +2437,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 				break;
 			case ItemPlace::PACKAGED:
 			case ItemPlace::INVENTORY:
+			case ItemPlace::ATTACHED:	// after its rod or cap, below
 				break;
 		}
 
@@ -2203,6 +2454,30 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 	for (auto& [ref, visual] : m_items)
 		if (ref.IsTool())
 			layout(visual);
+	// What's fitted into or onto another part sits in it, wherever it is, and is seen when it is: an upper rod shell
+	// in the big end, a rod's length from the small end; a lower shell where its cap is; a piston over the small
+	// end, its ring in its top groove and its pin through both. Twice round, so a pin follows its piston once that's followed its rod.
+	for (int pass = 0; pass < 2; pass++)
+	for (auto& [ref, visual] : m_items)
+	{
+		if (visual.place != ItemPlace::ATTACHED)
+			continue;
+		const ItemVisual* host = Find(ItemRef::Part(visual.hostPart));
+		visual.object->SetVisible(host && host->object->IsVisible());
+		visual.object->SetPickable(false);
+		if (!host)
+			continue;
+		visual.object->SetCastsShadows(host->object->CastsShadows());
+		PartType hostType = host->part ? host->part->GetType() : PartType::BLOCK;
+		PartType type = visual.part ? visual.part->GetType() : PartType::BLOCK;
+		glm::vec3 local = type == PartType::PISTON ? glm::vec3(0.f, EngineLayout::PISTON_PIN_DEPTH, 0.f)
+			: type == PartType::PISTON_RING ? glm::vec3(0.f, -0.006f, 0.f)
+			: hostType == PartType::PISTON ? glm::vec3(0.f, -EngineLayout::PISTON_PIN_DEPTH, 0.f)
+			: hostType == PartType::CONNECTING_ROD ? glm::vec3(0.f, -EngineLayout::ROD_LENGTH, 0.f) : glm::vec3(0.f);
+		visual.object->SetRotation(host->object->GetRotation());
+		visual.object->SetScale(host->object->GetScale());
+		visual.object->SetPosition(host->object->GetPosition() + host->object->GetRotation() * (local * host->object->GetScale()));
+	}
 	LayOutBatteries();
 	LayOutSetMembers();
 }
@@ -2462,16 +2737,33 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 
 		if (visual.place == ItemPlace::STAND && visual.engineIndex == m_engineOnDyno)
 			m_prompt = std::format("{}: on the dyno", name);
+		else if (visual.place == ItemPlace::STAND && visual.engineIndex == m_engineOnHoist)
+			m_prompt = std::format("{}: hanging from the hoist", name);
 		else if (visual.place == ItemPlace::STAND)
 		{
 			const auto& assembly = workshop.GetAssembly(visual.engineIndex);
 			auto slot = FindInstalledSlot(assembly, visual.part);
 			auto blocked = slot ? assembly.RemovalBlockedBy(slot->first, slot->second) : std::nullopt;
+			if (!blocked && PartWayDoneUp(*visual.part))
+				blocked = "part way done up: hold [RMB] with a spanner on it to undo it";
 			m_prompt = blocked ? std::format("{}: {}", name, *blocked) : std::format("[E] Take {} off the engine", name);
 			m_secondaryPrompt = "[R] Turn it over   [Z]/[X] Roll it on the stand";
 		}
 		else
-			m_prompt = std::format("[E] Pick up {}", name);
+		{
+			// A bearing shell in hand goes into a loose rod or cap, a piston onto a rod; R takes one off again.
+			auto fitted = visual.part && visual.place != ItemPlace::STAND ? TakeOffWhat(workshop, *visual.part) : nullptr;
+			if (CanFitOnto(workshop, visual))
+				m_prompt = std::format("[E] Fit the {} {} the {}", held->part->GetName(), held->part->GetType() == PartType::PISTON || held->part->GetType() == PartType::PISTON_RING ? "onto" : "into",
+					held->part->GetType() == PartType::PISTON_RING && visual.part->GetType() == PartType::CONNECTING_ROD ? "piston on the " + name : name);
+			else
+				m_prompt = std::format("[E] Pick up {}", name);
+			auto piston = visual.part ? workshop.PistonOn(*visual.part) : nullptr;
+			if (piston && !workshop.PinIn(*piston))
+				m_prompt += "   (its piston needs its pin pressed in)";
+			if (fitted)
+				m_secondaryPrompt = std::format("[R] Take the {} {}", fitted->GetName(), fitted->GetType() == PartType::ROD_BEARING || fitted->GetType() == PartType::ROD_BEARING_LOWER || fitted->GetType() == PartType::MAIN_BEARING_LOWER ? "out" : "off");
+		}
 
 		if (visual.part && visual.part->GetCondition() == PartCondition::DAMAGED)
 			m_prompt += std::format("  (damaged: {})", visual.part->GetDamageReason());
@@ -2507,7 +2799,9 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 			else
 			{
 				const auto& assembly = workshop.GetAssembly(station.engineIndex);
-				if (m_fitTarget && m_fitTarget->engine == station.engineIndex)
+				if (auto why = ShellGoesInFirst(held->part->GetType()))
+					m_prompt = *why;
+				else if (m_fitTarget && m_fitTarget->engine == station.engineIndex)
 				{
 					auto position = assembly.PositionName(m_fitTarget->slot, m_fitTarget->index);
 					if (auto missing = assembly.MissingPrerequisite(m_fitTarget->slot, m_fitTarget->index))
@@ -2554,9 +2848,26 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 		case StationType::LIFT:
 			m_prompt = std::format("[E] {} the lift{}", m_liftRaised ? "Lower" : "Raise", moveHint);
 			break;
-		case StationType::BED:
-			m_prompt = "[E] Sleep till morning (saves the game)";
+		case StationType::HOIST:
+		{
+			int hanging = workshop.GetEngineOnHoist();
+			auto target = HoistTarget(workshop);
+			auto where = [&](int at) { return at == DYNO_TARGET ? std::string("the dyno") : std::format("stand {}", at + 1); };
+			if (m_swing.progress < 1.f)
+				m_prompt = station.name;
+			else if (hanging >= 0 && target)
+				m_prompt = std::format("[E] Lower engine {} onto {}{}", hanging + 1, where(*target), moveHint);
+			else if (target)
+				m_prompt = std::format("[E] Lift engine {} off {}{}", (*target == DYNO_TARGET ? workshop.GetEngineOnDyno() : *target) + 1,
+					*target == DYNO_TARGET ? "the dyno" : "its stand", moveHint);
+			else
+			{
+				m_prompt = (hanging >= 0 ? std::format("Engine {} hangs from the hoist", hanging + 1) : station.name) + moveHint;
+				m_secondaryPrompt = hanging >= 0 ? "Push it up to a free engine stand or the dyno to lower the engine onto it"
+					: "Push it up to an engine stand or the dyno to lift the engine off";
+			}
 			break;
+		}
 		case StationType::DOOR:
 			m_prompt = DoorOpenFor(station) ? "[E] Pull the roll-up door down" : "[E] Roll the door up";
 			break;
@@ -2574,7 +2885,10 @@ std::optional<UIRequest> ShopWorld::Interact(Workshop& workshop)
 			PickUpPackage(m_hover->packageId);
 			return std::nullopt;
 		case TargetKind::ITEM:
-			PickUp(workshop, *Find(m_hover->item));
+			if (CanFitOnto(workshop, *Find(m_hover->item)))
+				FitOnto(workshop, *Find(m_hover->item));
+			else
+				PickUp(workshop, *Find(m_hover->item));
 			return std::nullopt;
 		case TargetKind::STATION:
 			return UseStation(workshop, m_stations[m_hover->stationIndex]);
@@ -2629,6 +2943,11 @@ std::optional<UIRequest> ShopWorld::UseStation(Workshop& workshop, const Station
 
 			// It goes exactly where you're aiming.
 			const auto& assembly = workshop.GetAssembly(engine);
+			if (auto why = ShellGoesInFirst(heldPart->part->GetType()))
+			{
+				Toast(*why + ".");
+				return std::nullopt;
+			}
 			if (!m_fitTarget || m_fitTarget->engine != engine)
 			{
 				auto spot = FindFitSpot(assembly, heldPart->part->GetType());
@@ -2666,9 +2985,40 @@ std::optional<UIRequest> ShopWorld::UseStation(Workshop& workshop, const Station
 		case StationType::LIFT:
 			m_liftRaised = !m_liftRaised;
 			return std::nullopt;
-		case StationType::BED:
-			m_sleepRequested = true;
+		// The hoist lifts the engine off whatever's in its reach, or lowers the one on it onto it.
+		case StationType::HOIST:
+		{
+			if (m_swing.progress < 1.f)
+				return std::nullopt;
+			int hanging = workshop.GetEngineOnHoist();
+			auto target = HoistTarget(workshop);
+			if (!target)
+			{
+				Toast(hanging >= 0 ? "Push the hoist up to a free engine stand or the dyno to lower the engine onto it."
+					: "Push the hoist up to an engine stand or the dyno to lift its engine off.");
+				return std::nullopt;
+			}
+			if (hanging < 0)
+			{
+				int engine = *target == DYNO_TARGET ? workshop.GetEngineOnDyno() : *target;
+				if (engine == m_dynoEngine && m_engineRpm > 0.f)
+				{
+					Toast("Not while it's running on the dyno.");
+					return std::nullopt;
+				}
+				workshop.HoistEngine(engine);
+			}
+			else if (*target == DYNO_TARGET)
+			{
+				if (!workshop.GetAssembly(hanging).IsComplete())
+					Toast(std::format("Engine {} isn't finished: only a complete engine goes on the dyno.", hanging + 1));
+				else
+					workshop.LowerEngineOntoDyno();
+			}
+			else
+				workshop.LowerEngineOntoStand(*target);
 			return std::nullopt;
+		}
 		// A bought workbench reads what's on it, like the shop's own.
 		case StationType::FURNITURE:
 			if (IsWorkbench(station))
@@ -2692,10 +3042,16 @@ std::optional<UIRequest> ShopWorld::UseStation(Workshop& workshop, const Station
 
 void ShopWorld::PickUpPackage(uint32_t packageId)
 {
+	// Onto the hotbar like anything else, and into your hands (both of them).
+	auto slot = m_inventory.FreeHotbarSlot();
+	if (!slot)
+	{
+		Toast("The hotbar's full: free a slot to carry the delivery.");
+		return;
+	}
 	Cue(Sound::PICK_UP, m_packages.at(packageId).object->GetPosition(), 1.2f);
-	// It takes both hands: whatever's in them waits in its hotbar slot until it's put down.
-	m_carriedPackage = packageId;
-	SyncHand();
+	m_inventory.PutInHotbar(*slot, ItemRef::Package(packageId));
+	SelectHotbarSlot(*slot);
 	m_packages.at(packageId).object->SetPickable(false);
 	// Something moving with the camera every frame would make the lamps redraw their shadows every
 	// frame; what you carry doesn't cast one.
@@ -2704,52 +3060,173 @@ void ShopWorld::PickUpPackage(uint32_t packageId)
 	m_supportChanged = true;
 }
 
-void ShopWorld::UpdateCarriedPackage(const FirstPersonController& player, const InputManager& input)
+bool ShopWorld::IsCarried(uint32_t packageId) const
 {
-	auto it = m_packages.find(m_carriedPackage);
-	if (it == m_packages.end())
-	{
-		m_carriedPackage = 0;
-		SyncHand();
-		return;
-	}
-	auto& package = it->second;
-	auto model = ModelOf(package.object);
-	glm::vec3 center = (model->GetBoundsMin() + model->GetBoundsMax()) * 0.5f;
-	float radius = glm::length(model->GetBoundsMax() - model->GetBoundsMin()) * 0.5f;
+	return m_inventory.HotbarSlotOf(ItemRef::Package(packageId)).has_value();
+}
 
-	// Held out in front at waist height, kept level, turning with you.
+void ShopWorld::PoseCarriedPackages(const FirstPersonController& player)
+{
 	glm::vec3 forward = player.GetForward();
 	forward.y = 0.f;
 	forward = glm::length(forward) > 0.001f ? glm::normalize(forward) : glm::vec3(0.f, 0.f, -1.f);
 	glm::quat rotation = Yaw(player.GetYaw());
-	glm::vec3 holdPoint = player.GetEyePosition() + forward * (0.3f + radius * 0.8f) - glm::vec3(0.f, 0.7f + radius * 0.4f, 0.f);
-	package.object->SetPosition(holdPoint - rotation * center);
-	package.object->SetRotation(rotation);
-	package.body = {};
+	for (int slot = 0; slot < PlayerInventory::HOTBAR_SLOTS; slot++)
+	{
+		ItemRef ref = m_inventory.GetHotbar(slot);
+		if (!ref.IsPackage())
+			continue;
+		auto it = m_packages.find(ref.id);
+		if (it == m_packages.end())
+		{
+			// Opened or taken by someone else meanwhile.
+			m_inventory.Remove(ref);
+			SyncHand();
+			continue;
+		}
+		auto& package = it->second;
+		auto model = ModelOf(package.object);
+		glm::vec3 center = (model->GetBoundsMin() + model->GetBoundsMax()) * 0.5f;
+		float radius = glm::length(model->GetBoundsMax() - model->GetBoundsMin()) * 0.5f;
+		bool inHand = ref.id == m_carriedPackage;
+		// In hand: held out in front at waist height, kept level, turning with you. Put away: with
+		// you, out of sight, so it's where you are if it's ever put down for you (leaving the garage).
+		glm::vec3 holdPoint = inHand
+			? player.GetEyePosition() + forward * (0.3f + radius * 0.8f) - glm::vec3(0.f, 0.7f + radius * 0.4f, 0.f)
+			: player.GetFeetPosition() + glm::vec3(0.f, 1.f, 0.f);
+		package.object->SetPosition(holdPoint - rotation * center);
+		package.object->SetRotation(rotation);
+		package.object->SetVisible(inHand);
+		package.object->SetPickable(false);
+		package.object->SetCastsShadows(false);
+		package.body = {};
+	}
+}
+
+void ShopWorld::ReleasePackage(uint32_t packageId, const glm::vec3& position, const glm::vec3& velocity)
+{
+	m_inventory.Remove(ItemRef::Package(packageId));
+	SyncHand();
+	auto it = m_packages.find(packageId);
+	if (it == m_packages.end())
+		return;
+	auto& package = it->second;
+	package.object->SetPosition(position);
+	package.body.velocity = velocity;
+	package.body.resting = false;
+	package.object->SetVisible(true);
+	package.object->SetPickable(true);
+	package.object->SetCastsShadows(true);
+	m_supportChanged = true;
+}
+
+void ShopWorld::UpdateCarriedPackage(const FirstPersonController& player, const InputManager& input)
+{
+	auto it = m_packages.find(m_carriedPackage);
+	if (it == m_packages.end())
+		return;
+	auto& package = it->second;
+	auto model = ModelOf(package.object);
+	glm::vec3 center = (model->GetBoundsMin() + model->GetBoundsMax()) * 0.5f;
+	glm::quat rotation = Yaw(player.GetYaw());
 
 	m_secondaryPrompt = package.label;
-	m_heldHint = "[RMB] Set down   [G] Drop";
+	m_heldHint = "[F] Open   [RMB] Set down   [G] Drop";
 
-	auto release = [&](const glm::vec3& position, const glm::vec3& velocity) {
-		package.object->SetPosition(position);
-		package.body.velocity = velocity;
-		package.body.resting = false;
-		package.object->SetPickable(true);
-		package.object->SetCastsShadows(true);
-		m_carriedPackage = 0;
-		m_supportChanged = true;
-		SyncHand();
-	};
-	if (Controls::Pressed(input, Control::DROP))
-		release(package.object->GetPosition(), player.GetForward() * 1.2f + glm::vec3(0.f, 0.5f, 0.f));
+	if (Controls::Pressed(input, Control::MOVE))
+		OpenPackage(package, &player);
+	else if (Controls::Pressed(input, Control::DROP))
+		ReleasePackage(package.id, package.object->GetPosition(), player.GetForward() * 1.2f + glm::vec3(0.f, 0.5f, 0.f));
 	else if (Controls::Pressed(input, Control::SET_DOWN))
 	{
 		if (auto point = AimPoint(player))
-			release(*point - rotation * glm::vec3(center.x, model->GetBoundsMin().y - 0.03f, center.z), {});
+			ReleasePackage(package.id, *point - rotation * glm::vec3(center.x, model->GetBoundsMin().y - 0.03f, center.z), {});
 		else
 			Toast("Nowhere to put it there.");
 	}
+}
+
+bool ShopWorld::PartWayDoneUp(const Part& part) const
+{
+	auto turned = m_fastenerTurns.find(part.GetId());
+	return turned != m_fastenerTurns.end() && turned->second > 0.f && part.GetTightness() == FastenerTightness::LOOSE;
+}
+
+pPart ShopWorld::RingTarget(const Workshop& workshop, const Part& host) const
+{
+	// A ring goes onto a loose piston, or the piston on a loose rod.
+	if (host.GetType() == PartType::PISTON)
+		return workshop.FindPart(host.GetId());
+	return host.GetType() == PartType::CONNECTING_ROD ? workshop.PistonOn(host) : nullptr;
+}
+
+bool ShopWorld::CanFitOnto(const Workshop& workshop, const ItemVisual& host) const
+{
+	// The part in hand into or onto a loose rod, cap or piston (put down, on the bench or the shelf): a bearing
+	// shell with none in it yet, a piston onto a rod with none on it, a ring onto a piston (or a rod's) without one.
+	auto held = GetHeld();
+	if (!held || !held->part || !host.part || &host == held)
+		return false;
+	bool loose = host.place == ItemPlace::WORLD || host.place == ItemPlace::BENCH || host.place == ItemPlace::STORAGE;
+	if (!loose)
+		return false;
+	if (held->part->GetType() == PartType::PISTON)
+		return host.part->GetType() == PartType::CONNECTING_ROD && !workshop.PistonOn(*host.part);
+	if (held->part->GetType() == PartType::PISTON_RING)
+	{
+		auto piston = RingTarget(workshop, *host.part);
+		return piston && !workshop.RingOn(*piston);
+	}
+	return Workshop::ShellFits(host.part->GetType(), held->part->GetType()) && !workshop.ShellIn(*host.part);
+}
+
+void ShopWorld::FitOnto(Workshop& workshop, ItemVisual& host)
+{
+	auto held = GetHeld();
+	if (!held)
+		return;
+	auto type = held->part->GetType();
+	pPart onto = type == PartType::PISTON_RING ? RingTarget(workshop, *host.part) : host.part;
+	bool fitted = type == PartType::PISTON ? workshop.FitPiston(host.part, held->part)
+		: type == PartType::PISTON_RING ? workshop.FitRing(onto, held->part)
+		: workshop.FitShell(host.part, held->part);
+	if (!fitted)
+		return;
+	held->hostPart = onto->GetId();
+	SetPlace(*held, ItemPlace::ATTACHED);
+	Cue(Sound::FIT_PART, host.object->GetPosition());
+	SyncHand();
+}
+
+pPart ShopWorld::TakeOffWhat(const Workshop& workshop, const Part& host) const
+{
+	// The last thing fitted: a piston's ring, then a rod's piston once its pin is out, then the shell in it.
+	if (auto piston = RingTarget(workshop, host))
+		if (auto ring = workshop.RingOn(*piston))
+			return ring;
+	if (auto piston = workshop.PistonOn(host); piston && !workshop.PinIn(*piston))
+		return piston;
+	return workshop.ShellIn(host);
+}
+
+void ShopWorld::TakeOff(Workshop& workshop, ItemVisual& host)
+{
+	auto what = TakeOffWhat(workshop, *host.part);
+	if (!what)
+	{
+		if (workshop.PistonOn(*host.part))
+			Toast("Press the piston's pin out first: hold the right button on it with the Piston Pin Press.");
+		return;
+	}
+	auto part = what->GetType() == PartType::PISTON_RING ? workshop.TakeRingOff(RingTarget(workshop, *host.part))
+		: what->GetType() == PartType::PISTON ? workshop.TakePistonOff(host.part) : workshop.TakeShellOut(host.part);
+	ItemVisual* visual = part ? Find(ItemRef::Part(part->GetId())) : nullptr;
+	if (!visual)
+		return;
+	// Off where it was, then into the hand (or the backpack); with no room, it's left lying there.
+	visual->yaw = host.yaw;
+	PlaceInWorld(*visual, visual->object->GetPosition() + glm::vec3(0.f, 0.03f, 0.f), {});
+	PickUp(workshop, *visual);
 }
 
 void ShopWorld::PickUp(Workshop& workshop, ItemVisual& visual)
@@ -2757,6 +3234,11 @@ void ShopWorld::PickUp(Workshop& workshop, ItemVisual& visual)
 	if (visual.place == ItemPlace::STAND && visual.engineIndex == m_engineOnDyno)
 	{
 		Toast("That engine is on the dyno: put it back on a stand (at the dyno) to work on it.");
+		return;
+	}
+	if (visual.place == ItemPlace::STAND && visual.engineIndex == m_engineOnHoist)
+	{
+		Toast("That engine is hanging from the hoist: lower it onto a stand to work on it.");
 		return;
 	}
 	// Off the engine in reverse build order.
@@ -2769,6 +3251,11 @@ void ShopWorld::PickUp(Workshop& workshop, ItemVisual& visual)
 				Toast(*blocked);
 				return;
 			}
+		if (PartWayDoneUp(*visual.part))
+		{
+			Toast("It's part way done up: hold [RMB] with a spanner on it to undo it the rest of the way.");
+			return;
+		}
 	}
 
 	// Onto the hotbar, in hand if the selected slot is free; with the hotbar full, into the backpack
@@ -2815,7 +3302,7 @@ void ShopWorld::PickUp(Workshop& workshop, ItemVisual& visual)
 
 void ShopWorld::ToggleEquip(const ItemRef& item)
 {
-	if (!Find(item))
+	if (!Find(item) && !item.IsPackage())
 		return;
 	if (m_equipped == item)
 		MoveToBackpack(item);
@@ -2830,15 +3317,20 @@ void ShopWorld::ToggleEquip(const ItemRef& item)
 
 bool ShopWorld::MoveToHotbar(const ItemRef& item, int slot)
 {
-	if (!Find(item) || !m_inventory.Contains(item) || slot < 0 || slot >= PlayerInventory::HOTBAR_SLOTS)
+	if ((!Find(item) && !item.IsPackage()) || !m_inventory.Contains(item) || slot < 0 || slot >= PlayerInventory::HOTBAR_SLOTS)
 		return false;
 
 	if (auto from = m_inventory.HotbarSlotOf(item))
 		m_inventory.SwapHotbar(*from, slot);
 	else
 	{
-		// From the backpack: whatever's in the slot takes its place there.
+		// From the backpack: whatever's in the slot takes its place there (a delivery can't).
 		ItemRef occupant = m_inventory.GetHotbar(slot);
+		if (occupant.IsPackage())
+		{
+			Toast("The delivery in that slot won't go in the backpack: pick another slot.");
+			return false;
+		}
 		const ItemVisual* occupantVisual = occupant.IsNone() ? nullptr : Find(occupant);
 		if (!m_inventory.ExchangeWithBackpack(slot, item, occupantVisual ? GridSize(*occupantVisual) : glm::ivec2(0)))
 		{
@@ -2853,6 +3345,11 @@ bool ShopWorld::MoveToHotbar(const ItemRef& item, int slot)
 
 bool ShopWorld::MoveToBackpack(const ItemRef& item)
 {
+	if (item.IsPackage())
+	{
+		Toast("A delivery is too big for the backpack.");
+		return false;
+	}
 	auto visual = Find(item);
 	if (!visual || !m_inventory.Contains(item))
 		return false;
@@ -2880,9 +3377,11 @@ void ShopWorld::SelectHotbarSlot(int slot)
 
 void ShopWorld::SyncHand()
 {
-	// Carrying a delivery takes both hands: the hotbar's item waits until it's put down. So does
-	// one put away with its own number.
-	ItemRef wanted = m_carriedPackage || m_handEmpty ? ItemRef{} : m_inventory.GetSelectedItem();
+	// The picked slot's item in hand, unless it's been put away with its own number. A delivery
+	// there is carried in both arms, with nothing else in hand.
+	ItemRef selected = m_handEmpty ? ItemRef{} : m_inventory.GetSelectedItem();
+	m_carriedPackage = selected.IsPackage() && m_packages.contains(selected.id) ? selected.id : 0;
+	ItemRef wanted = selected.IsPackage() ? ItemRef{} : selected;
 	if (!m_equipped.IsNone() && m_equipped != wanted)
 	{
 		if (auto previous = Find(m_equipped); previous && previous->place == ItemPlace::HAND)
@@ -2896,6 +3395,19 @@ void ShopWorld::SyncHand()
 
 void ShopWorld::DropFromInventory(const ItemRef& item, const FirstPersonController& player)
 {
+	if (item.IsPackage())
+	{
+		// Out in front of you, its middle at the height you'd carry it.
+		if (auto it = m_packages.find(item.id); it != m_packages.end())
+		{
+			auto model = ModelOf(it->second.object);
+			glm::vec3 center = (model->GetBoundsMin() + model->GetBoundsMax()) * 0.5f;
+			glm::vec3 forward = glm::normalize(glm::vec3(player.GetForward().x, 0.f, player.GetForward().z) + glm::vec3(0.f, 0.f, 1e-4f));
+			glm::vec3 middle = player.GetEyePosition() + forward * 0.8f - glm::vec3(0.f, 0.6f, 0.f);
+			ReleasePackage(item.id, middle - Yaw(player.GetYaw()) * center, forward * 0.5f);
+		}
+		return;
+	}
 	auto visual = Find(item);
 	if (!visual)
 		return;

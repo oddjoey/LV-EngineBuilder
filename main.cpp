@@ -2,8 +2,38 @@
 #include "Game/EngineBuilderGame.h"
 #include "Game/GameSettings.h"
 
+#include <cstdio>
+#include <filesystem>
+#ifdef _WIN32
+#include <io.h>
+#endif
+
+namespace
+{
+	// A Release build on Windows has no console, so what it logs goes to game.log beside it instead. The run
+	// before is kept as game.previous.log, so a crash's log is still there after starting the game again.
+	void LogToFile()
+	{
+#if defined(_WIN32) && !defined(_DEBUG)
+		std::error_code error;
+		std::filesystem::rename("game.log", "game.previous.log", error);
+		// Not freopen_s: that locks the file, and the log should be readable while the game's running.
+#pragma warning(suppress: 4996)
+		if (!std::freopen("game.log", "w", stdout))
+			return;
+		// Errors into the same file, at the same place.
+		_dup2(_fileno(stdout), _fileno(stderr));
+		// Written straight through, so nothing's lost if the game crashes.
+		std::setvbuf(stdout, nullptr, _IONBF, 0);
+		std::setvbuf(stderr, nullptr, _IONBF, 0);
+#endif
+	}
+}
+
 int main()
 {
+	LogToFile();
+
 	auto lordi = Lordi::Get();
 	auto settings = lordi->GetSettings();
 

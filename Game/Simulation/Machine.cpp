@@ -25,7 +25,6 @@ namespace MachineCatalog
 			ringFiler.sigma = 0.008;
 			ringFiler.maxRemoval = 0.50;
 			ringFiler.price = 150.0;
-			ringFiler.hoursPerUse = 0.15;
 			list.push_back(ringFiler);
 
 			Machine manualHone;
@@ -37,8 +36,6 @@ namespace MachineCatalog
 			// Honing is slow: there's no limit on stock, but every hundredth costs time.
 			manualHone.maxRemoval = 0.0;
 			manualHone.price = 300.0;
-			manualHone.hoursPerUse = 0.3;
-			manualHone.hoursPerMm = 8.0;
 			list.push_back(manualHone);
 
 			Machine powerHone;
@@ -49,8 +46,6 @@ namespace MachineCatalog
 			powerHone.finishRa = 0.35;
 			powerHone.maxRemoval = 0.0;
 			powerHone.price = 4500.0;
-			powerHone.hoursPerUse = 0.2;
-			powerHone.hoursPerMm = 3.0; 
 			list.push_back(powerHone);
 
 			Machine boringBar;
@@ -61,7 +56,6 @@ namespace MachineCatalog
 			boringBar.finishRa = 2.5;
 			boringBar.maxRemoval = 1.50;
 			boringBar.price = 3500.0;
-			boringBar.hoursPerUse = 0.75;
 			list.push_back(boringBar);
 
 			Machine crankGrinder;
@@ -72,7 +66,6 @@ namespace MachineCatalog
 			crankGrinder.finishRa = 0.30;
 			crankGrinder.maxRemoval = 0.80;
 			crankGrinder.price = 12000.0;
-			crankGrinder.hoursPerUse = 0.6;
 			list.push_back(crankGrinder);
 
 			Machine polisher;
@@ -83,7 +76,6 @@ namespace MachineCatalog
 			polisher.finishRa = 0.12;
 			polisher.maxRemoval = 0.004;
 			polisher.price = 600.0;
-			polisher.hoursPerUse = 0.2;
 			list.push_back(polisher);
 
 			Machine surfaceGrinder;
@@ -94,7 +86,6 @@ namespace MachineCatalog
 			surfaceGrinder.finishRa = 0.8;
 			surfaceGrinder.maxRemoval = 0.50;
 			surfaceGrinder.price = 6000.0;
-			surfaceGrinder.hoursPerUse = 1.0;
 			list.push_back(surfaceGrinder);
 
 			Machine reamer;
@@ -105,7 +96,6 @@ namespace MachineCatalog
 			reamer.finishRa = 0.6;
 			reamer.maxRemoval = 0.45;
 			reamer.price = 180.0;
-			reamer.hoursPerUse = 0.2;
 			list.push_back(reamer);
 
 			Machine seatCutter;
@@ -115,7 +105,6 @@ namespace MachineCatalog
 			seatCutter.sigma = 0.05;
 			seatCutter.maxRemoval = 0.8;
 			seatCutter.price = 900.0;
-			seatCutter.hoursPerUse = 0.25;
 			list.push_back(seatCutter);
 
 			Machine refacer;
@@ -125,7 +114,6 @@ namespace MachineCatalog
 			refacer.sigma = 0.003;
 			refacer.maxRemoval = 0.3;
 			refacer.price = 1400.0;
-			refacer.hoursPerUse = 0.15;
 			list.push_back(refacer);
 
 			// Added later, so saved machine lists keep their order.
@@ -139,7 +127,6 @@ namespace MachineCatalog
 			// How far over size a housing can be and still be brought back by grinding its cap.
 			lineBore.maxRemoval = 0.05;
 			lineBore.price = 9000.0;
-			lineBore.hoursPerUse = 2.5;
 			list.push_back(lineBore);
 
 			// The budget way to deck, after the line borer for the same reason.
@@ -147,15 +134,13 @@ namespace MachineCatalog
 			sandingBeam.name = "Deck Sanding Beam";
 			sandingBeam.description = "The budget way to deck: a long, dead-straight hardwood beam faced with 80 then 180 grit, worked "
 				"across a block or head deck by hand in long crossing strokes. Gets a warped deck close to flat for next to nothing, but "
-				"not as flat as a grinder, with a rougher finish and a lot slower. And you never quite know how much came off: measure "
+				"not as flat as a grinder, and with a rougher finish. And you never quite know how much came off: measure "
 				"the deck height (or chamber volumes) afterwards.";
 			sandingBeam.operation = MachineOperation::SURFACE;
 			sandingBeam.sigma = 0.022;
 			sandingBeam.finishRa = 1.4;
 			sandingBeam.maxRemoval = 0.10;
 			sandingBeam.price = 90.0;
-			sandingBeam.hoursPerUse = 0.5;
-			sandingBeam.hoursPerMm = 25.0;
 			sandingBeam.removalError = 0.35;
 			list.push_back(sandingBeam);
 

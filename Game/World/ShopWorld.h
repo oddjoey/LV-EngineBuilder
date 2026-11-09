@@ -2,6 +2,7 @@
 
 #include <array>
 #include <map>
+#include <set>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -527,8 +528,8 @@ private:
 	// A ratchet, breaker bar, torque wrench or the wrench set in hand: sockets go on from a set within
 	// reach, and nuts and bolts are done up or undone. True if it used this frame's E.
 	bool UpdateSpanner(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime);
-	// The piston pin press or ring compressor in hand: aimed at a piston on its loose rod, LMB held presses a pin in or
-	// squeezes its ring, RMB held the other way.
+	// The piston pin press in hand, aimed at a piston on its loose rod: LMB held presses a pin in, RMB held presses it
+	// out. Or the ring compressor, aimed at a piston in the top of its bore: LMB held pushes it home.
 	bool UpdatePinPress(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime);
 	// A marker, spray can or rag in hand: held down, it paints (or wipes) the wall or floor it's at, or (spray
 	// and rag) coats the part or tool. True while it's at work.
@@ -594,6 +595,8 @@ private:
 	pPart TakeOffWhat(const Workshop& workshop, const Part& host) const;
 	pPart RingTarget(const Workshop& workshop, const Part& host) const;
 	void TakeOff(Workshop& workshop, ItemVisual& host);
+	// How an item lies when it's put down loose: turned to its yaw, and a spray can stood on its base.
+	glm::quat RestingRotation(const ItemVisual& visual) const;
 	void PlaceInWorld(ItemVisual& visual, const glm::vec3& position, const glm::vec3& velocity);
 	void SetPlace(ItemVisual& visual, ItemPlace place, int machineIndex = -1);
 	ItemVisual* FindItemAt(ItemPlace place, int machineIndex = -1);
@@ -728,8 +731,11 @@ private:
 		glm::vec3 position = {};
 		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
 		float crank = 0.f;
+		std::set<int> unseated = {};
 	};
 	std::array<StandLayout, Workshop::MAX_ENGINES>	m_laidOutStands = {};
+	// The workshop's pistons in the top of their bores (Workshop::UnseatedPistons), kept here for posing them.
+	std::array<std::set<int>, Workshop::MAX_ENGINES>	m_unseated = {};
 	// One per tool in the catalogue: the model's position and turn on the board (see LayOutToolBoard).
 	struct ToolHook
 	{

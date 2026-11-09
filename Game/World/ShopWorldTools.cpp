@@ -918,16 +918,20 @@ void ShopWorld::UpdateMove(const FirstPersonController& player, const InputManag
 	station.object->SetTint(m_move->valid ? glm::vec4(0.7f, 1.f, 0.7f, 1.f) : glm::vec4(1.f, 0.45f, 0.45f, 1.f));
 	station.object->SetEmissive(0.25f);
 
-	m_prompt = m_move->valid ? std::format("[LMB] Set the {} down here", station.name) : std::format("The {} doesn't fit here", station.name);
-	m_secondaryPrompt = "[R] Rotate   [F] Cancel";
+	m_prompt = m_move->valid ? std::format("[LMB] or [F] Set the {} down here", station.name) : std::format("The {} doesn't fit here", station.name);
+	m_secondaryPrompt = "[R] Rotate   [RMB] Cancel";
 
-	if (m_move->valid && (Controls::Pressed(input, Control::USE) || Controls::Pressed(input, Control::PRIMARY)))
+	// Set down with a click, E or F again (where it fits); right-click puts it back where it was.
+	bool place = Controls::Pressed(input, Control::USE) || Controls::Pressed(input, Control::PRIMARY) || Controls::Pressed(input, Control::MOVE);
+	if (Controls::Pressed(input, Control::SET_DOWN))
+		CancelMove();
+	else if (place && m_move->valid)
 	{
 		Toast(std::format("Moved the {}.", station.name));
 		m_move.reset();
 	}
-	else if (Controls::Pressed(input, Control::MOVE))
-		CancelMove();
+	else if (place)
+		Toast(std::format("The {} doesn't fit here. Right-click puts it back.", station.name));
 }
 
 std::optional<glm::vec2> ShopWorld::ProjectToScreen(const glm::vec3& point, const FirstPersonController& player) const
@@ -1323,7 +1327,7 @@ std::string ShopWorld::SpannerLabel(size_t toolIndex) const
 		case HandToolKind::SPRAY_CAN:		return "[LMB] Spray";
 		case HandToolKind::THINNER:			return "[LMB] Wipe off paint";
 		case HandToolKind::PIN_PRESS:		return "[LMB] Press a pin in   [RMB] Press one out";
-		case HandToolKind::RING_COMPRESSOR:	return "[LMB] Squeeze a ring in   [RMB] Let it off";
+		case HandToolKind::RING_COMPRESSOR:	return "[LMB] Squeeze a piston's ring and push it home";
 		default:							return "";
 	}
 }
@@ -1635,34 +1639,53 @@ bool ShopWorld::UpdatePinPress(Workshop& workshop, const FirstPersonController& 
 	if (kind != HandToolKind::PIN_PRESS && kind != HandToolKind::RING_COMPRESSOR)
 		return false;
 	bool compressor = kind == HandToolKind::RING_COMPRESSOR;
-	// The piston aimed at, on a loose rod that isn't in your hand.
+	// The press works on a piston on a loose rod that isn't in your hand; the ring compressor on a piston sat in
+	// the top of its bore, on an engine.
 	glm::vec3 eye = player.GetEyePosition(), forward = player.GetForward();
 	ItemVisual* target = nullptr;
+	int cylinder = -1;
 	float best = 0.12f;
 	for (auto& [ref, visual] : m_items)
 	{
-		if (!visual.part || visual.part->GetType() != PartType::PISTON || visual.place != ItemPlace::ATTACHED || !visual.object->IsVisible())
+		if (!visual.part || visual.part->GetType() != PartType::PISTON || !visual.object->IsVisible())
 			continue;
-		const ItemVisual* rod = Find(ItemRef::Part(visual.hostPart));
-		if (!rod || !rod->part || rod->part->GetType() != PartType::CONNECTING_ROD || rod->place == ItemPlace::HAND)
-			continue;
-		glm::vec3 at = visual.object->GetPosition();
-		float along = glm::dot(at - eye, forward);
+		int at = -1;
+		if (compressor)
+		{
+			if (visual.place != ItemPlace::STAND || visual.engineIndex == m_engineOnDyno || visual.engineIndex == m_engineOnHoist)
+				continue;
+			auto slot = FindInstalledSlot(workshop.GetAssembly(visual.engineIndex), visual.part);
+			if (!slot || slot->first != AssemblySlot::PISTON || !workshop.UnseatedPistons(visual.engineIndex).contains(slot->second))
+				continue;
+			at = slot->second;
+		}
+		else
+		{
+			if (visual.place != ItemPlace::ATTACHED)
+				continue;
+			const ItemVisual* rod = Find(ItemRef::Part(visual.hostPart));
+			if (!rod || !rod->part || rod->part->GetType() != PartType::CONNECTING_ROD || rod->place == ItemPlace::HAND)
+				continue;
+		}
+		glm::vec3 position = visual.object->GetPosition();
+		float along = glm::dot(position - eye, forward);
 		if (along <= 0.f || along > INTERACT_DISTANCE)
 			continue;
-		float off = glm::length(at - (eye + forward * along));
+		float off = glm::length(position - (eye + forward * along));
 		if (off < best)
 		{
 			best = off;
 			target = &visual;
+			cylinder = at;
 		}
 	}
 	if (!target)
 		return false;
 	m_spannerTarget = target->object->GetPosition();
 
-	// Held: LMB presses a pin in or squeezes the ring, RMB the other way. Let go part way and it stays part way, on that
-	// piston, with that tool, that way; once one is done, the button is let go before the next.
+	// Held: LMB presses a pin in or squeezes the ring and pushes the piston home, RMB presses a pin out. Let go part
+	// way and it stays part way, on that piston, with that tool, that way; once one is done, the button is let go
+	// before the next.
 	auto piston = target->part;
 	if (m_pressPiston != piston->GetId() || m_pressTool != kind)
 	{
@@ -1671,37 +1694,36 @@ bool ShopWorld::UpdatePinPress(Workshop& workshop, const FirstPersonController& 
 		m_pressProgress = 0.f;
 	}
 	m_pressAimed = true;
-	bool ringed = workshop.RingOn(*piston) != nullptr;
-	bool done = compressor ? workshop.RingsCompressed(*piston) : workshop.PinIn(*piston) != nullptr;
+	bool done = !compressor && workshop.PinIn(*piston) != nullptr;
 	bool pressIn = Controls::Held(input, Control::PRIMARY), pressOut = Controls::Held(input, Control::SET_DOWN);
 	if (!pressIn && !pressOut)
 		m_pressDone = false;
 	if (compressor)
-		m_prompt = std::format("{} on its rod ({})   {}", piston->GetName(), !ringed ? "no ring on" : done ? "ring squeezed in" : "ring not squeezed",
-			done ? "[RMB] Hold to let the compressor off" : ringed ? "[LMB] Hold to squeeze its ring in" : "");
+		m_prompt = std::format("Piston {} is in the top of its bore   [LMB] Hold to squeeze its ring and push it home", cylinder + 1);
 	else
 		m_prompt = std::format("{} on its rod ({})   {}", piston->GetName(), done ? "pinned" : "no pin in",
 			done ? "[RMB] Hold to press the pin out" : "[LMB] Hold to press a pin in");
-	// What has to be there to do it.
-	std::optional<std::string> missing = !compressor && !done && !workshop.LoosePin() ? std::optional<std::string>("There's no loose piston pin: each piston comes with one.")
-		: compressor && !ringed ? std::optional<std::string>("Fit a piston ring onto it first.") : std::nullopt;
+	std::optional<std::string> missing = !compressor && !done && !workshop.LoosePin()
+		? std::optional<std::string>("There's no loose piston pin: each piston comes with one.") : std::nullopt;
 	if (missing)
 		m_secondaryPrompt = *missing;
 
 	int direction = pressIn == pressOut ? 0 : pressIn ? 1 : -1;
-	if (direction != 0 && Controls::Pressed(input, direction > 0 ? Control::PRIMARY : Control::SET_DOWN) && (direction > 0) == done)
-		Toast(compressor ? (done ? "Its ring is squeezed in already: the right button lets the compressor off." : "The compressor isn't on it: the left button squeezes the ring in.")
-			: (done ? "Its pin is in already: the right button presses it out." : "There's no pin in it: the left button presses one in."));
-	if (direction == 0 || m_pressDone || (direction > 0) == done || (direction > 0 && missing))
-		return direction < 0;
+	// The compressor only pushes home; to take it back out, pull the rod.
+	if (compressor && direction < 0)
+		direction = 0;
+	if (!compressor && direction != 0 && Controls::Pressed(input, direction > 0 ? Control::PRIMARY : Control::SET_DOWN) && (direction > 0) == done)
+		Toast(done ? "Its pin is in already: the right button presses it out." : "There's no pin in it: the left button presses one in.");
+	if (direction == 0 || m_pressDone || (!compressor && (direction > 0) == done) || (direction > 0 && missing))
+		return pressOut;
 	if (direction != m_pressDirection)
 	{
 		m_pressDirection = direction;
 		m_pressProgress = 0.f;
 	}
 
-	// Screwed down (or ratcheted tight) a turn at a time, the tool heard as it goes.
-	const float seconds = compressor ? 1.2f : 2.f;
+	// Screwed down (or ratcheted tight and tapped home) a turn at a time, the tool heard as it goes.
+	const float seconds = compressor ? 1.5f : 2.f;
 	float before = m_pressProgress;
 	m_pressProgress += deltaTime / (seconds * static_cast<float>(workshop.TurnTimeFactor()));
 	if (std::floor(before * 4.f) != std::floor(m_pressProgress * 4.f))
@@ -1713,8 +1735,10 @@ bool ShopWorld::UpdatePinPress(Workshop& workshop, const FirstPersonController& 
 	m_pressDone = true;
 	if (compressor)
 	{
-		workshop.CompressRings(piston, direction > 0);
-		return direction < 0;
+		workshop.SetActiveEngine(target->engineIndex);
+		if (workshop.SeatPiston(cylinder))
+			Cue(Sound::FIT_PART, target->object->GetPosition());
+		return false;
 	}
 	if (direction > 0)
 	{

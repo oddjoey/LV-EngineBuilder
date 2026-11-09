@@ -79,7 +79,8 @@ xcopy /y /d /i "$(LordiDir)Engine\Graphics\Shaders\Compiled\*.spv" "$(OutDir)LV\
 xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
       <Message>Copy the DLSS runtime, the shaders and Resources next to the executable, so it runs from its own folder</Message>
     </PostBuildEvent>
-  </ItemDefinitionGroup>  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -110,7 +111,8 @@ xcopy /y /d /i "$(LordiDir)Engine\Graphics\Shaders\Compiled\*.spv" "$(OutDir)LV\
 xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
       <Message>Copy the DLSS runtime, the shaders and Resources next to the executable, so it runs from its own folder</Message>
     </PostBuildEvent>
-  </ItemDefinitionGroup>  <ItemGroup>
+  </ItemDefinitionGroup>
+  <ItemGroup>
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader>Create</PrecompiledHeader>
     </ClCompile>
@@ -171,11 +173,18 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="Game\Net\AccountLogin.cpp" />
     <ClCompile Include="LV\Engine\Networking\Socket.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Engine\Networking\Crypto.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
+    </ClCompile>
+    <ClCompile Include="LV\Libraries\monocypher\monocypher.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Engine\Graphics\DLSS.cpp" />
     <ClCompile Include="LV\Engine\Graphics\Graphics.cpp" />
@@ -202,39 +211,48 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="LV\Engine\Utility\Utility.cpp" />
     <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_glfw.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\imgui\backends\imgui_impl_vulkan.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\imgui\imgui.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\imgui\imgui_demo.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\imgui\imgui_draw.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\imgui\imgui_tables.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\imgui\imgui_widgets.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\imgui\misc\cpp\imgui_stdlib.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
     <ClCompile Include="LV\Libraries\ufbx\ufbx.c">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <ForcedIncludeFiles></ForcedIncludeFiles>
+      <ForcedIncludeFiles>
+      </ForcedIncludeFiles>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -325,9 +343,7 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClInclude Include="LV\Engine\Utility\Utility.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="README.md" />
     <None Include="Resources\Models\models.cfg" />
-    <None Include="Resources\Models\README.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

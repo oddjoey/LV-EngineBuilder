@@ -2,7 +2,7 @@
 
 A first-person engine building game, made on **[Lordi](https://github.com/oddjoey/LV)**, a custom C++ / Vulkan game engine. Lordi is included as a git submodule in `LV/`.
 
-You run a small shop out of a wooden shack. You start with a worn-out **LV-16 Inline-4** (1.6 litre) core, a set of combination wrenches, the service manual and **$694**: just enough for the new parts the core needs. Measure every part down to the micron, machine what's out of spec, buy what's missing, put the engine together with the right clearances, and sell it. Nothing is shown to you that you haven't measured yourself: the parts have real (hidden) geometry, and your tools have real resolution and error.
+You run a small shop out of a wooden shack. You start with a worn-out **LV-16 Inline-4** (1.6 litre) core, a set of combination wrenches, the service manual and **$759**: just enough for the new parts the core needs. Measure every part down to the micron, machine what's out of spec, buy what's missing, put the engine together with the right clearances, and sell it. Nothing is shown to you that you haven't measured yourself: the parts have real (hidden) geometry, and your tools have real resolution and error.
 
 ---
 
@@ -32,7 +32,7 @@ You run a small shop out of a wooden shack. You start with a worn-out **LV-16 In
 
 - **Windows 10/11, x64**
 - **Visual Studio 2026** (platform toolset v145) with the C++ desktop workload
-- Or **macOS 13.3+** with CMake, the Vulkan SDK (MoltenVK), GLFW and OpenSSL: see [MACOS.md](MACOS.md)
+- Or **macOS 13.3+** with CMake, the Vulkan SDK (MoltenVK) and GLFW: see [MACOS.md](MACOS.md)
 - A discrete GPU with **Vulkan 1.4** support
 - An **NVIDIA RTX** GPU for DLSS (optional: the game runs without it)
 
@@ -51,6 +51,7 @@ The game builds against Lordi's libraries in `LV/Libraries/`. ImGui, glm and mag
 | [termcolor](https://github.com/ikalnytskyi/termcolor) | `LV/Libraries/termcolor` | Coloured console logs |
 | [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) | `LV/Libraries/tinyobjloader` | `.obj` models |
 | [ufbx](https://github.com/ufbx/ufbx) | `LV/Libraries/ufbx` | `.fbx` models |
+| [Monocypher 4.0.2](https://monocypher.org/) | `LV/Libraries/monocypher` (`monocypher.c` and `monocypher.h` from its `src` folder) | The encryption between the game and the servers, the same on every platform |
 | [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS) | `LV/Libraries/DLSS` | DLSS Super Resolution (310.9.16) |
 
 ### Setup
@@ -93,7 +94,7 @@ Engine work (rendering, shaders, DLSS) belongs in the [Lordi repository](https:/
 
 The loop:
 
-1. **Look around the shack.** Your core's parts are laid out in order on two parts shelves along the back wall. The left one holds the engine's internals (block, crank, head, cam, rods, valves, springs and the rest of the valvetrain), the right one everything bolted around them (timing drive, oiling, cooling, fuel and air, exhaust and ignition). The tool board holds only the combination wrenches (8-19 mm and 21-24 mm, for the 22 mm crank pulley bolt) and the service manual; there are no machines and no dyno: everything else is bought at the parts computer (E at the desk), a beam torque wrench ($45) and the 8-19 mm socket set from the start, and ratchets, breaker bars, the large sockets and the better torque wrenches only once the shop has the **Sockets & Ratchets** perk. The $694 you start with covers only the parts the core is missing (pistons, rings, bearings, gaskets, seals, filter, thermostat and V-belt). The core is always one that will run with just those, bolted up with the wrenches, so build it, sell it, and buy tools, machines and the dyno with what it earns.
+1. **Look around the shack.** Your core's parts are laid out in order on two parts shelves along the back wall. The left one holds the engine's internals (block, crank, head, cam, rods, valves, springs and the rest of the valvetrain), the right one everything bolted around them (timing drive, oiling, cooling, fuel and air, exhaust and ignition). The tool board holds only the combination wrenches (8-19 mm and 21-24 mm, for the 22 mm crank pulley bolt) and the service manual; there are no machines and no dyno: everything else is bought at the parts computer (E at the desk), a beam torque wrench ($45) and the 8-19 mm socket set from the start, and ratchets, breaker bars, the large sockets and the better torque wrenches only once the shop has the **Sockets & Ratchets** perk. The $759 you start with covers only the parts the core is missing (pistons, rings, bearings, gaskets, seals, filter, thermostat and V-belt), the piston pin press and the piston ring compressor. The core is always one that will run with just those, bolted up with the wrenches, so build it, sell it, and buy tools, machines and the dyno with what it earns.
 2. **Measure.** Take a tool in hand, aim at a part, and left-click. Bores, journals, decks, valves, springs: everything has a spec.
 3. **Inspect on the bench.** Set a part on the workbench and press E there. The Bench screen lists every feature, its spec, your reading and the verdict.
 4. **Machine** what's worn: set the part up in the right machine with E and cut it from that machine's screen. Material only comes off.
@@ -109,7 +110,7 @@ Each engine is built on its own engine stand. You start with one; buy more (up t
 - **E at a stand** makes its engine the one you're working on: the Engine Stand screen shows that stand's engine, and the Dyno screen has an engine picker when you have more than one.
 - **The engine hoist** ($350 at the parts computer, under Machines) moves engines about. Push it (F) up to a stand or the dyno and press E to lift the engine off onto its hook, push it anywhere, and press E by a free stand or the dyno to lower the engine on. Nothing can be fitted to or taken off an engine while it hangs.
 - **Bearing shells go in with their rods and caps.** The upper rod shell is fitted into its connecting rod, and the lower rod and main shells into the rod and main caps, off the engine: hold the shell, aim at the rod or cap on the bench, shelf or floor and press E (R takes one out again). A rod or cap only goes on the engine with its shell in, and comes off with it.
-- **Pistons go on their rods first, pinned and ringed.** Hold a piston and press E on a loose connecting rod to sit it on the rod, then, with the **Piston Pin Press** aimed at the piston, hold left-click to press a piston pin through both (right-click presses it out). Hold the piston ring and press E on the piston (loose, or on its rod) to fit it. Before it goes in, squeeze the ring with the **Piston Ring Compressor**: aim it at the piston and hold left-click (right-click lets it off). A rod goes into the engine only with its upper shell in and its piston pinned, ringed and squeezed, and comes out with all of it. R takes the last thing fitted off again. Every shop starts with the press and the compressor; each piston comes with its pin, and pins are sold on their own too.
+- **Pistons go on their rods first, pinned and ringed.** Hold a piston and press E on a loose connecting rod to sit it on the rod, then, with the **Piston Pin Press** aimed at the piston, hold left-click to press a piston pin through both (right-click presses it out). Hold the piston ring and press E on the piston (loose, or on its rod) to fit it. A rod goes into the engine only with its upper shell in and its piston pinned and ringed, and stops in the top of the bore: aim the **Piston Ring Compressor** at the piston and hold left-click to squeeze the ring and push it home (its cap, the oil pump and the head gasket wait for that). It comes out with all of it, and R takes the last thing fitted off again. Every rod and piston goes in before the oil pump. The press ($40) and the compressor ($25) are bought at the parts computer, and the starting money covers them; each piston comes with its pin, and pins are sold on their own too.
 - Parts are shared: any part can go into any engine, but only one at a time, and a part fitted to one engine isn't offered for another.
 - Assembly checks (Plastigauge, feelers, dial indicator) work on whichever stand you aim at. Each engine keeps its own readings and its own dyno sheet.
 
@@ -158,7 +159,7 @@ Older saves load whatever was fitted, even if out of order; their engines simply
 | Q | Stow what you're holding in your backpack (or, when it won't fit, on the parts shelf or tool board) |
 | 1 – 0 | Take a hotbar item in hand, or put it back |
 | Tab | Open/close your inventory (closes any workshop screen) |
-| F | Move equipment (machines, bench, stands, shelf, tool board) and open a delivery, on the floor or in your hands. R rotates, F cancels |
+| F | Move equipment (machines, bench, stands, shelf, tool board) and open a delivery, on the floor or in your hands. R rotates; click, E or F again sets it down, right-click puts it back |
 | R (hold) | Turn over the engine you're looking at, by hand |
 | Z / X (hold) | Roll the engine you're looking at on its stand to get at it from underneath |
 | Esc | Close the screen, or open the pause menu |

@@ -81,6 +81,7 @@
     <ClCompile Include="Accounts.cpp" />
     <ClCompile Include="..\LV\Engine\Networking\Socket.cpp" />
     <ClCompile Include="..\LV\Engine\Networking\Crypto.cpp" />
+    <ClCompile Include="..\LV\Libraries\monocypher\monocypher.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AccountServer.h" />

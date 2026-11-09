@@ -84,6 +84,13 @@ void PlayerAvatar::Remove()
 
 void PlayerAvatar::SetVisible(bool visible)
 {
+	// Shown again after a while hidden, it picks up from where they are now and stands still to start with,
+	// rather than walking off everything that happened meanwhile in a rush.
+	if (visible && !m_visible)
+	{
+		m_posed = false;
+		m_speed = 0.f;
+	}
 	m_visible = visible;
 	for (auto* object : Pieces())
 		if (*object)

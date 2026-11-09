@@ -499,13 +499,14 @@ void ServiceManual::Build(bool imperial)
 	heading("Pistons and Rods, Each Cylinder");
 	step("Off the engine: the piston onto its connecting rod, its pin pressed through both with the Piston Pin Press, the ring "
 		"(gapped) onto the piston, and the upper rod shell into the rod.", { PartType::PISTON, PartType::PISTON_PIN, PartType::PISTON_RING, PartType::ROD_BEARING });
-	step("Squeeze the ring into its groove with the Piston Ring Compressor, then the rod, piston and all, down the bore and onto "
-		"the crank pin.", { PartType::CONNECTING_ROD });
+	step("The rod, piston and all, into the top of the bore: the ring stops it. Squeeze the ring into its groove with the Piston "
+		"Ring Compressor and it goes home, the rod onto the crank pin. Every rod and piston goes in before the oil pump.", { PartType::CONNECTING_ROD });
 	step("Lower rod shell into the rod cap, then the cap onto the rod. Torque the rod nuts.", { PartType::ROD_BEARING_LOWER, PartType::ROD_CAP, PartType::NUT_M8 });
 	note("Shells, pistons and rings go into and onto their rods, caps and pistons off the engine: hold one, aim at what it goes on (on "
-		"the bench, a shelf or the floor) and press E; R takes the last one off again. With the Piston Pin Press or the Piston Ring "
-		"Compressor in hand and aimed at the piston, hold the left button to press its pin in or squeeze its ring, the right to undo it. A rod "
-		"goes on only with its shell in and its piston pinned, ringed and squeezed, a cap only with its shell, and they come off with them.");
+		"the bench, a shelf or the floor) and press E; R takes the last one off again. With the Piston Pin Press in hand and aimed at "
+		"the piston, hold the left button to press its pin in, the right to press it out. A rod goes on only with its shell in and its piston "
+		"pinned and ringed, and stops in the top of the bore: aim the Piston Ring Compressor at the piston and hold the left button to push it "
+		"home. A cap goes on only with its shell, and they come off with them. The press and the compressor are bought at the parts computer.");
 	heading("Top End");
 	step("Head gasket, once every piston and rod is in.", { PartType::HEAD_GASKET });
 	step("Cylinder head. Torque the head bolts.", { PartType::CYLINDER_HEAD, PartType::BOLT_M12 });

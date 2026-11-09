@@ -1498,7 +1498,7 @@ void ShopAssets::LoadParts()
 		// Core plug holes (the plugs are parts of their own) and the oil filter boss.
 		for (int plug = 0; plug < 3; plug++)
 			Cylinder(block, AlongZ({ (plug - 1) * 0.12f, -0.09f, BLOCK_WIDTH * 0.5f + 0.0005f }), 0.015f, 0.001f, DARK);
-		Cylinder(block, AlongZ({ 0.12f, -0.2f, -0.13f }), 0.035f, 0.03f);
+		Cylinder(block, AlongZ({ 0.12f, -0.2f, 0.13f }), 0.035f, 0.03f);	// on the side the filter went to (see AncillaryMount)
 		add(PartType::BLOCK, block);
 	}
 	{
@@ -1729,7 +1729,7 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 	bool exhaust = index % 2 == 1;
 	switch (type)
 	{
-		case PartType::CORE_PLUG:				return crossOver({ { (index - 1) * 0.12f, -0.09f, BLOCK_WIDTH * 0.5f + 0.0005f }, FACING_INTAKE });
+		case PartType::CORE_PLUG:				return { { (index - 1) * 0.12f, -0.09f, BLOCK_WIDTH * 0.5f + 0.0005f }, FACING_INTAKE };	// in the block's holes
 		case PartType::REAR_MAIN_SEAL:			return { { -FRONT_X + 0.001f, CRANK_Y, 0.f }, FACING_REAR };
 		case PartType::OIL_PUMP:				return { { FRONT_X - 0.001f, CRANK_Y, 0.f }, FACING_FRONT };
 		case PartType::OIL_PICKUP:				return { { FRONT_X - 0.009f, CRANK_Y - 0.075f, 0.f } };	// its flange under the pump's lug

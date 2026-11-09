@@ -61,6 +61,8 @@ namespace ShopLayout
 	constexpr float STAND_MOUNT_HEIGHT = 1.05f;
 	constexpr float STAND_ROLL_PIVOT_Y = -0.13f;	// below the deck, about the block's middle
 	constexpr float STAND_ROLL_SPEED = 1.6f;		// radians per second
+	// How far up the bore a rod and piston sit before the ring compressor lets them go home.
+	constexpr float UNSEATED_RISE = 0.07f;
 	inline const glm::vec3 DYNO_POSITION = { -2.6f, 0.f, 1.3f };
 	// Where an engine on the dyno sits, in the dyno's space: its crank on the absorber's axis, its
 	// flywheel end (engine +X) towards the absorber.
@@ -143,7 +145,7 @@ namespace ShopLayout
 		if (type == PartType::PISTON)
 			return std::string("The piston goes onto a connecting rod off the engine, pinned, and on with it");
 		if (type == PartType::PISTON_RING)
-			return std::string("The ring goes onto its piston off the engine, and on with it, squeezed in the ring compressor");
+			return std::string("The ring goes onto its piston off the engine, and in with it");
 		return std::format("The {} goes into a {} off the engine, and on with it", PartTypeName(type), PartTypeName(EngineAssembly::SlotPartType(*host)));
 	}
 	inline FitSpot FindFitSpot(const EngineAssembly& assembly, PartType type)

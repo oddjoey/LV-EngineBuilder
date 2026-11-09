@@ -50,6 +50,8 @@ struct EngineBuild
 	std::map<std::string, AssemblyReading> readings = {};
 	DynoResult lastDyno = {};
 	bool dynoCurrent = false;
+	// Cylinders whose rod and piston are in the top of the bore, not yet pushed home with the ring compressor.
+	std::set<int> unseated = {};
 };
 
 // The last engine sold: the buyer's dyno pull of it, what they paid and the reputation it earned. Only
@@ -250,13 +252,15 @@ public:
 	// The piston on a loose rod: a pin from the shop's loose ones pressed in, or out again. The one pressed.
 	pPart PressPinIn(const pPart& piston);
 	pPart PressPinOut(const pPart& piston);
-	// A piston's ring, fitted off the engine. Squeezed in the ring compressor (CompressRings), it can go down the bore;
-	// it has to be, for the rod to go in.
+	// A piston's ring, fitted off the engine.
 	pPart RingOn(const Part& piston) const;
 	bool FitRing(const pPart& piston, const pPart& ring);
 	pPart TakeRingOff(const pPart& piston);
-	bool CompressRings(const pPart& piston, bool squeezed);
-	bool RingsCompressed(const Part& piston) const;
+	// A rod goes in with its piston only as far as the ring: it sits in the top of the bore until the ring
+	// compressor squeezes the ring and it's pushed home (SeatPiston, on the active engine). Nothing goes on under
+	// or over it till then: its cap, the oil pump, the head gasket.
+	const std::set<int>& UnseatedPistons(int engine) const;
+	bool SeatPiston(int cylinder);
 	// A piston pin that isn't in a piston.
 	pPart LoosePin() const;
 	// Whether a shell of that type fits a part of the other.
@@ -331,6 +335,5 @@ private:
 	std::map<uint32_t, uint32_t>				m_pistons = {};	// a loose rod's id: the piston on it
 	std::map<uint32_t, uint32_t>				m_pins = {};	// a piston's id: the pin pressed into it (on the engine too)
 	std::map<uint32_t, uint32_t>				m_rings = {};	// a loose piston's id: the ring on it
-	std::set<uint32_t>							m_compressed = {};	// pistons whose ring is squeezed in the compressor (not saved)
 	EngineSale									m_lastSale = {};
 };

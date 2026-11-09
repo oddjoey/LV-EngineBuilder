@@ -28,13 +28,16 @@ Transport (LV/Engine/Networking/Socket.h)
     is a line of the same text format the save files use, for example:
         presence 7 1.2 0 3.4 ...
 
-Encryption (LV/Engine/Networking/Crypto.h), done before anything private:
-    1. Each side makes a fresh P-256 key pair for this connection and sends
+Encryption (LV/Engine/Networking/Crypto.h), done before anything private.
+It uses Monocypher (LV/Libraries/monocypher), built into the game and both
+servers, so it is the same on every platform:
+    1. Each side makes a fresh X25519 key pair for this connection and sends
        its public key.
-    2. The server also signs both keys with its permanent identity key.
+    2. The server also signs both keys with its permanent identity key
+       (EdDSA).
     3. Both sides work out the same shared secret and turn it into two
-       AES-256-GCM keys, one for each direction. From then on everything is
-       encrypted.
+       XChaCha20-Poly1305 keys (hashed with BLAKE2b), one for each
+       direction. From then on everything is encrypted.
     4. The game remembers each server's identity the first time it connects
        (known_servers.txt). If a server at that address ever shows a
        different identity, the game refuses it. That is what stops someone

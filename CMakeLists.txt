@@ -20,10 +20,9 @@ set(LORDI ${CMAKE_SOURCE_DIR}/LV)
 set(LIBRARIES ${LORDI}/Libraries)
 
 # The LunarG Vulkan SDK (it brings MoltenVK, the loader and the validation layers), and from
-# Homebrew: glfw and openssl@3.
+# Homebrew: glfw. (The encryption is Monocypher, built in.)
 find_package(Vulkan REQUIRED)
 find_package(glfw3 3.4 REQUIRED)
-find_package(OpenSSL 3 REQUIRED COMPONENTS Crypto)
 
 # ---- The game
 
@@ -44,7 +43,8 @@ add_executable(LV-EngineBuilder
 	${GAME_SOURCES}
 	${ENGINE_SOURCES}
 	${IMGUI_SOURCES}
-	${LIBRARIES}/ufbx/ufbx.c)
+	${LIBRARIES}/ufbx/ufbx.c
+	${LIBRARIES}/monocypher/monocypher.c)
 
 target_include_directories(LV-EngineBuilder PRIVATE
 	${CMAKE_SOURCE_DIR}
@@ -70,7 +70,6 @@ set_source_files_properties(${WITH_PCH} PROPERTIES COMPILE_OPTIONS "-include;${C
 target_link_libraries(LV-EngineBuilder PRIVATE
 	Vulkan::Vulkan
 	glfw
-	OpenSSL::Crypto
 	"-framework AudioToolbox"
 	"-framework CoreFoundation")
 
@@ -83,14 +82,13 @@ add_custom_command(TARGET LV-EngineBuilder POST_BUILD
 
 # ---- The servers
 
-set(NETWORKING_SOURCES ${LORDI}/Engine/Networking/Socket.cpp ${LORDI}/Engine/Networking/Crypto.cpp)
+set(NETWORKING_SOURCES ${LORDI}/Engine/Networking/Socket.cpp ${LORDI}/Engine/Networking/Crypto.cpp ${LIBRARIES}/monocypher/monocypher.c)
 
 add_executable(LV-EngineServer
 	${CMAKE_SOURCE_DIR}/Server/main.cpp
 	${CMAKE_SOURCE_DIR}/Server/GarageServer.cpp
 	${CMAKE_SOURCE_DIR}/Server/Profiles.cpp
 	${NETWORKING_SOURCES})
-target_link_libraries(LV-EngineServer PRIVATE OpenSSL::Crypto)
 set_target_properties(LV-EngineServer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Server)
 
 add_executable(LV-AccountServer
@@ -98,5 +96,4 @@ add_executable(LV-AccountServer
 	${CMAKE_SOURCE_DIR}/AccountServer/AccountServer.cpp
 	${CMAKE_SOURCE_DIR}/AccountServer/Accounts.cpp
 	${NETWORKING_SOURCES})
-target_link_libraries(LV-AccountServer PRIVATE OpenSSL::Crypto)
 set_target_properties(LV-AccountServer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Server)

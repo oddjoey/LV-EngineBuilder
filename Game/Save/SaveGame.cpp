@@ -45,8 +45,9 @@ namespace
 	// 28: the 4A-C's four cam journals (and caps), not five, and its five rocker shaft bolts through both shafts.
 	// 29: no cot (the station after the lift). 30: the engine hoist (a station after the extension's door), and
 	// which engine hangs from it. 31: bearing shells fitted into loose rods and caps. 32: pistons on loose rods, and
-	// the piston pins pressed into them (a part of their own). 33: rings fitted onto loose pistons.
-	constexpr int VERSION = 33;
+	// the piston pins pressed into them (a part of their own). 33: rings fitted onto loose pistons. 34: the pistons
+	// in the top of their bores, not yet pushed home with the ring compressor.
+	constexpr int VERSION = 34;
 	constexpr const char* MAGIC = "LVSAVE";
 
 	constexpr int PART_TYPES = static_cast<int>(PartType::COUNT);
@@ -324,6 +325,16 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 		out.Word(word).Int(fittings->size());
 		for (const auto& [host, fitted] : *fittings)
 			out.Int(host).Int(fitted);
+		out.Line();
+	}
+	{
+		std::vector<std::pair<int, int>> unseated;
+		for (int engine = 0; engine < workshop.GetEngineCount(); engine++)
+			for (int cylinder : workshop.m_engines[engine]->unseated)
+				unseated.push_back({ engine, cylinder });
+		out.Word("unseated").Int(unseated.size());
+		for (auto [engine, cylinder] : unseated)
+			out.Int(engine).Int(cylinder);
 		out.Line();
 	}
 
@@ -954,6 +965,17 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 				(*fittings)[host] = static_cast<uint32_t>(in.Int());
 			}
 		}
+	std::vector<std::pair<int, int>> unseated;
+	if (version >= 34)
+	{
+		in.Expect("unseated");
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			int engine = static_cast<int>(in.Int());
+			unseated.push_back({ engine, static_cast<int>(in.Int()) });
+		}
+	}
 
 	SavedWorld saved;
 	in.Expect("stations");
@@ -1195,11 +1217,14 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			&& partsById.at(pin)->GetType() == PartType::PISTON_PIN)
 			workshop.m_pins[piston] = pin;
 	workshop.m_rings.clear();
-	workshop.m_compressed.clear();
 	for (const auto& [piston, ring] : rings)
 		if (partsById.contains(piston) && partsById.contains(ring) && partsById.at(piston)->GetType() == PartType::PISTON
 			&& partsById.at(ring)->GetType() == PartType::PISTON_RING && workshop.EngineOf(*partsById.at(piston)) < 0 && workshop.EngineOf(*partsById.at(ring)) < 0)
 			workshop.m_rings[piston] = ring;
+	// Pistons in the top of their bores, as long as their rods are in.
+	for (auto [engine, cylinder] : unseated)
+		if (engine >= 0 && engine < workshop.GetEngineCount() && workshop.GetAssembly(engine).Get(AssemblySlot::CONNECTING_ROD, cylinder))
+			workshop.m_engines[engine]->unseated.insert(cylinder);
 	// Before version 32 the pins were part of the pistons: each piston gets one, pressed in if it's on an engine.
 	if (version < 32)
 	{

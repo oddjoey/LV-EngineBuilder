@@ -107,6 +107,9 @@
     <ClCompile Include="LV\Engine\Networking\Crypto.cpp">
       <Filter>LV\Engine\Networking</Filter>
     </ClCompile>
+    <ClCompile Include="LV\Libraries\monocypher\monocypher.c">
+      <Filter>LV\Engine\Networking</Filter>
+    </ClCompile>
     <ClCompile Include="Game\Net\ServerBrowser.cpp">
       <Filter>Game\Net</Filter>
     </ClCompile>
@@ -591,5 +594,8 @@
     <ClInclude Include="LV\Engine\Utility\Utility.h">
       <Filter>LV\Engine\Utility</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\Models\models.cfg" />
   </ItemGroup>
 </Project>

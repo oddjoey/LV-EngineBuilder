@@ -5,6 +5,8 @@
 #include <format>
 #include <numbers>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include <imgui.h>
 
@@ -27,6 +29,126 @@ namespace
 
 	const char* STATION_NAMES[Feature::STATIONS] = { "Top", "Middle", "Bottom" };
 	const char* AXIS_NAMES[Feature::AXES] = { "Thrust", "Pin" };
+
+	// What a measuring tool reads (FeatureKind), and the checks on an assembled engine it does (AssemblyCheck).
+	const char* FeatureKindUse(FeatureKind kind)
+	{
+		switch (kind)
+		{
+			case FeatureKind::BORE:			return "bores";
+			case FeatureKind::JOURNAL:		return "journals";
+			case FeatureKind::FLATNESS:		return "flatness";
+			case FeatureKind::LENGTH:		return "lengths";
+			case FeatureKind::THICKNESS:	return "thicknesses";
+			case FeatureKind::VOLUME:		return "volumes";
+			case FeatureKind::RUNOUT:		return "runout";
+			case FeatureKind::FORCE:		return "spring force";
+			case FeatureKind::SQUARENESS:	return "spring squareness";
+			case FeatureKind::ALIGNMENT:	return "rod bend and twist";
+		}
+		return "other features";
+	}
+
+	const char* AssemblyCheckUse(AssemblyCheck check)
+	{
+		switch (check)
+		{
+			case AssemblyCheck::OIL_CLEARANCE:		return "bearing oil clearance";
+			case AssemblyCheck::CAM_CLEARANCE:		return "cam oil clearance";
+			case AssemblyCheck::RING_GAP:			return "ring gap";
+			case AssemblyCheck::DECK_CLEARANCE:		return "deck clearance";
+			case AssemblyCheck::INSTALLED_HEIGHT:	return "installed height";
+			case AssemblyCheck::ROD_SIDE_CLEARANCE:	return "rod side clearance";
+			case AssemblyCheck::BELT_DEFLECTION:	return "belt deflection";
+			case AssemblyCheck::NONE:				break;
+		}
+		return "";
+	}
+
+	// How to use a tool, step by step, for its page in the store.
+	std::vector<std::string> HowToUse(const MeasuringTool& tool)
+	{
+		const std::string doUp = "Aim at a nut or bolt its size (they're marked) and hold the left button to do it up, the right button to undo it. "
+			"Let go part way and it stays part way; one done up only part way doesn't come out by hand.";
+		switch (tool.handKind)
+		{
+			case HandToolKind::SOCKETS:
+				return { "Hold a ratchet, breaker bar, torque wrench or cordless driver and aim at a socket in this set (on the tool board, a bench "
+					"or the floor): E puts that socket on the tool, or swaps it for the one on it.",
+					"Aim at the empty spot in the set with a socket on the tool and press E to put it back." };
+			case HandToolKind::WRENCHES:
+				return { "Look at the wrench you need in the tray and press E to take it out: each wrench is a tool of its own, one size.",
+					"Use the wrench on its own (see each wrench). Hang it back up on the tool board with E." };
+			case HandToolKind::COMBINATION_WRENCH:
+				return { doUp, "It does a bolt up close to spec by feel; only a torque wrench gets it to spec." };
+			case HandToolKind::RATCHET:
+			case HandToolKind::BREAKER_BAR:
+			case HandToolKind::IMPACT:
+			{
+				std::vector<std::string> steps = { "Put a socket on it first: hold it, aim at the socket you need in a socket set and press E.", doUp };
+				if (tool.handKind == HandToolKind::IMPACT || tool.powered)
+					steps.push_back("It runs off a battery pack: hold it and press E on a pack to clip it on, C to take it off.");
+				if (tool.handKind == HandToolKind::BREAKER_BAR)
+					steps.push_back("Its length cracks loose the big, tight bolts, like the crank pulley's.");
+				return steps;
+			}
+			case HandToolKind::TORQUE_WRENCH:
+				return { "Put a socket on it first: hold it, aim at the socket you need in a socket set and press E.",
+					"Aim at a nut or bolt and hold the left button: it's done up to the torque the manual gives for that hole, as close as the "
+					"wrench is accurate. A snugged-up bolt only needs the last of the turn.",
+					"It never undoes a bolt (that knocks it out of calibration): use a ratchet, breaker bar or wrench." };
+			case HandToolKind::BATTERY:
+				return { "Hold a cordless tool and press E on the pack to clip it on; C takes it back off.",
+					"To charge it, set a charger down, then hold the pack and press E on the charger." };
+			case HandToolKind::CHARGER:
+				return { "Set it down somewhere (right-click), then hold a battery pack and press E on it to put the pack on to charge.",
+					"E on the charger takes the pack back off." };
+			case HandToolKind::PIN_PRESS:
+				return { "First the piston onto its connecting rod, off the engine: hold the piston and press E on the rod (on the bench, a shelf "
+					"or the floor).",
+					"Hold the press, aim at the piston and hold the left button: a loose piston pin is pressed through the piston and the rod's "
+					"small end. The right button presses it out again.",
+					"A rod only goes in the engine with its piston pinned on (and its ring and upper bearing shell fitted)." };
+			case HandToolKind::RING_COMPRESSOR:
+				return { "Fit the rod, with its piston pinned and ringed and its upper shell in, to the engine: it stops in the top of the bore, "
+					"held up by the ring.",
+					"Hold the compressor, aim at that piston and hold the left button: the ring is squeezed into its groove and the piston goes "
+					"home, the rod onto the crank pin.",
+					"Until it's home, its rod cap, the oil pump and the head gasket can't go on." };
+			case HandToolKind::MARKER:
+				return { "Aim at a wall or the floor and hold the left button to draw. The mouse wheel sets how thick the line is." };
+			case HandToolKind::SPRAY_CAN:
+				return { "Aim at a wall or the floor and hold the left button to spray; the mouse wheel sets how wide.",
+					"Aim at a part or tool to give it a coat instead." };
+			case HandToolKind::THINNER:
+				return { "Hold the left button on paint on a wall or the floor to wipe it off (the mouse wheel sets how wide), or on a part or "
+					"tool to strip its coat." };
+			case HandToolKind::NONE:
+				break;
+		}
+		if (tool.manual)
+			return { "Hold it and left-click to open it. Every spec, step and torque figure is in it." };
+
+		// A measuring tool.
+		std::vector<std::string> steps;
+		if (!tool.kinds.empty() || tool.measuresFinish)
+			steps.push_back("Hold it and aim at a part (on the bench, a shelf, the floor, or the engine): the spots it can read are marked. "
+				"Left-click to take a reading of the one you aim at.");
+		if (std::find(tool.kinds.begin(), tool.kinds.end(), FeatureKind::BORE) != tool.kinds.end())
+			steps.push_back("A bore is read at the top, middle and bottom, across the thrust side and along the pin: aim at each.");
+		bool plastigauge = std::any_of(tool.assemblyChecks.begin(), tool.assemblyChecks.end(),
+			[](AssemblyCheck check) { return check == AssemblyCheck::OIL_CLEARANCE || check == AssemblyCheck::CAM_CLEARANCE; });
+		if (plastigauge)
+		{
+			steps.push_back("With the crank (or cam) in its shells and the cap off, aim at the journal and left-click to lay a strip across it.");
+			steps.push_back("Fit the cap with its shell and torque it to spec, without turning the engine over. Take the cap off again, then "
+				"aim at the journal and left-click to read the squashed strip: its width is the oil clearance.");
+		}
+		else if (!tool.assemblyChecks.empty())
+			steps.push_back("On an engine on its stand, once the parts involved are on: aim at the marked spot and left-click.");
+		steps.push_back("Each reading is kept on the part, against its spec: look at the part, or set it on the workbench and press E at the bench.");
+		return steps;
+	}
 
 	std::string SizeClassLabel(double sizeClass)
 	{
@@ -1788,6 +1910,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 			"Sockets and drives",
 			"Wrenches",
 			"Torque",
+			"Pistons and rods",
 			"Cordless: tools, batteries and chargers",
 			"Manuals",
 			"Paint markers",
@@ -1796,10 +1919,12 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 		};
 		auto shelfOf = [](const MeasuringTool& tool) {
 			if (tool.manual)
-				return 9;
+				return 10;
 			if (tool.Paints())
-				return tool.handKind == HandToolKind::MARKER ? 10 : tool.handKind == HandToolKind::SPRAY_CAN ? 11 : 12;
+				return tool.handKind == HandToolKind::MARKER ? 11 : tool.handKind == HandToolKind::SPRAY_CAN ? 12 : 13;
 			if (tool.powered || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
+				return 9;
+			if (tool.handKind == HandToolKind::PIN_PRESS || tool.handKind == HandToolKind::RING_COMPRESSOR)
 				return 8;
 			auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
 			switch (tool.handKind)
@@ -1867,6 +1992,13 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 		ImGui::PushTextWrapPos(0.f);
 		ImGui::TextDisabled("%s", tool.description.c_str());
 		ImGui::PopTextWrapPos();
+		// Step by step, how it's used in the shop.
+		ImGui::SeparatorText("How to use");
+		ImGui::PushTextWrapPos(0.f);
+		auto steps = HowToUse(tool);
+		for (size_t step = 0; step < steps.size(); step++)
+			ImGui::Text("%zu. %s", step + 1, steps[step].c_str());
+		ImGui::PopTextWrapPos();
 		ImGui::Separator();
 
 		if (tool.manual)
@@ -1914,7 +2046,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 			else if (tool.Paints())
 				ImGui::TextDisabled("For decorating: the walls and the floor take paint from as far off as you can see them, the ring round the crosshair showing how big (the mouse wheel changes it), and a spray can "
 					"or the thinner works on any part or tool too. It never wears off, but thinner takes it back off.");
-			else
+			else if (tool.handKind != HandToolKind::PIN_PRESS && tool.handKind != HandToolKind::RING_COMPRESSOR)
 				ImGui::TextDisabled("Every nut and bolt on the engine needs a socket (driven by a ratchet, impact or torque wrench) or a wrench of "
 					"its size, and a torque wrench to be done up to spec. How close the torque wrench gets "
 					"is how tight they really are, and the dyno finds out.");
@@ -1935,15 +2067,13 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 		std::string uses;
 		for (auto kind : tool.kinds)
 		{
-			static const char* kindNames[] = { "bores", "journals", "flatness", "lengths", "thicknesses", "volumes", "runout", "spring force" };
-			uses += (uses.empty() ? "" : ", ") + std::string(kindNames[static_cast<int>(kind)]);
+			uses += (uses.empty() ? "" : ", ") + std::string(FeatureKindUse(kind));
 		}
 		if (tool.measuresFinish)
 			uses += (uses.empty() ? "" : ", ") + std::string("surface finish");
 		for (auto check : tool.assemblyChecks)
 		{
-			static const char* checkNames[] = { "", "bearing oil clearance", "cam oil clearance", "ring gap", "deck clearance", "installed height" };
-			uses += (uses.empty() ? "" : ", ") + std::string(checkNames[static_cast<int>(check)]);
+			uses += (uses.empty() ? "" : ", ") + std::string(AssemblyCheckUse(check));
 		}
 		ImGui::PushTextWrapPos(0.f);
 		ImGui::Text("Measures   %s", uses.c_str());

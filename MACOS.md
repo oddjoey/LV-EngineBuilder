@@ -9,7 +9,7 @@ keeps using `LV-EngineBuilder.sln`.
 2. **The LunarG Vulkan SDK** for macOS, from <https://vulkan.lunarg.com/sdk/home#mac>. Tick
    *System Global Installation* in its installer, so the Vulkan loader finds MoltenVK (Vulkan on
    Metal) and, for Debug builds, the validation layers.
-3. **Homebrew** packages: `brew install cmake glfw openssl@3`
+3. **Homebrew** packages: `brew install cmake glfw`
 4. **The header-only libraries** in `LV/Libraries/`, as the README's Libraries table says: ImGui, glm
    and magic_enum come with the submodules; put **stb**, **termcolor**, **tinyobjloader** and
    **ufbx** there by hand. (The Vulkan, GLFW and DLSS folders aren't needed on a Mac: the SDK and
@@ -20,7 +20,6 @@ keeps using `LV-EngineBuilder.sln`.
 ```sh
 git submodule update --init          # the LV engine
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-      -DOPENSSL_ROOT_DIR="$(brew --prefix openssl@3)"
 cmake --build build -j
 cd build && ./LV-EngineBuilder
 ```
@@ -34,7 +33,7 @@ Ctrl+C stops them and saves.
 - **No DLSS.** It's NVIDIA's, on Windows. The setting stays off and the game renders at full
   resolution.
 - **Sound** is mixed by the engine and played through Core Audio (XAudio2 on Windows).
-- **Networking and encryption** use the BSD sockets and OpenSSL. Keys and signatures go over the
-  wire in the same form as on Windows, so a Mac can join a Windows-hosted garage and the other
+- **Networking** uses the BSD sockets. The encryption is Monocypher, built into the game and servers on
+  every platform alike, so a Mac can join a Windows-hosted garage and the other
   way round.
 - The shaders are the same compiled SPIR-V files as on Windows; nothing needs recompiling.

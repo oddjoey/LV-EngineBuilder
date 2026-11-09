@@ -395,6 +395,18 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 	}
 	records["g:dyno"] = Writer().Int(workshop.m_engineOnDyno).Text();
 	records["g:hoist"] = Writer().Int(workshop.m_engineOnHoist).Text();
+	{
+		// Pistons in the top of their bores, not yet pushed home: engine and cylinder.
+		Writer out;
+		std::vector<std::pair<int, int>> unseated;
+		for (int engine = 0; engine < workshop.GetEngineCount(); engine++)
+			for (int cylinder : workshop.m_engines[engine]->unseated)
+				unseated.push_back({ engine, cylinder });
+		out.Int(unseated.size());
+		for (auto [engine, cylinder] : unseated)
+			out.Int(engine).Int(cylinder);
+		records["g:unseated"] = out.Text();
+	}
 	// What's fitted to what off the engines: shells in rods and caps, pistons on rods, pins in pistons.
 	for (auto [key, fittings] : { std::pair{ "g:shells", &workshop.m_shells }, std::pair{ "g:pistons", &workshop.m_pistons }, std::pair{ "g:pins", &workshop.m_pins }, std::pair{ "g:rings", &workshop.m_rings } })
 	{
@@ -591,6 +603,7 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 	}
 
 	// The money, tallies and what the shop owns.
+	std::optional<std::string> unseatedText;
 	for (const auto& [key, text] : other)
 	{
 		if (!text)
@@ -638,6 +651,8 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			workshop.m_engineOnDyno = static_cast<int>(in.Int());
 		else if (key == "g:hoist")
 			workshop.m_engineOnHoist = static_cast<int>(in.Int());
+		else if (key == "g:unseated")
+			unseatedText = *text;
 		else if (key == "g:shells" || key == "g:pistons" || key == "g:pins" || key == "g:rings")
 		{
 			auto& fittings = key == "g:shells" ? workshop.m_shells : key == "g:pistons" ? workshop.m_pistons : key == "g:pins" ? workshop.m_pins : workshop.m_rings;
@@ -725,6 +740,21 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			workshop.m_engineOnDyno = -1;
 		if (workshop.m_engineOnHoist >= workshop.GetEngineCount() || workshop.m_engineOnHoist == workshop.m_engineOnDyno)
 			workshop.m_engineOnHoist = -1;
+	}
+	// Once the engines are what they are: which of their pistons are still in the top of the bore.
+	if (unseatedText)
+	{
+		for (auto& engine : workshop.m_engines)
+			engine->unseated.clear();
+		Reader in(*unseatedText);
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			int engine = static_cast<int>(in.Int());
+			int cylinder = static_cast<int>(in.Int());
+			if (!in.Failed() && engine >= 0 && engine < workshop.GetEngineCount())
+				workshop.m_engines[engine]->unseated.insert(cylinder);
+		}
 	}
 
 	// The building and furniture first: furniture brings stations with it.

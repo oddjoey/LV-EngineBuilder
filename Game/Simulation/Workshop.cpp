@@ -103,6 +103,11 @@ double Workshop::StartingMoney(const EngineSpec& spec)
 		// (A piston comes with its pin, which is sold on its own too.)
 		if (const auto& info = PartCatalog::Get(type); !info.inCore && info.listed && type != PartType::PISTON_PIN)
 			money += PartFactory::PriceWithCompanions(type, PartQuality::OEM, PartCondition::NEW, spec) * PartCatalog::CountPerEngine(type, spec);
+	// And the tools the first engine can't be built without that a new shop hasn't got: the pin press and the ring
+	// compressor.
+	for (size_t tool = 0; tool < ToolCatalog::All().size(); tool++)
+		if (auto kind = ToolCatalog::Of(tool).handKind; kind == HandToolKind::PIN_PRESS || kind == HandToolKind::RING_COMPRESSOR)
+			money += ToolCatalog::Of(tool).price;
 	return money;
 }
 
@@ -1258,11 +1263,6 @@ pPart Workshop::RingOn(const Part& piston) const
 	return it == m_rings.end() ? nullptr : FindPart(it->second);
 }
 
-bool Workshop::RingsCompressed(const Part& piston) const
-{
-	return m_compressed.contains(piston.GetId());
-}
-
 pPart Workshop::FittedIn(const Part& host, AssemblySlot slot) const
 {
 	switch (slot)
@@ -1310,26 +1310,22 @@ pPart Workshop::TakeRingOff(const pPart& piston)
 	if (!ring)
 		return nullptr;
 	m_rings.erase(piston->GetId());
-	m_compressed.erase(piston->GetId());
 	Log(std::format("Took the {} off the {}.", ring->GetName(), piston->GetName()));
 	return ring;
 }
 
-bool Workshop::CompressRings(const pPart& piston, bool squeezed)
+const std::set<int>& Workshop::UnseatedPistons(int engine) const
 {
-	if (!piston || EngineOf(*piston) >= 0)
+	static const std::set<int> none;
+	return engine >= 0 && engine < GetEngineCount() ? m_engines[engine]->unseated : none;
+}
+
+bool Workshop::SeatPiston(int cylinder)
+{
+	if (!Active().unseated.erase(cylinder))
 		return false;
-	if (squeezed && !RingOn(*piston))
-	{
-		Log("There's no ring on that piston to squeeze.");
-		return false;
-	}
-	if (squeezed)
-		m_compressed.insert(piston->GetId());
-	else
-		m_compressed.erase(piston->GetId());
-	Log(squeezed ? std::format("The {}'s ring is squeezed in the compressor: it can go down the bore.", piston->GetName())
-		: std::format("Let the compressor off the {}.", piston->GetName()));
+	Log(std::format("Squeezed piston {}'s ring and pushed it home down the bore, its rod onto the crank pin.", cylinder + 1));
+	AssemblyChanged();
 	return true;
 }
 
@@ -1384,12 +1380,14 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 			carried.push_back({ with, fitted });
 			hosts.push_back({ with, fitted });
 		}
-	for (const auto& [with, fitted] : carried)
-		if (with == AssemblySlot::PISTON && !m_compressed.contains(fitted->GetId()))
-		{
-			Log("Squeeze the piston's ring in first: hold the left button on it with the Piston Ring Compressor.");
-			return false;
-		}
+	// Nothing goes on under or over a piston sat in the top of its bore: its rod cap, the oil pump, the head gasket.
+	const auto& unseated = Active().unseated;
+	if (!unseated.empty() && ((slot == AssemblySlot::ROD_CAP && unseated.contains(index)) || slot == AssemblySlot::OIL_PUMP || slot == AssemblySlot::HEAD_GASKET))
+	{
+		int cylinder = slot == AssemblySlot::ROD_CAP ? index : *unseated.begin();
+		Log(std::format("Piston {} is only in the top of its bore: squeeze its ring with the Piston Ring Compressor to push it home first.", cylinder + 1));
+		return false;
+	}
 
 	auto& assembly = GetAssembly();
 	if (auto missing = assembly.MissingPrerequisite(slot, index))
@@ -1424,7 +1422,12 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 		m_shells.erase(on->GetId());
 		m_pistons.erase(on->GetId());
 		m_rings.erase(on->GetId());
-		m_compressed.erase(on->GetId());
+	}
+	// A rod and piston go in only as far as the ring, till the ring compressor pushes them home.
+	if (slot == AssemblySlot::CONNECTING_ROD)
+	{
+		Active().unseated.insert(index);
+		Log(std::format("Piston {} is in the top of its bore, stopped by its ring: squeeze the ring with the Piston Ring Compressor to push it home.", index + 1));
 	}
 
 	AssemblyChanged();
@@ -1460,6 +1463,8 @@ bool Workshop::RemovePart(AssemblySlot slot, int index)
 	{
 		removed->SetTorque(0.0);
 		removed->SetTightness(FastenerTightness::LOOSE);
+		if (slot == AssemblySlot::CONNECTING_ROD)
+			Active().unseated.erase(index);
 		// What it carries comes off with it: its shell in it, a rod's piston on it (pinned), the piston's ring.
 		std::vector<std::pair<AssemblySlot, pPart>> hosts = { { slot, removed } };
 		for (size_t host = 0; host < hosts.size(); host++)
@@ -1777,6 +1782,7 @@ bool Workshop::SellEngine()
 		m_inventory.erase(std::remove(m_inventory.begin(), m_inventory.end(), part), m_inventory.end());
 
 	engine.assembly.Clear();
+	engine.unseated.clear();
 	engine.readings.clear();
 	engine.dynoCurrent = false;
 	// Sold off the dyno, it leaves the dyno free too.

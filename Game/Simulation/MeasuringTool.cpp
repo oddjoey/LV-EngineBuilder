@@ -375,13 +375,14 @@ namespace ToolCatalog
 			// that squeezes its ring in to go down the bore. (Last, so saved tool lists keep their order.)
 			hand("Piston Pin Press", "A C-frame press with a screw and a pusher: with the piston sat on its rod, hold the left button to press "
 				"a pin through the piston and the rod's small end, the right button to press it out again.", HandToolKind::PIN_PRESS, 40.0);
-			hand("Piston Ring Compressor", "A spring-steel band ratcheted round the piston: hold the left button on a ringed piston on its rod to "
-				"squeeze its ring into its groove, so it slides down the bore; the right button lets it off.", HandToolKind::RING_COMPRESSOR, 25.0);
+			hand("Piston Ring Compressor", "A spring-steel band ratcheted round the piston: with a rod and piston sat in the top of its bore, hold "
+				"the left button on the piston to squeeze its ring into its groove and tap it home, the rod onto the crank pin.", HandToolKind::RING_COMPRESSOR, 25.0);
 
 			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
-			// the pin press and ring compressor, and the service manual (hung on the tool board with the rest). Everything else is bought.
+			// and the service manual (hung on the tool board with the rest). Everything else is bought, the pin press and
+			// ring compressor included (the starting money covers those).
 			for (auto& tool : list)
-				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual", "Piston Pin Press", "Piston Ring Compressor" })
+				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual" })
 					if (tool.name == starter)
 						tool.ownedAtStart = true;
 

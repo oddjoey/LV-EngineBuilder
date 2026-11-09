@@ -343,9 +343,10 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			needed.push_back({ A::ROD_BEARING, index });
 			break;
 
-		// The oil pump slides over the crank snout, the pickup bolts to it.
+		// The oil pump slides over the crank snout once every rod and piston is in (it's in the way of them), and the
+		// pickup bolts to it.
 		case A::OIL_PUMP:
-			all(A::MAIN_CAP);
+			all(A::CONNECTING_ROD);
 			break;
 		case A::OIL_PICKUP:
 			one(A::OIL_PUMP);

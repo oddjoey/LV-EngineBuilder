@@ -928,11 +928,12 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		{
 			if (auto point = AimPoint(player))
 			{
-				// Set it just above the spot so it settles onto whatever is there.
+				// Set it just above the spot so it settles onto whatever is there, the way it rests (a spray can stood up).
 				auto model = ModelOf(held->object);
-				glm::vec3 center = (model->GetBoundsMin() + model->GetBoundsMax()) * 0.5f;
 				held->yaw = player.GetYaw();
-				glm::vec3 position = *point - Yaw(held->yaw) * glm::vec3(center.x, model->GetBoundsMin().y - 0.03f, center.z);
+				ShopBox resting = TransformBox({ model->GetBoundsMin(), model->GetBoundsMax() }, {}, RestingRotation(*held));
+				glm::vec3 center = (resting.min + resting.max) * 0.5f;
+				glm::vec3 position = *point - glm::vec3(center.x, resting.min.y - 0.03f, center.z);
 				PlaceInWorld(*held, position, {});
 				Cue(Sound::SET_DOWN, position);
 			}
@@ -1108,6 +1109,8 @@ void ShopWorld::SyncItems(Workshop& workshop)
 
 void ShopWorld::SyncStands(const Workshop& workshop)
 {
+	for (int engine = 0; engine < Workshop::MAX_ENGINES; engine++)
+		m_unseated[engine] = workshop.UnseatedPistons(engine);
 	// The engines can also be changed from the UI, so the assemblies decide what's on each stand.
 	for (auto& [ref, visual] : m_items)
 	{
@@ -1604,6 +1607,11 @@ bool ShopWorld::EngineTurnsFreely(const Workshop& workshop, int engine, std::str
 {
 	const auto& assembly = workshop.GetAssembly(engine);
 	const auto& spec = assembly.GetSpec();
+	if (!workshop.UnseatedPistons(engine).empty())
+	{
+		reason = std::format("Piston {} isn't home: its rod isn't on the crank pin yet. The ring compressor pushes it home.", *workshop.UnseatedPistons(engine).begin() + 1);
+		return false;
+	}
 	if (!assembly.Get(AssemblySlot::CRANKSHAFT, 0))
 	{
 		reason = "There's no crank in it to turn.";
@@ -1971,6 +1979,10 @@ ShopWorld::StandPose ShopWorld::PoseOnStand(int engine, AssemblySlot slot, int i
 			break;
 		}
 	}
+	// A rod and piston not yet pushed home sit up in the top of the bore, stopped by the ring.
+	bool cylinderPart = slot == AssemblySlot::CONNECTING_ROD || slot == AssemblySlot::PISTON || slot == AssemblySlot::PISTON_RING || slot == AssemblySlot::ROD_BEARING;
+	if (cylinderPart && m_unseated[engine].contains(index))
+		offset.y += UNSEATED_RISE;
 	return { offset, rotation, scale };
 }
 
@@ -2322,10 +2334,11 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 {
 	for (int engine = 0; engine < Workshop::MAX_ENGINES; engine++)
 	{
-		StandLayout now = { StandToWorld(engine, {}), StandRotation(engine), m_crankAngles[engine] };
+		StandLayout now = { StandToWorld(engine, {}), StandRotation(engine), m_crankAngles[engine], m_unseated[engine] };
 		const auto& before = m_laidOutStands[engine];
 		bool shaking = engine == m_dynoEngine && m_engineRpm > 0.f;
-		m_standMoved[engine] = shaking || now.position != before.position || now.rotation != before.rotation || now.crank != before.crank;
+		m_standMoved[engine] = shaking || now.position != before.position || now.rotation != before.rotation || now.crank != before.crank
+			|| now.unseated != before.unseated;
 		m_laidOutStands[engine] = now;
 	}
 	const Station* bench = FindStation(StationType::WORKBENCH);
@@ -2421,7 +2434,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 				}
 				break;
 			case ItemPlace::WORLD:
-				visual.object->SetRotation(Yaw(visual.yaw));
+				visual.object->SetRotation(RestingRotation(visual));
 				visual.object->SetScale({ 1.f, 1.f, 1.f });
 				break;
 			case ItemPlace::CARRIED:
@@ -3415,11 +3428,20 @@ void ShopWorld::DropFromInventory(const ItemRef& item, const FirstPersonControll
 	PlaceInWorld(*visual, player.GetEyePosition() + player.GetForward() * 0.6f - glm::vec3(0.f, 0.4f, 0.f), player.GetForward() * 0.5f);
 }
 
+glm::quat ShopWorld::RestingRotation(const ItemVisual& visual) const
+{
+	// Turned to face the way it was put down. A spray can (built lying along X, its nozzle at +X) stands up on its base.
+	glm::quat rotation = Yaw(visual.yaw);
+	if (visual.ref.IsTool() && ToolShapeFor(ToolCatalog::Of(visual.ref.id)) == ToolShape::SPRAY_CAN)
+		rotation = rotation * glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.f, 0.f, 1.f));
+	return rotation;
+}
+
 void ShopWorld::PlaceInWorld(ItemVisual& visual, const glm::vec3& position, const glm::vec3& velocity)
 {
 	SetPlace(visual, ItemPlace::WORLD);
 	visual.object->SetPosition(position);
-	visual.object->SetRotation(Yaw(visual.yaw));
+	visual.object->SetRotation(RestingRotation(visual));
 	visual.object->SetScale({ 1.f, 1.f, 1.f });
 	visual.body.velocity = velocity;
 	visual.body.resting = false;

@@ -88,6 +88,13 @@ bool NetSession::Join(const std::string& address, uint16_t port, const std::stri
 	m_pending.clear();
 	m_incoming.clear();
 	m_nextSequence = 1;
+	m_choices.clear();
+	m_requesting = false;
+	m_choiceStatus.clear();
+	m_votes.clear();
+	m_plots.clear();
+	m_plot = 0;
+	m_garageName.clear();
 	return true;
 }
 
@@ -98,6 +105,10 @@ void NetSession::Leave(ShopWorld& world)
 		ids.push_back(id);
 	for (int id : ids)
 		RemoveRemote(id, world);
+	world.SetNeighbours({});
+	m_votes.clear();
+	m_choices.clear();
+	m_requesting = false;
 	// The backpack as it is now goes to the account on the way out.
 	if (m_connection && m_role == Role::PLAYING)
 	{
@@ -132,7 +143,8 @@ std::vector<NetSession::PlayerInfo> NetSession::GetPlayers() const
 		return players;
 	players.push_back({ m_localId, m_localPrefix, m_localName, true });
 	for (const auto& [id, remote] : m_remotes)
-		players.push_back({ id, remote.prefix, remote.name, false });
+		if (remote.plot == m_plot)
+			players.push_back({ id, remote.prefix, remote.name, false });
 	std::sort(players.begin(), players.end(), [](const PlayerInfo& a, const PlayerInfo& b) { return a.id < b.id; });
 	return players;
 }
@@ -163,7 +175,14 @@ void NetSession::Update(float deltaTime, Workshop& workshop, ShopWorld& world, c
 
 	Receive(world, timeOfDay);
 	if (m_role != Role::PLAYING)
+	{
+		// Choosing a garage: what's been picked goes now.
+		if (m_connection)
+			m_connection->Flush();
 		return;
+	}
+	for (auto& vote : m_votes)
+		vote.timeLeft = (std::max)(0.f, vote.timeLeft - deltaTime);
 
 	m_syncTimer += deltaTime;
 	m_presenceTimer += deltaTime;
@@ -224,6 +243,8 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 			m_localPrefix = in.Next();
 			if (std::string name = in.Next(); !name.empty())
 				m_localName = name;
+			m_plot = static_cast<int>(in.Int());
+			m_garageName = in.Next();
 			float time = static_cast<float>(in.Num());
 			m_dayLengthMinutes = static_cast<float>(in.Num());
 			size_t players = in.Count();
@@ -232,7 +253,12 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 				int id = static_cast<int>(in.Int());
 				m_remotes[id].prefix = in.Next();
 				m_remotes[id].name = in.Next();
+				m_remotes[id].plot = static_cast<int>(in.Int());
 			}
+			m_plots.clear();
+			size_t plots = in.Count();
+			for (size_t i = 0; i < plots && !in.Failed(); i++)
+				m_plots.push_back(static_cast<int>(in.Int()));
 			m_welcomeRecords.clear();
 			size_t count = in.Count();
 			for (size_t i = 0; i < count && !in.Failed(); i++)
@@ -275,6 +301,12 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 			std::string name = in.Next();
 			if (in.Failed() || id < 1)
 				continue;
+			if (type == "joined")
+			{
+				int plot = static_cast<int>(in.Int());
+				if (!in.Failed() && id != m_localId)
+					m_remotes[id].plot = plot;
+			}
 			if (id == m_localId)
 			{
 				m_localPrefix = prefix;
@@ -282,11 +314,73 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 			}
 			else
 			{
-				if (type == "joined")
+				if (type == "joined" && m_remotes[id].plot == m_plot)
 					Notice(std::format("{} joined the garage.", FullName(prefix, name)));
 				m_remotes[id].prefix = prefix;
 				m_remotes[id].name = name;
 			}
+		}
+		else if (type == "garages")
+		{
+			// Not in a garage here yet: the ones to choose from.
+			std::vector<GarageChoice> choices;
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+			{
+				GarageChoice choice;
+				choice.id = static_cast<int>(in.Int());
+				choice.name = in.Next();
+				choice.members = static_cast<int>(in.Int());
+				choice.online = static_cast<int>(in.Int());
+				choices.push_back(std::move(choice));
+			}
+			if (in.Failed())
+				continue;
+			m_choices = std::move(choices);
+			m_requesting = false;
+			m_role = Role::CHOOSING;
+		}
+		else if (type == "pending")
+		{
+			m_requesting = true;
+			m_choiceStatus = in.Next();
+		}
+		else if (type == "denied")
+		{
+			m_requesting = false;
+			m_choiceStatus = in.Next();
+		}
+		else if (type == "plots")
+		{
+			std::vector<int> plots;
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+				plots.push_back(static_cast<int>(in.Int()));
+			if (in.Failed())
+				continue;
+			m_plots = std::move(plots);
+			if (m_role == Role::PLAYING)
+				PlaceNeighbours(world);
+		}
+		else if (type == "vote")
+		{
+			Vote vote;
+			vote.requester = static_cast<int>(in.Int());
+			vote.name = in.Next();
+			vote.timeLeft = static_cast<float>(in.Num());
+			if (in.Failed())
+				continue;
+			std::erase_if(m_votes, [&](const Vote& other) { return other.requester == vote.requester; });
+			Notice(std::format("{} is asking to join the garage: vote [Y] yes or [N] no.", vote.name));
+			m_votes.push_back(std::move(vote));
+		}
+		else if (type == "voteover")
+		{
+			int requester = static_cast<int>(in.Int());
+			std::string outcome = in.Next();
+			std::erase_if(m_votes, [&](const Vote& vote) { return vote.requester == requester; });
+			if (!in.Failed())
+				Notice(outcome);
 		}
 		else if (type == "clock")
 		{
@@ -302,7 +396,7 @@ void NetSession::Receive(ShopWorld& world, float& timeOfDay)
 		{
 			// What they carried is put down by the server, in a change that follows this.
 			int id = static_cast<int>(in.Int());
-			if (auto remote = m_remotes.find(id); remote != m_remotes.end())
+			if (auto remote = m_remotes.find(id); remote != m_remotes.end() && remote->second.plot == m_plot)
 				Notice(std::format("{} left the garage.", FullName(remote->second.prefix, remote->second.name)));
 			RemoveRemote(id, world);
 		}
@@ -397,11 +491,15 @@ void NetSession::ApplyWelcome(Workshop& workshop, ShopWorld& world, FirstPersonC
 	m_shadow = std::move(m_welcomeRecords);
 	m_welcomeRecords.clear();
 	m_role = Role::PLAYING;
+	m_choices.clear();
+	m_requesting = false;
+	m_choiceStatus.clear();
+	PlaceNeighbours(world);
 	m_syncTimer = 0.f;
 	m_presenceTimer = 0.f;
 	m_profileTimer = 0.f;
-	Notice(m_seed ? std::format("Welcome, {}. This is a brand new garage: it starts as a fresh shop.", FullName(m_localPrefix, m_localName))
-		: std::format("Welcome {}, {}.", m_welcomePlaced ? "back" : "to the garage", FullName(m_localPrefix, m_localName)));
+	Notice(m_seed ? std::format("Welcome to {}, {}. It's brand new: it starts as a fresh shop.", m_garageName, FullName(m_localPrefix, m_localName))
+		: std::format("Welcome {} {}, {}.", m_welcomePlaced ? "back to" : "to", m_garageName, FullName(m_localPrefix, m_localName)));
 }
 
 bool NetSession::TakeDisconnected()
@@ -479,7 +577,7 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	remote.arms = std::clamp(arms, 0, 2);
 	remote.crouching = crouching;
 	if (!remote.avatar.IsSpawned())
-		remote.avatar.Spawn(world, remote.feet, yaw, look);
+		remote.avatar.Spawn(world, remote.feet + PlotOffset(remote.plot), yaw, look);
 	else if (!(remote.look == look))
 		remote.avatar.SetLook(look);
 	remote.look = look;
@@ -521,9 +619,10 @@ void NetSession::MoveAvatars(float deltaTime, ShopWorld& world)
 		float turn = std::remainder(remote.yaw - remote.shownYaw, glm::two_pi<float>());
 		remote.shownYaw += turn * ease;
 		remote.shownPitch += (remote.pitch - remote.shownPitch) * ease;
-		remote.avatar.Pose(deltaTime, remote.shownFeet, remote.shownYaw, remote.shownPitch, remote.crouching, remote.arms);
-		// What they hold is in their right hand.
-		world.m_remoteHands[id] = { remote.avatar.GetHand(), remote.shownYaw };
+		remote.avatar.Pose(deltaTime, remote.shownFeet + PlotOffset(remote.plot), remote.shownYaw, remote.shownPitch, remote.crouching, remote.arms);
+		// What they hold is in their right hand (in this garage: the others' things are in theirs).
+		if (remote.plot == m_plot)
+			world.m_remoteHands[id] = { remote.avatar.GetHand(), remote.shownYaw };
 	}
 }
 
@@ -554,4 +653,54 @@ void NetSession::DrawNameTags(const ShopWorld& world, const FirstPersonControlle
 			drawList->AddText(at, PrefixColor(id), prefix.c_str());
 		drawList->AddText({ at.x + prefixSize.x, at.y }, ImGui::ColorConvertFloat4ToU32({ color.r, color.g, color.b, 1.f }), remote.name.c_str());
 	}
+}
+
+void NetSession::CreateGarage()
+{
+	if (m_role != Role::CHOOSING || !m_connection)
+		return;
+	m_choiceStatus = "Making your garage...";
+	m_connection->Send(Writer().Word("create").Text());
+}
+
+void NetSession::RequestGarage(int garage)
+{
+	if (m_role != Role::CHOOSING || m_requesting || !m_connection)
+		return;
+	m_requesting = true;
+	m_choiceStatus = "Asking...";
+	m_connection->Send(Writer().Word("request").Int(garage).Text());
+}
+
+void NetSession::CancelRequest()
+{
+	if (m_role != Role::CHOOSING || !m_requesting || !m_connection)
+		return;
+	m_requesting = false;
+	m_choiceStatus.clear();
+	m_connection->Send(Writer().Word("cancel").Text());
+}
+
+void NetSession::CastVote(int requester, bool yes)
+{
+	auto vote = std::find_if(m_votes.begin(), m_votes.end(), [&](const Vote& v) { return v.requester == requester; });
+	if (vote == m_votes.end() || vote->voted || !m_connection || m_role != Role::PLAYING)
+		return;
+	vote->voted = true;
+	m_connection->Send(Writer().Word("ballot").Int(requester).Int(yes ? 1 : 0).Text());
+	Notice(std::format("You voted {} letting {} in.", yes ? "for" : "against", vote->name));
+}
+
+glm::vec3 NetSession::PlotOffset(int plot) const
+{
+	return { NetProtocol::PlotOffsetX(plot) - NetProtocol::PlotOffsetX(m_plot), 0.f, 0.f };
+}
+
+void NetSession::PlaceNeighbours(ShopWorld& world) const
+{
+	std::vector<float> offsets;
+	for (int plot : m_plots)
+		if (plot != m_plot)
+			offsets.push_back(PlotOffset(plot).x);
+	world.SetNeighbours(offsets);
 }

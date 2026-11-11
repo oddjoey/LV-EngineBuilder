@@ -633,6 +633,46 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::ROD_CAP:					material = MaterialType::POWDER_METAL; break;
 		case PartType::MAIN_CAP:				material = MaterialType::NODULAR_IRON; break;
 		case PartType::CAM_CAP:					material = MaterialType::ALUMINUM_A356; break;
+		// The car's
+		case PartType::WINDSHIELD:
+		case PartType::REAR_WINDOW:				material = MaterialType::LAMINATED_GLASS; break;
+		case PartType::BRAKE_PAD_SET:
+		case PartType::BRAKE_SHOE_SET:
+		case PartType::CLUTCH_DISC:				material = MaterialType::FRICTION_LINING; break;
+		case PartType::FRONT_BUMPER:
+		case PartType::REAR_BUMPER:
+		case PartType::HEADLIGHT:
+		case PartType::TAIL_LIGHT:
+		case PartType::DASHBOARD:
+		case PartType::INSTRUMENT_CLUSTER:
+		case PartType::SEAT:
+		case PartType::STEERING_WHEEL:			material = MaterialType::ABS_PLASTIC; break;
+		case PartType::BATTERY:					material = MaterialType::LEAD_ACID; break;
+		case PartType::TIRE:
+		case PartType::BRAKE_HOSE:
+		case PartType::RADIATOR_HOSE:
+		case PartType::ENGINE_MOUNT:
+		case PartType::TRANSMISSION_MOUNT:		material = MaterialType::TYRE_RUBBER; break;
+		case PartType::MAIN_HARNESS:
+		case PartType::ENGINE_HARNESS:
+		case PartType::FUSE_BOX:				material = MaterialType::COPPER_WIRING; break;
+		case PartType::TRANSMISSION:
+		case PartType::BRAKE_CALIPER:
+		case PartType::RADIATOR:				material = MaterialType::CAST_ALUMINUM; break;
+		case PartType::BRAKE_ROTOR:
+		case PartType::BRAKE_DRUM:
+		case PartType::STEERING_KNUCKLE:		material = MaterialType::GREY_IRON; break;
+		case PartType::BODY_SHELL:
+		case PartType::FRONT_FENDER:
+		case PartType::DOOR:
+		case PartType::HOOD:
+		case PartType::TRUNK_LID:
+		case PartType::FUEL_TANK:
+		case PartType::MUFFLER:
+		case PartType::CATALYTIC_CONVERTER:
+		case PartType::WHEEL:
+		case PartType::LOWER_CONTROL_ARM:
+		case PartType::REAR_AXLE:				material = MaterialType::STAMPED_STEEL; break;
 		default:								break;
 	}
 

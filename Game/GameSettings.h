@@ -42,10 +42,6 @@ struct GameSettings
 	float ambienceVolume = 0.7f;	// wind, birds, the shop's hum
 	float interfaceVolume = 0.8f;	// the till, gauge beeps, menu clicks
 
-	// Time of day
-	bool dayNightCycle = true;
-	float dayLengthMinutes = 30.f;	// real minutes for a full 24 hours
-
 	// How your monkey looks (the backpack's Monkey tab).
 	MonkeyLook monkey = {};
 

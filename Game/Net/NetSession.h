@@ -31,6 +31,7 @@ public:
 		OFFLINE,
 		CONNECTING,		// the connection is being made
 		JOINING,		// connected, waiting for the garage to arrive
+		CHOOSING,		// on the server, but not in a garage of theirs yet: making one, or asking to join one
 		PLAYING
 	};
 
@@ -60,9 +61,38 @@ public:
 	bool IsOnline() const { return m_role != Role::OFFLINE; }
 	bool IsJoining() const { return m_role == Role::CONNECTING || m_role == Role::JOINING; }
 	bool IsPlaying() const { return m_role == Role::PLAYING; }
+
+	// The first time on a server: the garages there to ask to join, or a new one to make.
+	struct GarageChoice
+	{
+		int id = 0;
+		std::string name = "";
+		int members = 0;
+		int online = 0;
+	};
+	bool IsChoosing() const { return m_role == Role::CHOOSING; }
+	const std::vector<GarageChoice>& GetGarageChoices() const { return m_choices; }
+	void CreateGarage();
+	void RequestGarage(int garage);
+	void CancelRequest();
+	// Asked to join one, and waiting; and what the server last said about it (waiting, or turned down).
+	bool IsRequesting() const { return m_requesting; }
+	const std::string& GetChoiceStatus() const { return m_choiceStatus; }
+	// In a garage: its name, and, as a member, the votes on anyone asking to join it.
+	const std::string& GetGarageName() const { return m_garageName; }
+	struct Vote
+	{
+		int requester = 0;
+		std::string name = "";
+		float timeLeft = 0.f;
+		bool voted = false;
+	};
+	const std::vector<Vote>& GetVotes() const { return m_votes; }
+	void CastVote(int requester, bool yes);
 	// "203.0.113.5:27616"
 	const std::string& GetServer() const { return m_server; }
 	int GetLocalId() const { return m_localId; }
+	// Everyone in this garage (others on the server are in theirs).
 	std::vector<PlayerInfo> GetPlayers() const;
 	// The server keeps the clock: how long its days are, in minutes (0: the sun stands still).
 	float GetDayLengthMinutes() const { return m_dayLengthMinutes; }
@@ -102,6 +132,8 @@ private:
 		float shownPitch = 0.f;
 		bool placed = false;
 		PlayerAvatar avatar = {};
+		// Their garage's plot: in this one, or drawn on theirs (NetProtocol::PlotOffsetX).
+		int plot = 0;
 	};
 
 	void Receive(ShopWorld& world, float& timeOfDay);
@@ -120,6 +152,10 @@ private:
 	void RemoveRemote(int id, ShopWorld& world);
 	void MoveAvatars(float deltaTime, ShopWorld& world);
 	void Notice(const std::string& text) { m_notices.push_back(text); }
+	// How far along X a player on that plot is drawn from this garage.
+	glm::vec3 PlotOffset(int plot) const;
+	// The other garages' buildings, on their plots.
+	void PlaceNeighbours(ShopWorld& world) const;
 
 	Role										m_role = Role::OFFLINE;
 	std::unique_ptr<Net::Connection>			m_connection = nullptr;
@@ -162,4 +198,13 @@ private:
 	float										m_syncTimer = 0.f;
 	float										m_presenceTimer = 0.f;
 	std::vector<std::string>					m_notices = {};
+	// Choosing a garage, and the votes on joining this one.
+	std::vector<GarageChoice>					m_choices = {};
+	bool										m_requesting = false;
+	std::string									m_choiceStatus = "";
+	std::vector<Vote>							m_votes = {};
+	// This garage, its plot, and every garage's plot on the server.
+	std::string									m_garageName = "";
+	int											m_plot = 0;
+	std::vector<int>							m_plots = {};
 };

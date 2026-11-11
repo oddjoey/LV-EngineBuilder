@@ -87,8 +87,10 @@ void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float
 	lighting.fogColor = lighting.skyHorizon;
 	lighting.fogDensity = 0.003f;
 
-	// The shack: dim ambient plus whatever daylight gets in through the windows and the door.
-	constexpr float MARGIN = 0.04f;
+	// The shack: dim ambient plus whatever daylight gets in through the windows and the door. Its zone reaches into
+	// the walls a little, past the inside of the roll-up door when it's down (4 cm out) and short of the window glass
+	// (5.5 cm): a face right on the edge of it flickers between lit inside and out.
+	constexpr float MARGIN = 0.05f;
 	lighting.interiors.push_back({ interior.min - glm::vec3(MARGIN, 0.f, MARGIN), interior.max + glm::vec3(MARGIN) });
 	// Kept modest so the (shadowed) lamps do most of the lighting and things look grounded.
 	lighting.interiorAmbient = glm::vec3(0.05f, 0.05f, 0.055f) + glm::vec3(0.9f, 0.95f, 1.f) * daylight * (0.06f + 0.05f * doorOpen);

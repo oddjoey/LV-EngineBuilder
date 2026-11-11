@@ -35,7 +35,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 	// A long hitch (window drag, breakpoint) shouldn't fling the player through a wall.
 	deltaTime = (std::min)(deltaTime, 0.1f);
 
-	glm::vec2 mouse = input.GetMouseDelta();
+	glm::vec2 mouse = m_lookLocked ? glm::vec2(0.f) : input.GetMouseDelta();
 	m_yaw -= mouse.x * m_mouseSensitivity;
 	m_pitch -= mouse.y * m_mouseSensitivity * (m_invertY ? -1.f : 1.f);
 	m_pitch = std::clamp(m_pitch, -glm::radians(85.f), glm::radians(85.f));

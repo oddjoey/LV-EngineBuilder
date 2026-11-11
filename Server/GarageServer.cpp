@@ -13,7 +13,7 @@
 
 namespace
 {
-	constexpr long long GARAGE_FILE_VERSION = 1;
+	constexpr long long GARAGE_FILE_VERSION = 2;		// 2: several garages, each with its members
 	constexpr float CLOCK_INTERVAL = 1.f;		// how often everyone is told the time
 	constexpr float HELLO_TIMEOUT = 15.f;		// a connection that never says what it wants is dropped
 	constexpr float PREFIXES_INTERVAL = 3.f;		// how often the prefixes file is looked at
@@ -23,6 +23,12 @@ namespace
 	{
 		std::printf("[%s] %s\n", LocalTimeText(std::chrono::system_clock::now(), "%Y-%m-%d %H:%M:%S").c_str(), text.c_str());
 		std::fflush(stdout);
+	}
+
+	// "[Owner] joey", for what everyone reads.
+	std::string FullName(const std::string& prefix, const std::string& name)
+	{
+		return prefix.empty() ? name : prefix + " " + name;
 	}
 }
 
@@ -119,8 +125,8 @@ bool GarageServer::Start(const Config& config, std::string& error)
 	}
 	Log(std::format("\"{}\" ({}) is open on port {}, for up to {} players.", config.name,
 		config.region.empty() ? "no region" : config.region, config.port, config.maxPlayers));
-	Log(m_records.empty() ? std::format("{} is new: the first player to join starts it.", config.garageFile)
-		: std::format("Loaded {} records from {}.", m_records.size(), config.garageFile));
+	Log(m_garages.empty() ? std::format("{} is new: the first player to join makes the first garage.", config.garageFile)
+		: std::format("Loaded {} garage{} from {}.", m_garages.size(), m_garages.size() == 1 ? "" : "s", config.garageFile));
 	Log(std::format("{} name prefixes from {} (read again whenever it changes).", m_prefixes.size(), config.prefixesFile));
 	Log(std::format("Log ins are checked against the account server with fingerprint {}.", Net::Fingerprint(m_accountIdentity)));
 	// Players can check this against what their game remembers for this server.
@@ -131,7 +137,7 @@ bool GarageServer::Start(const Config& config, std::string& error)
 void GarageServer::Stop()
 {
 	if (SaveAll())
-		Log("Garage and profiles saved.");
+		Log("Garages and profiles saved.");
 	for (auto& peer : m_peers)
 		if (peer.connection)
 			peer.connection->Flush();
@@ -161,6 +167,7 @@ void GarageServer::Update(float deltaTime)
 		m_peers.erase(m_peers.begin() + static_cast<std::ptrdiff_t>(i));
 		Departed(gone);
 	}
+	UpdateVotes(deltaTime);
 
 	// The clock.
 	if (m_config.dayLengthMinutes > 0.f)
@@ -219,18 +226,44 @@ void GarageServer::Receive(Peer& peer, bool& open)
 			if (!open)
 				break;
 		}
+		// Not in a garage yet: making one, or asking to join one (or taking that back).
+		else if (type == "create" && (peer.state == PeerState::CHOOSING || peer.state == PeerState::REQUESTING))
+		{
+			if (peer.state == PeerState::REQUESTING)
+				CancelRequest(peer);
+			CreateGarage(peer);
+		}
+		else if (type == "request" && peer.state == PeerState::CHOOSING)
+		{
+			int garage = static_cast<int>(in.Int());
+			if (!in.Failed())
+				RequestGarage(peer, garage);
+		}
+		else if (type == "cancel" && peer.state == PeerState::REQUESTING)
+		{
+			CancelRequest(peer);
+			SendChoices(peer);
+		}
 		else if (peer.state != PeerState::PLAYING)
 			continue;
 		else if (type == "ops")
 		{
 			NetProtocol::Batch batch;
 			if (NetProtocol::ReadOps(message, batch))
-				ApplyOps(peer.id, batch.sequence, std::move(batch.ops));
+				ApplyOps(peer.garage, peer.id, batch.sequence, std::move(batch.ops));
+		}
+		else if (type == "ballot")
+		{
+			int requester = static_cast<int>(in.Int());
+			bool yes = in.Int() != 0;
+			if (!in.Failed())
+				Ballot(peer, requester, yes);
 		}
 		else if (type == "presence")
 		{
-			// Passed on to everyone else, as long as it's who it says it is. Where they are is kept
-			// in their profile here, for when they come back.
+			// Passed on to everyone else, in every garage (each game puts them on their garage's plot), as
+			// long as it's who it says it is. Where they are is kept in their profile here, for when they
+			// come back.
 			if (in.Int() != peer.id)
 				continue;
 			SendToPlaying(message, peer.id);
@@ -312,9 +345,9 @@ void GarageServer::Hello(Peer& peer, Reader& in, bool& open)
 	else if (NetProtocol::TicketExpired(*ticket))
 		refusal = "Your log in has run out: log in again.";
 	else if (IsLoggedIn(ticket->account))
-		refusal = std::format("{} is already in the garage.", ticket->username);
+		refusal = std::format("{} is already on this server.", ticket->username);
 	else if (slot == 0)
-		refusal = std::format("That garage is full ({} players).", m_config.maxPlayers);
+		refusal = std::format("That server is full ({} players).", m_config.maxPlayers);
 	if (!refusal.empty())
 	{
 		Refuse(peer, refusal);
@@ -328,12 +361,26 @@ void GarageServer::Hello(Peer& peer, Reader& in, bool& open)
 	peer.prefix = PrefixOf(peer.name);
 	Log(std::format("{} (account {}) joined from {}.", peer.name, peer.id, peer.connection->GetAddress()));
 
-	// A brand new garage: the first player's fresh shop becomes it, and anyone else waits for that.
-	if (m_records.empty())
+	// Back to their own garage; or, the first time here, a garage to choose.
+	if (const Garage* garage = FindGarage(peer.profile->garage); garage && garage->members.contains(peer.id))
 	{
-		if (m_seeder == 0)
+		Enter(peer, garage->id);
+		return;
+	}
+	peer.profile->garage = 0;
+	SendChoices(peer);
+}
+
+void GarageServer::Enter(Peer& peer, int garageId)
+{
+	Garage& garage = *FindGarage(garageId);
+	peer.garage = garageId;
+	// A brand new garage: the first player's fresh shop becomes it, and anyone else in it waits for that.
+	if (garage.records.empty())
+	{
+		if (garage.seeder == 0)
 		{
-			m_seeder = peer.id;
+			garage.seeder = peer.id;
 			Welcome(peer, true);
 		}
 		else
@@ -345,53 +392,63 @@ void GarageServer::Hello(Peer& peer, Reader& in, bool& open)
 
 void GarageServer::Welcome(Peer& peer, bool seed)
 {
+	const Garage& garage = *FindGarage(peer.garage);
 	Writer welcome;
-	welcome.Word("welcome").Int(peer.id).Int(peer.slot).Int(seed).Str(peer.prefix).Str(peer.name).Num(m_timeOfDay).Num(m_config.dayLengthMinutes);
+	welcome.Word("welcome").Int(peer.id).Int(peer.slot).Int(seed).Str(peer.prefix).Str(peer.name).Int(garage.plot).Str(garage.name)
+		.Num(m_timeOfDay).Num(m_config.dayLengthMinutes);
+	// Everyone playing, in every garage, on their garage's plot.
 	std::vector<const Peer*> others;
 	for (const auto& other : m_peers)
 		if (other.state == PeerState::PLAYING && other.id != peer.id)
 			others.push_back(&other);
 	welcome.Int(others.size());
 	for (const auto* other : others)
-		welcome.Int(other->id).Str(other->prefix).Str(other->name);
-	welcome.Int(m_records.size());
-	for (const auto& [key, text] : m_records)
+		welcome.Int(other->id).Str(other->prefix).Str(other->name).Int(m_garages.at(other->garage).plot);
+	WritePlots(welcome);
+	welcome.Int(garage.records.size());
+	for (const auto& [key, text] : garage.records)
 		welcome.Str(key).Str(text);
 	// Their backpack as they left it, and where they stood.
 	const auto& profile = *peer.profile;
 	welcome.Str(profile.layout).Int(profile.placed).Num(profile.x).Num(profile.y).Num(profile.z).Num(profile.yaw).Num(profile.pitch);
 	peer.connection->Send(welcome.Text());
 	peer.state = PeerState::PLAYING;
-	SendToPlaying(Writer().Word("joined").Int(peer.id).Str(peer.prefix).Str(peer.name).Text(), peer.id);
+	SendToPlaying(Writer().Word("joined").Int(peer.id).Str(peer.prefix).Str(peer.name).Int(garage.plot).Text(), peer.id);
+	Log(std::format("{} is in {}.", peer.name, garage.name));
+	// A member online: anyone waiting to join this garage gets their vote.
+	StartVotes(garage.id);
 }
 
-void GarageServer::ApplyOps(int author, long long sequence, std::vector<NetProtocol::Op> ops)
+void GarageServer::ApplyOps(int garageId, int author, long long sequence, std::vector<NetProtocol::Op> ops)
 {
 	using NetProtocol::OpKind;
+	Garage* garage = FindGarage(garageId);
+	if (!garage)
+		return;
 	for (auto& op : ops)
 	{
 		// Money and the tallies go up or down by what the player's did, from wherever they are now.
 		if (op.kind == OpKind::ADD)
 		{
-			auto current = m_records.find(op.key);
-			double base = current != m_records.end() ? NetProtocol::CounterValue(current->second) : 0.0;
+			auto current = garage->records.find(op.key);
+			double base = current != garage->records.end() ? NetProtocol::CounterValue(current->second) : 0.0;
 			op = { OpKind::SET, op.key, NetProtocol::CounterText(base + NetProtocol::CounterValue(op.text)) };
 		}
 		if (op.kind == OpKind::ERASE)
-			m_records.erase(op.key);
+			garage->records.erase(op.key);
 		else
-			m_records[op.key] = op.text;
+			garage->records[op.key] = op.text;
 	}
 	if (ops.empty())
 		return;
 	m_dirty = true;
-	// To everyone, the author too: that's how they know the garage has it.
-	SendToPlaying(NetProtocol::OpsMessage(author, sequence, ops));
-	if (author == m_seeder && !m_records.empty())
+	// To everyone in the garage, the author too: that's how they know the garage has it.
+	SendToGarage(garageId, NetProtocol::OpsMessage(author, sequence, ops));
+	if (author == garage->seeder && !garage->records.empty())
 	{
-		Log("The new garage has its first shop.");
-		m_seeder = 0;
-		WelcomeWaiting();
+		Log(std::format("{} has its first shop.", garage->name));
+		garage->seeder = 0;
+		WelcomeWaiting(garageId);
 	}
 }
 
@@ -400,22 +457,36 @@ void GarageServer::Departed(const Peer& peer)
 	if (peer.state == PeerState::NEW)
 		return;
 	Log(std::format("{} (account {}) left.", peer.name, peer.id));
+	// Gone while asking to join: the request goes with them.
+	if (peer.state == PeerState::REQUESTING)
+		for (size_t i = 0; i < m_requests.size(); i++)
+			if (m_requests[i].requester == peer.id)
+			{
+				JoinRequest request = m_requests[i];
+				m_requests.erase(m_requests.begin() + static_cast<std::ptrdiff_t>(i));
+				if (request.voting)
+					EndVote(request, std::format("{} left before the vote was over.", peer.name));
+				break;
+			}
 	if (peer.state == PeerState::PLAYING)
 	{
 		SendToPlaying(Writer().Word("left").Int(peer.id).Text());
 
 		// A delivery in their arms is put down. Their backpack stays theirs, out of everyone's reach,
 		// till they're back.
-		std::vector<NetProtocol::Op> ops;
-		for (const auto& [key, text] : m_records)
-			if (auto dropped = NetProtocol::DroppedPackage(key, text, peer.id))
-				ops.push_back({ NetProtocol::OpKind::SET, key, *dropped });
-		ApplyOps(NetProtocol::SERVER_AUTHOR, 0, std::move(ops));
+		if (const Garage* garage = FindGarage(peer.garage))
+		{
+			std::vector<NetProtocol::Op> ops;
+			for (const auto& [key, text] : garage->records)
+				if (auto dropped = NetProtocol::DroppedPackage(key, text, peer.id))
+					ops.push_back({ NetProtocol::OpKind::SET, key, *dropped });
+			ApplyOps(peer.garage, NetProtocol::SERVER_AUTHOR, 0, std::move(ops));
+		}
 	}
-	if (peer.id == m_seeder)
+	if (Garage* garage = FindGarage(peer.garage); garage && peer.id == garage->seeder)
 	{
-		m_seeder = 0;
-		WelcomeWaiting();
+		garage->seeder = 0;
+		WelcomeWaiting(garage->id);
 	}
 	if (PlayerCount() == 0)
 		SaveAll();
@@ -427,7 +498,7 @@ bool GarageServer::SaveAll()
 	bool saved = true;
 	if (m_dirty && !Save(error))
 	{
-		Log("Couldn't save the garage: " + error);
+		Log("Couldn't save the garages: " + error);
 		saved = false;
 	}
 	if (m_profiles.IsDirty() && !m_profiles.Save(error))
@@ -438,17 +509,20 @@ bool GarageServer::SaveAll()
 	return saved;
 }
 
-void GarageServer::WelcomeWaiting()
+void GarageServer::WelcomeWaiting(int garageId)
 {
+	Garage* garage = FindGarage(garageId);
+	if (!garage)
+		return;
 	for (auto& peer : m_peers)
 	{
-		if (peer.state != PeerState::WAITING)
+		if (peer.state != PeerState::WAITING || peer.garage != garageId)
 			continue;
-		if (m_records.empty())
+		if (garage->records.empty())
 		{
-			if (m_seeder != 0)
+			if (garage->seeder != 0)
 				return;
-			m_seeder = peer.id;
+			garage->seeder = peer.id;
 			Welcome(peer, true);
 		}
 		else
@@ -456,11 +530,247 @@ void GarageServer::WelcomeWaiting()
 	}
 }
 
+void GarageServer::SendChoices(Peer& peer)
+{
+	peer.state = PeerState::CHOOSING;
+	peer.garage = 0;
+	Writer out;
+	out.Word("garages").Int(m_garages.size());
+	for (const auto& [id, garage] : m_garages)
+		out.Int(id).Str(garage.name).Int(garage.members.size()).Int(OnlineMembers(id));
+	peer.connection->Send(out.Text());
+}
+
+void GarageServer::CreateGarage(Peer& peer)
+{
+	Garage garage;
+	garage.id = m_nextGarage++;
+	garage.name = std::format("{}'s garage", peer.name);
+	garage.plot = FreePlot();
+	garage.members.insert(peer.id);
+	m_garages[garage.id] = garage;
+	peer.profile->garage = garage.id;
+	m_profiles.MarkDirty();
+	m_dirty = true;
+	Log(std::format("{} made {}, on plot {}.", peer.name, garage.name, garage.plot));
+	// Everyone sees it go up on its plot.
+	SendPlots();
+	Enter(peer, garage.id);
+}
+
+void GarageServer::RequestGarage(Peer& peer, int garageId)
+{
+	Garage* garage = FindGarage(garageId);
+	if (!garage)
+	{
+		SendChoices(peer);
+		return;
+	}
+	// One nobody belongs to: theirs for the asking.
+	if (garage->members.empty())
+	{
+		garage->members.insert(peer.id);
+		peer.profile->garage = garageId;
+		m_profiles.MarkDirty();
+		m_dirty = true;
+		Log(std::format("{} took over {}, which had no members.", peer.name, garage->name));
+		Enter(peer, garageId);
+		return;
+	}
+	m_requests.push_back({ peer.id, garageId });
+	peer.state = PeerState::REQUESTING;
+	peer.garage = garageId;
+	Log(std::format("{} asked to join {}.", peer.name, garage->name));
+	if (OnlineMembers(garageId) > 0)
+		StartVotes(garageId);
+	else
+		peer.connection->Send(Writer().Word("pending")
+			.Str(std::format("Nobody from {} is online. Your request waits for one of them: the vote starts when they come in.", garage->name)).Text());
+}
+
+void GarageServer::CancelRequest(Peer& peer)
+{
+	for (size_t i = 0; i < m_requests.size(); i++)
+		if (m_requests[i].requester == peer.id)
+		{
+			JoinRequest request = m_requests[i];
+			m_requests.erase(m_requests.begin() + static_cast<std::ptrdiff_t>(i));
+			if (request.voting)
+				EndVote(request, std::format("{} took back their request.", peer.name));
+			break;
+		}
+	peer.state = PeerState::CHOOSING;
+	peer.garage = 0;
+}
+
+void GarageServer::Ballot(Peer& peer, int requester, bool yes)
+{
+	const Garage* garage = FindGarage(peer.garage);
+	if (!garage || !garage->members.contains(peer.id))
+		return;
+	for (auto& request : m_requests)
+		if (request.requester == requester && request.garage == peer.garage && request.voting)
+		{
+			request.ballots[peer.id] = yes;
+			break;
+		}
+}
+
+void GarageServer::StartVotes(int garageId)
+{
+	const Garage* garage = FindGarage(garageId);
+	if (!garage || OnlineMembers(garageId) == 0)
+		return;
+	for (auto& request : m_requests)
+	{
+		if (request.garage != garageId || request.voting)
+			continue;
+		Peer* requester = FindPeer(request.requester);
+		if (!requester)
+			continue;
+		request.voting = true;
+		request.timeLeft = NetProtocol::VOTE_SECONDS;
+		request.ballots.clear();
+		SendToGarage(garageId, Writer().Word("vote").Int(request.requester).Str(FullName(requester->prefix, requester->name))
+			.Num(NetProtocol::VOTE_SECONDS).Text());
+		requester->connection->Send(Writer().Word("pending")
+			.Str(std::format("The members of {} online are voting on letting you in.", garage->name)).Text());
+	}
+}
+
+void GarageServer::UpdateVotes(float deltaTime)
+{
+	for (size_t i = 0; i < m_requests.size();)
+	{
+		JoinRequest& request = m_requests[i];
+		if (!request.voting)
+		{
+			i++;
+			continue;
+		}
+		const Garage* garage = FindGarage(request.garage);
+		int online = OnlineMembers(request.garage);
+		// Its members have all gone: it waits again for one of them.
+		if (online == 0)
+		{
+			request.voting = false;
+			if (Peer* requester = FindPeer(request.requester))
+				requester->connection->Send(Writer().Word("pending")
+					.Str(std::format("The members of {} went offline before deciding. Your request waits for one of them to come back.", garage->name)).Text());
+			i++;
+			continue;
+		}
+		// Only the votes of the members still here count.
+		int yes = 0, no = 0;
+		for (const auto& [member, ballot] : request.ballots)
+		{
+			const Peer* voter = FindPeer(member);
+			if (!voter || voter->state != PeerState::PLAYING || voter->garage != request.garage)
+				continue;
+			(ballot ? yes : no)++;
+		}
+		request.timeLeft -= deltaTime;
+		std::optional<bool> decided;
+		if (yes * 2 > online)
+			decided = true;
+		else if (no * 2 >= online)
+			decided = false;
+		else if (request.timeLeft <= 0.f)
+			decided = yes > no;
+		if (!decided)
+		{
+			i++;
+			continue;
+		}
+		JoinRequest done = request;
+		m_requests.erase(m_requests.begin() + static_cast<std::ptrdiff_t>(i));
+		if (*decided)
+			Admit(done);
+		else
+			TurnAway(done, yes + no == 0 ? std::format("Nobody in {} answered in time.", garage->name)
+				: std::format("{} voted not to let you in.", garage->name));
+	}
+}
+
+void GarageServer::Admit(JoinRequest request)
+{
+	Garage& garage = *FindGarage(request.garage);
+	Peer* requester = FindPeer(request.requester);
+	if (!requester)
+		return;
+	garage.members.insert(requester->id);
+	requester->profile->garage = garage.id;
+	m_profiles.MarkDirty();
+	m_dirty = true;
+	Log(std::format("{} voted {} in.", garage.name, requester->name));
+	EndVote(request, std::format("{} was let in.", FullName(requester->prefix, requester->name)));
+	Enter(*requester, garage.id);
+}
+
+void GarageServer::TurnAway(JoinRequest request, const std::string& why)
+{
+	Peer* requester = FindPeer(request.requester);
+	if (!requester)
+		return;
+	Log(std::format("{} was turned away from {}.", requester->name, FindGarage(request.garage)->name));
+	EndVote(request, std::format("{} was turned away.", FullName(requester->prefix, requester->name)));
+	requester->connection->Send(Writer().Word("denied").Str(why).Text());
+	SendChoices(*requester);
+}
+
+void GarageServer::EndVote(const JoinRequest& request, const std::string& outcome)
+{
+	SendToGarage(request.garage, Writer().Word("voteover").Int(request.requester).Str(outcome).Text());
+}
+
+void GarageServer::SendPlots()
+{
+	Writer out;
+	out.Word("plots");
+	WritePlots(out);
+	SendToPlaying(out.Text());
+}
+
+Writer& GarageServer::WritePlots(Writer& out) const
+{
+	out.Int(m_garages.size());
+	for (const auto& [id, garage] : m_garages)
+		out.Int(garage.plot);
+	return out;
+}
+
 void GarageServer::SendToPlaying(const std::string& message, int except)
 {
 	for (auto& peer : m_peers)
 		if (peer.state == PeerState::PLAYING && peer.id != except)
 			peer.connection->Send(message);
+}
+
+void GarageServer::SendToGarage(int garage, const std::string& message, int except)
+{
+	for (auto& peer : m_peers)
+		if (peer.state == PeerState::PLAYING && peer.garage == garage && peer.id != except)
+			peer.connection->Send(message);
+}
+
+GarageServer::Peer* GarageServer::FindPeer(int account)
+{
+	for (auto& peer : m_peers)
+		if (peer.state != PeerState::NEW && peer.id == account)
+			return &peer;
+	return nullptr;
+}
+
+GarageServer::Garage* GarageServer::FindGarage(int id)
+{
+	auto it = m_garages.find(id);
+	return it == m_garages.end() ? nullptr : &it->second;
+}
+
+int GarageServer::OnlineMembers(int garage) const
+{
+	return static_cast<int>(std::count_if(m_peers.begin(), m_peers.end(),
+		[&](const Peer& peer) { return peer.state == PeerState::PLAYING && peer.garage == garage; }));
 }
 
 int GarageServer::PlayerCount() const
@@ -476,6 +786,13 @@ int GarageServer::FreeSlot() const
 	return 0;
 }
 
+int GarageServer::FreePlot() const
+{
+	for (int plot = 0;; plot++)
+		if (std::none_of(m_garages.begin(), m_garages.end(), [&](const auto& entry) { return entry.second.plot == plot; }))
+			return plot;
+}
+
 bool GarageServer::IsLoggedIn(int account) const
 {
 	return std::any_of(m_peers.begin(), m_peers.end(), [&](const Peer& peer) { return peer.state != PeerState::NEW && peer.id == account; });
@@ -483,7 +800,8 @@ bool GarageServer::IsLoggedIn(int account) const
 
 bool GarageServer::Load(std::string& error)
 {
-	m_records.clear();
+	m_garages.clear();
+	m_nextGarage = 1;
 	if (!std::filesystem::exists(m_config.garageFile))
 		return true;
 	std::ifstream file(m_config.garageFile, std::ios::binary);
@@ -491,16 +809,51 @@ bool GarageServer::Load(std::string& error)
 	text << file.rdbuf();
 	Reader in(text.str());
 	in.Expect("lvgarage");
-	if (in.Int() != GARAGE_FILE_VERSION)
+	long long version = in.Int();
+	if (version < 1 || version > GARAGE_FILE_VERSION)
 		in.Fail("it was saved by a different version of the server");
 	in.Expect("time");
 	m_timeOfDay = static_cast<float>(in.Num());
-	in.Expect("records");
-	long long count = in.Int();
-	for (long long i = 0; i < count && !in.Failed(); i++)
+	auto readRecords = [&](NetProtocol::Records& records) {
+		in.Expect("records");
+		long long count = in.Int();
+		for (long long i = 0; i < count && !in.Failed(); i++)
+		{
+			std::string key = in.Next();
+			records[key] = in.Next();
+		}
+	};
+	if (version < 2)
 	{
-		std::string key = in.Next();
-		m_records[key] = in.Next();
+		// One garage a server, before: it becomes the first, on the first plot, and nobody's a member of it
+		// till they choose it again.
+		Garage garage;
+		garage.id = m_nextGarage++;
+		garage.name = "The first garage";
+		readRecords(garage.records);
+		if (!garage.records.empty())
+			m_garages[garage.id] = std::move(garage);
+	}
+	else
+	{
+		in.Expect("garages");
+		m_nextGarage = static_cast<int>(in.Int());
+		long long count = in.Int();
+		for (long long i = 0; i < count && !in.Failed(); i++)
+		{
+			Garage garage;
+			in.Expect("garage");
+			garage.id = static_cast<int>(in.Int());
+			garage.name = in.Next();
+			garage.plot = static_cast<int>(in.Int());
+			in.Expect("members");
+			long long members = in.Int();
+			for (long long m = 0; m < members && !in.Failed(); m++)
+				garage.members.insert(static_cast<int>(in.Int()));
+			readRecords(garage.records);
+			m_nextGarage = (std::max)(m_nextGarage, garage.id + 1);
+			m_garages[garage.id] = std::move(garage);
+		}
 	}
 	if (in.Failed())
 	{
@@ -510,24 +863,33 @@ bool GarageServer::Load(std::string& error)
 	m_timeOfDay = std::fmod(std::abs(m_timeOfDay), 24.f);
 
 	// Nobody's here yet: a delivery anyone was carrying when the server last stopped is put down.
-	for (auto& [key, text] : m_records)
-		if (auto dropped = NetProtocol::DroppedPackage(key, text, std::nullopt))
-			text = *dropped;
+	for (auto& [id, garage] : m_garages)
+		for (auto& [key, text] : garage.records)
+			if (auto dropped = NetProtocol::DroppedPackage(key, text, std::nullopt))
+				text = *dropped;
 	return true;
 }
 
 bool GarageServer::Save(std::string& error)
 {
-	if (m_records.empty())
+	if (m_garages.empty())
 		return true;
 	Writer out;
 	out.Word("lvgarage").Int(GARAGE_FILE_VERSION).Line();
 	out.Word("time").Num(m_timeOfDay).Line();
-	out.Word("records").Int(m_records.size()).Line();
-	for (const auto& [key, text] : m_records)
-		out.Str(key).Str(text).Line();
+	out.Word("garages").Int(m_nextGarage).Int(m_garages.size()).Line();
+	for (const auto& [id, garage] : m_garages)
+	{
+		out.Word("garage").Int(garage.id).Str(garage.name).Int(garage.plot).Word("members").Int(garage.members.size());
+		for (int member : garage.members)
+			out.Int(member);
+		out.Line();
+		out.Word("records").Int(garage.records.size()).Line();
+		for (const auto& [key, text] : garage.records)
+			out.Str(key).Str(text).Line();
+	}
 
-	// Written beside the old one, then swapped in, so a crash mid-save never loses the garage.
+	// Written beside the old one, then swapped in, so a crash mid-save never loses the garages.
 	std::string temporary = m_config.garageFile + ".tmp";
 	{
 		std::ofstream file(temporary, std::ios::binary | std::ios::trunc);

@@ -36,7 +36,8 @@ enum class StationType
 	DOOR,		// the roll-up door: opens and closes, never moves
 	FURNITURE,	// bought shelving, benches, seats and decorations (see FurnitureCatalog)
 	LIFT,		// the two-post lift upgrade: raised and lowered with E
-	HOIST		// the engine hoist: lifts an engine off a stand or the dyno, and lowers it onto one
+	HOIST,		// the engine hoist: lifts an engine off a stand or the dyno, and lowers it onto one
+	CAR			// the project car on the drive: E works on it; the hoist lifts its engine in and out
 };
 
 // Bounding box colours for the developer view (ImGui's packed ABGR).
@@ -88,7 +89,9 @@ enum class ItemPlace
 	PACKAGED,	// still in its delivery box
 	INVENTORY,	// in the backpack and not in hand
 	CARRIED,	// another player has it, in a game over the network (never saved)
-	ATTACHED	// a bearing shell fitted into a loose rod or cap (ItemVisual::hostPart), going about in it (saved as STORAGE)
+	ATTACHED,	// a bearing shell fitted into a loose rod or cap (ItemVisual::hostPart), going about in it (saved as STORAGE);
+				// also a spring on a loose strut, a tire on a loose wheel
+	CAR			// on the project car, or in an engine that is (hidden till the car is modelled; saved as STORAGE)
 };
 
 // Just enough physics for things to fall, land and stack: no tumbling, no friction model.
@@ -108,6 +111,8 @@ struct ItemVisual
 	int engineIndex = -1;		// fitted to this engine (place STAND)
 	Body body = {};
 	float yaw = 0.f;
+	// Put down turned some other way than flat (see TurnHeld): its turn, after the yaw. Only kept while it's down.
+	glm::quat tilt = glm::quat(1.f, 0.f, 0.f, 0.f);
 	std::vector<std::pair<SurfaceOverlay, pObject>> overlays = {};
 	// Tools: the sockets of a socket set, or the socket on a ratchet, breaker bar or torque wrench.
 	std::vector<pObject> sockets = {};
@@ -185,6 +190,11 @@ public:
 
 	glm::vec3 GetSpawnPosition() const;
 	float GetSpawnYaw() const;
+	// The turn-held key is down with something in hand: the mouse turns it, not the view.
+	bool TurningHeld(const InputManager& input) const;
+	// The other garages on this server, each on its own plot this far along X from this one: their buildings,
+	// shut up, with their drives, solid to walk into, and the desert cleared round them. Empty for none.
+	void SetNeighbours(const std::vector<float>& offsets);
 	const std::vector<FloorObstacle>& GetObstacles() const;
 	FloorObstacle GetRoomBounds() const;
 
@@ -243,7 +253,8 @@ public:
 	// hum or rumble while they run: whether they're going and where they are.
 	std::vector<SoundCue> TakeSoundCues();
 	// The player opened the service manual in their hand this frame.
-	bool TakeReadRequest();
+	// The book the player opened with a manual in hand this frame (MeasuringTool::manualBook), if they did.
+	std::optional<int> TakeReadRequest();
 	// A message along the bottom of the screen, like the shop's own.
 	void Notify(const std::string& message);
 	// What a footstep at feet sounds like: the shop's concrete, upstairs boards, the drive and street, grass.
@@ -276,6 +287,12 @@ public:
 	void SyncHand();
 	// Drops an item from the backpack onto the floor in front of the player.
 	void DropFromInventory(const ItemRef& item, const FirstPersonController& player);
+	// Developer shortcut: takes an item straight into the hand from wherever it is (out of its delivery, too).
+	bool DevHold(const ItemRef& item);
+	// Dev: the nearest boulder still standing, for the console.
+	std::optional<glm::vec3> DevNearestBoulder(const glm::vec3& from, int kind = 0) const;
+	// Dev: the pickaxe held still partway through its swing (0 to 1), to look at; negative lets it go.
+	void DevSwing(float phase) { m_devSwing = phase; }
 
 	// Parts on the workbench, then parts set up in machines: what the Bench tab works on.
 	std::vector<BenchItem> GetBenchItems() const;
@@ -295,7 +312,7 @@ public:
 	// The inside of the shop, side bay and second story included, and its lamps.
 	ShopInterior GetInterior() const;
 private:
-	enum class TargetKind { ITEM, STATION, PACKAGE };
+	enum class TargetKind { ITEM, STATION, PACKAGE, QUARRY };
 	struct Target
 	{
 		TargetKind kind = TargetKind::STATION;
@@ -327,6 +344,7 @@ private:
 		bool rod = false;
 		int engine = 0;
 		StripStep strip = StripStep::NONE;	// oil clearance: which Plastigauge step this is
+		bool looseRing = false;			// a ring's end gap, in the bore of a block off the engine (part is the ring)
 		glm::vec3 position = {};
 		std::string label = "";
 	};
@@ -390,6 +408,14 @@ private:
 	void BuildUpgrades(bool bay, bool upper);
 	// Whether equipment with this footprint stands on the shop floor (side bay included).
 	bool OnShopFloor(const ShopBox& footprint) const;
+	// Whether it's out on the drive in front of the roll-up door (or in the open doorway): where the hoist can be
+	// rolled to reach the project car.
+	bool OnDrive(const ShopBox& footprint) const;
+	// Out on the shop's own land, round the building and in the salvage yard, clear of what stands there: where the shop's
+	// equipment can be moved to outside.
+	bool OnPlot(const ShopBox& footprint) const;
+	// Swings the salvage yard's gate open or shut (ShopWorldOutdoors.cpp).
+	void SetYardGate(bool open);
 	void UpdateLift(float deltaTime);
 	void UpdateDoor(float deltaTime);
 	// Whether a door station is the extension's roll-up door rather than the shop's, and which way it's going.
@@ -410,7 +436,11 @@ private:
 	void SyncMachines(const Workshop& workshop);
 	// Dropped on the pile by the roll-up door.
 	// title, if given, heads the label ("Timing drive: ...").
-	void CreatePackage(const std::vector<ItemRef>& items, const std::vector<size_t>& stations, const std::string& title = "");
+	// Delivered at the door (NextDeliverySpot), or wherever at says.
+	void CreatePackage(const std::vector<ItemRef>& items, const std::vector<size_t>& stations, const std::string& title = "",
+		std::optional<glm::vec3> at = std::nullopt);
+	// The project car's parts, just bought, strewn on the ground round it in the salvage yard (ShopWorldCar.cpp).
+	void LayOutCarLot(std::vector<ItemRef> parts);
 	bool IsCrated(size_t stationIndex) const;
 	// Where the next delivery lands: on top of the shortest pile by the door.
 	glm::vec3 NextDeliverySpot() const;
@@ -472,6 +502,7 @@ private:
 	EnginePose CurrentPose(int engine) const;
 	// What the hoist would lift or lower onto with E: a stand (its engine number), DYNO_TARGET, or nothing.
 	static constexpr int DYNO_TARGET = -2;
+	static constexpr int CAR_TARGET = -3;	// the project car's engine bay
 	std::optional<int> HoistTarget(const Workshop& workshop) const;
 	glm::vec3 HoistHook() const;
 	// Follows the workshop's engines onto and off the dyno and the hoist (see m_engineOnDyno).
@@ -516,6 +547,12 @@ private:
 
 	// Interaction
 	void UpdateHover(const Workshop& workshop, const FirstPersonController& player);
+	// A nut or bolt on that engine near the crosshair, its head's face not behind something the ray hit this far
+	// off: the one meant, though the ray caught the part it holds (a rod cap's nut, round the cap's bolt).
+	const ItemVisual* FastenerNearCrosshair(int engine, const FirstPersonController& player, float hitDistance) const;
+	// A part on an engine that only comes off with the one it's fitted to (a piston on its rod, the piston's ring, a
+	// shell in a rod or cap) is taken off by taking that: the outermost one it's carried by. Itself otherwise.
+	const ItemVisual* RemovalHost(const Workshop& workshop, const ItemVisual& visual) const;
 	// Marks every empty position the held part could go in on the engines in reach, and picks the
 	// one nearest the crosshair (if it's close enough). Returns that engine's stand.
 	std::optional<size_t> FindFitTarget(const Workshop& workshop, const FirstPersonController& player, const ItemVisual& held);
@@ -578,7 +615,45 @@ private:
 		AssemblySlot slot = AssemblySlot::BLOCK;
 		int index = 0;
 		glm::vec3 position = {};
+		// On the project car instead: engine is -1, slot COUNT, and carSlot and index say which.
+		bool car = false;
+		CarSlot carSlot = CarSlot::COUNT;
 	};
+	// The project car (ShopWorldCar.cpp). Where each part sits on it, in the car's own space (+X its nose, +Z its
+	// right side, y = 0 the ground under its wheels), and the car in the world.
+	struct CarPose
+	{
+		glm::vec3 offset = {};
+		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
+	};
+	CarPose PoseOnCar(CarSlot slot, int index) const;
+	glm::vec3 CarToWorld(const glm::vec3& offset) const;
+	glm::quat CarRotation() const;
+	// The middle of the part that goes in a position, where it would sit, in the world.
+	glm::vec3 CarSlotCenter(CarSlot slot, int index) const;
+	void PlaceOnCar(ItemVisual& visual, CarSlot slot, int index) const;
+	// Carrying a part to the car: marks every empty position it could go in and picks the one nearest the crosshair
+	// (m_carFitTarget). Returns the car's station if it found one.
+	std::optional<size_t> FindCarFitTarget(const Workshop& workshop, const FirstPersonController& player, const ItemVisual& held);
+	// A fitted nut or bolt on the car near the crosshair, those of sizeMm first.
+	std::optional<FastenerTarget> FindCarFastenerTarget(const Workshop& workshop, const FirstPersonController& player, int sizeMm);
+	// The prompt for the car station with a part in hand, aimed at a position on it.
+	std::string CarFitPrompt(const Workshop& workshop, const ItemVisual& held) const;
+	// Fits the part in hand where m_carFitTarget says (E at the car).
+	void FitToCar(Workshop& workshop, ItemVisual& held);
+	// The car's tools in hand (ShopWorldCarTools.cpp): the funnel at a filler, the bleeder on a nipple, the spring
+	// compressor and tire irons on a loose strut or wheel, the timing light, tire gauge and alignment gauge. True while
+	// it's aimed at something it works on (the prompt is its).
+	bool UpdateCarTool(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime);
+	// The pickaxe in hand: aimed at a boulder out in the desert, held to break it for the quarry. True while aimed at one.
+	bool UpdatePickaxe(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime);
+	// The quarry's pad, laid out once (BuildOutdoors), then kept to what's been bought, and the broken boulders grown back.
+	void BuildQuarry();
+	// Makes boulder index that kind of rock: its tint and glint (ShopWorldQuarry.cpp).
+	void DressBoulder(size_t index, int kind);
+	void SyncQuarry(const Workshop& workshop, float deltaTime);
+	// What the quarry's sign or machines say when they're looked at.
+	std::string QuarryPrompt(const Workshop& workshop) const;
 	// The fitted nut or bolt nearest the crosshair, those of sizeMm first (any size if 0).
 	std::optional<FastenerTarget> FindFastenerTarget(const Workshop& workshop, const FirstPersonController& player, int sizeMm);
 	// "13 mm socket", "no socket", "13 mm wrench", or "" for anything that isn't a spanner.
@@ -594,9 +669,35 @@ private:
 	void FitOnto(Workshop& workshop, ItemVisual& host);
 	pPart TakeOffWhat(const Workshop& workshop, const Part& host) const;
 	pPart RingTarget(const Workshop& workshop, const Part& host) const;
+	// What has to happen before a part goes in that position: its prerequisites, or for a ring set in a bore on its own
+	// to be gapped, an open bore (Workshop::RingInBoreBlockedBy).
+	std::optional<std::string> FitMissing(const Workshop& workshop, int engine, AssemblySlot slot, int index) const;
+	// The ring set in a bore on its own, aimed at with a piston in hand: the cylinder it's in, to push it down square.
+	std::optional<int> RingToSquare(const Workshop& workshop, const ItemVisual& ring) const;
+	// The bore of a loose block the crosshair is in (found by UpdateHover).
+	std::optional<int> AimedBore(const ItemVisual& block) const;
+	// The ring in the bore aimed into, which E takes out (as on the stand) when there's nothing to fit there.
+	pPart RingInAimedBore(const Workshop& workshop, const ItemVisual& block) const;
+	void FindAimedBore(const Workshop& workshop, const ItemVisual& block, const FirstPersonController& player);
 	void TakeOff(Workshop& workshop, ItemVisual& host);
 	// How an item lies when it's put down loose: turned to its yaw, and a spray can stood on its base.
 	glm::quat RestingRotation(const ItemVisual& visual) const;
+	// Come to rest turned up on an edge or a corner, it tips over onto the side nearest the floor (still facing the way
+	// it was), rolling over the edge it landed on, faster as it goes. LevelOut starts that (whether it has to); StepTip
+	// moves it on, and says when it's down.
+	struct Tip
+	{
+		glm::vec3 pivot = {};			// the edge or corner it rolls over
+		glm::vec3 axis = {};
+		float total = 0.f;				// how far over it goes
+		float angle = 0.f;
+		float speed = 0.f;
+		glm::quat start = glm::quat(1.f, 0.f, 0.f, 0.f);
+		glm::vec3 startPosition = {};
+	};
+	std::unordered_map<ItemRef, Tip, ItemRefHash>		m_tips = {};
+	bool LevelOut(ItemVisual& visual);
+	bool StepTip(ItemVisual& visual, Tip& tip, float deltaTime);
 	void PlaceInWorld(ItemVisual& visual, const glm::vec3& position, const glm::vec3& velocity);
 	void SetPlace(ItemVisual& visual, ItemPlace place, int machineIndex = -1);
 	ItemVisual* FindItemAt(ItemPlace place, int machineIndex = -1);
@@ -675,7 +776,37 @@ private:
 	pObject											m_garageFrames = nullptr;
 	pObject											m_garageGlass = nullptr;
 	std::vector<pObject>							m_sideDrums = {};		// outside the left wall, where the side bay goes
+	pObject										m_yardGate[2] = {};		// the salvage yard's gate leaves: the near (low z) one, the far one
+	bool										m_yardGateOpen = false;	// shut till there's a car in the yard (or anything else of ours)
 	std::vector<FloorObstacle>						m_sceneryObstacles = {};	// trees, poles, the dumpster
+	// The cacti, boulders and scrub scattered over the desert, so those on a neighbour's plot can be cleared away.
+	struct Scenery
+	{
+		pObject object = nullptr;
+		glm::vec2 at = {};
+		std::optional<FloorObstacle> footprint = std::nullopt;
+		bool boulder = false;		// one the quarry's hammer breaks
+		float regrow = 0.f;			// broken: seconds till another's turned up in its place
+		int kind = 0;				// which rock it is (BoulderKinds in ShopWorldQuarry.cpp): sandstone up to gold-bearing quartz
+	};
+	std::vector<Scenery>							m_scenery = {};
+	// The desert quarry (ShopWorldQuarry.cpp): the pad on the plot and what's been set up on it, shown by what's
+	// been bought, and what of it is in the way.
+	struct QuarrySite
+	{
+		pObject pad, sign, crusher, conveyor, hopper, gravel, shed;
+	};
+	QuarrySite										m_quarry = {};
+	std::vector<FloorObstacle>						m_quarryObstacles = {};
+	std::array<int, QUARRY_UPGRADES>				m_quarryShown = { -1, -1, -1, -1, -1 };
+	std::optional<size_t>							m_boulderAimed = std::nullopt;	// the boulder the hammer is on
+	float											m_boulderHold = 0.f;
+	float											m_swingTime = 0.f;		// through the pickaxe's swing, seconds (0: at rest)
+	float											m_swingAngle = 0.f;		// its tilt now: back over the shoulder (+) or down onto the rock (-)
+	float											m_devSwing = -1.f;
+	// The other garages' buildings (SetNeighbours), and what can't be walked through of them.
+	std::vector<pObject>							m_neighbourObjects = {};
+	std::vector<FloorObstacle>						m_neighbourObstacles = {};
 	std::vector<FloorObstacle>						m_drumObstacles = {};
 	std::vector<pObject>							m_upgradeObjects = {};		// what the upgrades added
 	std::vector<WalkSurface>						m_walkSurfaces = {};
@@ -701,7 +832,7 @@ private:
 	bool											m_upgradesApplied = false;
 	uint64_t										m_syncedStock = 0;		// the parts and tools last synced (see Update)
 	size_t											m_liftStation = SIZE_MAX;
-	bool											m_readRequested = false;
+	std::optional<int>								m_readRequested = std::nullopt;
 	pObject											m_liftArms = nullptr;
 	float											m_liftHeight = 0.08f;
 	bool											m_liftRaised = false;
@@ -711,6 +842,8 @@ private:
 	// The extension's own roll-up door: there only once it's built, shut until it's opened.
 	size_t										m_bayDoorStation = SIZE_MAX;
 	size_t									m_hoistStation = SIZE_MAX;
+	size_t									m_carStation = SIZE_MAX;
+	pObject									m_carStands = nullptr;	// under the car till it's on its wheels
 	bool											m_bayDoorOpen = false;
 	float											m_bayDoorAmount = 0.f;
 	std::unordered_map<ItemRef, ItemVisual, ItemRefHash>	m_items = {};
@@ -718,6 +851,23 @@ private:
 	std::unordered_map<const Object*, Target>		m_targets = {};
 	PlayerInventory									m_inventory = {};
 	ItemRef											m_equipped = {};
+	// How the item in hand has been turned with the turn-held key, to be put down that way: spun about its own up,
+	// then tipped toward or away from the player (who faces the way it goes down). With Shift they go in steps; the raw
+	// angles are where the mouse has got to. Reset whenever another item is taken in hand.
+	struct HeldTurn
+	{
+		ItemRef item = {};
+		bool turned = false;
+		float spin = 0.f;
+		float tip = 0.f;
+		float rawSpin = 0.f;
+		float rawTip = 0.f;
+		glm::quat Tilt() const { return glm::angleAxis(tip, glm::vec3(1.f, 0.f, 0.f)) * glm::angleAxis(spin, glm::vec3(0.f, 1.f, 0.f)); }
+	};
+	HeldTurn										m_heldTurn = {};
+	void TurnHeld(const InputManager& input, const FirstPersonController& player);
+	// The way the item in hand would lie if put down now: turned by the player, or flat facing them.
+	void ApplyHeldTurn(ItemVisual& held, const FirstPersonController& player);
 	bool											m_initialSyncDone = false;
 	uint32_t										m_nextPackageId = 1;
 	uint32_t										m_deliveries = 0;
@@ -732,10 +882,13 @@ private:
 		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
 		float crank = 0.f;
 		std::set<int> unseated = {};
+		std::map<int, bool> ringsInBore = {};
 	};
 	std::array<StandLayout, Workshop::MAX_ENGINES>	m_laidOutStands = {};
 	// The workshop's pistons in the top of their bores (Workshop::UnseatedPistons), kept here for posing them.
 	std::array<std::set<int>, Workshop::MAX_ENGINES>	m_unseated = {};
+	// And its rings set in bores on their own to be gapped, and whether each is squared (Workshop::RingsInBore).
+	std::array<std::map<int, bool>, Workshop::MAX_ENGINES>	m_ringsInBore = {};
 	// One per tool in the catalogue: the model's position and turn on the board (see LayOutToolBoard).
 	struct ToolHook
 	{
@@ -756,6 +909,7 @@ private:
 	float											m_fieldOfView = 70.f;
 
 	std::optional<Target>							m_hover = std::nullopt;
+	std::optional<std::pair<uint32_t, int>>			m_aimedBore = std::nullopt;	// a loose block's id, and the bore aimed into
 	std::optional<MeasureTarget>					m_measureTarget = std::nullopt;
 	// What's in the way of the measuring spot nearest the crosshair, when it can't be measured.
 	mutable std::string								m_measureBlocked = "";
@@ -778,6 +932,8 @@ private:
 		bool ready = false;
 	};
 	std::vector<FitPoint>							m_fitPoints = {};
+	// The bore of a loose block aimed at with a ring or piston in hand, where it goes (marked like m_fitTarget).
+	std::optional<glm::vec3>						m_boreFitTarget = std::nullopt;
 	// Empty bolt and nut holes near the player (see MarkEmptyHoles).
 	struct HolePoint
 	{
@@ -790,6 +946,22 @@ private:
 	std::optional<FastenerTarget>					m_aimedHole = std::nullopt;
 	std::optional<FastenerTarget>					m_spannerFastener = std::nullopt;
 	std::optional<FitTarget>						m_fitTarget = std::nullopt;
+	// The same on the project car.
+	struct CarFitTarget
+	{
+		CarSlot slot = CarSlot::BODY_SHELL;
+		int index = 0;
+		glm::vec3 position = {};
+		bool ready = false;
+	};
+	std::optional<CarFitTarget>						m_carFitTarget = std::nullopt;
+	// The car's tools: what the funnel pours into each circuit (a FluidProduct, or -1 for what the manual says), how
+	// long the button's been held on what (for the spring compressor, tire irons and draining), and the pause after
+	// each go with the bleeder or a click of the distributor.
+	std::array<int, FLUID_CIRCUITS>					m_funnelProduct = { -1, -1, -1, -1, -1, -1, -1 };
+	float											m_carHold = 0.f;
+	uint64_t										m_carHoldOn = 0;
+	float											m_carToolPause = 0.f;
 	// A spanner in hand: the sockets it can take from a set within reach, and the nuts and bolts it can
 	// reach (coloured by how tight they are), each with a label.
 	struct MarkedPoint
@@ -855,6 +1027,7 @@ private:
 	bool											m_handEmpty = false;		// the selected slot's item put away with its number
 	int												m_engineOnDyno = -1;		// the Workshop's, kept here for posing it
 	int												m_engineOnHoist = -1;		// the same, for the hoist
+	int												m_engineInCar = -1;			// and for the project car's bay
 	// An engine going up onto the hoist or down off it: from where it was, over HOIST_SWING_SECONDS.
 	struct EngineSwing
 	{

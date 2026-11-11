@@ -352,15 +352,14 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			one(A::OIL_PUMP);
 			break;
 
-		// Top end: the gasket only once the bottom end is finished, the head on it, then the
-		// bolts that clamp it down.
+		// Top end: the gasket only once every rod and piston is in, the head on it, then the bolts that clamp it
+		// down. Not the rod caps: as on a real engine, they (and their bearings) come off from underneath, with the pan
+		// off and the head still on.
 		case A::HEAD_GASKET:
 			all(A::PISTON);
 			all(A::PISTON_RING);
 			all(A::CONNECTING_ROD);
 			all(A::ROD_BEARING);
-			all(A::ROD_BEARING_LOWER);
-			all(A::ROD_CAP);
 			break;
 		case A::CYLINDER_HEAD:
 			one(A::HEAD_GASKET);

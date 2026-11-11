@@ -24,6 +24,11 @@ enum class SkillKind
 	SECOND_STORY,		// building: a room on top of the shack (UpgradeKind::SECOND_STORY)
 	POST_LIFT,			// building: a two-post lift (UpgradeKind::POST_LIFT)
 	WARDROBE,			// cosmetic: dressing your monkey at all (fur, face, cap and tail)
+	TRADE_DISCOUNT,		// shop: parts cost less
+	SCRAP_DEALER,		// shop: loose parts sell for more
+	WORD_OF_MOUTH,		// shop: more reputation from sales and clean pulls
+	MACHINIST,			// tools: machines cut closer to the target
+	TRADE_ACCOUNT,		// tools: tools and machines cost less
 	COUNT
 };
 
@@ -77,6 +82,11 @@ namespace Skills
 			{ SkillKind::POST_LIFT, Group::BUILDING, "Two-Post Lift", "A two-post lift, delivered crated and set up in the side bay. E raises and lowers it.", 1, 5, SkillKind::SIDE_BAY },
 			{ SkillKind::WARDROBE, Group::COSMETICS, "Wardrobe", "Dress your monkey, beside the backpack: its fur, face, cap and tail, in any colour. "
 				"Without it, you're the shop's monkey like everyone else.", 1, 1, ROOT },
+			{ SkillKind::TRADE_DISCOUNT, Group::SHOP, "Trade Discount", "Each level, parts cost 5% less at the parts computer.", 3, 2, SkillKind::SALESMAN },
+			{ SkillKind::SCRAP_DEALER, Group::SHOP, "Scrap Dealer", "Each level, a part you sell from the bench fetches 15% more.", 2, 1, SkillKind::TRADE_DISCOUNT },
+			{ SkillKind::WORD_OF_MOUTH, Group::SHOP, "Word of Mouth", "Each level, engines sold and clean dyno pulls earn 10% more reputation.", 3, 3, SkillKind::DYNO_CONTRACT },
+			{ SkillKind::MACHINIST, Group::TOOLS, "Machinist", "Each level, every machine cuts 12% closer to the size you set.", 3, 2, SkillKind::SOCKETS },
+			{ SkillKind::TRADE_ACCOUNT, Group::TOOLS, "Trade Account", "Each level, tools and machines cost 5% less at the parts computer.", 2, 3, SkillKind::MACHINIST },
 		} };
 		return skills;
 	}

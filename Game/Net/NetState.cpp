@@ -34,9 +34,11 @@ namespace
 	std::string CoatKey(const ItemRef& ref) { return std::format("o:{}:{}", static_cast<int>(ref.kind), ref.id); }
 	// Which way the shop's stations are numbered ("s:N"), so a garage kept from before a change can be
 	// renumbered. 1: no cot (the station after the lift went). 2: the engine hoist, after the extension's
-	// door. Garages without it are older.
+	// door. 3: the project car, after the hoist. Garages without it are older.
 	constexpr const char* LAYOUT_KEY = "g:layout";
-	constexpr long long STATION_LAYOUT = 2;
+	constexpr long long STATION_LAYOUT = 3;
+	// The project car, what's on its loose struts and wheels, and the fluids in stock (Workshop::CarState).
+	constexpr const char* CAR_KEY = "g:car";
 
 	// "p:12" is part 12: the number after the prefix.
 	std::optional<uint32_t> KeyNumber(const std::string& key, const char* prefix)
@@ -405,7 +407,23 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		out.Int(unseated.size());
 		for (auto [engine, cylinder] : unseated)
 			out.Int(engine).Int(cylinder);
+		// Then the rings gapped on their own, pushed down square in their bores.
+		std::vector<std::pair<int, int>> squared;
+		for (int engine = 0; engine < workshop.GetEngineCount(); engine++)
+			for (int cylinder : workshop.m_engines[engine]->squaredRings)
+				squared.push_back({ engine, cylinder });
+		out.Int(squared.size());
+		for (auto [engine, cylinder] : squared)
+			out.Int(engine).Int(cylinder);
 		records["g:unseated"] = out.Text();
+	}
+	{
+		// Rings set in the bores of blocks off the engine: the ring, the block, the bore, and whether it's squared.
+		Writer out;
+		out.Int(workshop.m_boreRings.size());
+		for (const auto& [ring, at] : workshop.m_boreRings)
+			out.Int(ring).Int(at.block).Int(at.cylinder).Int(at.squared ? 1 : 0);
+		records["g:borerings"] = out.Text();
 	}
 	// What's fitted to what off the engines: shells in rods and caps, pistons on rods, pins in pistons.
 	for (auto [key, fittings] : { std::pair{ "g:shells", &workshop.m_shells }, std::pair{ "g:pistons", &workshop.m_pistons }, std::pair{ "g:pins", &workshop.m_pins }, std::pair{ "g:rings", &workshop.m_rings } })
@@ -422,6 +440,7 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		records[PartKey(part->GetId())] = PartText(*part);
 	for (size_t engine = 0; engine < workshop.m_engines.size(); engine++)
 		records[EngineKey(engine)] = EngineText(*workshop.m_engines[engine]);
+	records[CAR_KEY] = workshop.CarState();
 
 	for (size_t i = 0; i < world.m_stations.size(); i++)
 	{
@@ -437,7 +456,7 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		Writer out;
 		// What's in this player's backpack or hand is carried by them.
 		bool mine = visual.place == ItemPlace::INVENTORY || visual.place == ItemPlace::HAND;
-		ItemPlace place = mine ? ItemPlace::CARRIED : visual.place == ItemPlace::ATTACHED ? ItemPlace::STORAGE : visual.place;
+		ItemPlace place = mine ? ItemPlace::CARRIED : visual.place == ItemPlace::ATTACHED || visual.place == ItemPlace::CAR ? ItemPlace::STORAGE : visual.place;
 		int index = place == ItemPlace::STAND ? visual.engineIndex : visual.machineIndex;
 		out.Int(static_cast<int>(place)).Int(index).Num(visual.yaw);
 		if (place == ItemPlace::WORLD)
@@ -445,6 +464,7 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 			WriteVec3(out, visual.object->GetPosition());
 			WriteVec3(out, visual.body.velocity);
 			out.Int(visual.body.resting);
+			out.Num(visual.tilt.w).Num(visual.tilt.x).Num(visual.tilt.y).Num(visual.tilt.z);
 		}
 		if (place == ItemPlace::CARRIED)
 			out.Int(mine ? localPlayer : visual.carrier).Int(mine ? visual.place == ItemPlace::HAND : visual.carriedInHand);
@@ -522,9 +542,10 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 	}
 	// A garage from before a change to the shop's stations is renumbered. Before the cot went it was the
 	// station after the lift, and those after it move down one; before the hoist, those after the
-	// extension's door move up one to make room for it.
-	const size_t hoistStation = world.m_fixedStations - 1;
-	const size_t cotStation = world.m_fixedStations - 2;
+	// extension's door move up one to make room for it; before the car, those after the hoist (the furniture) do.
+	const size_t carStation = world.m_fixedStations - 1;
+	const size_t hoistStation = carStation - 1;
+	const size_t cotStation = carStation - 2;
 	long long layout = STATION_LAYOUT;
 	if (full)
 	{
@@ -540,6 +561,8 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 				index--;
 		}
 		if (layout < 2 && index >= hoistStation)
+			index++;
+		if (layout < 3 && index >= carStation)
 			index++;
 		return index;
 	};
@@ -653,6 +676,21 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			workshop.m_engineOnHoist = static_cast<int>(in.Int());
 		else if (key == "g:unseated")
 			unseatedText = *text;
+		else if (key == "g:borerings")
+		{
+			workshop.m_boreRings.clear();
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+			{
+				auto ring = static_cast<uint32_t>(in.Int());
+				BoreRing at;
+				at.block = static_cast<uint32_t>(in.Int());
+				at.cylinder = static_cast<int>(in.Int());
+				at.squared = in.Int() != 0;
+				if (!in.Failed())
+					workshop.m_boreRings[ring] = at;
+			}
+		}
 		else if (key == "g:shells" || key == "g:pistons" || key == "g:pins" || key == "g:rings")
 		{
 			auto& fittings = key == "g:shells" ? workshop.m_shells : key == "g:pistons" ? workshop.m_pistons : key == "g:pins" ? workshop.m_pins : workshop.m_rings;
@@ -741,11 +779,35 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		if (workshop.m_engineOnHoist >= workshop.GetEngineCount() || workshop.m_engineOnHoist == workshop.m_engineOnDyno)
 			workshop.m_engineOnHoist = -1;
 	}
-	// Once the engines are what they are: which of their pistons are still in the top of the bore.
+	// The project car, rebuilt from its parts once they and the engines are in place. A part that's gone with no
+	// change to the car still comes off it (rebuilt from its own state, which drops what isn't the shop's).
+	if (auto car = other.find(CAR_KEY); car != other.end())
+	{
+		if (car->second)
+			workshop.RestoreCarState(*car->second);
+		else
+		{
+			workshop.m_car.reset();
+			workshop.m_carCarried.clear();
+		}
+		other.erase(car);
+	}
+	else if (full)
+	{
+		workshop.m_car.reset();
+		workshop.m_carCarried.clear();
+	}
+	else if (!partChanges.empty() && workshop.m_car)
+		workshop.RestoreCarState(workshop.CarState());
+	// Once the engines are what they are: which of their pistons are still in the top of the bore, and which rings
+	// gapped on their own have been squared in theirs.
 	if (unseatedText)
 	{
 		for (auto& engine : workshop.m_engines)
+		{
 			engine->unseated.clear();
+			engine->squaredRings.clear();
+		}
 		Reader in(*unseatedText);
 		size_t count = in.Count();
 		for (size_t i = 0; i < count && !in.Failed(); i++)
@@ -754,6 +816,14 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			int cylinder = static_cast<int>(in.Int());
 			if (!in.Failed() && engine >= 0 && engine < workshop.GetEngineCount())
 				workshop.m_engines[engine]->unseated.insert(cylinder);
+		}
+		count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			int engine = static_cast<int>(in.Int());
+			int cylinder = static_cast<int>(in.Int());
+			if (!in.Failed() && engine >= 0 && engine < workshop.GetEngineCount())
+				workshop.m_engines[engine]->squaredRings.insert(cylinder);
 		}
 	}
 
@@ -825,11 +895,15 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		float yaw = static_cast<float>(in.Num());
 		glm::vec3 position = {}, velocity = {};
 		bool resting = true;
+		glm::quat tilt = glm::quat(1.f, 0.f, 0.f, 0.f);
 		if (place == ItemPlace::WORLD)
 		{
 			position = ReadVec3(in);
 			velocity = ReadVec3(in);
 			resting = in.Int() != 0;
+			float w = static_cast<float>(in.Num()), x = static_cast<float>(in.Num()), y = static_cast<float>(in.Num()), z = static_cast<float>(in.Num());
+			if (w * w + x * x + y * y + z * z > 0.5f)
+				tilt = glm::normalize(glm::quat(w, x, y, z));
 		}
 		int carrier = -1;
 		bool inHand = false;
@@ -873,7 +947,8 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		if (place == ItemPlace::WORLD)
 		{
 			visual->object->SetPosition(position);
-			visual->object->SetRotation(ShopLayout::Yaw(yaw));
+			visual->tilt = tilt;
+			visual->object->SetRotation(world.RestingRotation(*visual));
 			visual->object->SetScale({ 1.f, 1.f, 1.f });
 			visual->body.velocity = velocity;
 			visual->body.resting = resting;

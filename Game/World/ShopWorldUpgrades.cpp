@@ -211,6 +211,29 @@ bool ShopWorld::OnShopFloor(const ShopBox& footprint) const
 		|| within({ BAY_MIN_X, -BAY_OPENING_HALF }, { HALF_WIDTH, BAY_OPENING_HALF });
 }
 
+bool ShopWorld::OnDrive(const ShopBox& footprint) const
+{
+	using namespace GarageLayout;
+	auto within = [&](glm::vec2 min, glm::vec2 max) {
+		return footprint.min.x >= min.x && footprint.max.x <= max.x && footprint.min.z >= min.y && footprint.max.z <= max.y;
+	};
+	// Out on the drive in front of the door, or through the doorway itself while it's up.
+	constexpr float DRIVE_DEPTH = 9.f;
+	if (within({ DRIVE_MIN_X, HALF_DEPTH + WALL }, { DRIVE_MAX_X, HALF_DEPTH + WALL + DRIVE_DEPTH }))
+		return true;
+	if (m_doorOpen && within({ DOOR_MIN_X, -HALF_DEPTH }, { DOOR_MAX_X, HALF_DEPTH + WALL + DRIVE_DEPTH }))
+		return true;
+	// Along the track and into the salvage yard, to the car. Rolling from one onto the next it's partly on each,
+	// so it's enough that every corner of it is on the drive, the track or the yard.
+	auto onGround = [&](float x, float z) {
+		auto in = [&](const Paved& area) { return x >= area.min.x && x <= area.max.x && z >= area.min.y && z <= area.max.y; };
+		// Past the gate only while it's open.
+		return in(PAVED[0]) || (m_yardGateOpen && (in(YARD_TRACK) || in(YARD)));
+	};
+	return onGround(footprint.min.x, footprint.min.z) && onGround(footprint.max.x, footprint.min.z) && onGround(footprint.min.x, footprint.max.z)
+		&& onGround(footprint.max.x, footprint.max.z);
+}
+
 void ShopWorld::UpdateLift(float deltaTime)
 {
 	// The carriages run up and down the posts; the arms go with them wherever the lift is moved to.
@@ -225,4 +248,38 @@ void ShopWorld::UpdateLift(float deltaTime)
 	m_liftArms->SetVisible(lift.present);
 	m_liftArms->SetPosition(lift.object->GetPosition() + lift.object->GetRotation() * glm::vec3(0.f, m_liftHeight, 0.f));
 	m_liftArms->SetRotation(lift.object->GetRotation());
+}
+
+bool ShopWorld::OnPlot(const ShopBox& footprint) const
+{
+	using namespace GarageLayout;
+	// On the shop's own land outside: within the plot's bounds, not in or through the building (the floor inside is
+	// OnShopFloor's), and clear of everything that stands there (walls, stairs, the yard's fence and junk, the drums,
+	// the neighbours' shacks).
+	if (footprint.min.x < PLOT_MIN.x || footprint.max.x > PLOT_MAX.x || footprint.min.z < PLOT_MIN.y || footprint.max.z > PLOT_MAX.y)
+		return false;
+	ShopInterior interior = GetInterior();
+	glm::vec3 middle = (footprint.min + footprint.max) * 0.5f;
+	for (glm::vec3 corner : { glm::vec3(footprint.min.x, 0.5f, footprint.min.z), glm::vec3(footprint.max.x, 0.5f, footprint.min.z),
+			glm::vec3(footprint.min.x, 0.5f, footprint.max.z), glm::vec3(footprint.max.x, 0.5f, footprint.max.z), glm::vec3(middle.x, 0.5f, middle.z) })
+		if (interior.InGarage(corner))
+			return false;
+	if (InsideWalls(footprint))
+		return false;
+	auto blocks = [&](const FloorObstacle& obstacle) {
+		return obstacle.top > 0.05f && obstacle.bottom < footprint.max.y && footprint.min.x < obstacle.max.x && obstacle.min.x < footprint.max.x
+			&& footprint.min.z < obstacle.max.y && obstacle.min.y < footprint.max.z;
+	};
+	for (const auto* list : { &m_staticObstacles, &m_neighbourObstacles })
+		for (const auto& obstacle : *list)
+			if (blocks(obstacle))
+				return false;
+	// Not on the quarry's pad: it's the quarry's.
+	if (footprint.min.x < QUARRY_PAD.max.x && QUARRY_PAD.min.x < footprint.max.x && footprint.min.z < QUARRY_PAD.max.y && QUARRY_PAD.min.y < footprint.max.z)
+		return false;
+	// Not across the yard's gateway while the gate's shut.
+	if (!m_yardGateOpen && footprint.max.x > YARD_MIN_X - 0.1f && footprint.min.x < YARD_MIN_X + 0.1f
+			&& footprint.max.z > YARD_GATE_MIN_Z && footprint.min.z < YARD_GATE_MAX_Z)
+		return false;
+	return true;
 }

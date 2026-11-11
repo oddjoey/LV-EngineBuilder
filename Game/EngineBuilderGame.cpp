@@ -249,6 +249,59 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_splash.Update(deltaTime, m_input->WasKeyPressed(GLFW_KEY_ESCAPE) || m_input->WasKeyPressed(GLFW_KEY_SPACE)
 			|| m_input->WasKeyPressed(GLFW_KEY_ENTER) || m_input->WasKeyPressed(GLFW_KEY_E) || m_input->WasMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT));
 
+	// Developer start (debug builds): LV_DEV_START="command; command" goes straight into an offline game once the
+	// studio card has gone, runs those console commands, and never saves (it's for looking at things).
+	if (DEV_OFFLINE && !splash && !m_devStartDone)
+	{
+		m_devStartDone = true;
+		std::string script;
+#ifdef _WIN32
+		char* value = nullptr;
+		size_t length = 0;
+		if (_dupenv_s(&value, &length, "LV_DEV_START") == 0 && value)
+		{
+			script = value;
+			free(value);
+		}
+#else
+		if (const char* value = std::getenv("LV_DEV_START"))
+			script = value;
+#endif
+		if (!script.empty())
+		{
+			m_devNoSave = true;
+			PlayOffline();
+			size_t start = 0;
+			while (start <= script.size())
+			{
+				size_t end = script.find(';', start);
+				std::string command = script.substr(start, end == std::string::npos ? std::string::npos : end - start);
+				if (command.find_first_not_of(' ') != std::string::npos)
+					m_devScript.push_back(command.substr(command.find_first_not_of(' ')));
+				if (end == std::string::npos)
+					break;
+				start = end + 1;
+			}
+		}
+	}
+	// The script runs a command a frame (things bought turn up the frame after), and "wait <seconds>" pauses it.
+	if (!m_devScript.empty())
+	{
+		m_devWait -= deltaTime;
+		while (!m_devScript.empty() && m_devWait <= 0.f)
+		{
+			std::string command = m_devScript.front();
+			m_devScript.erase(m_devScript.begin());
+			if (command.starts_with("wait"))
+			{
+				m_devWait = command.size() > 5 ? std::stof(command.substr(5)) : 1.f;
+				break;
+			}
+			m_console.Execute(command);
+			break;
+		}
+	}
+
 	// Don't steal Tab/Esc from a text field the player is typing in (and none of it while the
 	// splash is up, or while a control is waiting for its new key).
 	bool typing = ImGui::GetIO().WantTextInput || splash || m_pauseMenu.IsBinding();
@@ -312,6 +365,8 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	{
 		glm::vec3 before = m_player.GetFeetPosition();
 		m_player.SetSpeedScale(static_cast<float>(m_workshop->WalkSpeedFactor()));
+		// Turning what's in hand, the mouse turns it and the view stays put.
+		m_player.SetLookLocked(m_world.TurningHeld(*m_input));
 		m_player.Update(deltaTime, *m_input, m_world.GetObstacles(), m_world.GetRoomBounds(), m_world.GetWalkSurfaces());
 		glm::vec3 step = m_player.GetFeetPosition() - before;
 		m_workshop->AddDistanceWalked(glm::length(glm::vec2(step.x, step.z)));
@@ -372,13 +427,17 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 			m_audio.PlayInterface(Sound::PAGE_TURN, 0.7f);
 	}
 
-	// The service manual in hand, clicked: open the book.
-	if (m_world.TakeReadRequest())
+	// The service manual in hand, clicked: open the book (the engine's or the car's).
+	if (auto book = m_world.TakeReadRequest())
 	{
 		m_ui.Close();
-		m_manual.Open();
+		m_manual.Open(*book == 1 ? ServiceManual::Book::CHASSIS : ServiceManual::Book::ENGINE);
 		m_audio.PlayInterface(Sound::PAGE_TURN, 0.8f);
 	}
+
+	// The quarry's crusher keeps working, whatever you're doing.
+	if (m_workshop)
+		m_workshop->AdvanceQuarry((std::min)(deltaTime, 0.25f));
 
 	// The sun keeps moving, even with the menus open.
 	// The dev menu can speed it up, or stop it. In a garage on a server it goes at the server's pace,
@@ -388,9 +447,11 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		if (float dayLength = m_net.GetDayLengthMinutes(); dayLength > 0.f)
 			m_timeOfDay = std::fmod(m_timeOfDay + (std::min)(deltaTime, 0.1f) * 24.f / (dayLength * 60.f), 24.f);
 	}
-	else if (m_settings.dayNightCycle && !m_devMenu.GetSettings().timePaused)
+	else if (!m_devMenu.GetSettings().timePaused)
 	{
-		float hours = (std::min)(deltaTime, 0.1f) * 24.f / (m_settings.dayLengthMinutes * 60.f) * m_devMenu.GetSettings().timeScale;
+		// Offline, a day lasts half an hour.
+		constexpr float DAY_MINUTES = 30.f;
+		float hours = (std::min)(deltaTime, 0.1f) * 24.f / (DAY_MINUTES * 60.f) * m_devMenu.GetSettings().timeScale;
 		m_timeOfDay = std::fmod(m_timeOfDay + hours, 24.f);
 	}
 	m_lighting.Update(m_camera->GetPosition(), m_settings.renderDistance, m_timeOfDay, m_world.GetDoorOpenAmount(),
@@ -439,7 +500,7 @@ void EngineBuilderGame::PlayOffline()
 
 bool EngineBuilderGame::SaveOffline()
 {
-	if (!m_offline)
+	if (!m_offline || m_devNoSave)
 		return false;
 	std::string error;
 	if (!SaveGame::Save(*m_workshop, m_world, m_player, m_timeOfDay, error))
@@ -585,6 +646,15 @@ void EngineBuilderGame::HandlePauseAction(PauseMenu::Action action)
 		case PauseMenu::Action::LEAVE:
 			LeaveGarage();
 			break;
+		case PauseMenu::Action::CREATE_GARAGE:
+			m_net.CreateGarage();
+			break;
+		case PauseMenu::Action::REQUEST_GARAGE:
+			m_net.RequestGarage(m_pauseMenu.GetRequestedGarage());
+			break;
+		case PauseMenu::Action::CANCEL_REQUEST:
+			m_net.CancelRequest();
+			break;
 		case PauseMenu::Action::PLAY_OFFLINE:
 			PlayOffline();
 			break;
@@ -610,6 +680,7 @@ void EngineBuilderGame::OnGUI()
 		m_world.DrawDebugBounds(m_player);
 
 	m_ui.SetXray(dev.xray);
+	m_ui.SetDarkMode(m_settings.darkMode);
 	m_ui.Draw(*m_workshop);
 	m_devMenu.Draw(m_timeOfDay);
 
@@ -620,6 +691,8 @@ void EngineBuilderGame::OnGUI()
 		m_world.DrawHud(*m_workshop, m_player);
 	if (!m_pauseMenu.IsOpen())
 		m_net.DrawNameTags(m_world, m_player);
+	if (!InMenu() && !m_console.IsOpen())
+		DrawVote();
 
 	ImDrawList* foreground = ImGui::GetForegroundDrawList();
 	float right = ImGui::GetIO().DisplaySize.x;
@@ -633,7 +706,6 @@ void EngineBuilderGame::OnGUI()
 	context.pressedInput = Controls::FirstPressed(*m_input);
 	if (m_pauseMenu.IsOpen())
 	{
-		context.timeOfDay = &m_timeOfDay;
 		context.resolutions = Graphics::Get()->GetDisplayResolutions();
 		context.maxMsaa = (std::min)(8, static_cast<int>(Graphics::Get()->GetMaxMSAA()));
 
@@ -651,7 +723,12 @@ void EngineBuilderGame::OnGUI()
 		}
 
 		context.online = m_net.IsPlaying();
-		context.joining = m_net.IsJoining();
+		context.joining = m_net.IsJoining() || m_net.IsChoosing();
+		context.choosingGarage = m_net.IsChoosing();
+		for (const auto& garage : m_net.GetGarageChoices())
+			context.garageChoices.push_back({ garage.id, garage.name, garage.members, garage.online });
+		context.requestingGarage = m_net.IsRequesting();
+		context.garageStatus = m_net.GetChoiceStatus();
 		context.offline = m_offline;
 		context.canPlayOffline = DEV_OFFLINE;
 		context.loggedIn = m_login.IsLoggedIn();
@@ -692,4 +769,44 @@ void EngineBuilderGame::OnShutdown()
 	m_settings.Save();
 	if (m_input)
 		m_input->SetCursorLocked(false);
+}
+
+void EngineBuilderGame::DrawVote()
+{
+	// Someone asking to join this garage: the first vote not yet cast, at the top of the screen, answered
+	// with Y or N (or the buttons, with the mouse free).
+	const auto& votes = m_net.GetVotes();
+	auto vote = std::find_if(votes.begin(), votes.end(), [](const NetSession::Vote& v) { return !v.voted; });
+	if (vote == votes.end())
+		return;
+	int requester = vote->requester;
+	bool typing = ImGui::GetIO().WantTextInput;
+	if (!typing && m_input->WasKeyPressed(GLFW_KEY_Y))
+	{
+		m_net.CastVote(requester, true);
+		return;
+	}
+	if (!typing && m_input->WasKeyPressed(GLFW_KEY_N))
+	{
+		m_net.CastVote(requester, false);
+		return;
+	}
+	ImGuiViewport* viewport = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos({ viewport->GetCenter().x, viewport->WorkPos.y + 60.f }, ImGuiCond_Always, { 0.5f, 0.f });
+	ImGui::SetNextWindowBgAlpha(0.88f);
+	ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings
+		| ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+	if (ImGui::Begin("JoinVote", nullptr, flags))
+	{
+		ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "%s wants to join %s", vote->name.c_str(), m_net.GetGarageName().c_str());
+		ImGui::Text("Let them in? %.0f s to vote", std::ceil(vote->timeLeft));
+		if (ImGui::Button("[Y] Yes, let them in"))
+			m_net.CastVote(requester, true);
+		ImGui::SameLine();
+		if (ImGui::Button("[N] No"))
+			m_net.CastVote(requester, false);
+		if (votes.size() > 1)
+			ImGui::TextDisabled("%zu more asking", votes.size() - 1);
+	}
+	ImGui::End();
 }

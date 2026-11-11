@@ -24,7 +24,8 @@ namespace EngineLayout
 	constexpr float BORE_SPACING = 0.095f;
 	constexpr float BORE_RADIUS = 0.0405f;
 	constexpr float BLOCK_LENGTH = 4 * BORE_SPACING + 0.03f;
-	constexpr float BLOCK_WIDTH = 0.20f;
+	constexpr float BLOCK_WIDTH = 0.18f;		// across the deck
+	constexpr float CRANKCASE_WIDTH = 0.20f;	// across the skirts
 	constexpr float CYLINDER_DEPTH = 0.16f;
 	constexpr float CRANK_Y = -0.25f;
 	constexpr float CRANK_THROW = 0.0385f;
@@ -86,9 +87,11 @@ namespace EngineLayout
 
 	// Bolt-on parts. The timing end of the engine is -X, the intake side -Z.
 	constexpr float FRONT_X = -BLOCK_LENGTH * 0.5f;
-	constexpr float PAN_RAIL_Y = CRANK_Y;							// the block's bottom face
+	// The skirts come down past the crank's centre line (a deep-skirt block); the pan rail is their bottom face.
+	constexpr float SKIRT_DEPTH = 0.045f;
+	constexpr float PAN_RAIL_Y = CRANK_Y - SKIRT_DEPTH;				// the block's bottom face
 	constexpr float HEAD_TOP_Y = HEAD_DECK_Y + HEAD_RAIL_TOP;		// where the valve cover sits
-	constexpr float OIL_PAN_DEPTH = 0.14f;
+	constexpr float OIL_PAN_DEPTH = 0.095f;							// down to the pickup, under the skirts
 	constexpr float PORT_Y = 0.035f;								// intake and exhaust port centres
 	constexpr float PORT_FACE_Z = 0.1055f;							// the head's port faces, either side
 	constexpr float TIMING_PLANE_X = FRONT_X - 0.023f;				// sprockets and belt
@@ -239,6 +242,17 @@ namespace ShopModels
 	inline const std::string STREET_LIGHT = "Street Light";
 	inline const std::string LAMP_HEAD = "Lamp Head";
 	inline const std::string DUMPSTER = "Dumpster";
+	inline const std::string YARD_GROUND = "Salvage Yard Gravel";
+	inline const std::string YARD_FENCE = "Salvage Yard Fence";
+	inline const std::string YARD_JUNK = "Salvage Yard Junk";
+	inline const std::string YARD_GATE_LEAF = "Salvage Yard Gate Leaf";
+	inline const std::string QUARRY_PAD = "Quarry Pad";
+	inline const std::string QUARRY_SIGN = "Quarry Sign";
+	inline const std::string QUARRY_CRUSHER = "Quarry Crusher";
+	inline const std::string QUARRY_CONVEYOR = "Quarry Conveyor";
+	inline const std::string QUARRY_HOPPER = "Quarry Hopper";
+	inline const std::string QUARRY_GRAVEL = "Quarry Gravel";
+	inline const std::string QUARRY_SHED = "Quarry Shed";
 	inline const std::string OIL_DRUM = "Oil Drum";
 	inline const std::string WORKBENCH = "Workbench";
 	inline const std::string SHELF = "Parts Shelf";
@@ -248,6 +262,8 @@ namespace ShopModels
 	inline const std::string ENGINE_STAND = "Engine Stand";
 	inline const std::string DYNO = "Dyno";
 	inline const std::string ENGINE_HOIST = "Engine Hoist";
+	inline const std::string PROJECT_CAR = "LE86 Project Car";
+	inline const std::string CAR_JACK_STANDS = "Car Jack Stands";
 	inline const std::string COMPUTER_DESK = "Computer Desk";
 	inline const std::string PACKAGE_BOX = "Package: Box";
 	inline const std::string PACKAGE_CRATE = "Package: Crate";
@@ -369,6 +385,9 @@ private:
 	void LoadParts();
 	// Seals, gaskets and everything bolted around the long block.
 	void LoadAncillaries();
+	// The project car's parts (stand-ins, till the car is modelled properly) and the car itself.
+	void LoadCarParts();
+	void BuildProjectCarShell();
 	void LoadOverlays();
 	void LoadTools();
 	void LoadFurniture();

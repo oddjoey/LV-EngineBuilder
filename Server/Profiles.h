@@ -3,9 +3,9 @@
 #include <map>
 #include <string>
 
-// What each player has to come back to in this garage, by their account number (the account itself
-// is the account server's): how their backpack and hotbar were laid out, and where they stood. The
-// things in the backpack are in the garage's records, carried by them.
+// What each player has to come back to on this server, by their account number (the account itself is the
+// account server's): the garage they belong to and, in it, how their backpack and hotbar were laid out and
+// where they stood. The things in the backpack are in the garage's records, carried by them.
 class Profiles
 {
 public:
@@ -16,6 +16,7 @@ public:
 		std::string layout = "";
 		bool placed = false;
 		float x = 0.f, y = 0.f, z = 0.f, yaw = 0.f, pitch = 0.f;
+		int garage = 0;		// the garage they belong to (GarageServer), or 0 for none yet
 	};
 
 	bool Load(const std::string& path, std::string& error);

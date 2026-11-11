@@ -193,7 +193,7 @@ bool Machining::CanMachine(const Machine& machine, const Feature& feature)
 	return feature.SupportsOperation(machine.operation);
 }
 
-MachiningResult Machining::Apply(const Machine& machine, Part& part, Feature& feature, double parameter, const EngineSpec& spec)
+MachiningResult Machining::Apply(const Machine& machine, Part& part, Feature& feature, double parameter, const EngineSpec& spec, double errorFactor)
 {
 	if (part.GetCondition() == PartCondition::DAMAGED)
 		return { false, "That part is damaged beyond machining." };
@@ -201,7 +201,7 @@ MachiningResult Machining::Apply(const Machine& machine, Part& part, Feature& fe
 		return { false, std::format("A {} can't work on {}.", machine.name, feature.name) };
 
 	// Harder materials deflect the tool more and cut less predictably.
-	double sigma = machine.sigma / GetMaterial(part.GetMaterial()).machinability;
+	double sigma = machine.sigma / GetMaterial(part.GetMaterial()).machinability * errorFactor;
 
 	MachiningResult result;
 	switch (machine.operation)
@@ -222,6 +222,9 @@ MachiningResult Machining::Apply(const Machine& machine, Part& part, Feature& fe
 	{
 		feature.lastOperation = machine.operation;
 		part.MarkReadingStale(feature.name);
+		// Filed open, a ring's gap has to be read again.
+		if (machine.operation == MachineOperation::FILE_RING)
+			part.MarkReadingStale(FeatureNames::END_GAP);
 	}
 	return result;
 }

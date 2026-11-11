@@ -10,6 +10,7 @@
 
 #include <imgui.h>
 
+#include "../Simulation/CarSpec.h"
 #include "../Simulation/EngineSpec.h"
 #include "../Simulation/MeasuringTool.h"
 #include "../Simulation/PartCatalog.h"
@@ -143,6 +144,10 @@ float ServiceManual::FigureLines(Figure figure)
 		case Figure::ROCKER_SHAFT_SEQUENCE:
 		case Figure::CAM_CAP_SEQUENCE:	return 7.f;
 		case Figure::ASSEMBLY_FLOW:		return 12.f;
+		case Figure::BRAKE_BLEED_ORDER:	return 16.f;
+		case Figure::ALIGNMENT_ANGLES:	return 12.f;
+		case Figure::GEAR_SPEEDS:		return 14.f;
+		case Figure::CAR_BUILD_FLOW:	return 16.f;
 		default:						return 11.f;
 	}
 }
@@ -714,6 +719,179 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 			ImVec2 stock = plot.At(0.f, ratio(0.0));
 			drawList->AddCircleFilled(stock, 4.f, ACCENT);
 			Text(drawList, stock + ImVec2(8.f, 2.f), ACCENT, std::format("As built: {:.1f}:1", ratio(0.0)), label);
+			break;
+		}
+		case Figure::BRAKE_BLEED_ORDER:
+		{
+			// The car from above, nose up, the master cylinder on the driver's side of the firewall and a line to each
+			// corner: bled farthest first, so the air is pushed ahead of the fluid down the longest line.
+			const CarSpec& car = CarSpec::LE86Coupe();
+			float bodyHeight = height - fontSize * 1.6f, bodyWidth = bodyHeight * static_cast<float>(car.width / car.length);
+			ImVec2 bodyMin = { centre.x - bodyWidth * 0.5f, min.y + fontSize * 0.3f }, bodyMax = { centre.x + bodyWidth * 0.5f, min.y + fontSize * 0.3f + bodyHeight };
+			drawList->AddRectFilled(bodyMin, bodyMax, FILL, bodyWidth * 0.18f);
+			drawList->AddRect(bodyMin, bodyMax, INK_FAINT, bodyWidth * 0.18f, 0, 1.5f);
+			float bodyMiddle = (bodyMin.y + bodyMax.y) * 0.5f;
+			float axle = bodyHeight * static_cast<float>(car.wheelbase / car.length) * 0.5f;
+			float frontY = bodyMiddle - axle, rearY = bodyMiddle + axle;
+			Text(drawList, { centre.x, bodyMin.y + fontSize * 0.2f }, INK_FAINT, "FRONT", label, 0.5f);
+			ImVec2 master = { bodyMin.x + bodyWidth * 0.3f, frontY + bodyHeight * 0.13f };
+			// Each corner's wheel and its number in the order.
+			struct Wheel { float x, y; int order; const char* name; };
+			const Wheel wheels[] = { { bodyMin.x, frontY, 4, "Front left" }, { bodyMax.x, frontY, 3, "Front right" },
+				{ bodyMin.x, rearY, 2, "Rear left" }, { bodyMax.x, rearY, 1, "Rear right" } };
+			for (const auto& wheel : wheels)
+			{
+				Dashed(drawList, master, { wheel.x, wheel.y }, BAD, 5.f, 1.4f);
+				drawList->AddRectFilled({ wheel.x - 7.f, wheel.y - 18.f }, { wheel.x + 7.f, wheel.y + 18.f }, BELT, 3.f);
+				float out = wheel.x < centre.x ? -1.f : 1.f;
+				ImVec2 badge = { wheel.x + out * 26.f, wheel.y };
+				drawList->AddCircleFilled(badge, 12.f, ACCENT, 20);
+				Text(drawList, badge, IM_COL32(255, 255, 255, 255), std::to_string(wheel.order), label, 0.5f, 0.5f);
+				Text(drawList, { badge.x + out * 16.f, badge.y }, INK, wheel.name, label * 0.85f, out < 0.f ? 1.f : 0.f, 0.5f);
+			}
+			// The clutch's own line, to its release cylinder on the bellhousing.
+			ImVec2 release = { centre.x + bodyWidth * 0.08f, frontY + bodyHeight * 0.24f };
+			Dashed(drawList, master, release, ACCENT, 4.f, 1.2f);
+			drawList->AddCircleFilled(release, 9.f, GOOD, 16);
+			Text(drawList, release, IM_COL32(255, 255, 255, 255), "C", label * 0.8f, 0.5f, 0.5f);
+			drawList->AddLine(release, { bodyMax.x + 8.f, release.y }, INK_FAINT, 1.f);
+			Text(drawList, { bodyMax.x + 12.f, release.y }, INK, "Clutch release cylinder", label * 0.85f, 0.f, 0.5f);
+			drawList->AddRectFilled(master - ImVec2(11.f, 7.f), master + ImVec2(11.f, 7.f), METAL, 3.f);
+			drawList->AddRect(master - ImVec2(11.f, 7.f), master + ImVec2(11.f, 7.f), METAL_DARK, 3.f);
+			drawList->AddLine(master, { bodyMin.x - 8.f, master.y }, INK_FAINT, 1.f);
+			Text(drawList, { bodyMin.x - 12.f, master.y }, INK, "Master cylinder", label * 0.85f, 1.f, 0.5f);
+			Text(drawList, { centre.x, max.y }, INK_FAINT, "Brakes 1 to 4, farthest from the master cylinder first. The clutch bleeds on its own.",
+				label * 0.9f, 0.5f, 1.f);
+			break;
+		}
+		case Figure::ALIGNMENT_ANGLES:
+		{
+			// Three views of a front wheel: camber from the front, caster from the side, toe from above, each
+			// angle drawn several times larger than it is so it can be seen.
+			const auto& tune = CarSpec::LE86Coupe().tune;
+			auto exaggerated = [](double degrees) { return static_cast<float>(degrees) * 8.f * PI / 180.f; };
+			float panel = width / 3.f;
+			float top = min.y + fontSize * 1.6f, bottom = max.y - fontSize * 2.f;
+			float tall = bottom - top;
+			auto title = [&](int i, const char* text) { Text(drawList, { min.x + panel * (i + 0.5f), min.y }, ACCENT, text, label, 0.5f); };
+			auto caption = [&](int i, const std::string& text) { Text(drawList, { min.x + panel * (i + 0.5f), max.y }, INK, text, label * 0.85f, 0.5f, 1.f); };
+			auto rotate = [](ImVec2 v, float a) { return ImVec2(v.x * std::cos(a) - v.y * std::sin(a), v.x * std::sin(a) + v.y * std::cos(a)); };
+			// A tire seen edge on, turned by an angle (screen radians, clockwise positive).
+			auto tire = [&](ImVec2 c, float w, float h, float lean) {
+				ImVec2 corners[4] = { { -w, -h }, { w, -h }, { w, h }, { -w, h } };
+				for (auto& corner : corners)
+					corner = c + rotate(corner, lean);
+				drawList->AddConvexPolyFilled(corners, 4, BELT);
+			};
+			// Camber: the left wheel from the front, the car to its right; negative camber leans its top in.
+			{
+				ImVec2 c = { min.x + panel * 0.45f, top + tall * 0.5f };
+				float lean = exaggerated(-tune.frontCamberNominal);
+				tire(c, panel * 0.1f, tall * 0.42f, lean);
+				Dashed(drawList, { c.x, top }, { c.x, bottom }, INK_FAINT, 5.f);
+				drawList->AddLine(c + rotate({ 0.f, -tall * 0.5f }, lean), c + rotate({ 0.f, tall * 0.5f }, lean), BAD, 1.5f);
+				Text(drawList, { min.x + panel * 0.8f, top + tall * 0.5f }, INK_FAINT, "car", label * 0.8f, 0.5f, 0.5f);
+				drawList->AddLine({ min.x + panel * 0.12f, top + tall * 0.92f }, { min.x + panel * 0.88f, top + tall * 0.92f }, INK_FAINT, 1.f);
+				title(0, "Camber, from the front");
+				caption(0, std::format("{:.2f} to {:.2f} deg", tune.frontCamber.min, tune.frontCamber.max));
+			}
+			// Caster: from the side, nose to the right; the strut's axis leans back at the top.
+			{
+				float wheel = (std::min)(panel * 0.3f, tall * 0.34f);
+				ImVec2 c = { min.x + panel * 1.5f, bottom - wheel };
+				drawList->AddCircleFilled(c, wheel, BELT, 32);
+				drawList->AddCircleFilled(c, wheel * 0.5f, METAL, 24);
+				float lean = exaggerated(tune.casterNominal);
+				ImVec2 axisTop = c + rotate({ 0.f, -(tall - wheel) * 0.98f }, -lean);
+				ImVec2 axisBottom = c + rotate({ 0.f, wheel }, -lean);
+				Dashed(drawList, { c.x, axisTop.y }, { c.x, c.y + wheel }, INK_FAINT, 5.f);
+				drawList->AddLine(axisBottom, axisTop, BAD, 4.f);
+				Text(drawList, { min.x + panel * 1.85f, top + tall * 0.2f }, INK_FAINT, "front", label * 0.8f, 0.5f, 0.5f);
+				title(1, "Caster, from the side");
+				caption(1, std::format("{:.2f} to {:.2f} deg", tune.caster.min, tune.caster.max));
+			}
+			// Toe: from above, nose up, both front tires turned in at the front: the gap across the front of the
+			// treads (A) is less than across the back (B).
+			{
+				float cx = min.x + panel * 2.5f, cy = top + tall * 0.5f;
+				float spread = panel * 0.3f, halfLength = tall * 0.34f, halfWidth = panel * 0.05f;
+				float lean = exaggerated(0.8);
+				tire({ cx - spread, cy }, halfWidth, halfLength, lean);
+				tire({ cx + spread, cy }, halfWidth, halfLength, -lean);
+				float shift = halfLength * std::sin(lean);
+				float frontY = cy - halfLength * 0.85f, rearY = cy + halfLength * 0.85f;
+				Dimension(drawList, { cx - spread + halfWidth + shift * 0.85f, frontY }, { cx + spread - halfWidth - shift * 0.85f, frontY }, ACCENT, arrow);
+				Text(drawList, { cx, frontY - 2.f }, ACCENT, "A", label, 0.5f, 1.f);
+				Dimension(drawList, { cx - spread + halfWidth - shift * 0.85f, rearY }, { cx + spread - halfWidth + shift * 0.85f, rearY }, ACCENT, arrow);
+				Text(drawList, { cx, rearY + 2.f }, ACCENT, "B", label, 0.5f);
+				title(2, "Toe, from above, front up");
+				caption(2, std::format("B - A: {:.0f} to {:.0f} mm in", tune.frontToe.min, tune.frontToe.max));
+			}
+			break;
+		}
+		case Figure::GEAR_SPEEDS:
+		{
+			// Road speed in each gear against engine speed, from the MK50's ratios, the stock final drive and the tire's
+			// rolling radius, up to the redline.
+			const CarSpec& car = CarSpec::LE86Coupe();
+			float redline = static_cast<float>(spec.redline);
+			auto speed = [&](double ratio, double rpm) {
+				double kmh = rpm / (ratio * car.finalDriveNominal) * 2.0 * PI * car.tireRadius * 60.0 / 1000.0;
+				return static_cast<float>(imperial ? kmh * 0.621371 : kmh);
+			};
+			float yStep = imperial ? 20.f : 40.f;
+			float top = std::ceil(speed(car.gearRatios.back(), redline) / yStep) * yStep;
+			float right = std::ceil(redline / 1000.f) * 1000.f;
+			Plot plot = Axes(drawList, min, max, fontSize, 0.f, right, 0.f, top, "Engine speed (rpm)",
+				imperial ? "Road speed (mph)" : "Road speed (km/h)", 1000.f, yStep, "{:.0f}", "{:.0f}");
+			drawList->AddLine(plot.At(redline, 0.f), plot.At(redline, top), BAD, 1.5f);
+			Text(drawList, plot.At(redline, top * 0.04f) + ImVec2(4.f, 0.f), BAD, "Redline", label, 0.f, 1.f);
+			for (size_t gear = 0; gear < car.gearRatios.size(); gear++)
+			{
+				float atRedline = speed(car.gearRatios[gear], redline);
+				ImU32 color = gear % 2 ? ACCENT : INK;
+				drawList->AddLine(plot.At(0.f, 0.f), plot.At(redline, atRedline), color, 2.f);
+				Text(drawList, plot.At(redline, atRedline) + ImVec2(-6.f, -2.f), color, std::format("{}: {:.0f}", gear + 1, atRedline), label * 0.9f, 1.f, 1.f);
+			}
+			break;
+		}
+		case Figure::CAR_BUILD_FLOW:
+		{
+			// The build from the bare shell to the road, in twelve stages snaking down the page.
+			const char* stages[] = { "Shell on\njack stands", "Front struts,\narms, knuckles", "Rear axle, diff,\nlinks, springs",
+				"Rack, tie rods,\ncolumn", "Booster, lines,\nbrakes at corners", "Engine mounts,\nengine in",
+				"Clutch, gearbox,\ndriveshaft", "Fuel, harness,\ncooling, exhaust", "Panels, glass,\ninterior",
+				"Wheels and tires,\nlug nuts", "Fluids in,\nbleed and burp", "Tune it, then\nthe road test" };
+			constexpr int STAGES = static_cast<int>(std::size(stages));
+			constexpr int COLUMNS = 4;
+			constexpr int ROWS = STAGES / COLUMNS;
+			float boxWidth = width / COLUMNS - fontSize * 0.9f, boxHeight = height / ROWS - fontSize * 1.4f;
+			ImVec2 centres[STAGES];
+			for (int i = 0; i < STAGES; i++)
+			{
+				int row = i / COLUMNS, column = row % 2 == 0 ? i % COLUMNS : COLUMNS - 1 - i % COLUMNS;
+				centres[i] = { min.x + (column + 0.5f) * width / COLUMNS, min.y + (row + 0.5f) * height / ROWS };
+			}
+			for (int i = 0; i + 1 < STAGES; i++)
+			{
+				ImVec2 from = centres[i], to = centres[i + 1];
+				if (from.y == to.y)
+				{
+					float direction = to.x > from.x ? 1.f : -1.f;
+					Arrow(drawList, { from.x + direction * boxWidth * 0.5f, from.y }, { to.x - direction * boxWidth * 0.5f, to.y }, ACCENT, arrow, 2.f);
+				}
+				else
+					Arrow(drawList, { from.x, from.y + boxHeight * 0.5f }, { to.x, to.y - boxHeight * 0.5f }, ACCENT, arrow, 2.f);
+			}
+			for (int i = 0; i < STAGES; i++)
+			{
+				bool last = i == STAGES - 1;
+				ImVec2 boxMin = { centres[i].x - boxWidth * 0.5f, centres[i].y - boxHeight * 0.5f }, boxMax = { centres[i].x + boxWidth * 0.5f, centres[i].y + boxHeight * 0.5f };
+				drawList->AddRectFilled(boxMin, boxMax, last ? GOOD_FILL : FILL, 5.f);
+				drawList->AddRect(boxMin, boxMax, last ? GOOD : ACCENT, 5.f, 0, 1.5f);
+				Text(drawList, { boxMin.x + 6.f, boxMin.y + 4.f }, ACCENT, std::to_string(i + 1), label * 0.9f);
+				Text(drawList, centres[i] + ImVec2(0.f, 5.f), INK, stages[i], label * 0.8f, 0.5f, 0.5f);
+			}
 			break;
 		}
 	}

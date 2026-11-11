@@ -225,6 +225,53 @@ namespace ItemIcons
 				drawList->AddLine(p(0.78f, 0.52f), p(0.9f, 0.52f), color, line);
 				drawList->AddLine(p(0.9f, 0.4f), p(0.9f, 0.64f), color, line * 1.4f);
 				break;
+			case ToolShape::FUNNEL:
+				// A funnel: a cone over its spout.
+				drawList->AddTriangle(p(0.2f, 0.2f), p(0.8f, 0.2f), p(0.5f, 0.6f), color, line * 1.4f);
+				drawList->AddLine(p(0.5f, 0.6f), p(0.5f, 0.85f), color, line * 1.6f);
+				break;
+			case ToolShape::BLEEDER:
+				// The bottle and its hose.
+				drawList->AddRect(p(0.3f, 0.4f), p(0.62f, 0.88f), color, size * 0.04f, 0, line * 1.4f);
+				drawList->AddBezierCubic(p(0.46f, 0.4f), p(0.46f, 0.1f), p(0.8f, 0.1f), p(0.8f, 0.4f), color, line);
+				break;
+			case ToolShape::SPRING_COMPRESSOR:
+				// A coil between two hooks.
+				for (int coil = 0; coil < 4; coil++)
+					drawList->AddLine(p(0.3f, 0.3f + coil * 0.12f), p(0.7f, 0.36f + coil * 0.12f), color, line * 1.2f);
+				drawList->AddLine(p(0.2f, 0.18f), p(0.2f, 0.82f), color, line * 1.6f);
+				drawList->AddLine(p(0.8f, 0.18f), p(0.8f, 0.82f), color, line * 1.6f);
+				break;
+			case ToolShape::TIRE_IRONS:
+				drawList->AddLine(p(0.2f, 0.8f), p(0.75f, 0.2f), color, line * 1.8f);
+				drawList->AddLine(p(0.3f, 0.85f), p(0.85f, 0.3f), color, line * 1.8f);
+				break;
+			case ToolShape::TIMING_LIGHT:
+				// A strobe gun and its flash.
+				drawList->AddRectFilled(p(0.2f, 0.35f), p(0.65f, 0.55f), color, size * 0.03f);
+				drawList->AddLine(p(0.3f, 0.55f), p(0.25f, 0.85f), color, line * 1.8f);
+				drawList->AddLine(p(0.72f, 0.45f), p(0.9f, 0.3f), color, line);
+				drawList->AddLine(p(0.72f, 0.45f), p(0.9f, 0.6f), color, line);
+				break;
+			case ToolShape::TIRE_GAUGE:
+				drawList->AddCircle(p(0.4f, 0.4f), size * 0.22f, color, 16, line * 1.4f);
+				drawList->AddLine(p(0.4f, 0.4f), p(0.52f, 0.28f), color, line);
+				drawList->AddLine(p(0.56f, 0.56f), p(0.85f, 0.85f), color, line * 1.6f);
+				break;
+			case ToolShape::ALIGNMENT_GAUGE:
+				// A bubble level.
+				drawList->AddRect(p(0.15f, 0.38f), p(0.85f, 0.62f), color, size * 0.05f, 0, line * 1.4f);
+				drawList->AddCircleFilled(p(0.55f, 0.5f), size * 0.06f, color);
+				break;
+			case ToolShape::SCREWDRIVER:
+				drawList->AddLine(p(0.2f, 0.8f), p(0.45f, 0.55f), color, line * 3.f);
+				drawList->AddLine(p(0.45f, 0.55f), p(0.82f, 0.18f), color, line);
+				break;
+			case ToolShape::PICKAXE:
+				// A long handle and the curved head across its end: the point one way, the adze the other.
+				drawList->AddLine(p(0.22f, 0.88f), p(0.66f, 0.26f), color, line * 2.2f);
+				drawList->AddBezierQuadratic(p(0.32f, 0.3f), p(0.62f, 0.08f), p(0.94f, 0.36f), color, line * 3.f);
+				break;
 		}
 	}
 

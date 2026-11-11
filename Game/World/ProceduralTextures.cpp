@@ -47,17 +47,17 @@ namespace ProceduralTextures
 			return sum / total;
 		}
 
-		Image Generate(const std::function<glm::vec3(float u, float v, int x, int y)>& shader)
+		Image Generate(const std::function<glm::vec3(float u, float v, int x, int y)>& shader, int size = SIZE)
 		{
 			Image image;
-			image.width = SIZE;
-			image.height = SIZE;
-			image.pixels.resize(SIZE * SIZE * 4);
-			for (int y = 0; y < SIZE; y++)
-				for (int x = 0; x < SIZE; x++)
+			image.width = size;
+			image.height = size;
+			image.pixels.resize(static_cast<size_t>(size) * size * 4);
+			for (int y = 0; y < size; y++)
+				for (int x = 0; x < size; x++)
 				{
-					glm::vec3 color = glm::clamp(shader(static_cast<float>(x) / SIZE, static_cast<float>(y) / SIZE, x, y), 0.f, 1.f);
-					size_t i = (static_cast<size_t>(y) * SIZE + x) * 4;
+					glm::vec3 color = glm::clamp(shader(static_cast<float>(x) / size, static_cast<float>(y) / size, x, y), 0.f, 1.f);
+					size_t i = (static_cast<size_t>(y) * size + x) * 4;
 					image.pixels[i + 0] = static_cast<uint8_t>(color.r * 255.f);
 					image.pixels[i + 1] = static_cast<uint8_t>(color.g * 255.f);
 					image.pixels[i + 2] = static_cast<uint8_t>(color.b * 255.f);
@@ -269,17 +269,19 @@ namespace ProceduralTextures
 
 	Image Sand()
 	{
+		// Big, and laid over a lot of ground (see ShopOutdoors), so it repeats far apart: a small tile's drifts lined up
+		// into a grid across the desert. Many soft drifts in it, gentler, and fine wind ripples bent by them.
 		return Generate([](float u, float v, int x, int y) {
 			// Pale desert sand: wind ripples across it, darker drifts, and grains.
-			float drifts = Fbm(u, v, 3, 5, 201);
-			float warp = Fbm(u, v, 6, 3, 203);
-			float ripples = 0.5f + 0.5f * std::sin((v * 18.f + warp * 2.5f) * glm::two_pi<float>());
+			float drifts = Fbm(u, v, 7, 6, 201);
+			float warp = Fbm(u, v, 12, 4, 203);
+			float ripples = 0.5f + 0.5f * std::sin((v * 80.f + warp * 6.f) * glm::two_pi<float>());
 			float grain = Hash(x, y, 202);
 			glm::vec3 pale = { 0.86f, 0.74f, 0.55f };
-			glm::vec3 dark = { 0.72f, 0.58f, 0.41f };
-			glm::vec3 color = glm::mix(dark, pale, glm::smoothstep(0.3f, 0.7f, drifts));
-			return color * (0.9f + ripples * 0.07f + (grain - 0.5f) * 0.12f);
-		});
+			glm::vec3 dark = { 0.76f, 0.62f, 0.45f };
+			glm::vec3 color = glm::mix(dark, pale, glm::smoothstep(0.25f, 0.75f, drifts));
+			return color * (0.92f + ripples * 0.05f + (grain - 0.5f) * 0.10f);
+		}, 1024);
 	}
 
 	Image Asphalt()

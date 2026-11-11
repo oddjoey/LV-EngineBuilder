@@ -19,8 +19,23 @@ enum class PartSystem
 	EXHAUST,
 	IGNITION,
 	FASTENERS,
+	// The car's systems (see CarAssembly), after the engine's.
+	BODY,
+	INTERIOR,
+	FRONT_SUSPENSION,
+	REAR_SUSPENSION,
+	STEERING,
+	BRAKES,
+	DRIVETRAIN,
+	FUEL_SYSTEM,
+	ELECTRICAL,
+	RADIATOR_AND_FAN,
+	CAR_EXHAUST,
+	WHEELS,
 	COUNT
 };
+constexpr PartSystem FIRST_CAR_SYSTEM = PartSystem::BODY;
+inline bool IsCarSystem(PartSystem system) { return system >= FIRST_CAR_SYSTEM && system < PartSystem::COUNT; }
 
 const char* PartSystemName(PartSystem system);
 
@@ -84,6 +99,8 @@ struct PartInfo
 namespace PartCatalog
 {
 	const PartInfo& Get(PartType type);
+	// What the part is and what it does in the engine, in a sentence or two (Get's description is the shop's note on it).
+	const char* Purpose(PartType type);
 	// Every part type, in build order within each system.
 	const std::vector<PartType>& All();
 	// How many one engine of this spec takes.

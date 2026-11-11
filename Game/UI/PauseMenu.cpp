@@ -176,23 +176,6 @@ void PauseMenu::DrawAudioSettings(GameSettings& settings)
 	volume("Interface", settings.interfaceVolume, "The till when you buy or sell, gauge beeps, machining cuts.");
 }
 
-void PauseMenu::DrawTimeSettings(GameSettings& settings, const PauseMenuContext& context)
-{
-	if (context.timeOfDay)
-	{
-		int minutes = static_cast<int>(*context.timeOfDay * 60.f) % (24 * 60);
-		ImGui::Text("It's %02d:%02d", minutes / 60, minutes % 60);
-		ImGui::SliderFloat("Time of day", context.timeOfDay, 0.f, 23.99f, "%.1f h");
-	}
-	ImGui::Checkbox("Day and night cycle", &settings.dayNightCycle);
-	ImGui::BeginDisabled(!settings.dayNightCycle);
-	ImGui::SliderFloat("Length of a day", &settings.dayLengthMinutes, 5.f, 240.f, "%.0f min");
-	ImGui::EndDisabled();
-	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
-	ImGui::TextDisabled("The sun moves across the sky and the street lights come on at dusk. The shop lamps are always on.");
-	ImGui::PopTextWrapPos();
-}
-
 void PauseMenu::DrawControls(GameSettings& settings, const PauseMenuContext& context)
 {
 	const ImVec4 gold = { 1.f, 0.85f, 0.4f, 1.f };
@@ -407,7 +390,53 @@ PauseMenu::Action PauseMenu::DrawMainMenu(GameSettings& settings, const PauseMen
 		ImGui::EndDisabled();
 	}
 
-	if (context.joining)
+	if (context.choosingGarage)
+	{
+		// The first time on this server: a garage of one's own, or someone else's to ask to join.
+		ImGui::SeparatorText("Choose your garage");
+		ImGui::TextWrapped("It's your first time on %s. Make a garage of your own, on its own plot, or ask to join someone else's: "
+			"its members who are online vote on letting you in.", context.server.c_str());
+		ImGui::BeginDisabled(context.requestingGarage);
+		if (BigButton("Make a new garage"))
+			action = Action::CREATE_GARAGE;
+		if (context.garageChoices.empty())
+			ImGui::TextDisabled("No garages here yet: yours would be the first.");
+		else if (ImGui::BeginTable("GarageChoices", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp))
+		{
+			ImGui::TableSetupColumn("Garage", ImGuiTableColumnFlags_WidthStretch, 3.f);
+			ImGui::TableSetupColumn("Members", ImGuiTableColumnFlags_WidthStretch, 1.6f);
+			ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 100.f);
+			ImGui::TableHeadersRow();
+			for (const auto& garage : context.garageChoices)
+			{
+				ImGui::PushID(garage.id);
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::TextUnformatted(garage.name.c_str());
+				ImGui::TableNextColumn();
+				if (garage.members == 0)
+					ImGui::TextDisabled("none: yours to take");
+				else
+					ImGui::Text("%d (%d online)", garage.members, garage.online);
+				ImGui::TableNextColumn();
+				if (ImGui::SmallButton(garage.members == 0 ? "Take it" : "Ask to join"))
+				{
+					m_requestedGarage = garage.id;
+					action = Action::REQUEST_GARAGE;
+				}
+				ImGui::PopID();
+			}
+			ImGui::EndTable();
+		}
+		ImGui::EndDisabled();
+		if (!context.garageStatus.empty())
+			ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "%s", context.garageStatus.c_str());
+		if (context.requestingGarage && BigButton("Take back the request"))
+			action = Action::CANCEL_REQUEST;
+		if (BigButton("Leave the server"))
+			action = Action::LEAVE;
+	}
+	else if (context.joining)
 	{
 		ImGui::TextColored({ 1.f, 0.85f, 0.4f, 1.f }, "Joining %s...", context.server.c_str());
 		if (BigButton("Cancel"))
@@ -537,11 +566,6 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 					if (ImGui::BeginTabItem("Audio"))
 					{
 						DrawAudioSettings(settings);
-						ImGui::EndTabItem();
-					}
-					if (ImGui::BeginTabItem("Time of day"))
-					{
-						DrawTimeSettings(settings, context);
 						ImGui::EndTabItem();
 					}
 					ImGui::EndTabBar();

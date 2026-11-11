@@ -1,8 +1,8 @@
-// LV-EngineServer: a dedicated server holding one garage for the players of LV: Engine Builder.
+// LV-EngineServer: a dedicated server holding the garages of one world for the players of LV: Engine Builder.
 //
 //   LV-EngineServer [--config server.cfg] [--port 27616]
 //
-// Runs until Ctrl+C (or the console closing), then saves the garage.
+// Runs until Ctrl+C (or the console closing), then saves the garages.
 #ifdef _WIN32
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN

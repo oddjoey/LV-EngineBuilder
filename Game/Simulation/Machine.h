@@ -44,7 +44,8 @@ public:
 	static bool UsesParameter(MachineOperation operation);
 
 	static bool CanMachine(const Machine& machine, const Feature& feature);
-	static MachiningResult Apply(const Machine& machine, Part& part, Feature& feature, double parameter, const EngineSpec& spec);
+	// errorFactor scales how far off the cut can land (the Machinist perk).
+	static MachiningResult Apply(const Machine& machine, Part& part, Feature& feature, double parameter, const EngineSpec& spec, double errorFactor = 1.0);
 private:
 	static MachiningResult CutBore(const Machine& machine, Feature& feature, double target, double sigma);
 	static MachiningResult GrindJournal(const Machine& machine, Feature& feature, double target, double sigma);

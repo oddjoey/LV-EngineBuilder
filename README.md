@@ -156,7 +156,7 @@ Older saves load whatever was fitted, even if out of order; their engines simply
 | Left click | Measure with the tool in your hand (otherwise the same as E) |
 | Right click | Set what you're holding down where you're aiming |
 | G | Drop what you're holding |
-| Q | Stow what you're holding in your backpack (or, when it won't fit, on the parts shelf or tool board) |
+| Q (hold) + mouse | Turn what you're holding (side to side spins it, up and down tips it) to set it down or drop it that way; the view stays still. Hold Shift as well to turn it in 15° steps |
 | 1 – 0 | Take a hotbar item in hand, or put it back |
 | Tab | Open/close your inventory (closes any workshop screen) |
 | F | Move equipment (machines, bench, stands, shelf, tool board) and open a delivery, on the floor or in your hands. R rotates; click, E or F again sets it down, right-click puts it back |
@@ -305,6 +305,7 @@ Tools are rated for **precision**, and spanners and wrenches for **speed** too (
 - **Equipment**: workbench, two parts shelves, one for the internals and one for the bolt-ons (no E action: its boards are surfaces like any other, so any part is set down on them with RMB and stays where it lands; parts that won't fit in the backpack or get bumped off the bench, a machine or a stand go in the first gap from the left on the lowest board they fit), tool board, engine stand, machines, the dyno once bought, and parts computer. All of it can be moved with F, and whatever is sitting on it (parts, tools, deliveries, even things stacked on those) goes along.
 - **Shadows**: the sun casts shadows outside and through the windows, and the six ceiling lamps each cast their own, so machines, parts, tools and equipment throw shadows inside the shop too.
 - **Outside**: open desert in every direction, sand scattered with saguaros, boulders and scrub, and a jagged ring of mountains on the horizon that stays there however far you walk (it follows the camera at the edge of the view distance). A paved drive runs from the roll-up door down to a four-lane divided highway with lights along it, about 40 m out front; bins and oil drums out back.
+- **Other garages**: on a server, each garage has a plot of its own along the highway, 40 m apart. You see the others' buildings (shut, with their drives) and their players walking about, but only your own garage loads and can be used. The first time you join a server you make a garage of your own or ask to join one: its members online vote on letting you in (see `NETWORKING.txt`).
 - **Physics**: items fall, land and stack, and can be set down anywhere. Walls stop you and anything you throw. You can't reach through walls or windows.
 - **Holding things**: whatever is in your hand is held first person, low and to the right of your view, small parts and tools stood upright on their longest side and big parts (block, head, crank, cam) carried flat, and moves with the camera.
 - **Deliveries** arrive as boxes and crates by the door, stacked up to three high in piles. Each one has a tag with an icon for every kind of thing inside it and how many. Open one with F: parts and tools are laid out on the floor around it (never through a wall), and a machine or engine stand is set up where its crate was. Before opening, E picks a delivery up to carry it somewhere else: set it on the floor, a bench or another delivery (anything stacked on it drops into its place).
@@ -330,8 +331,6 @@ Esc → **Settings**. Changes apply immediately and are saved to `game_settings.
 | Anti-aliasing (MSAA) | 1×/2×/4×/8×, takes effect on restart, not used while DLSS is on |
 | Shadows | Off / Low / Medium / High (sun: 1024 / 2048 / 4096 shadow maps; lamps: half that, 512 to 2048). Off turns the lamps' shadows off too |
 | Shadow distance, view distance, brightness | |
-
-**Time of day:** set the time, turn the cycle on/off, and set the length of a day.
 
 ---
 

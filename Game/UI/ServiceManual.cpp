@@ -58,8 +58,15 @@ namespace
 	constexpr float STEP_VIEW = 4.2f;
 }
 
-void ServiceManual::Open()
+void ServiceManual::Open(Book book)
 {
+	// Another book opens at its cover.
+	if (book != m_book)
+	{
+		m_book = book;
+		m_built = false;
+		m_spread = 0;
+	}
 	m_open = true;
 }
 
@@ -88,6 +95,8 @@ void ServiceManual::SetModelLookup(const std::function<uint32_t(const std::strin
 
 void ServiceManual::Build(bool imperial)
 {
+	if (m_book == Book::CHASSIS)
+		return BuildChassis(imperial);
 	const EngineSpec& spec = EngineSpec::InlineFour();
 	auto system = imperial ? Units::System::IMPERIAL : Units::System::METRIC;
 	auto size = [&](double mm) { return Units::FormatSize(mm, system); };
@@ -367,7 +376,8 @@ void ServiceManual::Build(bool imperial)
 	heading("Ring End Gap");
 	figure("Top ring end gap", clearance(spec.ringGap));
 	illustrate(Figure::RING_GAP, "Checking a ring's end gap, the ring squared in its own bore.");
-	step("Push the ring squarely into its own bore with a piston, about a third of the way down.", { PartType::PISTON_RING, PartType::PISTON });
+	step("With the head off and no piston in the bore, set the ring in the top of it on its own (hold it and press E at the bore). "
+		"Then push it squarely down with a piston (hold the piston and press E on the ring).", { PartType::PISTON_RING, PartType::PISTON });
 	step("Measure the gap between the ends with the feeler gauge set.");
 	step("Too tight: file it open on the ring filer, a little at a time, and measure again. Too wide: fit a new ring.");
 	note("Gap each ring to the bore it goes in. Ends that butt when hot break the ring land.");
@@ -503,7 +513,7 @@ void ServiceManual::Build(bool imperial)
 		"Ring Compressor and it goes home, the rod onto the crank pin. Every rod and piston goes in before the oil pump.", { PartType::CONNECTING_ROD });
 	step("Lower rod shell into the rod cap, then the cap onto the rod. Torque the rod nuts.", { PartType::ROD_BEARING_LOWER, PartType::ROD_CAP, PartType::NUT_M8 });
 	note("Shells, pistons and rings go into and onto their rods, caps and pistons off the engine: hold one, aim at what it goes on (on "
-		"the bench, a shelf or the floor) and press E; R takes the last one off again. With the Piston Pin Press in hand and aimed at "
+		"the bench, a shelf or the floor) and press E; R, aimed at it there, takes the last one off again. With the Piston Pin Press in hand and aimed at "
 		"the piston, hold the left button to press its pin in, the right to press it out. A rod goes on only with its shell in and its piston "
 		"pinned and ringed, and stops in the top of the bore: aim the Piston Ring Compressor at the piston and hold the left button to push it "
 		"home. A cap goes on only with its shell, and they come off with them. The press and the compressor are bought at the parts computer.");
@@ -600,6 +610,7 @@ void ServiceManual::Build(bool imperial)
 
 	m_built = true;
 	m_builtImperial = imperial;
+	m_builtBook = m_book;
 	m_pagedWidth = 0.f;
 }
 
@@ -744,6 +755,36 @@ void ServiceManual::DrawCover(ImDrawList* drawList, const ImVec2& min, const ImV
 	// The maker's band is the cover's navy on any page, so the gold name on it always reads.
 	drawList->AddRectFilled({ min.x, min.y + height * 0.08f }, { max.x, min.y + height * 0.16f }, COVER);
 	centred("MONKEY KOBO MOTOR WORKS", 1.3f, min.y + height * 0.12f - fontSize * 0.65f, GOLD);
+	if (m_book == Book::CHASSIS)
+	{
+		// The car's book: the coupe side on, nose to the right, over the title.
+		centred("LE86", 4.f, min.y + height * 0.22f, ACCENT);
+		centred("MONKEYKOBO COMET GT COUPE  -  1985", 1.2f, min.y + height * 0.22f + fontSize * 4.6f, INK);
+		float left = min.x + width * 0.12f, right = max.x - width * 0.12f;
+		float ground = min.y + height * 0.68f, length = right - left;
+		auto at = [&](float x, float y) { return ImVec2(left + x * length, ground - y * length); };
+		// The profile, tail to nose: the boot deck, the sloping hatch glass, the roof, the windshield, the long hood.
+		const ImVec2 body[] = { at(0.f, 0.07f), at(0.f, 0.17f), at(0.06f, 0.19f), at(0.17f, 0.2f), at(0.33f, 0.31f), at(0.52f, 0.31f),
+			at(0.66f, 0.21f), at(0.97f, 0.17f), at(1.f, 0.13f), at(1.f, 0.07f), at(0.97f, 0.04f), at(0.03f, 0.04f) };
+		drawList->AddPolyline(body, static_cast<int>(std::size(body)), ACCENT, ImDrawFlags_Closed, 2.5f);
+		// The side glass, the door's shut line, and the wheels in their arches.
+		const ImVec2 glass[] = { at(0.21f, 0.2f), at(0.34f, 0.29f), at(0.51f, 0.29f), at(0.62f, 0.21f) };
+		drawList->AddPolyline(glass, static_cast<int>(std::size(glass)), INK_FAINT, ImDrawFlags_Closed, 1.5f);
+		drawList->AddLine(at(0.43f, 0.2f), at(0.43f, 0.06f), INK_FAINT, 1.2f);
+		drawList->AddLine(at(0.63f, 0.2f), at(0.63f, 0.06f), INK_FAINT, 1.2f);
+		for (float x : { 0.2f, 0.8f })
+		{
+			drawList->AddCircleFilled(at(x, 0.06f), length * 0.065f, PAPER, 32);
+			drawList->AddCircle(at(x, 0.06f), length * 0.065f, ACCENT, 32, 2.5f);
+			drawList->AddCircle(at(x, 0.06f), length * 0.035f, INK_FAINT, 24, 1.5f);
+		}
+		drawList->AddLine({ left - 10.f, ground + length * 0.005f }, { right + 10.f, ground + length * 0.005f }, INK_FAINT, 1.f);
+
+		centred("CHASSIS SERVICE MANUAL", 1.6f, min.y + height * 0.78f, ACCENT);
+		centred("Body  -  Suspension  -  Brakes  -  Fluids  -  Tune-up", 1.f, min.y + height * 0.78f + fontSize * 2.2f, INK_FAINT);
+		drawList->AddRectFilled({ min.x, max.y - height * 0.06f }, { max.x, max.y - height * 0.04f }, GOLD);
+		return;
+	}
 	centred("LV-16", 4.f, min.y + height * 0.22f, ACCENT);
 	centred("1.6 LITRE SOHC INLINE FOUR", 1.2f, min.y + height * 0.22f + fontSize * 4.6f, INK);
 
@@ -930,7 +971,7 @@ bool ServiceManual::Draw(bool imperial, bool dark)
 		return false;
 	SetInks(dark);
 	SetFigureInks(dark);
-	if (!m_built || m_builtImperial != imperial)
+	if (!m_built || m_builtImperial != imperial || m_builtBook != m_book)
 		Build(imperial);
 
 	// The open book fills most of the screen: two pages either side of the spine, the controls under it.
@@ -941,7 +982,7 @@ bool ServiceManual::Draw(bool imperial, bool dark)
 	ImGui::SetNextWindowFocus();
 	ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings;
 	bool turned = false;
-	if (ImGui::Begin("LV-16 Factory Service Manual", nullptr, flags))
+	if (ImGui::Begin(m_book == Book::CHASSIS ? "LE86 Chassis Service Manual" : "LV-16 Factory Service Manual", nullptr, flags))
 	{
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 		float fontSize = ImGui::GetFontSize() * TEXT_SCALE;

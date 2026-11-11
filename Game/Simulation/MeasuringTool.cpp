@@ -378,11 +378,44 @@ namespace ToolCatalog
 			hand("Piston Ring Compressor", "A spring-steel band ratcheted round the piston: with a rod and piston sat in the top of its bore, hold "
 				"the left button on the piston to squeeze its ring into its groove and tap it home, the rod onto the crank pin.", HandToolKind::RING_COMPRESSOR, 25.0);
 
+			// The project car's tools. (Last again, for the same reason.)
+			hand("Fluid Funnel", "A funnel and a jug. At a filler on the car, hold the left button to pour in the fluid picked (R picks another "
+				"from what's in stock), the right button to drain the circuit into the pan.", HandToolKind::FUNNEL, 8.0);
+			hand("Brake Bleeder Kit", "A clear hose and a catch bottle for a bleed nipple. Click on a caliper, wheel cylinder or the clutch release "
+				"cylinder: someone pumps the pedal, the nipple's cracked, and you watch the bubbles. Keep the reservoir topped up.",
+				HandToolKind::BRAKE_BLEEDER, 18.0);
+			hand("Strut Spring Compressor", "Two hooked screws that squeeze a coil spring short. Aimed at a loose front strut, hold the left button to "
+				"compress a spring onto it (one lying nearby), the right to take its spring off. Never undo a strut's top nut without it.",
+				HandToolKind::SPRING_COMPRESSOR, 55.0);
+			hand("Tire Irons & Bead Breaker", "Aimed at a loose wheel, hold the left button to lever a tire lying nearby onto it, the right to break the "
+				"bead and take its tire off.", HandToolKind::TIRE_IRONS, 40.0);
+			hand("Timing Light", "An inductive strobe clipped on the number one plug lead. With the engine running, aim it at the crank pulley's "
+				"marks to read the timing; the buttons turn the distributor, left to advance, right to retard.", HandToolKind::TIMING_LIGHT, 65.0);
+			hand("Tire Gauge & Inflator", "Aimed at a tire, it reads the pressure. Hold the left button to pump it up off the compressor, the right "
+				"to let some out.", HandToolKind::TIRE_GAUGE, 25.0);
+			hand("Camber & Toe Gauge", "A magnetic camber gauge and a toe bar. Aimed at a front wheel it reads its camber, caster and the toe; the "
+				"buttons turn the tie rods, left for more toe in, right for less.", HandToolKind::ALIGNMENT_GAUGE, 120.0);
+			hand("Flat Screwdriver", "For the carburettor's idle speed and mixture screws with the engine running, and, with the valve cover off, "
+				"the rockers' lash adjusters (a feeler gauge reads the gap). Left turns a screw in, right out.", HandToolKind::SCREWDRIVER, 6.0);
+
+			// The car's own book, for the project car: added last, so saved tool lists keep their order.
+			MeasuringTool chassisManual;
+			chassisManual.name = "LE86 Chassis Service Manual";
+			chassisManual.description = "The factory book for the MonkeyKobo Comet coupe round the engine: the body, suspension, steering, brakes, "
+				"drivetrain, fuel, electrics and cooling, every fluid and its capacity, the torque for every chassis bolt, the tune-up and "
+				"alignment figures, and the build from a bare shell to the road test. Hold it and left click to read.";
+			chassisManual.manual = true;
+			chassisManual.manualBook = 1;
+			chassisManual.price = 45.0;
+			list.push_back(chassisManual);
+			hand("Pickaxe", "For the desert's boulders: hold the left button on one to break it up, and the stone's sold where it lies. "
+				"Better ways of breaking rock are bought for the quarry.", HandToolKind::PICKAXE, 25.0);
+
 			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
 			// and the service manual (hung on the tool board with the rest). Everything else is bought, the pin press and
 			// ring compressor included (the starting money covers those).
 			for (auto& tool : list)
-				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual" })
+				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual", "Pickaxe" })
 					if (tool.name == starter)
 						tool.ownedAtStart = true;
 

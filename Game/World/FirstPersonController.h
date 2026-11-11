@@ -39,6 +39,8 @@ public:
 	// multiplier on the base look speed
 	void SetMouseSensitivity(float multiplier);
 	void SetInvertY(bool invert);
+	// The mouse turns something else for now (an item in hand): the view stays put.
+	void SetLookLocked(bool locked) { m_lookLocked = locked; }
 
 	void Update(float deltaTime, const InputManager& input, const std::vector<FloorObstacle>& obstacles, const FloorObstacle& roomBounds,
 		const std::vector<WalkSurface>& surfaces);
@@ -74,6 +76,7 @@ private:
 	bool			m_crouching = false;
 	float			m_mouseSensitivity = BASE_SENSITIVITY;
 	bool			m_invertY = false;
+	bool			m_lookLocked = false;
 	float			m_verticalVelocity = 0.f;
 	float			m_jumpSpeed = 3.6f;		// about a 0.65 m jump
 	bool			m_grounded = true;

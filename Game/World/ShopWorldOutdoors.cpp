@@ -1,5 +1,6 @@
 #include "ShopWorld.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/gtc/constants.hpp>
@@ -63,26 +64,60 @@ void ShopWorld::BuildOutdoors()
 		bool onHighway = at.y > HIGHWAY_NEAR_Z - 5.f && at.y < HIGHWAY_FAR_Z + 5.f;
 		bool onDrive = at.x > BAY_DOOR_MIN_X - 4.f && at.x < DRIVE_MAX_X + 4.f && at.y > 0.f && at.y < HIGHWAY_NEAR_Z;
 		bool byShack = at.x > BAY_MIN_X - 6.f && at.x < HALF_WIDTH + 8.f && at.y > -HALF_DEPTH - 8.f && at.y < HALF_DEPTH + 8.f;
-		if (onHighway || onDrive || byShack)
+		bool inYard = at.x > YARD_MIN_X - 4.f && at.x < YARD_MAX_X + 4.f && at.y > YARD_MIN_Z - 4.f && at.y < YARD_MAX_Z + 4.f;
+		if (onHighway || onDrive || byShack || inYard)
 			continue;
 		glm::vec3 position = { at.x, 0.f, at.y };
 		float scale = 0.7f + 0.6f * hash(i, 4);
 		float yaw = hash(i, 5) * glm::two_pi<float>();
 		float pick = hash(i, 3);
 		pObject piece;
+		std::optional<FloorObstacle> footprint;
 		if (pick < 0.3f)
 		{
 			piece = scenery(ShopModels::CACTUS, "", position, yaw);
-			m_sceneryObstacles.push_back(Footprint(at, glm::vec2(0.25f * scale)));
+			footprint = Footprint(at, glm::vec2(0.25f * scale));
 		}
 		else if (pick < 0.55f)
 		{
 			piece = scenery(ShopModels::BOULDER, ShopTextures::ROCK, position, yaw);
-			m_sceneryObstacles.push_back(Footprint(at, glm::vec2(1.f * scale)));
+			footprint = Footprint(at, glm::vec2(1.f * scale));
 		}
 		else
 			piece = scenery(ShopModels::SCRUB, ShopTextures::FOLIAGE, position, yaw);
+		if (footprint)
+			m_sceneryObstacles.push_back(*footprint);
 		piece->SetScale(glm::vec3(scale));
+		m_scenery.push_back({ piece, at, footprint, pick >= 0.3f && pick < 0.55f });
+	}
+
+	// More boulders for the quarry, thicker nearer the shop so there's always rock within a short walk (the same in
+	// every game), clear of the plot, the highway and each other.
+	{
+		std::vector<glm::vec2> placed;
+		for (const auto& piece : m_scenery)
+			placed.push_back(piece.at);
+		constexpr int EXTRA_BOULDERS = 260;
+		for (int i = 0; i < EXTRA_BOULDERS; i++)
+		{
+			float angle = hash(i, 11) * glm::two_pi<float>();
+			float distance = 16.f + 95.f * hash(i, 12);
+			glm::vec2 at = { std::sin(angle) * distance, std::cos(angle) * distance };
+			bool onHighway = at.y > HIGHWAY_NEAR_Z - 5.f && at.y < HIGHWAY_FAR_Z + 5.f;
+			bool onPlot = at.x > PLOT_MIN.x - 3.f && at.x < PLOT_MAX.x + 3.f && at.y > PLOT_MIN.y - 3.f && at.y < PLOT_MAX.y + 3.f;
+			bool onDrive = at.x > DRIVE_MIN_X - 4.f && at.x < DRIVE_MAX_X + 4.f && at.y > 0.f && at.y < HIGHWAY_NEAR_Z;
+			if (onHighway || onPlot || onDrive)
+				continue;
+			float scale = 0.6f + 0.6f * hash(i, 14);
+			if (std::any_of(placed.begin(), placed.end(), [&](glm::vec2 other) { return glm::distance(other, at) < 2.2f * scale + 0.6f; }))
+				continue;
+			placed.push_back(at);
+			auto piece = scenery(ShopModels::BOULDER, ShopTextures::ROCK, { at.x, 0.f, at.y }, hash(i, 15) * glm::two_pi<float>());
+			FloorObstacle footprint = Footprint(at, glm::vec2(1.f * scale));
+			m_sceneryObstacles.push_back(footprint);
+			piece->SetScale(glm::vec3(scale));
+			m_scenery.push_back({ piece, at, footprint, true });
+		}
 	}
 
 	// Lights along the highway, and a lamp over the roll-up door.
@@ -113,6 +148,40 @@ void ShopWorld::BuildOutdoors()
 		m_sideDrums.push_back(drum);
 		m_drumObstacles.push_back(Footprint({ position.x, position.z }, { 0.3f, 0.3f }));
 	}
+
+	// The salvage yard: its gravel, the fence and gate, and the junk along the back and far side, all in the way
+	// but the gravel. The project car stands in it (see the CAR station), its parts laid round it when it's bought.
+	{
+		scenery(ShopModels::YARD_GROUND, ShopTextures::ASPHALT, {});
+		scenery(ShopModels::YARD_FENCE, ShopTextures::SIDING, {});
+		scenery(ShopModels::YARD_JUNK, ShopTextures::RUBBER, {});
+		constexpr float FENCE = 0.06f;
+		m_sceneryObstacles.push_back({ { YARD_MIN_X - FENCE, YARD_MIN_Z - FENCE }, { YARD_MAX_X + FENCE, YARD_MIN_Z + FENCE } });
+		m_sceneryObstacles.push_back({ { YARD_MIN_X - FENCE, YARD_MAX_Z - FENCE }, { YARD_MAX_X + FENCE, YARD_MAX_Z + FENCE } });
+		m_sceneryObstacles.push_back({ { YARD_MAX_X - FENCE, YARD_MIN_Z - FENCE }, { YARD_MAX_X + FENCE, YARD_MAX_Z + FENCE } });
+		m_sceneryObstacles.push_back({ { YARD_MIN_X - FENCE, YARD_MIN_Z - FENCE }, { YARD_MIN_X + FENCE, YARD_GATE_MIN_Z } });
+		m_sceneryObstacles.push_back({ { YARD_MIN_X - FENCE, YARD_GATE_MAX_Z }, { YARD_MIN_X + FENCE, YARD_MAX_Z + FENCE } });
+		// The gate, shut till there's a project car to get at.
+		for (int leaf = 0; leaf < 2; leaf++)
+			m_yardGate[leaf] = scenery(ShopModels::YARD_GATE_LEAF, ShopTextures::SIDING, { YARD_MIN_X, 0.f, leaf == 0 ? YARD_GATE_MIN_Z : YARD_GATE_MAX_Z });
+		m_yardGateOpen = true;
+		SetYardGate(false);
+		for (const auto& stack : YARD_TIRE_STACKS)
+			m_sceneryObstacles.push_back(Footprint({ stack.x, stack.z }, { 0.32f, 0.32f }));
+		m_sceneryObstacles.push_back(Footprint({ YARD_SCRAP_HEAP.x, YARD_SCRAP_HEAP.z }, { 1.1f, 0.9f }));
+		m_sceneryObstacles.push_back(Footprint({ YARD_PALLET.x, YARD_PALLET.z }, { 0.6f, 0.5f }));
+		m_sceneryObstacles.push_back(Footprint({ YARD_PIPE_PILE.x, YARD_PIPE_PILE.z }, { 0.8f, 0.5f }));
+		const glm::vec3 drumColors[] = { { 0.5f, 0.3f, 0.2f }, { 0.3f, 0.4f, 0.3f }, { 0.55f, 0.5f, 0.42f } };
+		for (size_t i = 0; i < std::size(YARD_DRUMS); i++)
+		{
+			auto drum = scenery(ShopModels::OIL_DRUM, ShopTextures::PAINT, YARD_DRUMS[i], i * 1.3f);
+			drum->SetTint(glm::vec4(drumColors[i], 1.f));
+			m_sceneryObstacles.push_back(Footprint({ YARD_DRUMS[i].x, YARD_DRUMS[i].z }, { 0.3f, 0.3f }));
+		}
+	}
+
+	// The desert quarry's pad, front left of the plot.
+	BuildQuarry();
 
 	// The walls and what the player bumps into, as the shop stands without upgrades (see BuildUpgrades).
 	BuildUpgrades(false, false);
@@ -232,4 +301,82 @@ float ShopWorld::GetDoorOpenAmount() const
 const std::vector<pObject>& ShopWorld::GetLampHeads() const
 {
 	return m_lampHeads;
+}
+
+void ShopWorld::SetNeighbours(const std::vector<float>& offsets)
+{
+	using namespace GarageLayout;
+	auto objectManager = ObjectManager::Get();
+	for (const auto& object : m_neighbourObjects)
+		objectManager->RemoveObject(object);
+	m_neighbourObjects.clear();
+	m_neighbourObstacles.clear();
+
+	for (float offset : offsets)
+	{
+		// The building as a new shop stands, shut: its walls, roof, windows and door, and its drive and apron.
+		glm::vec3 at = { offset, 0.f, 0.f };
+		auto add = [&](const std::string& model, const std::string& texture, const glm::vec3& position) {
+			auto object = Spawn(model, texture, position);
+			object->SetPickable(false);
+			m_neighbourObjects.push_back(object);
+			return object;
+		};
+		add(ShopModels::FLOOR, ShopTextures::CONCRETE, at);
+		add(ShopModels::WALLS, ShopTextures::PLANKS, at);
+		add(ShopModels::GARAGE_SIDING, ShopTextures::PLANKS, at)->SetTint(WEATHERED_BOARDS);
+		add(ShopModels::GARAGE_ROOF, ShopTextures::SIDING, at);
+		add(ShopModels::GARAGE_FRAMES, ShopTextures::WOOD, at);
+		add(ShopModels::WINDOW_GLASS, "", at)->SetTint({ 0.8f, 0.9f, 0.95f, 0.18f })->SetCastsShadows(false);
+		add(ShopModels::ROLLUP_DOOR, ShopTextures::PAINT, at + glm::vec3((DOOR_MIN_X + DOOR_MAX_X) * 0.5f, DOOR_HEIGHT, HALF_DEPTH + 0.06f))
+			->SetCastsLampShadows(false);
+		add(ShopModels::PAVING, ShopTextures::CONCRETE, at);
+		const float outerX = HALF_WIDTH + WALL, outerZ = HALF_DEPTH + WALL;
+		m_neighbourObstacles.push_back({ { offset - outerX, -outerZ }, { offset + outerX, outerZ } });
+	}
+
+	// The desert on their plots (round the building, and down the drive to the highway) is cleared, and what
+	// was there stops being in the way; it's all back when they're gone.
+	auto onPlot = [&](glm::vec2 at) {
+		return std::any_of(offsets.begin(), offsets.end(), [&](float offset) {
+			float x = at.x - offset;
+			bool byShack = x > BAY_MIN_X - 6.f && x < HALF_WIDTH + 8.f && at.y > -HALF_DEPTH - 8.f && at.y < HALF_DEPTH + 8.f;
+			bool onDrive = x > DRIVE_MIN_X - 4.f && x < DRIVE_MAX_X + 4.f && at.y > 0.f && at.y < HIGHWAY_NEAR_Z;
+			return byShack || onDrive;
+		});
+	};
+	for (const auto& piece : m_scenery)
+	{
+		bool cleared = onPlot(piece.at);
+		piece.object->SetVisible(!cleared);
+		if (!piece.footprint)
+			continue;
+		// Below the floor, it's in no one's way.
+		float top = cleared ? -1e5f : piece.footprint->top;
+		for (auto* list : { &m_sceneryObstacles, &m_staticObstacles })
+			for (auto& obstacle : *list)
+				if (obstacle.min == piece.footprint->min && obstacle.max == piece.footprint->max)
+					obstacle.top = top;
+	}
+	RebuildCollision();
+}
+
+void ShopWorld::SetYardGate(bool open)
+{
+	if (open == m_yardGateOpen)
+		return;
+	m_yardGateOpen = open;
+	// Each leaf is built out from its hinge along its +X. Shut, the near one reaches along +Z to meet the far one
+	// coming back along -Z; open, both swing in to lie along +X against the inside of the fence.
+	for (int leaf = 0; leaf < 2; leaf++)
+		if (m_yardGate[leaf])
+		{
+			float shut = leaf == 0 ? -glm::half_pi<float>() : glm::half_pi<float>();
+			float yaw = open ? 0.f : shut;
+			m_yardGate[leaf]->SetRotation(glm::angleAxis(yaw, glm::vec3(0.f, 1.f, 0.f)));
+			// Swung open, it sits just inside its post, clear of the gateway.
+			float inward = open ? (leaf == 0 ? -0.08f : 0.08f) : 0.f;
+			m_yardGate[leaf]->SetPosition({ GarageLayout::YARD_MIN_X, 0.f, (leaf == 0 ? GarageLayout::YARD_GATE_MIN_Z : GarageLayout::YARD_GATE_MAX_Z) + inward });
+		}
+	RebuildCollision();
 }

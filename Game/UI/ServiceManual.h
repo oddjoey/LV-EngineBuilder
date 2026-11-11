@@ -10,14 +10,21 @@
 struct ImDrawList;
 struct ImVec2;
 
-// The LV-16 factory service manual, read as a book: two pages open at a time, turned with the
+// The factory service manuals (the LV-16's, and the project car's chassis book), read as a book: two pages open at a time, turned with the
 // arrow keys (or A and D) or the buttons under it. Every number in it comes from the engine's own
 // spec, the part catalogue and the tool list, in the units the player plays in, so the book and
 // the shop never disagree.
 class ServiceManual
 {
 public:
-	void Open();
+	// Which book is open.
+	enum class Book
+	{
+		ENGINE,		// the LV-16 Factory Service Manual
+		CHASSIS		// the LE86 Chassis Service Manual (see ServiceManualChassis.cpp)
+	};
+
+	void Open(Book book = Book::ENGINE);
 	void Close();
 	// Forward (positive) or back a pair of pages; true if it moved.
 	bool Turn(int spreads);
@@ -61,7 +68,12 @@ private:
 		MAIN_CAP_SEQUENCE,
 		ROCKER_SHAFT_SEQUENCE,
 		CAM_CAP_SEQUENCE,
-		COMPRESSION_GRAPH
+		COMPRESSION_GRAPH,
+		// The chassis book's.
+		BRAKE_BLEED_ORDER,
+		ALIGNMENT_ANGLES,
+		GEAR_SPEEDS,
+		CAR_BUILD_FLOW
 	};
 	// A turning 3D view of one of the shop's models, with a caption under it.
 	struct View
@@ -90,6 +102,8 @@ private:
 	};
 
 	void Build(bool imperial);
+	// The chassis book's chapters (ServiceManualChassis.cpp).
+	void BuildChassis(bool imperial);
 	void Paginate(float width, float height, float fontSize);
 	float Measure(const Line& line, float width, float fontSize) const;
 	// Draws one page; true if a chapter in the contents was clicked (the book has turned to it).
@@ -114,6 +128,8 @@ private:
 	void HoverSpec(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, const std::string& name, const std::string& tip, float fontSize) const;
 
 	bool					m_open = false;
+	Book					m_book = Book::ENGINE;
+	Book					m_builtBook = Book::ENGINE;
 	int						m_spread = 0;			// the open pair of pages: 2n on the left, 2n + 1 on the right
 	bool					m_built = false;
 	bool					m_builtImperial = false;

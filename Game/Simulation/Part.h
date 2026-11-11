@@ -94,8 +94,99 @@ enum class PartType
 	// Appended later still: the pin a piston pivots on in its rod's small end, pressed in with the Piston Pin Press.
 	PISTON_PIN,
 
+	// The car: an LE86 Comet coupe, bought as a bare project shell and built up round an engine from the
+	// stands. None of these goes in an engine (perEngine 0); CarAssembly says where each one goes on the car.
+	// Body
+	BODY_SHELL,
+	FRONT_FENDER,
+	DOOR,
+	HOOD,
+	TRUNK_LID,
+	FRONT_BUMPER,
+	REAR_BUMPER,
+	HEADLIGHT,
+	TAIL_LIGHT,
+	WINDSHIELD,
+	REAR_WINDOW,
+	// Interior
+	DASHBOARD,
+	INSTRUMENT_CLUSTER,
+	SEAT,
+	STEERING_WHEEL,
+	// Front suspension: MacPherson struts
+	FRONT_STRUT,
+	FRONT_COIL_SPRING,
+	STEERING_KNUCKLE,
+	LOWER_CONTROL_ARM,
+	STRUT_ROD,
+	FRONT_SWAY_BAR,
+	// Rear suspension: a live axle on four links and a lateral rod
+	REAR_AXLE,
+	DIFFERENTIAL,
+	LOWER_TRAILING_LINK,
+	UPPER_TRAILING_LINK,
+	LATERAL_ROD,
+	REAR_COIL_SPRING,
+	REAR_SHOCK,
+	// Steering
+	STEERING_RACK,
+	TIE_ROD_END,
+	STEERING_COLUMN,
+	// Brakes: ventilated discs in front, drums at the back
+	BRAKE_BOOSTER,
+	BRAKE_MASTER_CYLINDER,
+	BRAKE_LINE_SET,
+	BRAKE_HOSE,
+	BRAKE_ROTOR,
+	BRAKE_PAD_SET,
+	BRAKE_CALIPER,
+	WHEEL_CYLINDER,
+	BRAKE_SHOE_SET,
+	BRAKE_DRUM,
+	PARKING_BRAKE_CABLE,
+	// Drivetrain
+	ENGINE_MOUNT,
+	CLUTCH_DISC,
+	PRESSURE_PLATE,
+	RELEASE_BEARING,
+	TRANSMISSION,
+	TRANSMISSION_MOUNT,
+	CLUTCH_MASTER_CYLINDER,
+	CLUTCH_RELEASE_CYLINDER,
+	DRIVESHAFT,
+	// Fuel
+	FUEL_TANK,
+	FUEL_SENDER,
+	FUEL_LINE_SET,
+	FUEL_FILTER,
+	// Electrical
+	BATTERY,
+	MAIN_HARNESS,
+	ENGINE_HARNESS,
+	FUSE_BOX,
+	IGNITION_COIL,
+	STARTER,
+	// Cooling
+	RADIATOR,
+	RADIATOR_HOSE,
+	COOLING_FAN,
+	// Exhaust
+	CATALYTIC_CONVERTER,
+	MUFFLER,
+	// Wheels
+	WHEEL,
+	TIRE,
+	// The car's nuts and bolts that the engine's sizes don't cover: the wheels' lug nuts, and the bigger nuts
+	// under the car.
+	LUG_NUT,
+	NUT_M10,
+	NUT_M12,
+
 	COUNT
 };
+// The first of the car's part types: everything from here to COUNT goes on the car, not an engine.
+constexpr PartType FIRST_CAR_PART = PartType::BODY_SHELL;
+inline bool IsCarPart(PartType type) { return type >= FIRST_CAR_PART && type < PartType::COUNT; }
 
 enum class PartQuality { BUDGET, OEM, PERFORMANCE };
 // A nut or bolt: in its hole finger tight, snugged by feel, or done up with a torque wrench.
@@ -153,6 +244,8 @@ namespace FeatureNames
 	inline const std::string COMPRESSION_HEIGHT = "Compression Height";
 	inline const std::string DISH_VOLUME = "Dish Volume";
 	inline const std::string CLOSED_DIAMETER = "Closed Diameter";
+	// Not a feature of the ring alone: its end gap, read squared in a bore, kept with its readings.
+	inline const std::string END_GAP = "End Gap";
 	inline const std::string WALL_THICKNESS = "Wall Thickness";
 	inline const std::string COMPRESSED_THICKNESS = "Compressed Thickness";
 

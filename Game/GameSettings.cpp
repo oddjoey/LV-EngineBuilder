@@ -47,8 +47,6 @@ GameSettings GameSettings::Load()
 		else if (key == "render_distance") value >> settings.renderDistance;
 		else if (key == "brightness") value >> settings.brightness;
 		else if (key == "frame_limit") value >> settings.frameLimit;
-		else if (key == "day_night_cycle") value >> settings.dayNightCycle;
-		else if (key == "day_length_minutes") value >> settings.dayLengthMinutes;
 		else if (key == "master_volume") value >> settings.masterVolume;
 		else if (key == "effects_volume") value >> settings.effectsVolume;
 		else if (key == "ambience_volume") value >> settings.ambienceVolume;
@@ -75,7 +73,6 @@ GameSettings GameSettings::Load()
 	settings.renderDistance = std::clamp(settings.renderDistance, 80.f, 500.f);
 	settings.brightness = std::clamp(settings.brightness, 0.5f, 2.f);
 	settings.frameLimit = std::clamp(settings.frameLimit, 0, 360);
-	settings.dayLengthMinutes = std::clamp(settings.dayLengthMinutes, 5.f, 240.f);
 	settings.viewHandRight = std::clamp(settings.viewHandRight, -VIEW_HAND_REACH, VIEW_HAND_REACH);
 	settings.viewHandUp = std::clamp(settings.viewHandUp, -VIEW_HAND_REACH, VIEW_HAND_REACH);
 	settings.viewHandForward = std::clamp(settings.viewHandForward, -VIEW_HAND_REACH, VIEW_HAND_REACH);
@@ -125,8 +122,6 @@ void GameSettings::Save() const
 	file << "render_distance=" << renderDistance << "\n";
 	file << "brightness=" << brightness << "\n";
 	file << "frame_limit=" << frameLimit << "\n";
-	file << "day_night_cycle=" << dayNightCycle << "\n";
-	file << "day_length_minutes=" << dayLengthMinutes << "\n";
 	file << "master_volume=" << masterVolume << "\n";
 	file << "effects_volume=" << effectsVolume << "\n";
 	file << "ambience_volume=" << ambienceVolume << "\n";

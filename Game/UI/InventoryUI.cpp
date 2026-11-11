@@ -17,6 +17,7 @@
 #include "../Simulation/Workshop.h"
 #include "../World/ShopWorld.h"
 #include "ItemIcons.h"
+#include "MaterialText.h"
 #include "Ratings.h"
 
 namespace
@@ -371,7 +372,7 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 		};
 
 		row("Material");
-		ImGui::TextUnformatted(GetMaterial(part.GetMaterial()).name);
+		MaterialText(part.GetMaterial());
 		row("Condition");
 		if (part.GetCondition() == PartCondition::DAMAGED)
 			ImGui::TextColored({ 1.f, 0.45f, 0.4f, 1.f }, "%s", PartConditionName(part.GetCondition()));
@@ -425,60 +426,116 @@ void InventoryUI::DrawPlayerStats(ShopWorld& world, Workshop& workshop)
 	const ImVec4 good = { 0.45f, 0.85f, 0.5f, 1.f };
 	const ImVec4 bad = { 1.f, 0.45f, 0.45f, 1.f };
 	bool imperial = m_units == Units::System::IMPERIAL;
+	auto money = [](double amount) { return std::format("{}${:.0f}", amount < 0.0 ? "-" : "", std::abs(amount)); };
+	double profit = stats.moneyEarned - stats.moneySpent;
+	const ImGuiStyle& style = ImGui::GetStyle();
 
-	auto section = [&](const char* title) {
-		ImGui::TableNextRow();
-		ImGui::TableNextColumn();
-		ImGui::Spacing();
-		ImGui::TextDisabled("%s", title);
+	// The headline figures, in a row of tiles across the top.
+	struct Tile { const char* label; std::string value; std::optional<ImVec4> color; std::string note; };
+	Tile tiles[] = {
+		{ "In the bank", money(workshop.GetMoney()), good, std::format("{} earned, {} spent", money(stats.moneyEarned), money(stats.moneySpent)) },
+		{ "Profit", money(profit), profit < 0.0 ? bad : good, "earned less spent, all time" },
+		{ "Engines sold", std::to_string(stats.enginesSold), std::nullopt, stats.bestEngineSale > 0.0 ? std::format("best sale {}", money(stats.bestEngineSale)) : std::string("none yet") },
+		{ "Best power", stats.bestPowerKw > 0.0 ? std::format("{:.0f} hp", stats.bestPowerKw * 1.341) : std::string("-"), std::nullopt,
+			stats.bestPowerKw > 0.0 ? std::format("{:.0f} kW on the dyno", stats.bestPowerKw) : std::string("no dyno pulls yet") },
 	};
+	constexpr int TILES = static_cast<int>(std::size(tiles));
+	float tileWidth = (ImGui::GetContentRegionAvail().x - style.ItemSpacing.x * (TILES - 1)) / TILES;
+	float tileHeight = ImGui::GetTextLineHeight() * 3.8f + style.ItemSpacing.y * 2.f + style.WindowPadding.y * 2.f + 4.f;
+	for (int i = 0; i < TILES; i++)
+	{
+		if (i > 0)
+			ImGui::SameLine();
+		ImGui::BeginChild(std::format("StatTile{}", i).c_str(), { tileWidth, tileHeight }, ImGuiChildFlags_Borders, ImGuiWindowFlags_NoScrollbar);
+		ImGui::TextDisabled("%s", tiles[i].label);
+		ImGui::SetWindowFontScale(1.8f);
+		if (tiles[i].color)
+			ImGui::TextColored(*tiles[i].color, "%s", tiles[i].value.c_str());
+		else
+			ImGui::TextUnformatted(tiles[i].value.c_str());
+		ImGui::SetWindowFontScale(1.f);
+		ImGui::TextDisabled("%s", tiles[i].note.c_str());
+		ImGui::EndChild();
+	}
+	ImGui::Spacing();
+
+	// The rest in a 2 by 2 grid of cards filling what's left of the window, each a list of figures with the
+	// figure right-aligned against its name.
 	auto row = [&](const char* label, const std::string& value, std::optional<ImVec4> color = std::nullopt) {
-		ImGui::TableNextRow();
+		// Roomy rows, the text centred in them.
+		float rowHeight = ImGui::GetTextLineHeight() * 1.9f;
+		float inset = (rowHeight - ImGui::GetTextLineHeight()) * 0.5f;
+		ImGui::TableNextRow(0, rowHeight);
 		ImGui::TableNextColumn();
+		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + inset);
 		ImGui::TextUnformatted(label);
 		ImGui::TableNextColumn();
+		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + inset);
+		float x = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(value.c_str()).x;
+		ImGui::SetCursorPosX((std::max)(ImGui::GetCursorPosX(), x));
 		if (color)
 			ImGui::TextColored(*color, "%s", value.c_str());
 		else
 			ImGui::TextUnformatted(value.c_str());
 	};
-	auto money = [](double amount) { return std::format("${:.0f}", amount); };
+	ImVec2 avail = ImGui::GetContentRegionAvail();
+	ImVec2 cardSize = { (avail.x - style.ItemSpacing.x) * 0.5f, (std::max)((avail.y - style.ItemSpacing.y) * 0.5f, ImGui::GetTextLineHeightWithSpacing() * 9.f) };
+	int cardIndex = 0;
+	auto card = [&](const char* title, auto&& rows) {
+		if (cardIndex % 2 == 1)
+			ImGui::SameLine();
+		ImGui::BeginChild(std::format("StatCard{}", cardIndex++).c_str(), cardSize, ImGuiChildFlags_Borders);
+		ImGui::SetWindowFontScale(1.2f);
+		ImGui::TextUnformatted(title);
+		ImGui::SetWindowFontScale(1.f);
+		ImGui::Separator();
+		ImGui::Spacing();
+		if (ImGui::BeginTable(title, 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX))
+		{
+			ImGui::TableSetupColumn("Stat", ImGuiTableColumnFlags_WidthStretch, 3.f);
+			ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 2.f);
+			rows();
+			ImGui::EndTable();
+		}
+		ImGui::EndChild();
+	};
 
-	// Kept narrow on the wide Stats tab, so each figure stays next to its name.
-	if (!ImGui::BeginTable("PlayerStats", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp, { (std::min)(ImGui::GetContentRegionAvail().x, 520.f), 0.f }))
-		return;
-	ImGui::TableSetupColumn("Stat", ImGuiTableColumnFlags_WidthStretch, 2.f);
-	ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 1.f);
-
-	section("Money");
-	row("In the bank", money(workshop.GetMoney()), good);
-	row("Earned", money(stats.moneyEarned));
-	row("Spent", money(stats.moneySpent));
-	double profit = stats.moneyEarned - stats.moneySpent;
-	row("Profit", std::format("{}{}", profit < 0.0 ? "-" : "", money(std::abs(profit))), profit < 0.0 ? bad : good);
-
-	section("Shop");
-	row("Parts bought", std::to_string(stats.partsBought));
-	row("Parts sold", std::to_string(stats.partsSold));
-	row("Parts fitted", std::to_string(stats.partsFitted));
-	row("Measurements taken", std::to_string(stats.measurements));
-	row("Machining cuts", std::to_string(stats.cuts));
-	if (int packages = world.GetUnopenedPackages(); packages > 0)
-		row("Deliveries waiting", std::to_string(packages), ImVec4(1.f, 0.8f, 0.35f, 1.f));
-
-	section("Dyno and sales");
-	row("Dyno pulls", std::to_string(stats.dynoPulls));
-	row("Engines blown up", std::to_string(stats.dynoFailures), stats.dynoFailures > 0 ? std::optional<ImVec4>(bad) : std::nullopt);
-	row("Best power", stats.bestPowerKw > 0.0 ? std::format("{:.0f} hp ({:.0f} kW)", stats.bestPowerKw * 1.341, stats.bestPowerKw) : "-");
-	row("Best torque", stats.bestTorqueNm > 0.0
-		? (imperial ? std::format("{:.0f} lb-ft", stats.bestTorqueNm * 0.7376) : std::format("{:.0f} Nm", stats.bestTorqueNm)) : "-");
-	row("Engines sold", std::to_string(stats.enginesSold));
-	row("Best sale", stats.bestEngineSale > 0.0 ? money(stats.bestEngineSale) : "-");
-
-	section("On foot");
-	double metres = stats.metresWalked;
-	row("Distance walked", imperial ? (metres >= 1609.0 ? std::format("{:.2f} mi", metres / 1609.34) : std::format("{:.0f} ft", metres * 3.2808))
-		: (metres >= 1000.0 ? std::format("{:.2f} km", metres / 1000.0) : std::format("{:.0f} m", metres)));
-
-	ImGui::EndTable();
+	card("Money", [&] {
+		row("In the bank", money(workshop.GetMoney()), good);
+		row("Earned", money(stats.moneyEarned));
+		row("Spent", money(stats.moneySpent));
+		row("Profit", money(profit), profit < 0.0 ? bad : good);
+		row("Best engine sale", stats.bestEngineSale > 0.0 ? money(stats.bestEngineSale) : "-");
+		row("Average engine sale", stats.enginesSold > 0 ? money(stats.moneyEarned / stats.enginesSold) : "-");
+	});
+	card("The work", [&] {
+		row("Parts bought", std::to_string(stats.partsBought));
+		row("Cores bought", std::to_string(stats.coresBought));
+		row("Parts sold", std::to_string(stats.partsSold));
+		row("Parts fitted", std::to_string(stats.partsFitted));
+		row("Measurements taken", std::to_string(stats.measurements));
+		row("Machining cuts", std::to_string(stats.cuts));
+		if (int packages = world.GetUnopenedPackages(); packages > 0)
+			row("Deliveries waiting", std::to_string(packages), ImVec4(1.f, 0.8f, 0.35f, 1.f));
+	});
+	card("Dyno and sales", [&] {
+		row("Dyno pulls", std::to_string(stats.dynoPulls));
+		row("Engines blown up", std::to_string(stats.dynoFailures), stats.dynoFailures > 0 ? std::optional<ImVec4>(bad) : std::nullopt);
+		row("Clean pulls", std::to_string((std::max)(stats.dynoPulls - stats.dynoFailures, 0)));
+		row("Best power", stats.bestPowerKw > 0.0 ? std::format("{:.0f} hp ({:.0f} kW)", stats.bestPowerKw * 1.341, stats.bestPowerKw) : "-");
+		row("Best torque", stats.bestTorqueNm > 0.0
+			? (imperial ? std::format("{:.0f} lb-ft", stats.bestTorqueNm * 0.7376) : std::format("{:.0f} Nm", stats.bestTorqueNm)) : "-");
+		row("Engines sold", std::to_string(stats.enginesSold));
+	});
+	card("You and the shop", [&] {
+		int rank = workshop.Rank();
+		row("Rank", std::format("{} ({})", rank, ShopRank::Info(rank).name));
+		row("Reputation", rank < ShopRank::MaxRank()
+			? std::format("{:.0f} / {:.0f}", stats.reputation, ShopRank::Info(rank + 1).reputation) : std::format("{:.0f}", stats.reputation));
+		row("Skill points to spend", std::to_string(workshop.SkillPoints()), workshop.SkillPoints() > 0 ? std::optional<ImVec4>(good) : std::nullopt);
+		row("Skill points spent", std::to_string(workshop.SkillPointsSpent()));
+		double metres = stats.metresWalked;
+		row("Distance walked", imperial ? (metres >= 1609.0 ? std::format("{:.2f} mi", metres / 1609.34) : std::format("{:.0f} ft", metres * 3.2808))
+			: (metres >= 1000.0 ? std::format("{:.2f} km", metres / 1000.0) : std::format("{:.0f} m", metres)));
+	});
 }

@@ -364,6 +364,29 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 				return target;
 			});
 		}
+
+		// A ring's end gap, squared on its own in a bore of a block off the engine.
+		bool loose = visual.place == ItemPlace::WORLD || visual.place == ItemPlace::BENCH || visual.place == ItemPlace::STORAGE;
+		if (loose && visual.part->GetType() == PartType::BLOCK && tool.CanCheck(AssemblyCheck::RING_GAP))
+			for (int cylinder = 0; cylinder < workshop.GetSpec().cylinders; cylinder++)
+			{
+				auto ring = workshop.RingInLooseBore(*visual.part, cylinder);
+				if (!ring)
+					continue;
+				glm::vec3 point = glm::vec3(transform * glm::vec4(EngineLayout::BoreX(cylinder), RING_SQUARED_Y, 0.f, 1.f));
+				if (!workshop.LooseBoreOf(*ring)->squared)
+				{
+					noteBlocked(point, "Push the ring down square with a piston first: hold one and press [E] on the ring.");
+					continue;
+				}
+				consider(point, [&] {
+					MeasureTarget target;
+					target.part = ItemRef::Part(ring->GetId());
+					target.looseRing = true;
+					target.label = std::format("the ring gap in bore {} of the {}", cylinder + 1, visual.part->GetName());
+					return target;
+				});
+			}
 	}
 
 	// Assembly checks on whichever engine stand it's aimed at.
@@ -390,6 +413,18 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 					if (step == StripStep::NONE)
 					{
 						noteBlocked(point, why);
+						continue;
+					}
+				}
+				// A ring gap is read on a ring on its own in the bore, pushed down square with a piston.
+				if (anchor.check == AssemblyCheck::RING_GAP)
+				{
+					auto ring = m_ringsInBore[engine].find(anchor.index);
+					if (ring == m_ringsInBore[engine].end() || !ring->second)
+					{
+						noteBlocked(point, ring == m_ringsInBore[engine].end()
+							? std::format("Set a ring on its own in the top of bore {} (the head off, no piston in it), then push it down square with a piston to gap it.", anchor.index + 1)
+							: "Push the ring down square with a piston first: hold one and press [E] on the ring.");
 						continue;
 					}
 				}
@@ -444,6 +479,21 @@ void ShopWorld::Measure(Workshop& workshop, const MeasureTarget& target, int too
 {
 	Readout readout;
 	readout.time = READOUT_SECONDS;
+
+	if (target.looseRing)
+	{
+		auto ring = Find(target.part);
+		if (!ring || !ring->part || !workshop.MeasureLooseRingGap(*ring->part, toolIndex))
+			return;
+		const FeatureReading* reading = ring->part->GetReading(FeatureNames::END_GAP);
+		Range range = workshop.GetSpec().ringGap;
+		readout.title = std::format("End gap  ({})", PartLabel(*ring->part));
+		readout.lines.push_back(Units::FormatDeviation(reading->value, m_units));
+		readout.lines.push_back(std::format("target {} - {}", Units::FormatDeviation(range.min, m_units), Units::FormatDeviation(range.max, m_units)));
+		readout.good = range.Contains(reading->value);
+		m_readout = readout;
+		return;
+	}
 
 	if (target.assembly)
 	{
@@ -543,6 +593,25 @@ std::optional<size_t> ShopWorld::FindFitTarget(const Workshop& workshop, const F
 	float radius = glm::length(model->GetBoundsMax() - model->GetBoundsMin()) * 0.5f;
 	float tolerance = std::clamp(radius * 0.45f, 0.03f, 0.15f);
 
+	// A ring or piston in hand by a block off the engine: its open bores for a ring, its rings still to be pushed down
+	// square for a piston (aimed at, they're picked by UpdateHover, see FindAimedBore).
+	if (held.part->GetType() == PartType::PISTON_RING || held.part->GetType() == PartType::PISTON)
+		for (const auto& [ref, visual] : m_items)
+		{
+			bool loose = visual.place == ItemPlace::WORLD || visual.place == ItemPlace::BENCH || visual.place == ItemPlace::STORAGE;
+			if (!loose || !visual.part || visual.part->GetType() != PartType::BLOCK || !visual.object->IsVisible()
+				|| glm::distance(visual.object->GetPosition(), eye) > INTERACT_DISTANCE + 1.f)
+				continue;
+			glm::mat4 transform = visual.object->GetModelMatrix();
+			for (int cylinder = 0; cylinder < workshop.GetSpec().cylinders; cylinder++)
+			{
+				auto ring = workshop.RingInLooseBore(*visual.part, cylinder);
+				bool wanted = held.part->GetType() == PartType::PISTON_RING ? !ring : ring && !workshop.LooseBoreOf(*ring)->squared;
+				if (wanted)
+					m_fitPoints.push_back({ glm::vec3(transform * glm::vec4(EngineLayout::BoreX(cylinder), RING_IN_BORE_Y, 0.f, 1.f)), true });
+			}
+		}
+
 	std::optional<size_t> stand;
 	float best = tolerance;
 	for (size_t i = 0; i < m_stations.size(); i++)
@@ -555,25 +624,49 @@ std::optional<size_t> ShopWorld::FindFitTarget(const Workshop& workshop, const F
 			continue;
 
 		const auto& assembly = workshop.GetAssembly(engine);
+		// A piston in hand pushes a ring set in a bore on its own down square.
+		if (held.part->GetType() == PartType::PISTON)
+			for (auto [cylinder, squared] : m_ringsInBore[engine])
+			{
+				if (squared)
+					continue;
+				glm::vec3 position = StandToWorld(engine, { EngineLayout::BoreX(cylinder), RING_IN_BORE_Y, 0.f });
+				m_fitPoints.push_back({ position, true });
+				float along = glm::dot(position - eye, forward);
+				if (along <= 0.f || along > INTERACT_DISTANCE + 0.5f)
+					continue;
+				float off = glm::length(position - (eye + forward * along));
+				if (off < best)
+				{
+					best = off;
+					m_fitTarget = FitTarget{ engine, AssemblySlot::PISTON_RING, cylinder, position, true };
+					stand = i;
+				}
+			}
 		// A size of nut or bolt fits every set of holes of its size.
 		for (int slotIndex = 0; slotIndex < static_cast<int>(AssemblySlot::COUNT); slotIndex++)
 		{
 			auto slot = static_cast<AssemblySlot>(slotIndex);
 			if (EngineAssembly::SlotPartType(slot) != held.part->GetType())
 				continue;
-			// Bearing shells go on in their rods and caps, never by themselves.
-			if (EngineAssembly::CarriedBy(slot))
+			// Bearing shells go on in their rods and caps, never by themselves; a ring only on its own, into an empty
+			// bore to be gapped.
+			bool ringInBore = slot == AssemblySlot::PISTON_RING;
+			if (EngineAssembly::CarriedBy(slot) && !ringInBore)
 				continue;
 			bool fastener = EngineAssembly::Holes(slot) != nullptr;
 			for (int index = 0; index < assembly.SlotCount(slot); index++)
 			{
 				if (assembly.Get(slot, index))
 					continue;
-				bool ready = !assembly.MissingPrerequisite(slot, index);
+				if (ringInBore && (assembly.Get(AssemblySlot::PISTON, index) || !assembly.Get(AssemblySlot::BLOCK, 0)))
+					continue;
+				bool ready = !FitMissing(workshop, engine, slot, index);
 				// Holes only exist once the part they're in is on.
 				if (fastener && !ready)
 					continue;
-				glm::vec3 position = SlotWorldCenter(engine, slot, index);
+				glm::vec3 position = ringInBore ? StandToWorld(engine, { EngineLayout::BoreX(index), RING_IN_BORE_Y, 0.f })
+					: SlotWorldCenter(engine, slot, index);
 				m_fitPoints.push_back({ position, ready });
 
 				float along = glm::dot(position - eye, forward);
@@ -674,16 +767,25 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 			if (visual->place == ItemPlace::STAND)
 				if (auto slot = FindInstalledSlot(workshop.GetAssembly(visual->engineIndex), visual->part))
 					hole = FastenerTarget{ visual->engineIndex, slot->first, slot->second, {} };
+			if (visual->place == ItemPlace::CAR && workshop.GetCar())
+				if (auto at = workshop.GetCar()->assembly.Find(visual->part.get()); at && CarAssembly::IsFastenerSlot(at->first))
+					hole = FastenerTarget{ -1, AssemblySlot::COUNT, at->second, {}, true, at->first };
 		}
 	if (!part && !hole)
 		hole = m_aimedHole;
 	if (!part && !hole)
 		return;
+	if (hole && hole->car && !workshop.GetCar())
+		return;
 
-	const EngineAssembly* assembly = hole ? &workshop.GetAssembly(hole->engine) : nullptr;
-	const FastenerHoles* holes = hole ? EngineAssembly::Holes(hole->slot) : nullptr;
+	// On the car or on an engine.
+	const CarAssembly* car = hole && hole->car ? &workshop.GetCar()->assembly : nullptr;
+	const EngineAssembly* assembly = hole && !hole->car ? &workshop.GetAssembly(hole->engine) : nullptr;
+	const FastenerHoles* holes = !hole ? nullptr : car ? CarAssembly::Holes(hole->carSlot) : EngineAssembly::Holes(hole->slot);
 	if (hole && !part)
-		part = assembly->Get(hole->slot, hole->index).get();
+		part = (car ? car->Get(hole->carSlot, hole->index) : assembly->Get(hole->slot, hole->index)).get();
+	if (!part && !holes)
+		return;
 	PartType type = part ? part->GetType() : holes->size;
 	const auto& info = PartCatalog::Get(type);
 	const auto& spec = info.fastener;
@@ -707,7 +809,7 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 
 	if (holes)
 	{
-		lines.push_back({ assembly->PositionName(hole->slot, hole->index), text });
+		lines.push_back({ car ? car->PositionName(hole->carSlot, hole->index) : assembly->PositionName(hole->slot, hole->index), text });
 		lines.push_back({ std::format("Spec: {:.0f} Nm", holes->torqueNm), text });
 		if (part)
 		{
@@ -728,7 +830,11 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 		for (const auto& candidate : PartCatalog::Holes())
 			if (candidate.size == type)
 				uses.push_back(std::format("  {} ({:.0f} Nm)", candidate.name, candidate.torqueNm));
-		lines.push_back({ uses.empty() ? "Not used on this engine" : "Goes in:", text });
+		// And on the car.
+		for (const auto& candidate : CarAssembly::Holes())
+			if (candidate.size == type)
+				uses.push_back(std::format("  {}, on the car ({:.0f} Nm)", candidate.name, candidate.torqueNm));
+		lines.push_back({ uses.empty() ? "Not used on this engine or the car" : "Goes in:", text });
 		for (const auto& use : uses)
 			lines.push_back({ use, dim });
 	}
@@ -840,15 +946,20 @@ bool ShopWorld::StationFits(const Station& station, const glm::vec3& position, f
 	auto model = ModelOf(station.object);
 	ShopBox footprint = TransformBox({ model->GetBoundsMin(), model->GetBoundsMax() }, position, Yaw(yaw));
 
-	if (!OnShopFloor(footprint))
+	// The hoist can also be rolled out of the roll-up door onto the drive and along the track into the salvage yard, to the project car.
+	// Anything that stands on the floor can also go outside, anywhere on the shop's land (the tool board, hung on a
+	// wall, can't).
+	bool floorStanding = station.homePosition.y < 0.05f && station.type != StationType::DOOR && station.type != StationType::CAR;
+	if (!OnShopFloor(footprint) && !(station.type == StationType::HOIST && OnDrive(footprint)) && !(floorStanding && OnPlot(footprint)))
 		return false;
 
 	for (const auto& other : m_stations)
 	{
 		if (other.object == station.object || !other.present)
 			continue;
-		// The hoist's legs run in under an engine stand or the dyno, to get its hook over the engine.
-		auto under = [](StationType hoist, StationType over) { return hoist == StationType::HOIST && (over == StationType::ENGINE_STAND || over == StationType::DYNO); };
+		// The hoist's legs run in under an engine stand, the dyno or the car's nose, to get its hook over the engine.
+		auto under = [](StationType hoist, StationType over) { return hoist == StationType::HOIST
+			&& (over == StationType::ENGINE_STAND || over == StationType::DYNO || over == StationType::CAR); };
 		if (under(station.type, other.type) || under(other.type, station.type))
 			continue;
 		auto bounds = WorldBounds(other.object);
@@ -1228,6 +1339,19 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 	for (const auto& point : m_fitPoints)
 		if (auto screen = ProjectToScreen(point.position, player))
 			drawList->AddCircleFilled({ screen->x, screen->y }, 4.f, point.ready ? IM_COL32(120, 255, 150, 150) : IM_COL32(170, 170, 170, 110));
+	if (m_boreFitTarget)
+		if (auto screen = ProjectToScreen(*m_boreFitTarget, player))
+		{
+			drawList->AddCircle({ screen->x, screen->y }, 11.f, IM_COL32(120, 255, 150, 240), 24, 2.f);
+			drawList->AddCircleFilled({ screen->x, screen->y }, 3.f, IM_COL32(120, 255, 150, 240));
+		}
+	if (m_carFitTarget)
+		if (auto screen = ProjectToScreen(m_carFitTarget->position, player))
+		{
+			ImU32 ring = m_carFitTarget->ready ? IM_COL32(120, 255, 150, 240) : IM_COL32(255, 190, 90, 240);
+			drawList->AddCircle({ screen->x, screen->y }, 11.f, ring, 24, 2.f);
+			drawList->AddCircleFilled({ screen->x, screen->y }, 3.f, ring);
+		}
 	if (m_fitTarget)
 		if (auto screen = ProjectToScreen(m_fitTarget->position, player))
 		{
@@ -1256,10 +1380,11 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		drawList->PathArcTo(center, RING, start, start + glm::two_pi<float>() * (std::min)(ring, 1.f), 40);
 		drawList->PathStroke(IM_COL32(255, 210, 120, 240), 0, 3.f);
 	}
+	// What can be done with what is aimed at, low on the screen above the toast and hotbar, clear of the crosshair.
 	if (!m_prompt.empty())
-		ShadowText(drawList, { center.x, center.y + 24.f }, white, Controls::Keys(m_prompt), true);
+		ShadowText(drawList, { center.x, display.y - 210.f }, white, Controls::Keys(m_prompt), true);
 	if (!m_secondaryPrompt.empty())
-		ShadowText(drawList, { center.x, center.y + 44.f }, grey, Controls::Keys(m_secondaryPrompt), true);
+		ShadowText(drawList, { center.x, display.y - 188.f }, grey, Controls::Keys(m_secondaryPrompt), true);
 
 	if (m_toastTime > 0.f)
 	{
@@ -1296,8 +1421,20 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		ShadowText(drawList, { center.x, 40.f }, IM_COL32(255, 120, 90, 255), std::format("{:.0f} rpm", m_engineRpm), true);
 
 	ShadowText(drawList, { 16.f, 12.f }, IM_COL32(140, 230, 140, 255), std::format("${:.0f}", workshop.GetMoney()), false);
-	if (!m_packages.empty())
-		ShadowText(drawList, { 16.f, 32.f }, IM_COL32(230, 190, 120, 255), std::format("{} deliver{} waiting by the door", m_packages.size(), m_packages.size() == 1 ? "y" : "ies"), false);
+	// Boxes by the door, and any in the salvage yard (the project car's nuts and bolts), counted apart.
+	size_t inYard = 0;
+	for (const auto& [id, package] : m_packages)
+	{
+		glm::vec3 at = package.object->GetPosition();
+		inYard += at.x >= GarageLayout::YARD_MIN_X - 0.5f && at.x <= GarageLayout::YARD_MAX_X && at.z >= GarageLayout::YARD_MIN_Z
+			&& at.z <= GarageLayout::YARD_MAX_Z;
+	}
+	size_t atDoor = m_packages.size() - inYard;
+	std::string waiting = atDoor > 0 ? std::format("{} deliver{} waiting by the door", atDoor, atDoor == 1 ? "y" : "ies") : "";
+	if (inYard > 0)
+		waiting += std::format("{}{} box{} in the salvage yard", waiting.empty() ? "" : ", ", inYard, inYard == 1 ? "" : "es");
+	if (!waiting.empty())
+		ShadowText(drawList, { 16.f, 32.f }, IM_COL32(230, 190, 120, 255), waiting, false);
 
 	DrawHotbar(workshop);
 }
@@ -1387,6 +1524,7 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindFastenerTarget(const Wor
 		bool fits = false;
 		float off = 0.f;
 		const Object* object = nullptr;
+		const Object* holds = nullptr;	// the part it holds on
 	};
 	std::vector<Candidate> candidates;
 	for (const auto& station : m_stations)
@@ -1405,9 +1543,11 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindFastenerTarget(const Wor
 				auto part = assembly.Get(slot, index);
 				if (!part)
 					continue;
-				// Aimed at by its head (its origin is just under the head), not its middle, which is in the part.
+				// Aimed at by the outer face of its head or nut (its origin is at the face it bears on), the part that
+				// shows: not its middle, which is in the part, nor right up against what it holds.
 				auto pose = PoseOnStand(engine, slot, index);
-				glm::vec3 position = StandToWorld(engine, pose.offset + pose.rotation * glm::vec3(0.f, 0.005f, 0.f));
+				float face = PartBounds(part->GetType()).second.y * 0.85f;
+				glm::vec3 position = StandToWorld(engine, pose.offset + pose.rotation * glm::vec3(0.f, face, 0.f));
 				float along = glm::dot(position - eye, forward);
 				if (along <= 0.f || along > INTERACT_DISTANCE + 0.5f)
 					continue;
@@ -1417,7 +1557,12 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindFastenerTarget(const Wor
 				if (off < along * 0.026f)
 				{
 					const auto* visual = Find(ItemRef::Part(part->GetId()));
-					candidates.push_back({ FastenerTarget{ engine, slot, index, position }, fits, off, visual ? visual->object.get() : nullptr });
+					// What it holds doesn't hide it (a nut sits right up against its cap).
+					const auto* holes = EngineAssembly::Holes(slot);
+					auto held = assembly.Get(EngineAssembly::SlotFor(holes->parent), holes->throughAll ? 0 : index / holes->perParent);
+					const auto* heldVisual = held ? Find(ItemRef::Part(held->GetId())) : nullptr;
+					candidates.push_back({ FastenerTarget{ engine, slot, index, position }, fits, off, visual ? visual->object.get() : nullptr,
+						heldVisual ? heldVisual->object.get() : nullptr });
 				}
 			}
 		}
@@ -1436,7 +1581,7 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindFastenerTarget(const Wor
 		glm::vec3 toward = candidate.target.position - eye;
 		float distance = glm::length(toward);
 		auto hit = ObjectManager::Get()->Raycast(eye, toward / distance, distance, [&](const pObject& object) {
-			return object.get() != heldObject && object.get() != candidate.object && m_targets.contains(object.get());
+			return object.get() != heldObject && object.get() != candidate.object && object.get() != candidate.holds && m_targets.contains(object.get());
 		});
 		if (!hit || hit->distance > distance - 0.03f)
 			return candidate.target;
@@ -1487,18 +1632,35 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 		}
 
 	auto target = FindFastenerTarget(workshop, player, size);
+	// The project car's nuts and bolts go the same way.
+	if (!target)
+		target = FindCarFastenerTarget(workshop, player, size);
 	if (!target)
 	{
 		m_turning.reset();
 		return false;
 	}
 	m_spannerFastener = *target;
-	workshop.SetActiveEngine(target->engine);
-	const auto& assembly = workshop.GetAssembly();
-	auto part = assembly.Get(target->slot, target->index);
-	const auto* holes = EngineAssembly::Holes(target->slot);
+	bool onCar = target->car;
+	if (!onCar)
+		workshop.SetActiveEngine(target->engine);
+	const CarAssembly* car = onCar ? &workshop.GetCar()->assembly : nullptr;
+	auto part = onCar ? car->Get(target->carSlot, target->index) : workshop.GetAssembly().Get(target->slot, target->index);
+	const auto* holes = onCar ? CarAssembly::Holes(target->carSlot) : EngineAssembly::Holes(target->slot);
 	auto tightness = part->GetTightness();
-	std::string position = assembly.PositionName(target->slot, target->index);
+	std::string position = onCar ? car->PositionName(target->carSlot, target->index) : workshop.GetAssembly().PositionName(target->slot, target->index);
+	auto turningProblem = [&](bool tightening) {
+		return onCar ? workshop.CarTurningProblem(target->carSlot, target->index, toolIndex, size, tightening)
+			: workshop.TurningProblem(target->slot, target->index, toolIndex, size, tightening);
+	};
+	auto loosen = [&]() {
+		return onCar ? workshop.LoosenCarFastener(target->carSlot, target->index, toolIndex, size)
+			: workshop.LoosenFastener(target->slot, target->index, toolIndex, size);
+	};
+	auto tighten = [&]() {
+		return onCar ? workshop.TightenCarFastener(target->carSlot, target->index, toolIndex, size)
+			: workshop.TightenFastener(target->slot, target->index, toolIndex, size);
+	};
 
 	// Held to turn it: LMB does it up, RMB undoes it. Let go part way and it stays part way
 	// (m_fastenerTurns); once one is done, the button is let go before the next.
@@ -1520,7 +1682,7 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 	// Why the tool can't turn it each way, if it can't (a cordless tool needs a pack with something in it).
 	std::optional<size_t> battery = tool.powered ? BatteryOn(toolIndex) : std::nullopt;
 	auto problemWith = [&](bool tightening) -> std::optional<std::string> {
-		if (auto problem = workshop.TurningProblem(target->slot, target->index, toolIndex, size, tightening))
+		if (auto problem = turningProblem(tightening))
 			return problem;
 		if (tool.powered && !battery)
 			return std::format("There's no battery on the {}: look at a pack and press [E] to clip one on.", tool.name);
@@ -1548,7 +1710,7 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 
 	// Turned part way, the ring round the crosshair shows how far.
 	bool same = m_turning && m_turning->fastener.engine == target->engine && m_turning->fastener.slot == target->slot
-		&& m_turning->fastener.index == target->index;
+		&& m_turning->fastener.carSlot == target->carSlot && m_turning->fastener.index == target->index;
 	if (!same)
 		m_turning = Turning{ *target, true, { target->index } };
 	m_turning->progress = doneUp > 0.f && doneUp < 1.f ? doneUp : 0.f;
@@ -1594,7 +1756,7 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 		// Undoing a done-up one cracks it loose first: from then on it's no longer tight.
 		if (tightness != FastenerTightness::LOOSE)
 		{
-			if (!workshop.LoosenFastener(target->slot, target->index, toolIndex, size))
+			if (!loosen())
 				return true;
 			drawPack();
 			doneUp = 1.f;
@@ -1623,7 +1785,7 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 	m_fastenerTurns.erase(part->GetId());
 	m_turning->progress = 0.f;
 	m_turnDone = true;
-	if (!workshop.TightenFastener(target->slot, target->index, toolIndex, size))
+	if (!tighten())
 		return true;
 	drawPack();
 	if (torqueWrench)

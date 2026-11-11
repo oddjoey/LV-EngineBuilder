@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <numbers>
 
 #include "Furniture.h"
 #include "PartCatalog.h"
@@ -39,6 +40,15 @@ namespace
 	constexpr double DYNO_COST = 50.0;
 	constexpr double DYNO_PRICE = 1200.0;
 	constexpr double HOIST_PRICE = 350.0;
+
+	// A ring's end gap, as read squared in a bore: kept with the ring, whichever bore it was read in.
+	void RecordEndGap(Part& ring, double gap, const std::string& with)
+	{
+		FeatureReading reading;
+		reading.toolName = with;
+		reading.value = gap;
+		ring.RecordReading(FeatureNames::END_GAP, reading);
+	}
 
 	// How tight a combination wrench does a nut or bolt up, as a share of its spec: by feel, but a spanner's
 	// short reach and a steady pull get it close every time, never dangerously loose or tight. Under spec
@@ -327,6 +337,8 @@ std::vector<double> Workshop::SizeOptions(PartType type)
 		case PartType::ROD_BEARING:		return { 0.0, -0.25, -0.50, -0.75 };
 		case PartType::INTAKE_VALVE:
 		case PartType::EXHAUST_VALVE:	return { 0.0, 0.075, 0.15, 0.38 };
+		// A differential is bought by its final drive ratio.
+		case PartType::DIFFERENTIAL:	return CarSpec::LE86Coupe().finalDriveOptions;
 		default:						return { 0.0 };
 	}
 }
@@ -338,7 +350,7 @@ bool Workshop::SoldUsed(PartType type)
 
 double Workshop::Quote(const PartOrder& order) const
 {
-	return PartFactory::PriceWithCompanions(order.type, PartQuality::OEM, order.condition, *m_spec) * std::max(order.quantity, 0);
+	return PartFactory::PriceWithCompanions(order.type, PartQuality::OEM, order.condition, *m_spec) * std::max(order.quantity, 0) * PartPriceFactor();
 }
 
 bool Workshop::Buy(const PartOrder& order)
@@ -437,6 +449,16 @@ bool Workshop::SellPart(const pPart& part)
 		Log("Take it off the engine stand before selling it.");
 		return false;
 	}
+	if (IsOnCar(*part))
+	{
+		Log("Take it off the car before selling it.");
+		return false;
+	}
+	if (CarriedOn(*part) || CarHostOf(*part))
+	{
+		Log("Take the spring off its strut, or the tire off its wheel, first.");
+		return false;
+	}
 	if (ShellIn(*part) || PistonOn(*part) || PinIn(*part) || RingOn(*part) || HostOf(*part))
 	{
 		Log("Take it apart first: the shell out, the ring off, the pin out and the piston off its rod.");
@@ -447,7 +469,7 @@ bool Workshop::SellPart(const pPart& part)
 	if (it == m_inventory.end())
 		return false;
 
-	double price = std::round(part->GetValue() * 0.5);
+	double price = PartSalePrice(*part);
 	m_money += price;
 	m_stats.moneyEarned += price;
 	m_stats.partsSold++;
@@ -584,6 +606,31 @@ double Workshop::BatteryUseFactor() const
 double Workshop::SaleFactor() const
 {
 	return 1.0 + 0.05 * SkillLevel(SkillKind::SALESMAN);
+}
+
+double Workshop::PartPriceFactor() const
+{
+	return 1.0 - 0.05 * SkillLevel(SkillKind::TRADE_DISCOUNT);
+}
+
+double Workshop::EquipmentPriceFactor() const
+{
+	return 1.0 - 0.05 * SkillLevel(SkillKind::TRADE_ACCOUNT);
+}
+
+double Workshop::PartSalePrice(const Part& part) const
+{
+	return std::round(part.GetValue() * 0.5 * (1.0 + 0.15 * SkillLevel(SkillKind::SCRAP_DEALER)));
+}
+
+double Workshop::ReputationFactor() const
+{
+	return 1.0 + 0.1 * SkillLevel(SkillKind::WORD_OF_MOUTH);
+}
+
+double Workshop::MachiningErrorFactor() const
+{
+	return std::pow(0.88, SkillLevel(SkillKind::MACHINIST));
 }
 
 double Workshop::WalkSpeedFactor() const
@@ -746,8 +793,11 @@ int Workshop::BestToolFor(AssemblyCheck check) const
 
 std::optional<std::string> Workshop::TurningProblem(AssemblySlot slot, int index, size_t toolIndex, int sizeMm, bool tightening) const
 {
-	const auto* holes = EngineAssembly::Holes(slot);
-	auto part = GetAssembly().Get(slot, index);
+	return TurningProblemFor(EngineAssembly::Holes(slot), GetAssembly().Get(slot, index), toolIndex, sizeMm, tightening);
+}
+
+std::optional<std::string> Workshop::TurningProblemFor(const FastenerHoles* holes, const pPart& part, size_t toolIndex, int sizeMm, bool tightening) const
+{
 	if (!holes || !part)
 		return "There's nothing there to turn.";
 	const auto& tools = ToolCatalog::All();
@@ -786,8 +836,15 @@ bool Workshop::TightenFastener(AssemblySlot slot, int index, size_t toolIndex, i
 		Log(*problem);
 		return false;
 	}
-	auto part = GetAssembly().Get(slot, index);
-	const auto* holes = EngineAssembly::Holes(slot);
+	DoUp(*EngineAssembly::Holes(slot), *GetAssembly().Get(slot, index), toolIndex);
+	AssemblyChanged();
+	return true;
+}
+
+void Workshop::DoUp(const FastenerHoles& holesRef, Part& partRef, size_t toolIndex)
+{
+	const auto* holes = &holesRef;
+	auto* part = &partRef;
 	const auto& tool = ToolCatalog::Of(toolIndex);
 
 	double torque = 0.0;
@@ -813,8 +870,6 @@ bool Workshop::TightenFastener(AssemblySlot slot, int index, size_t toolIndex, i
 	if (part->GetCondition() == PartCondition::DAMAGED)
 		torque *= 0.7;
 	part->SetTorque(torque);
-	AssemblyChanged();
-	return true;
 }
 
 bool Workshop::LoosenFastener(AssemblySlot slot, int index, size_t toolIndex, int sizeMm)
@@ -922,7 +977,7 @@ MachiningResult Workshop::MachineFeature(size_t machineIndex, Part& part, const 
 	if (!feature)
 		return { false, "No such feature." };
 
-	auto result = Machining::Apply(machine, part, *feature, parameter, *m_spec);
+	auto result = Machining::Apply(machine, part, *feature, parameter, *m_spec, MachiningErrorFactor());
 	if (result.success)
 	{
 		m_stats.cuts++;
@@ -988,12 +1043,15 @@ double Workshop::LineTotal(const CartLine& line) const
 	switch (line.kind)
 	{
 		case CartLine::Kind::PART:			return Quote(line.order);
-		case CartLine::Kind::TOOL:			return line.index < ToolCatalog::All().size() ? ToolCatalog::Of(line.index).price * line.quantity : 0.0;
-		case CartLine::Kind::MACHINE:		return line.index < MachineCatalog::All().size() ? MachineCatalog::All()[line.index].price : 0.0;
+		case CartLine::Kind::TOOL:			return line.index < ToolCatalog::All().size() ? ToolCatalog::Of(line.index).price * line.quantity * EquipmentPriceFactor() : 0.0;
+		case CartLine::Kind::MACHINE:		return line.index < MachineCatalog::All().size() ? MachineCatalog::All()[line.index].price * EquipmentPriceFactor() : 0.0;
 		case CartLine::Kind::ENGINE_STAND:	return ENGINE_STAND_PRICE * line.quantity;
 		case CartLine::Kind::FURNITURE:		return line.index < FurnitureCatalog::All().size() ? FurnitureCatalog::All()[line.index].price * line.quantity : 0.0;
 		case CartLine::Kind::DYNO:			return DYNO_PRICE;
 		case CartLine::Kind::HOIST:			return HOIST_PRICE;
+		case CartLine::Kind::PROJECT_CAR:	return PROJECT_CAR_PRICE;
+		case CartLine::Kind::FLUID:			return line.index < static_cast<size_t>(FLUID_PRODUCTS)
+			? FluidUnitPrice(static_cast<FluidProduct>(line.index)) * line.quantity * PartPriceFactor() : 0.0;
 	}
 	return 0.0;
 }
@@ -1027,6 +1085,14 @@ std::optional<std::string> Workshop::CartLineProblem(const CartLine& line, const
 		case CartLine::Kind::HOIST:
 			if (m_ownsHoist)
 				return "Already owned.";
+			break;
+		case CartLine::Kind::PROJECT_CAR:
+			if (m_car)
+				return "There's room in the salvage yard for one project car: sell this one first.";
+			break;
+		case CartLine::Kind::FLUID:
+			if (line.index >= static_cast<size_t>(FLUID_PRODUCTS) || line.quantity <= 0)
+				return "Not sold like that.";
 			break;
 		case CartLine::Kind::ENGINE_STAND:
 		{
@@ -1077,6 +1143,17 @@ bool Workshop::Checkout(const std::vector<CartLine>& cart)
 			case CartLine::Kind::FURNITURE:		for (int i = 0; i < line.quantity; i++) BuyFurniture(line.index); break;
 			case CartLine::Kind::DYNO:			BuyDyno(); break;
 			case CartLine::Kind::HOIST:			BuyHoist(); break;
+			case CartLine::Kind::PROJECT_CAR:	BuyProjectCar(); break;
+			case CartLine::Kind::FLUID:
+			{
+				auto product = static_cast<FluidProduct>(line.index);
+				if (Spend(LineTotal(line), FluidProductName(product)))
+				{
+					m_fluidStock[line.index] += FluidUnitLitres(product) * line.quantity;
+					Log(std::format("Bought {} x {:g} l of {}.", line.quantity, FluidUnitLitres(product), FluidProductName(product)));
+				}
+				break;
+			}
 		}
 	Log(std::format("Order placed: {} line{}, ${:.0f}. It's on its way to the roll-up door.", cart.size(), cart.size() == 1 ? "" : "s", total));
 	return true;
@@ -1149,6 +1226,8 @@ pPart Workshop::HostOf(const Part& part) const
 		for (const auto& [host, fitted] : *fittings)
 			if (fitted == part.GetId())
 				return FindPart(host);
+	if (auto ring = m_boreRings.find(part.GetId()); ring != m_boreRings.end())
+		return FindPart(ring->second.block);
 	return nullptr;
 }
 
@@ -1329,6 +1408,136 @@ bool Workshop::SeatPiston(int cylinder)
 	return true;
 }
 
+std::map<int, bool> Workshop::RingsInBore(int engine) const
+{
+	std::map<int, bool> rings;
+	if (engine < 0 || engine >= GetEngineCount())
+		return rings;
+	const auto& build = *m_engines[engine];
+	for (int cylinder = 0; cylinder < build.assembly.SlotCount(AssemblySlot::PISTON_RING); cylinder++)
+		if (build.assembly.Get(AssemblySlot::PISTON_RING, cylinder) && !build.assembly.Get(AssemblySlot::PISTON, cylinder))
+			rings[cylinder] = build.squaredRings.contains(cylinder);
+	return rings;
+}
+
+std::optional<std::string> Workshop::RingInBoreBlockedBy(int engine, int cylinder) const
+{
+	const auto& assembly = GetAssembly(engine);
+	if (!assembly.Get(AssemblySlot::BLOCK, 0))
+		return "The block has to go on first.";
+	if (assembly.Get(AssemblySlot::PISTON, cylinder))
+		return std::format("Piston {} is in that bore: a ring is gapped in an empty one.", cylinder + 1);
+	if (assembly.Get(AssemblySlot::PISTON_RING, cylinder))
+		return std::format("There's a ring in bore {} already.", cylinder + 1);
+	if (assembly.Get(AssemblySlot::HEAD_GASKET, 0))
+		return "The head gasket has to come off first: the ring goes in the top of the bore.";
+	return std::nullopt;
+}
+
+bool Workshop::SquareRing(int cylinder)
+{
+	auto rings = RingsInBore(m_activeEngine);
+	if (!rings.contains(cylinder) || rings[cylinder])
+		return false;
+	Active().squaredRings.insert(cylinder);
+	Log(std::format("Pushed the ring in bore {} down square with a piston, ready to gap with the feeler gauge.", cylinder + 1));
+	AssemblyChanged();
+	return true;
+}
+
+pPart Workshop::RingInLooseBore(const Part& block, int cylinder) const
+{
+	for (const auto& [ring, at] : m_boreRings)
+		if (at.block == block.GetId() && at.cylinder == cylinder)
+			return FindPart(ring);
+	return nullptr;
+}
+
+const BoreRing* Workshop::LooseBoreOf(const Part& ring) const
+{
+	auto it = m_boreRings.find(ring.GetId());
+	return it == m_boreRings.end() ? nullptr : &it->second;
+}
+
+std::optional<std::string> Workshop::LooseBoreBlockedBy(const Part& block, int cylinder) const
+{
+	if (block.GetType() != PartType::BLOCK || !block.FindFeature(FeatureNames::Bore(cylinder)))
+		return "That's not a bore.";
+	if (EngineOf(block) >= 0)
+		return "That block is on an engine stand: set the ring in the bore there.";
+	if (RingInLooseBore(block, cylinder))
+		return std::format("There's a ring in bore {} already.", cylinder + 1);
+	return std::nullopt;
+}
+
+bool Workshop::SetRingInLooseBore(const pPart& block, int cylinder, const pPart& ring)
+{
+	if (!block || !ring || ring->GetType() != PartType::PISTON_RING || EngineOf(*ring) >= 0 || HostOf(*ring))
+		return false;
+	if (auto blocked = LooseBoreBlockedBy(*block, cylinder))
+	{
+		Log(*blocked);
+		return false;
+	}
+	m_boreRings[ring->GetId()] = { block->GetId(), cylinder, false };
+	Log(std::format("Set the {} in the top of bore {} of the {}: push it down square with a piston (hold one, [E] on the ring), then "
+		"the feeler gauge reads its gap.", ring->GetName(), cylinder + 1, block->GetName()));
+	return true;
+}
+
+bool Workshop::SquareLooseRing(const Part& ring)
+{
+	auto it = m_boreRings.find(ring.GetId());
+	if (it == m_boreRings.end() || it->second.squared)
+		return false;
+	it->second.squared = true;
+	Log(std::format("Pushed the ring in bore {} down square with a piston, ready to gap with the feeler gauge.", it->second.cylinder + 1));
+	return true;
+}
+
+pPart Workshop::TakeRingOutOfLooseBore(const Part& ring)
+{
+	auto it = m_boreRings.find(ring.GetId());
+	if (it == m_boreRings.end())
+		return nullptr;
+	m_boreRings.erase(it);
+	auto part = FindPart(ring.GetId());
+	if (part)
+		Log(std::format("Took the {} out of the bore.", part->GetName()));
+	return part;
+}
+
+bool Workshop::MeasureLooseRingGap(Part& ring, int toolIndex)
+{
+	const BoreRing* at = LooseBoreOf(ring);
+	auto block = at ? FindPart(at->block) : nullptr;
+	if (!block)
+		return false;
+	if (!at->squared)
+	{
+		Log("Push the ring down square with a piston first.");
+		return false;
+	}
+	auto bore = block->FindFeature(FeatureNames::Bore(at->cylinder));
+	auto closed = ring.FindFeature(FeatureNames::CLOSED_DIAMETER);
+	if (!bore || !closed)
+		return false;
+	if (toolIndex < 0)
+		toolIndex = BestToolFor(AssemblyCheck::RING_GAP);
+	if (toolIndex < 0 || !OwnsTool(toolIndex) || !ToolCatalog::Of(toolIndex).CanCheck(AssemblyCheck::RING_GAP))
+	{
+		Log("You don't have a tool that can check a ring's gap.");
+		return false;
+	}
+	const auto& tool = ToolCatalog::Of(toolIndex);
+	// The ring has to pass through the tightest part of its bore, so that's where it's gapped (as EngineAssembly::RingGap).
+	double gap = std::numbers::pi * (bore->MinSample() - closed->Size());
+	RecordEndGap(ring, (std::max)(0.0, tool.Read(gap, MeasureScatterFactor())), std::format("{}, in bore {} of block #{}", tool.name, at->cylinder + 1, block->GetId()));
+	m_stats.measurements++;
+	Log(std::format("Checked the {}'s end gap in bore {} of the {} with the {}.", ring.GetName(), at->cylinder + 1, block->GetName(), tool.name));
+	return true;
+}
+
 bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 {
 	if (m_activeEngine == m_engineOnDyno)
@@ -1341,6 +1550,11 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 		Log("That engine is hanging from the hoist: lower it onto a stand to work on it.");
 		return false;
 	}
+	if (m_activeEngine == GetEngineInCar() && !ServiceableInCar(slot))
+	{
+		Log("That engine is in the car: only the top-end service parts (valve cover, plugs and leads, carburettor, oil filter) can be got at. Lift it out with the hoist for the rest.");
+		return false;
+	}
 	if (std::find(m_inventory.begin(), m_inventory.end(), part) == m_inventory.end())
 		return false;
 	// A part can only be in one engine at a time.
@@ -1349,7 +1563,42 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 		Log(std::format("That {} is on engine {}.", part->GetName(), engine + 1));
 		return false;
 	}
+	if (IsOnCar(*part))
+	{
+		Log(std::format("That {} is on the car.", part->GetName()));
+		return false;
+	}
 
+	// A block goes on with no rings sat in its bores.
+	if (slot == AssemblySlot::BLOCK && std::any_of(m_boreRings.begin(), m_boreRings.end(), [&](const auto& entry) { return entry.second.block == part->GetId() && FindPart(entry.first); }))
+	{
+		Log("Take the rings out of the block's bores first.");
+		return false;
+	}
+	// A ring on its own, in the top of an empty bore, to be gapped.
+	if (slot == AssemblySlot::PISTON_RING && !GetAssembly().Get(AssemblySlot::PISTON, index))
+	{
+		std::string error;
+		if (auto blocked = RingInBoreBlockedBy(m_activeEngine, index))
+			error = *blocked;
+		else if (GetAssembly().Install(slot, index, part, error))
+		{
+			Active().squaredRings.erase(index);
+			m_stats.partsFitted++;
+			Log(std::format("Set the {} in the top of bore {}: push it down square with a piston (hold one, [E] on the ring), then "
+				"the feeler gauge reads its gap.", part->GetName(), index + 1));
+			AssemblyChanged();
+			return true;
+		}
+		Log(error);
+		return false;
+	}
+	// A rod and piston can't go down a bore with a ring sat in it for gapping.
+	if (slot == AssemblySlot::CONNECTING_ROD && GetAssembly().Get(AssemblySlot::PISTON_RING, index))
+	{
+		Log(std::format("Take the ring out of bore {} first.", index + 1));
+		return false;
+	}
 	// A shell, piston or ring goes in with the rod, cap or piston it's fitted to, and a rod or cap only with them: its
 	// shell in, and a rod's piston pinned on, ringed, and the ring squeezed in the compressor to go down the bore.
 	if (auto host = EngineAssembly::CarriedBy(slot))
@@ -1446,6 +1695,11 @@ bool Workshop::RemovePart(AssemblySlot slot, int index)
 		Log("That engine is hanging from the hoist: lower it onto a stand to work on it.");
 		return false;
 	}
+	if (m_activeEngine == GetEngineInCar() && !ServiceableInCar(slot))
+	{
+		Log("That engine is in the car: only the top-end service parts (valve cover, plugs and leads, carburettor, oil filter) can be got at. Lift it out with the hoist for the rest.");
+		return false;
+	}
 	// In reverse build order: nothing comes off while something is fitted on top of it.
 	if (auto blocked = GetAssembly().RemovalBlockedBy(slot, index))
 	{
@@ -1465,6 +1719,8 @@ bool Workshop::RemovePart(AssemblySlot slot, int index)
 		removed->SetTightness(FastenerTightness::LOOSE);
 		if (slot == AssemblySlot::CONNECTING_ROD)
 			Active().unseated.erase(index);
+		if (slot == AssemblySlot::PISTON_RING)
+			Active().squaredRings.erase(index);
 		// What it carries comes off with it: its shell in it, a rod's piston on it (pinned), the piston's ring.
 		std::vector<std::pair<AssemblySlot, pPart>> hosts = { { slot, removed } };
 		for (size_t host = 0; host < hosts.size(); host++)
@@ -1505,14 +1761,31 @@ bool Workshop::MeasureAssembly(AssemblyCheck check, int index, bool rod, int too
 	{
 		case AssemblyCheck::OIL_CLEARANCE:		trueValue = rod ? assembly.RodClearance(index) : assembly.MainClearance(index); break;
 		case AssemblyCheck::CAM_CLEARANCE:		trueValue = assembly.CamClearance(index); break;
-		case AssemblyCheck::RING_GAP:			trueValue = assembly.RingGap(index); break;
+		case AssemblyCheck::RING_GAP:
+			// Only a ring on its own, squared in its bore, shows its gap.
+			if (!RingsInBore(m_activeEngine).contains(index) || !RingsInBore(m_activeEngine).at(index))
+			{
+				Log(std::format("Set a ring on its own in bore {} and push it down square with a piston to check its gap.", index + 1));
+				return false;
+			}
+			trueValue = assembly.RingGap(index);
+			break;
 		case AssemblyCheck::DECK_CLEARANCE:		trueValue = assembly.DeckClearance(index); break;
 		case AssemblyCheck::INSTALLED_HEIGHT:	trueValue = assembly.InstalledHeight(index / 2, index % 2 == 1); break;
 		case AssemblyCheck::ROD_SIDE_CLEARANCE:	trueValue = assembly.RodSideClearance(index); break;
 		case AssemblyCheck::BELT_DEFLECTION:	trueValue = assembly.BeltDeflection(index == 1); break;
 		default:								return false;
 	}
-	return RecordAssemblyReading(check, index, rod, toolIndex, trueValue);
+	if (!RecordAssemblyReading(check, index, rod, toolIndex, trueValue))
+		return false;
+	// The ring keeps its gap too.
+	if (check == AssemblyCheck::RING_GAP)
+		if (auto ring = assembly.Get(AssemblySlot::PISTON_RING, index))
+		{
+			int tool = toolIndex >= 0 ? toolIndex : BestToolFor(check);
+			RecordEndGap(*ring, GetAssemblyReading(check, index, rod)->value, std::format("{}, in bore {} on engine {}", ToolCatalog::Of(tool).name, index + 1, m_activeEngine + 1));
+		}
+	return true;
 }
 
 bool Workshop::RecordAssemblyReading(AssemblyCheck check, int index, bool rod, int toolIndex, std::optional<double> trueValue)
@@ -1560,6 +1833,11 @@ bool Workshop::MoveEngineToDyno(int engine)
 {
 	if (engine < 0 || engine >= GetEngineCount())
 		return false;
+	if (engine == GetEngineInCar())
+	{
+		Log("That engine is in the car: lift it out with the hoist first.");
+		return false;
+	}
 	if (!m_ownsDyno)
 	{
 		Log("The shop hasn't a dyno: buy one at the parts computer, or sell the engine untested.");
@@ -1618,6 +1896,8 @@ bool Workshop::HoistEngine(int engine)
 {
 	if (engine < 0 || engine >= GetEngineCount() || !m_ownsHoist)
 		return false;
+	if (engine == GetEngineInCar())
+		return HoistEngineFromCar();
 	if (m_engineOnHoist >= 0)
 	{
 		Log(std::format("Engine {} is hanging from the hoist already: lower it first.", m_engineOnHoist + 1));
@@ -1717,7 +1997,7 @@ const DynoResult& Workshop::RunDyno()
 	{
 		m_stats.bestPowerKw = std::max(m_stats.bestPowerKw, pull.peakPowerKw);
 		m_stats.bestTorqueNm = std::max(m_stats.bestTorqueNm, pull.peakTorqueNm);
-		EarnReputation(ShopRank::FOR_CLEAN_PULL);
+		EarnReputation(ShopRank::FOR_CLEAN_PULL * ReputationFactor());
 	}
 	if (pull.failed)
 		Log(std::format("Engine {}: dyno pull ended in failure at {:.0f} rpm.", m_activeEngine + 1, pull.failureRpm));
@@ -1746,6 +2026,11 @@ const EngineSale& Workshop::GetLastSale() const
 bool Workshop::SellEngine()
 {
 	auto& engine = Active();
+	if (m_activeEngine == GetEngineInCar())
+	{
+		Log("That engine is in the car: sell the car, or lift the engine out first.");
+		return false;
+	}
 	if (!engine.assembly.IsComplete())
 	{
 		Log(std::format("Engine {} isn't finished: buyers only take a complete engine.", m_activeEngine + 1));
@@ -1762,7 +2047,7 @@ bool Workshop::SellEngine()
 	double horsepower = pull.failed ? 0.0 : pull.peakPowerKw * 1.341;
 	double value = pull.failed ? std::round(partsValue * 0.3 * SaleFactor())
 		: std::round((partsValue * 0.8 + horsepower * 8.0 * pull.healthScore / 100.0) * SaleFactor());
-	double earned = pull.failed ? 0.0 : ShopRank::ForSale(pull.healthScore, horsepower);
+	double earned = pull.failed ? 0.0 : ShopRank::ForSale(pull.healthScore, horsepower) * ReputationFactor();
 	if (!pull.failed)
 	{
 		m_stats.bestPowerKw = std::max(m_stats.bestPowerKw, pull.peakPowerKw);
@@ -1783,6 +2068,7 @@ bool Workshop::SellEngine()
 
 	engine.assembly.Clear();
 	engine.unseated.clear();
+	engine.squaredRings.clear();
 	engine.readings.clear();
 	engine.dynoCurrent = false;
 	// Sold off the dyno, it leaves the dyno free too.

@@ -9,7 +9,7 @@
 
 namespace
 {
-	constexpr long long FILE_VERSION = 1;
+	constexpr long long FILE_VERSION = 2;
 }
 
 bool Profiles::Load(const std::string& path, std::string& error)
@@ -23,7 +23,8 @@ bool Profiles::Load(const std::string& path, std::string& error)
 	text << file.rdbuf();
 	Reader in(text.str());
 	in.Expect("lvprofiles");
-	if (in.Int() != FILE_VERSION)
+	long long version = in.Int();
+	if (version < 1 || version > FILE_VERSION)
 		in.Fail("it was saved by a different version of the server");
 	in.Expect("profiles");
 	long long count = in.Int();
@@ -39,6 +40,9 @@ bool Profiles::Load(const std::string& path, std::string& error)
 		profile.z = static_cast<float>(in.Num());
 		profile.yaw = static_cast<float>(in.Num());
 		profile.pitch = static_cast<float>(in.Num());
+		// Before version 2 a server had one garage, which nobody belongs to now: everyone chooses afresh.
+		if (version >= 2)
+			profile.garage = static_cast<int>(in.Int());
 		m_profiles[profile.account] = profile;
 	}
 	if (in.Failed())
@@ -56,7 +60,7 @@ bool Profiles::Save(std::string& error)
 	out.Word("profiles").Int(m_profiles.size()).Line();
 	for (const auto& [account, profile] : m_profiles)
 		out.Int(profile.account).Str(profile.username).Str(profile.layout).Int(profile.placed)
-			.Num(profile.x).Num(profile.y).Num(profile.z).Num(profile.yaw).Num(profile.pitch).Line();
+			.Num(profile.x).Num(profile.y).Num(profile.z).Num(profile.yaw).Num(profile.pitch).Int(profile.garage).Line();
 
 	// Written beside the old one, then swapped in, so a crash mid-save never loses it.
 	std::string temporary = m_path + ".tmp";

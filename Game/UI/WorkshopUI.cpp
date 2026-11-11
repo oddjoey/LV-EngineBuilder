@@ -6,11 +6,13 @@
 #include <numbers>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <imgui.h>
 
 #include "ItemIcons.h"
+#include "MaterialText.h"
 #include "Ratings.h"
 #include "ModelPreview.h"
 #include "../FrameProfiler.h"
@@ -21,11 +23,12 @@
 
 namespace
 {
-	const ImVec4 COLOR_GOOD = { 0.45f, 0.90f, 0.45f, 1.f };
-	const ImVec4 COLOR_WARN = { 1.00f, 0.80f, 0.30f, 1.f };
-	const ImVec4 COLOR_BAD = { 1.00f, 0.40f, 0.40f, 1.f };
-	const ImVec4 COLOR_DIM = { 0.55f, 0.55f, 0.55f, 1.f };
-	const ImVec4 COLOR_XRAY = { 0.55f, 0.75f, 1.00f, 1.f };
+	// Not const: the store's light pages deepen them while it's drawn (WebsiteTheme).
+	ImVec4 COLOR_GOOD = { 0.45f, 0.90f, 0.45f, 1.f };
+	ImVec4 COLOR_WARN = { 1.00f, 0.80f, 0.30f, 1.f };
+	ImVec4 COLOR_BAD = { 1.00f, 0.40f, 0.40f, 1.f };
+	ImVec4 COLOR_DIM = { 0.55f, 0.55f, 0.55f, 1.f };
+	ImVec4 COLOR_XRAY = { 0.55f, 0.75f, 1.00f, 1.f };
 
 	const char* STATION_NAMES[Feature::STATIONS] = { "Top", "Middle", "Bottom" };
 	const char* AXIS_NAMES[Feature::AXES] = { "Thrust", "Pin" };
@@ -146,8 +149,191 @@ namespace
 		}
 		else if (!tool.assemblyChecks.empty())
 			steps.push_back("On an engine on its stand, once the parts involved are on: aim at the marked spot and left-click.");
+		if (std::find(tool.assemblyChecks.begin(), tool.assemblyChecks.end(), AssemblyCheck::RING_GAP) != tool.assemblyChecks.end())
+			steps.push_back("Ring gap: hold a ring and press E at the top of an empty bore to set it in on its own (a block off the engine, or on the stand with the head off). Hold a "
+				"piston and press E on the ring to push it down square, then aim at it and left-click. Take the ring out with E.");
 		steps.push_back("Each reading is kept on the part, against its spec: look at the part, or set it on the workbench and press E at the bench.");
 		return steps;
+	}
+
+	// What a feature is, and what it means for the engine: shown when it's opened on the workbench.
+	std::string FeatureExplanation(PartType type, const std::string& name)
+	{
+		auto starts = [&](std::string_view prefix) { return name.starts_with(prefix); };
+		auto ends = [&](std::string_view suffix) { return name.ends_with(suffix); };
+		auto has = [&](std::string_view part) { return name.find(part) != std::string::npos; };
+		bool exhaust = starts("Exhaust");
+
+		// The bottom end.
+		if (starts("Bore "))
+			return "The cylinder the piston runs in. It wears oval and tapered (most at the top, where the rings turn round), and every "
+				"bit it's out costs ring seal: compression lost and oil burnt. Bored and honed oversize, it takes oversize pistons.";
+		if (starts("Main Housing"))
+			return "The bore in the block, with its main cap bolted on, that the crank's main bearing shells sit in. It has to be round "
+				"and in line with the others, or the shells are crushed out of shape and the crank binds or wears them through.";
+		if (starts("Main Journal"))
+			return "Where the crankshaft turns in the main bearings. Its size against the shells sets the main oil clearance: too much "
+				"and the oil pressure falls and the bearings knock, too little and they run dry and seize. Worn, it's ground undersize "
+				"for undersize shells.";
+		if (starts("Rod Journal") && ends("Width"))
+			return "How wide the crank pin is between its cheeks. With the rod's big end width, it sets rod side clearance: room for the "
+				"rod to float and oil to spill out the sides and cool the bearing.";
+		if (starts("Rod Journal"))
+			return "The crank pin a connecting rod runs on. Its size against the rod shells sets the rod oil clearance, the most loaded "
+				"bearing in the engine. Worn, it's ground undersize for undersize shells.";
+		if (name == FeatureNames::DECK_HEIGHT)
+			return "From the crank's centre line to the block's top deck. With the stroke, rod length and piston, it sets how far below "
+				"the deck the piston stops at the top: the deck clearance, which sets quench and compression.";
+		if (name == FeatureNames::DECK_FLATNESS)
+			return type == PartType::CYLINDER_HEAD
+				? "How flat the head's face is where it meets the gasket. A warped head (from overheating, usually) leaks compression and "
+					"coolant past the gasket. Skimmed flat, it's a little thinner, which raises compression."
+				: "How flat the block's top face is where the head gasket sits. A warped deck lets the gasket leak: compression, coolant or "
+					"oil getting where it shouldn't. Skimmed flat, the pistons come up closer to the head.";
+		if (name == FeatureNames::STROKE)
+			return "How far the piston travels, set by how far the crank pins sit off the centre line. It sets the engine's "
+				"displacement, and with the rod and piston, how high the piston comes up the bore.";
+		if (name == FeatureNames::BIG_END)
+			return "The bore at the crank end of the rod, with its cap torqued on, that the rod shells sit in. Stretched oval by the "
+				"loads, it lets the shells move and spin; resized, it's round again.";
+		if (name == FeatureNames::CENTER_LENGTH)
+			return "From the centre of the big end to the centre of the small end (the pin). Each rod has to match: a longer one pushes its "
+				"piston higher and changes that cylinder's compression and deck clearance.";
+		if (name == FeatureNames::BIG_END_WIDTH)
+			return "How wide the big end is across its faces. With the crank pin's width, it sets the rod side clearance.";
+		if (name == FeatureNames::ROD_BEND)
+			return "How far the rod's two bores are out of parallel, seen from the side. A bent rod cocks the piston in the bore: it wears "
+				"the skirt and bore on one side and loads the bearing on its edge.";
+		if (name == FeatureNames::ROD_TWIST)
+			return "How far the rod's two bores are twisted against each other. A twisted rod rocks the piston and edge-loads the bearing, "
+				"the same as a bent one.";
+		if (name == FeatureNames::SKIRT)
+			return "The piston's diameter at the skirt, where it's widest. Against the bore it sets piston to wall clearance: too little and "
+				"it scuffs or seizes once hot, too much and it rocks and slaps, and the rings never seal.";
+		if (name == FeatureNames::COMPRESSION_HEIGHT)
+			return "From the centre of the pin to the piston's crown. It sets how high the crown comes up the bore, so the deck clearance and "
+				"the compression.";
+		if (name == FeatureNames::DISH_VOLUME)
+			return "How much the dish in the crown holds. It adds to the room above the piston at the top of its stroke, so a bigger dish "
+				"means lower compression.";
+		if (name == FeatureNames::CLOSED_DIAMETER)
+			return "How big the ring is when squeezed shut, ends touching. In its bore it sets the end gap, the room the ends need to grow "
+				"into once hot: too small a gap and the ends butt and break the ring; too big and the gas blows by. It's read as the end "
+				"gap with feelers, the ring squared on its own in its bore, and opened up on a ring filer.";
+		if (name == FeatureNames::WALL_THICKNESS)
+			return "How thick the bearing shell is. With the housing and journal it sets the oil clearance; undersize shells are thicker to "
+				"make up for a journal ground smaller. A shell worn thin opens the clearance up.";
+		if (name == FeatureNames::COMPRESSED_THICKNESS)
+			return "How thick the head gasket is once the head is torqued down on it. It sets how far the head sits above the pistons: "
+				"thinner raises the compression and tightens the quench, thicker lowers them.";
+
+		// The head and valvetrain.
+		if (starts("Chamber"))
+			return "How much the combustion chamber in the head holds. It's most of the room above the piston at the top of its stroke, so a "
+				"smaller chamber means more compression. Every cylinder's should match, or they don't make the same power.";
+		if (has("Guide"))
+			return std::format("The bore in the head the {} valve's stem slides in. Worn, the stem rocks in it: the valve doesn't seat "
+				"square{}. Reamed oversize, it takes an oversize stem.", exhaust ? "exhaust" : "intake",
+				exhaust ? " and runs hot" : " and oil is sucked down the stem into the cylinder");
+		if (has("Seat") && ends("Width"))
+			return "How wide a band the valve seals on in the seat. Too narrow and the valve can't get its heat out into the head and burns; "
+				"too wide and it doesn't press hard enough to seal and carbon gets trapped. Cut with a seat cutter.";
+		if (has("Seat") && ends("Runout"))
+			return "How far the seat wobbles round its guide. A seat out of true with its guide leaves the valve sealing on one side only: "
+				"it leaks compression and burns where it doesn't touch.";
+		if (has("Seat") && ends("Recession"))
+			return "How far the seat has sunk into the head from wear (and valve hammering). Sunk, the valve sits higher, the spring's "
+				"installed height grows and the spring pressure falls.";
+		if (starts("Cam Bore"))
+			return "The bore in the head, with its cam cap on, that a cam journal turns in. Against the journal it sets the cam oil "
+				"clearance.";
+		if (starts("Cam Journal"))
+			return "Where the camshaft turns in the head. Against its bore it sets the cam oil clearance: worn, the oil pressure falls and "
+				"the cam rattles in its bores.";
+		if (has("Lobe") && ends("Height"))
+			return "How tall the cam lobe is, heel to nose. The difference from the base circle is how far it opens the valve: a lobe worn "
+				"down opens its valve less and that cylinder breathes, and makes power, less.";
+		if (has("Face Flatness") && (type == PartType::CYLINDER_HEAD))
+			return std::format("How flat the head's {} port face is, where the manifold bolts on. Warped, the manifold gasket leaks{}.",
+				exhaust ? "exhaust" : "intake", exhaust ? ": hot gas ticks out past it and burns the gasket" : " air in: the engine runs lean and idles badly");
+		if (name == FeatureNames::FUEL_PUMP_ECCENTRIC)
+			return "The height of the cam's eccentric that works the mechanical fuel pump's arm. Worn down, the pump strokes less and can't "
+				"keep up with the fuel at high revs.";
+		if (name == FeatureNames::CAM_END_PLAY)
+			return "How far the cam slides end to end in the head. Too much and it walks back and forth, knocking the timing out and "
+				"wearing its thrust faces.";
+		if (name == FeatureNames::CAM_RUNOUT)
+			return "How far the cam's middle wobbles as it turns, held at its ends. A bent cam loads its journals unevenly and wears them "
+				"out of round.";
+		if (name == FeatureNames::STEM)
+			return "The diameter of the valve's stem. Against its guide it sets the stem clearance: worn, it rocks and leaks oil past the "
+				"seal.";
+		if (name == FeatureNames::MARGIN)
+			return "The thickness of the valve head's rim, above the face. Ground too thin (or burnt thin), the edge can't hold its heat and "
+				"burns through or cracks off.";
+		if (name == FeatureNames::FACE_RUNOUT)
+			return "How far the valve's face wobbles round its stem. A face out of true with the stem seals on one side only, the same as a "
+				"bad seat.";
+		if (name == FeatureNames::VALVE_LENGTH)
+			return "The valve's length, tip to head. Ground faces and sunk seats leave the tip higher, which changes the spring's "
+				"installed height and the valvetrain's geometry.";
+		if (name == FeatureNames::SEAT_SINK)
+			return "How far the valve sits down into its seat from face and seat grinding. The more it sinks, the higher the stem tip comes "
+				"up and the lower the spring pressure.";
+		if (name == FeatureNames::FREE_LENGTH)
+			return "The spring's length sitting free. A tired spring sags shorter and pushes less; one much shorter than its mates is done.";
+		if (name == FeatureNames::SEAT_PRESSURE)
+			return "How hard the spring pushes at its installed height, holding the valve shut. Too little and the valve floats at high revs "
+				"and bounces on its seat; too much and it wears the cam lobe.";
+		if (name == FeatureNames::SPRING_RATE)
+			return "How much harder the spring pushes for each millimetre it's squeezed. It sets the pressure with the valve open, keeping "
+				"the valve following the cam.";
+		if (name == FeatureNames::SPRING_SQUARENESS)
+			return "How far the spring leans off upright, stood on its end. A spring out of square pushes the valve sideways, wearing the "
+				"guide and the stem.";
+
+		// Ancillaries.
+		if (name == FeatureNames::ROTOR_TIP_CLEARANCE)
+			return "The gap between the oil pump's inner and outer rotor tips. Worn wide, oil slips back round inside the pump and the oil "
+				"pressure falls, worst at idle when hot.";
+		if (name == FeatureNames::ROTOR_SIDE_CLEARANCE)
+			return "The gap between the oil pump's rotors and its cover. Worn wide, oil leaks past the sides of the rotors and the pump "
+				"makes less pressure.";
+		if (name == FeatureNames::RAIL_FLATNESS || name == FeatureNames::FLANGE_FLATNESS || name == FeatureNames::FACE_FLATNESS)
+			return "How flat the face is where it bolts on with a gasket. Bent or warped, the gasket can't seal it: a leak of oil, coolant, air "
+				"or exhaust, whichever it holds in.";
+		if (name == FeatureNames::ROCKER_BORE)
+			return "The bore of the rocker arm that rides on its shaft. Worn, the rocker rocks on the shaft and its tip wanders across the "
+				"valve stem, noisy and wearing.";
+		if (name == FeatureNames::ROCKER_SHAFT_DIAMETER)
+			return "The diameter of the shaft the rockers pivot on. Worn under each rocker, it lets them rock and clatter and leaks the oil "
+				"fed through it.";
+		if (name == FeatureNames::ROOT_DIAMETER)
+			return "The diameter across the bottom of the teeth. Worn down, the belt rides lower and its teeth slip against the sprocket's: "
+				"the cam timing drifts and the belt wears.";
+		if (name == FeatureNames::BELT_TOOTH_HEIGHT)
+			return "How tall the belt's teeth stand. Worn short, they can ride up over the sprocket's teeth: the timing jumps, and the valves "
+				"can hit the pistons.";
+		if (name == FeatureNames::SHAFT_PLAY || name == FeatureNames::IDLER_PLAY)
+			return "How much the shaft rocks in its bearing. Worn bearings let it wobble: noise, a belt that runs off true and wears, and "
+				"before long a bearing that seizes.";
+		if (name == FeatureNames::TENSIONER_TRAVEL)
+			return "How far the tensioner has left to take up the belt's stretch. With little left, it can't keep the belt tight as it "
+				"stretches further.";
+		if (name == FeatureNames::RING_RUNOUT)
+			return "How far the crank pulley's outer ring wobbles. It's bonded on rubber that damps the crank's twisting; a ring that's "
+				"slipped or wobbles means the rubber is going, and the crank is left undamped.";
+		if (name == FeatureNames::ELECTRODE_GAP)
+			return "The gap the spark jumps. Worn wide it needs more voltage than the coil gives and misfires under load; too tight and the "
+				"spark is small and lights the mixture poorly.";
+		if (name == FeatureNames::THROTTLE_BORE)
+			return "The bore the throttle plate shuts in. Worn oval, the plate can't shut it off and air leaks past at idle.";
+		if (name == FeatureNames::INJECTOR_FLOW || name == FeatureNames::JET_FLOW)
+			return "How much fuel it passes in 15 seconds on the bench. A clogged one passes less and leaves its cylinders lean, hotter and "
+				"down on power.";
+		if (name == FeatureNames::FLYWHEEL_RUNOUT)
+			return "How far the face the clutch grips wobbles as it turns. Out of true, the clutch judders as it takes up.";
+		return "";
 	}
 
 	std::string SizeClassLabel(double sizeClass)
@@ -161,6 +347,107 @@ namespace
 	}
 
 	constexpr const char* XRAY_TIP = "The part's real geometry (debug x-ray). The player never gets to see this.";
+
+	// The UI is drawn into a linear target and shown brighter, so colours meant as they'd look on a web page (the
+	// store's) are written as on screen and darkened to match.
+	float WebChannel(float value)
+	{
+		return std::pow(value, 2.2f);
+	}
+	ImU32 Web(int r, int g, int b, int a = 255)
+	{
+		auto channel = [](int value) { return static_cast<int>(std::lround(WebChannel(value / 255.f) * 255.f)); };
+		return IM_COL32(channel(r), channel(g), channel(b), a);
+	}
+	ImVec4 WebV(float r, float g, float b, float a = 1.f)
+	{
+		return { WebChannel(r), WebChannel(g), WebChannel(b), a };
+	}
+
+	// The store's website colours, light or dark (the Dark mode setting), as they'd look on screen.
+	struct SitePalette
+	{
+		// The window's ImGui colours.
+		ImVec4 page, panel, popup, text, textDisabled, border, frame, frameHovered, frameActive;
+		ImVec4 button, buttonHovered, buttonActive, header, headerHovered, headerActive;
+		ImVec4 scrollbar, grab, grabHovered, grabActive, check, checkActive, tableHeader, tableLine, rowAlt;
+		// The shared status colours, to read on its pages.
+		ImVec4 good, warn, bad, dim, xray;
+		// The browser, the site's header and menu, and the page.
+		ImU32 browser, tab, toolbar, navButton, address, addressBorder, lock, browserLine;
+		ImU32 ink, muted, brand, cartText, menu, menuLine, linkActive, linkHover, linkUnderline, delivery, heading;
+		ImVec4 home;
+		// The product cards.
+		ImU32 card, cardShadow, cardShadowHovered, photo, cardBorder, cardBorderHovered, cardInk, cardPrice, cardMuted;
+	};
+
+	SitePalette MakeSitePalette(bool dark)
+	{
+		SitePalette p;
+		if (!dark)
+		{
+			p.page = WebV(0.957f, 0.961f, 0.969f); p.panel = WebV(1.f, 1.f, 1.f); p.popup = WebV(1.f, 1.f, 1.f);
+			p.text = WebV(0.12f, 0.13f, 0.16f); p.textDisabled = WebV(0.42f, 0.45f, 0.50f); p.border = WebV(0.85f, 0.86f, 0.88f);
+			p.frame = WebV(0.94f, 0.95f, 0.96f); p.frameHovered = WebV(0.90f, 0.92f, 0.95f); p.frameActive = WebV(0.86f, 0.89f, 0.94f);
+			p.button = WebV(1.00f, 0.60f, 0.00f); p.buttonHovered = WebV(1.00f, 0.68f, 0.18f); p.buttonActive = WebV(0.92f, 0.52f, 0.00f);
+			p.header = WebV(0.86f, 0.91f, 0.98f); p.headerHovered = WebV(0.80f, 0.87f, 0.97f); p.headerActive = WebV(0.74f, 0.83f, 0.96f);
+			p.scrollbar = WebV(0.95f, 0.95f, 0.96f); p.grab = WebV(0.75f, 0.77f, 0.80f); p.grabHovered = WebV(0.65f, 0.67f, 0.71f);
+			p.grabActive = WebV(0.55f, 0.58f, 0.62f); p.check = WebV(0.10f, 0.45f, 0.85f); p.checkActive = WebV(0.08f, 0.38f, 0.75f);
+			p.tableHeader = WebV(0.92f, 0.93f, 0.95f); p.tableLine = WebV(0.90f, 0.91f, 0.93f); p.rowAlt = WebV(0.97f, 0.97f, 0.98f);
+			p.good = WebV(0.10f, 0.55f, 0.22f); p.warn = WebV(0.78f, 0.47f, 0.00f); p.bad = WebV(0.80f, 0.15f, 0.15f);
+			p.dim = WebV(0.47f, 0.49f, 0.53f); p.xray = WebV(0.15f, 0.40f, 0.80f);
+			p.browser = Web(222, 225, 230); p.tab = Web(248, 249, 251); p.toolbar = Web(248, 249, 251); p.navButton = Web(232, 234, 238);
+			p.address = Web(255, 255, 255); p.addressBorder = Web(200, 204, 212); p.lock = Web(60, 140, 70); p.browserLine = Web(200, 204, 212);
+			p.ink = Web(30, 34, 42); p.muted = Web(110, 116, 126); p.brand = Web(22, 52, 96); p.cartText = Web(30, 34, 42);
+			p.menu = Web(255, 255, 255); p.menuLine = Web(220, 223, 228); p.linkActive = Web(22, 52, 96); p.linkHover = Web(20, 90, 170);
+			p.linkUnderline = Web(200, 204, 212); p.delivery = Web(25, 135, 65); p.heading = Web(22, 52, 96); p.home = WebV(0.08f, 0.35f, 0.67f);
+			p.card = Web(255, 255, 255); p.cardShadow = Web(0, 0, 0, 16); p.cardShadowHovered = Web(0, 0, 0, 38); p.photo = Web(52, 58, 70);
+			p.cardBorder = Web(220, 223, 228); p.cardBorderHovered = Web(150, 160, 175);
+			p.cardInk = Web(30, 34, 42); p.cardPrice = Web(25, 135, 65); p.cardMuted = Web(120, 126, 136);
+		}
+		else
+		{
+			p.page = WebV(0.09f, 0.10f, 0.12f); p.panel = WebV(0.13f, 0.14f, 0.17f); p.popup = WebV(0.15f, 0.16f, 0.19f);
+			p.text = WebV(0.90f, 0.91f, 0.93f); p.textDisabled = WebV(0.58f, 0.61f, 0.66f); p.border = WebV(0.24f, 0.26f, 0.30f);
+			p.frame = WebV(0.18f, 0.19f, 0.23f); p.frameHovered = WebV(0.22f, 0.24f, 0.28f); p.frameActive = WebV(0.26f, 0.28f, 0.33f);
+			p.button = WebV(0.88f, 0.48f, 0.04f); p.buttonHovered = WebV(0.96f, 0.56f, 0.10f); p.buttonActive = WebV(0.78f, 0.40f, 0.00f);
+			p.header = WebV(0.20f, 0.30f, 0.45f); p.headerHovered = WebV(0.25f, 0.36f, 0.52f); p.headerActive = WebV(0.28f, 0.40f, 0.58f);
+			p.scrollbar = WebV(0.11f, 0.12f, 0.14f); p.grab = WebV(0.30f, 0.32f, 0.36f); p.grabHovered = WebV(0.38f, 0.40f, 0.45f);
+			p.grabActive = WebV(0.46f, 0.49f, 0.54f); p.check = WebV(0.40f, 0.65f, 1.00f); p.checkActive = WebV(0.50f, 0.72f, 1.00f);
+			p.tableHeader = WebV(0.17f, 0.18f, 0.22f); p.tableLine = WebV(0.20f, 0.21f, 0.25f); p.rowAlt = WebV(0.15f, 0.16f, 0.19f);
+			p.good = WebV(0.40f, 0.82f, 0.50f); p.warn = WebV(1.00f, 0.75f, 0.30f); p.bad = WebV(1.00f, 0.45f, 0.45f);
+			p.dim = WebV(0.55f, 0.58f, 0.62f); p.xray = WebV(0.55f, 0.75f, 1.00f);
+			p.browser = Web(30, 32, 38); p.tab = Web(46, 49, 56); p.toolbar = Web(46, 49, 56); p.navButton = Web(60, 64, 72);
+			p.address = Web(24, 26, 30); p.addressBorder = Web(66, 70, 80); p.lock = Web(95, 205, 125); p.browserLine = Web(20, 22, 26);
+			p.ink = Web(230, 232, 236); p.muted = Web(150, 156, 166); p.brand = Web(16, 34, 62); p.cartText = Web(22, 24, 28);
+			p.menu = Web(28, 30, 36); p.menuLine = Web(50, 54, 62); p.linkActive = Web(255, 153, 0); p.linkHover = Web(110, 175, 255);
+			p.linkUnderline = Web(90, 96, 108); p.delivery = Web(95, 205, 125); p.heading = Web(240, 242, 245); p.home = WebV(0.43f, 0.69f, 1.f);
+			p.card = Web(36, 39, 46); p.cardShadow = Web(0, 0, 0, 70); p.cardShadowHovered = Web(0, 0, 0, 110); p.photo = Web(22, 24, 30);
+			p.cardBorder = Web(56, 60, 68); p.cardBorderHovered = Web(105, 112, 126);
+			p.cardInk = Web(230, 232, 236); p.cardPrice = Web(95, 205, 125); p.cardMuted = Web(140, 146, 156);
+		}
+		return p;
+	}
+
+	// The palette the store is being drawn in (set by WebsiteTheme), light otherwise.
+	const SitePalette* g_site = nullptr;
+	const SitePalette& Site()
+	{
+		static const SitePalette light = MakeSitePalette(false);
+		return g_site ? *g_site : light;
+	}
+
+	// The store's product cards: a card with a shadow, the icon on a dark tile like a product photo (the icons are
+	// drawn light), the name and the price in green.
+	void ProductCard(ImDrawList* drawList, ImVec2 min, ImVec2 max, float photoBottom, bool selected, bool hovered)
+	{
+		const SitePalette& site = Site();
+		drawList->AddRectFilled({ min.x + 1.f, min.y + 3.f }, { max.x + 1.f, max.y + 3.f }, hovered ? site.cardShadowHovered : site.cardShadow, 8.f);
+		drawList->AddRectFilled(min, max, site.card, 8.f);
+		drawList->AddRectFilled({ min.x + 6.f, min.y + 6.f }, { max.x - 6.f, photoBottom }, site.photo, 6.f);
+		ImU32 border = selected ? Web(255, 153, 0) : hovered ? site.cardBorderHovered : site.cardBorder;
+		drawList->AddRect(min, max, border, 8.f, 0, selected ? 2.5f : 1.f);
+	}
 
 	// TableHeadersRow, but each column header explains itself on hover. Tips past the column count are ignored.
 	void HeadersRow(std::initializer_list<const char*> tips)
@@ -418,6 +705,10 @@ void WorkshopUI::Draw(Workshop& workshop)
 		title = "Engine Stand";
 	else if (m_currentTab == WorkshopTab::DYNO)
 		title = "Dyno Cell";
+	else if (m_currentTab == WorkshopTab::CAR)
+		title = "LE86 Project Car";
+	else if (m_currentTab == WorkshopTab::QUARRY)
+		title = "Desert Quarry";
 
 	if (ImGui::Begin(std::format("{}###Workshop", title).c_str(), &m_open))
 	{
@@ -435,6 +726,8 @@ void WorkshopUI::Draw(Workshop& workshop)
 					break;
 				case WorkshopTab::ENGINE_STAND:	DrawAssemblyTab(workshop);	break;
 				case WorkshopTab::DYNO:			DrawDynoTab(workshop);		break;
+				case WorkshopTab::CAR:			DrawCarTab(workshop);		break;
+				case WorkshopTab::QUARRY:		DrawQuarryTab(workshop);	break;
 				default:						DrawInventoryTab(workshop);	break;
 			}
 		}
@@ -546,6 +839,10 @@ void WorkshopUI::DrawInventoryTab(Workshop& workshop)
 
 			const auto& part = item.part;
 			ImGui::PushID(static_cast<int>(part->GetId()));
+			// What's fitted to a part is listed under it, stepped in.
+			float indent = item.depth * 16.f;
+			if (indent > 0.f)
+				ImGui::Indent(indent);
 			PartIcons::Icon(part->GetType(), ImGui::GetTextLineHeight() * 1.3f);
 			ImGui::SameLine();
 			bool damaged = part->GetCondition() == PartCondition::DAMAGED;
@@ -561,6 +858,8 @@ void WorkshopUI::DrawInventoryTab(Workshop& workshop)
 			}
 			if (damaged)
 				ImGui::PopStyleColor();
+			if (indent > 0.f)
+				ImGui::Unindent(indent);
 			ImGui::PopID();
 		}
 	}
@@ -630,7 +929,9 @@ void WorkshopUI::DrawMachineTab(Workshop& workshop)
 		ImGui::PushTextWrapPos(0.f);
 		ImGui::Text("#%u %s", part->GetId(), part->GetName().c_str());
 		ImGui::PopTextWrapPos();
-		ImGui::TextDisabled("%s  |  %s", GetMaterial(part->GetMaterial()).name, PartConditionName(part->GetCondition()));
+		MaterialText(part->GetMaterial());
+		ImGui::SameLine();
+		ImGui::TextDisabled("|  %s", PartConditionName(part->GetCondition()));
 		ImGui::EndGroup();
 		if (part->GetCondition() == PartCondition::DAMAGED)
 			ImGui::TextColored(COLOR_BAD, "Damaged: %s", part->GetDamageReason().c_str());
@@ -682,8 +983,27 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 	ImGui::SameLine();
 	ImGui::BeginGroup();
 	ImGui::Text("%s", part->GetName().c_str());
-	ImGui::TextDisabled("#%u  |  %s  |  %s", part->GetId(), GetMaterial(part->GetMaterial()).name, PartConditionName(part->GetCondition()));
+	ImGui::TextDisabled("#%u  |", part->GetId());
+	ImGui::SameLine();
+	MaterialText(part->GetMaterial());
+	ImGui::SameLine();
+	ImGui::TextDisabled("|  %s", PartConditionName(part->GetCondition()));
 	ImGui::EndGroup();
+
+	// What it is and what it does, what it's made of, and the shop's note on it.
+	ImGui::Spacing();
+	ImGui::PushTextWrapPos(0.f);
+	ImGui::TextUnformatted(PartCatalog::Purpose(part->GetType()));
+	const Material& material = GetMaterial(part->GetMaterial());
+	ImGui::TextDisabled("Made of");
+	ImGui::SameLine();
+	MaterialText(part->GetMaterial());
+	ImGui::SameLine();
+	ImGui::TextDisabled("(%s): %s", MaterialTierName(material.tier), MaterialTierMeaning(material.tier));
+	if (const char* note = PartCatalog::Get(part->GetType()).description; note && *note)
+		ImGui::TextDisabled("%s", note);
+	ImGui::PopTextWrapPos();
+	ImGui::Spacing();
 
 	if (part->GetCondition() == PartCondition::DAMAGED)
 		ImGui::TextColored(COLOR_BAD, "Damaged: %s", part->GetDamageReason().c_str());
@@ -725,7 +1045,7 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 
 	bool installed = workshop.EngineOf(*part) >= 0;
 	ImGui::BeginDisabled(installed);
-	if (ImGui::Button(std::format("Sell for ${:.0f}", std::round(part->GetValue() * 0.5)).c_str()))
+	if (ImGui::Button(std::format("Sell for ${:.0f}", workshop.PartSalePrice(*part)).c_str()))
 	{
 		workshop.SellPart(part);
 		ImGui::EndDisabled();
@@ -811,9 +1131,20 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 			ImGui::TableSetColumnIndex(1);
 			ImGui::TextUnformatted(SpecText(feature).c_str());
 
+			// A ring is read by its end gap, squared in a bore.
+			const FeatureReading* endGap = feature.name == FeatureNames::CLOSED_DIAMETER ? part->GetReading(FeatureNames::END_GAP) : nullptr;
+			const Range& gapSpec = workshop.GetSpec().ringGap;
+
 			ImGui::TableSetColumnIndex(2);
-			if (!feature.directlyMeasurable)
-				ImGui::TextDisabled("Check on stand");
+			if (endGap)
+			{
+				ImGui::TextColored(endGap->stale ? COLOR_DIM : ImGui::GetStyleColorVec4(ImGuiCol_Text), "gap %s%s", Deviation(endGap->value).c_str(),
+					endGap->stale ? " (stale)" : "");
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("End gap, squared in a bore: %s", endGap->toolName.c_str());
+			}
+			else if (!feature.directlyMeasurable)
+				ImGui::TextDisabled(feature.name == FeatureNames::CLOSED_DIAMETER ? "Gap it in a bore" : "Check on stand");
 			else if (reading && reading->hasSize)
 			{
 				auto measured = FromReading(feature, *reading);
@@ -837,7 +1168,10 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 				ImGui::TextDisabled("-");
 
 			ImGui::TableSetColumnIndex(4);
-			if (reading && !reading->stale && (reading->hasSize || reading->finishRa))
+			if (endGap && !endGap->stale)
+				ImGui::TextColored(gapSpec.Contains(endGap->value) ? COLOR_GOOD : COLOR_BAD, "%s",
+					endGap->value < gapSpec.min ? "Gap too tight" : endGap->value > gapSpec.max ? "Gap too wide" : "Gap in spec");
+			else if (reading && !reading->stale && (reading->hasSize || reading->finishRa))
 			{
 				auto measured = FromReading(feature, *reading);
 				uint32_t issues = 0;
@@ -893,6 +1227,12 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 		{
 			ImGui::SetScrollHereY(0.f);
 			m_scrollToDetail = false;
+		}
+		// What it is and what it means, between its name and its spec.
+		if (auto explanation = FeatureExplanation(part->GetType(), feature->name); !explanation.empty())
+		{
+			ImGui::TextWrapped("%s", explanation.c_str());
+			ImGui::Spacing();
 		}
 		DrawFeatureDetail(workshop, *part, *feature);
 		DrawFixAdvice(workshop, *part, *feature);
@@ -966,13 +1306,34 @@ void WorkshopUI::DrawFeatureDetail(Workshop& workshop, Part& part, const Feature
 		ImGui::TableSetColumnIndex(1);
 		ImGui::SeparatorText("Your last reading");
 		bool hasReading = reading && (reading->hasSize || reading->finishRa);
-		if (!hasReading)
+		// A ring: its end gap, squared in a bore.
+		const FeatureReading* endGap = feature.name == FeatureNames::CLOSED_DIAMETER ? part.GetReading(FeatureNames::END_GAP) : nullptr;
+		if (endGap)
+		{
+			const Range& gapSpec = workshop.GetSpec().ringGap;
+			if (endGap->stale)
+				ImGui::TextColored(COLOR_WARN, "Out of date: it's been filed since.");
+			if (ImGui::BeginTable("Reading", 2, cardFlags))
+			{
+				row("End gap");
+				ImGui::TextColored(endGap->stale ? COLOR_DIM : gapSpec.Contains(endGap->value) ? COLOR_GOOD : COLOR_BAD, "%s", Deviation(endGap->value).c_str());
+				row("Target");
+				ImGui::Text("%s - %s", Deviation(gapSpec.min).c_str(), Deviation(gapSpec.max).c_str());
+				row("Measured with");
+				ImGui::TextUnformatted(endGap->toolName.c_str());
+				ImGui::EndTable();
+			}
+		}
+		else if (!hasReading)
 		{
 			ImGui::PushTextWrapPos(0.f);
 			if (feature.directlyMeasurable && workshop.BestToolFor(feature) < 0)
 				ImGui::TextDisabled("Not measured yet, and none of your tools can measure it: the Measure with column says which to buy.");
 			else if (feature.directlyMeasurable)
 				ImGui::TextDisabled("Not measured yet. Use the %s on it.", ToolHint(workshop, workshop.BestToolFor(feature)).c_str());
+			else if (feature.name == FeatureNames::CLOSED_DIAMETER)
+				ImGui::TextDisabled("Not gapped yet. Set it on its own in a bore (in a block on the stand or off it), push it down square "
+					"with a piston and read the gap with the feeler gauge.");
 			else
 				ImGui::TextDisabled("Not measured yet. This one is checked with the part on the engine stand.");
 			ImGui::PopTextWrapPos();
@@ -1070,7 +1431,7 @@ void WorkshopUI::DrawFeatureDetail(Workshop& workshop, Part& part, const Feature
 	}
 
 	if (part.GetType() == PartType::PISTON_RING)
-		ImGui::TextWrapped("A ring's gap depends on the bore it lives in. Square it in its cylinder on the Engine Stand and check the gap with feelers, then set it up in the ring filer to open the gap.");
+		ImGui::TextWrapped("A ring's gap depends on the bore it lives in. Set it on its own in its bore (in a block on the stand or off it), push it down square with a piston and check the gap with feelers, then set it up in the ring filer to open the gap.");
 	if (feature.name == FeatureNames::SKIRT)
 		ImGui::TextWrapped("Piston-to-wall clearance for this alloy: %s (cold). Subtract this skirt from the measured bore.",
 			RangeText(workshop.GetSpec().PistonToWallFor(part.GetMaterial())).c_str());
@@ -1108,7 +1469,7 @@ void WorkshopUI::DrawFixAdvice(Workshop& workshop, const Part& part, const Featu
 	{
 		if (part.GetType() == PartType::PISTON_RING)
 		{
-			step("Fit the ring in its bore on the engine stand and check the gap with feelers.");
+			step("Set the ring on its own in its bore (in the block, on the stand or off it), push it down square with a piston and check the gap with feelers.");
 			step(std::format("Too tight: set the ring up in {} and open the gap a little at a time, checking as you go.", machineFor(MachineOperation::FILE_RING)));
 			step("Too wide: filing only opens it. Fit a new ring, or the next oversize ring with an overbored cylinder.");
 		}
@@ -1336,7 +1697,12 @@ void WorkshopUI::DrawMachiningPanel(Workshop& workshop, Part& part, const Featur
 void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 {
 	// Each tab keeps to its own kind: switching tabs picks the first of that kind.
-	auto belongs = [&](PartType type) { return (PartCatalog::Get(type).system == PartSystem::FASTENERS) == hardware; };
+	// The car's parts aren't the engine store's (the car has its own section of the store, once the shop has one).
+	// (The project car's own nuts, its lug nuts and M10 and M12 nuts, are hardware like any other and sold here too.)
+	auto belongs = [&](PartType type) {
+		bool fastener = PartCatalog::Get(type).system == PartSystem::FASTENERS;
+		return fastener == hardware && (!IsCarPart(type) || fastener);
+	};
 	if (!belongs(m_order.type))
 		for (auto type : PartCatalog::All())
 			if (belongs(type) && PartCatalog::Get(type).listed)
@@ -1371,23 +1737,27 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 		int column = 0;
 		ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-		// One section per engine system.
-		std::optional<PartSystem> section;
-		for (auto type : PartCatalog::All())
+		// One section per engine system; the hardware in two, its bolts and then its nuts, each smallest first.
+		// (The other halves of a set aren't listed: they come with it.)
+		auto isNut = [](PartType type) { return std::string_view(PartTypeName(type)).find("Nut") != std::string_view::npos; };
+		std::vector<std::pair<PartType, std::string>> shown;
+		for (int pass = 0; pass < (hardware ? 2 : 1); pass++)
+			for (auto type : PartCatalog::All())
+				if (belongs(type) && PartCatalog::Get(type).listed && (!hardware || isNut(type) == (pass == 1)))
+					shown.push_back({ type, hardware ? (pass == 0 ? "Bolts" : "Nuts") : PartSystemName(PartCatalog::Get(type).system) });
+		// The wheels' lug nuts after the plain nuts, M8 to M12.
+		std::stable_partition(shown.begin(), shown.end(), [](const auto& entry) { return entry.first != PartType::LUG_NUT; });
+		std::string section;
+		for (const auto& entry : shown)
 		{
-			if (!belongs(type))
-				continue;
-			// The other halves of a set come with it.
-			if (!PartCatalog::Get(type).listed)
-				continue;
-			auto system = PartCatalog::Get(type).system;
-			if (system != section)
+			PartType type = entry.first;
+			if (entry.second != section)
 			{
 				if (column != 0)
 					ImGui::NewLine();
 				column = 0;
-				ImGui::SeparatorText(PartSystemName(system));
-				section = system;
+				ImGui::SeparatorText(entry.second.c_str());
+				section = entry.second;
 			}
 			ImGui::PushID(static_cast<int>(type));
 			ImVec2 cardMin = ImGui::GetCursorScreenPos();
@@ -1403,10 +1773,7 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 			bool hovered = ImGui::IsItemHovered();
 			ImVec2 cardMax = { cardMin.x + CARD_WIDTH, cardMin.y + CARD_HEIGHT };
 
-			ImU32 background = selected ? IM_COL32(60, 85, 120, 255) : hovered ? IM_COL32(55, 58, 66, 255) : IM_COL32(40, 42, 48, 255);
-			drawList->AddRectFilled(cardMin, cardMax, background, 6.f);
-			if (selected)
-				drawList->AddRect(cardMin, cardMax, IM_COL32(120, 170, 230, 255), 6.f, 0, 2.f);
+			ProductCard(drawList, cardMin, cardMax, cardMin.y + ICON_SIZE + 10.f, selected, hovered);
 
 			PartIcons::Draw(drawList, type, { cardMin.x + (CARD_WIDTH - ICON_SIZE) * 0.5f, cardMin.y + 8.f }, ICON_SIZE);
 
@@ -1414,16 +1781,16 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 			const char* name = PartCatalog::StoreName(type);
 			ImVec2 textSize = ImGui::CalcTextSize(name);
 			drawList->PushClipRect(cardMin, cardMax, true);
-			drawList->AddText({ cardMin.x + (std::max)(4.f, (CARD_WIDTH - textSize.x) * 0.5f), cardMin.y + ICON_SIZE + 14.f }, IM_COL32(230, 230, 230, 255), name);
+			drawList->AddText({ cardMin.x + (std::max)(4.f, (CARD_WIDTH - textSize.x) * 0.5f), cardMin.y + ICON_SIZE + 14.f }, Site().cardInk, name);
 			drawList->PopClipRect();
 			if (hovered && textSize.x > CARD_WIDTH - 8.f)
 				ImGui::SetTooltip("%s", name);
 			double cheapest = PartFactory::PriceWithCompanions(type, PartQuality::OEM,
-				Workshop::SoldUsed(type) ? PartCondition::USED : PartCondition::NEW, workshop.GetSpec());
+				Workshop::SoldUsed(type) ? PartCondition::USED : PartCondition::NEW, workshop.GetSpec()) * workshop.PartPriceFactor();
 			// Cents for the small stuff, so a bolt isn't "from $0".
 			std::string from = cheapest < 10.0 ? std::format("from ${:.2f}", cheapest) : std::format("from ${:.0f}", cheapest);
 			ImVec2 fromSize = ImGui::CalcTextSize(from.c_str());
-			drawList->AddText({ cardMin.x + (CARD_WIDTH - fromSize.x) * 0.5f, cardMin.y + ICON_SIZE + 30.f }, IM_COL32(140, 200, 140, 255), from.c_str());
+			drawList->AddText({ cardMin.x + (CARD_WIDTH - fromSize.x) * 0.5f, cardMin.y + ICON_SIZE + 30.f }, Site().cardPrice, from.c_str());
 
 			if (++column < columns)
 				ImGui::SameLine();
@@ -1495,80 +1862,304 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 
 void WorkshopUI::DrawStoreTab(Workshop& workshop)
 {
-	if (!ImGui::BeginTabBar("StoreCategories"))
-		return;
+	switch (m_storeCategory)
+	{
+		case StoreCategory::PARTS:		DrawPartsStore(workshop, false); break;
+		case StoreCategory::HARDWARE:	DrawPartsStore(workshop, true); break;
+		case StoreCategory::TOOLS:		DrawToolStore(workshop, false); break;
+		case StoreCategory::MACHINES:	DrawMachineStore(workshop); break;
+		case StoreCategory::FURNITURE:	DrawFurnitureStore(workshop); break;
+		case StoreCategory::PAINT:		DrawToolStore(workshop, true); break;
+		case StoreCategory::CAR:		DrawCarStore(workshop); break;
+	}
+}
 
-	auto category = [&](const char* label, StoreCategory which) {
-		ImGuiTabItemFlags flags = m_requestedCategory == which ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-		return ImGui::BeginTabItem(label, nullptr, flags);
+namespace
+{
+	// The parts computer is a web shop: each section of the catalogue is a page of the site.
+	struct StorePage
+	{
+		StoreCategory category;
+		const char* link;		// in the site's menu
+		const char* path;		// in the address bar
+		const char* title;
+		const char* blurb;
+	};
+	const StorePage STORE_PAGES[] = {
+		{ StoreCategory::PARTS, "Engine Parts", "parts", "Engine Parts", "New and used parts for every system, shipped the same day." },
+		{ StoreCategory::HARDWARE, "Nuts & Bolts", "hardware", "Nuts & Bolts", "Fasteners by size: any of a size fits every hole of that size." },
+		{ StoreCategory::TOOLS, "Tools", "tools", "Tools", "Measuring tools, spanners and the specialist tools for the job." },
+		{ StoreCategory::MACHINES, "Machine Shop", "machine-shop", "Machine Shop", "Machines to bring parts back into spec, the dyno and the hoist." },
+		{ StoreCategory::FURNITURE, "Shop Fittings", "shop-fittings", "Shop Fittings", "Benches, shelving, engine stands and the rest of a working shop." },
+		{ StoreCategory::PAINT, "Paint", "paint", "Paint", "Markers, spray cans and thinner, for the parts and the walls." },
+		{ StoreCategory::CAR, "Project Car", "project-car", "Project Car", "An LE86 shell to build up, every part for it, and the fluids to fill it." },
+	};
+	constexpr const char* STORE_NAME = "MonkeyKobo";
+	constexpr const char* STORE_HOST = "monkeykobo.love/shop";	// the site, and its shop
+
+	// Lower case, words joined with dashes, for the address bar.
+	std::string Slug(const std::string& name)
+	{
+		std::string slug;
+		for (char c : name)
+		{
+			if (std::isalnum(static_cast<unsigned char>(c)))
+				slug += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+			else if (!slug.empty() && slug.back() != '-')
+				slug += '-';
+		}
+		while (!slug.empty() && slug.back() == '-')
+			slug.pop_back();
+		return slug;
+	}
+
+	// A website's colours for the parts computer's window, light or dark (the Dark mode setting), pushed for as long as
+	// it's drawn; and the shared status colours set to read on its pages.
+	class WebsiteTheme
+	{
+	public:
+		explicit WebsiteTheme(bool dark)
+		{
+			static const SitePalette light = MakeSitePalette(false), darkPalette = MakeSitePalette(true);
+			const SitePalette& p = dark ? darkPalette : light;
+			g_site = &p;
+			const std::pair<ImGuiCol, ImVec4> colors[] = {
+				{ ImGuiCol_WindowBg, p.page }, { ImGuiCol_ChildBg, p.panel }, { ImGuiCol_PopupBg, p.popup },
+				{ ImGuiCol_Text, p.text }, { ImGuiCol_TextDisabled, p.textDisabled },
+				{ ImGuiCol_Border, p.border }, { ImGuiCol_Separator, p.border },
+				{ ImGuiCol_FrameBg, p.frame }, { ImGuiCol_FrameBgHovered, p.frameHovered }, { ImGuiCol_FrameBgActive, p.frameActive },
+				{ ImGuiCol_Button, p.button }, { ImGuiCol_ButtonHovered, p.buttonHovered }, { ImGuiCol_ButtonActive, p.buttonActive },
+				{ ImGuiCol_Header, p.header }, { ImGuiCol_HeaderHovered, p.headerHovered }, { ImGuiCol_HeaderActive, p.headerActive },
+				{ ImGuiCol_ScrollbarBg, p.scrollbar }, { ImGuiCol_ScrollbarGrab, p.grab }, { ImGuiCol_ScrollbarGrabHovered, p.grabHovered },
+				{ ImGuiCol_ScrollbarGrabActive, p.grabActive },
+				{ ImGuiCol_CheckMark, p.check }, { ImGuiCol_SliderGrab, p.check }, { ImGuiCol_SliderGrabActive, p.checkActive },
+				{ ImGuiCol_TableHeaderBg, p.tableHeader }, { ImGuiCol_TableBorderStrong, p.border }, { ImGuiCol_TableBorderLight, p.tableLine },
+				{ ImGuiCol_TableRowBgAlt, p.rowAlt }, { ImGuiCol_PlotHistogram, p.button },
+			};
+			for (const auto& [index, color] : colors)
+				ImGui::PushStyleColor(index, color);
+			m_pushed = static_cast<int>(std::size(colors));
+			m_saved = { COLOR_GOOD, COLOR_WARN, COLOR_BAD, COLOR_DIM, COLOR_XRAY };
+			COLOR_GOOD = p.good;
+			COLOR_WARN = p.warn;
+			COLOR_BAD = p.bad;
+			COLOR_DIM = p.dim;
+			COLOR_XRAY = p.xray;
+		}
+		~WebsiteTheme()
+		{
+			ImGui::PopStyleColor(m_pushed);
+			COLOR_GOOD = m_saved[0];
+			COLOR_WARN = m_saved[1];
+			COLOR_BAD = m_saved[2];
+			COLOR_DIM = m_saved[3];
+			COLOR_XRAY = m_saved[4];
+			g_site = nullptr;
+		}
+	private:
+		int m_pushed = 0;
+		std::array<ImVec4, 5> m_saved = {};
 	};
 
-	if (category("Parts", StoreCategory::PARTS))
+	// Text at a size of its own (headings, the logo), drawn with the UI's font.
+	void BigText(ImDrawList* drawList, ImVec2 at, float size, ImU32 color, const char* text)
 	{
-		DrawPartsStore(workshop, false);
-		ImGui::EndTabItem();
+		drawList->AddText(ImGui::GetFont(), size, at, color, text);
 	}
-	if (category("Hardware", StoreCategory::HARDWARE))
+	float BigTextWidth(float size, const char* text)
 	{
-		DrawPartsStore(workshop, true);
-		ImGui::EndTabItem();
+		return ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.f, text).x;
 	}
-	if (category("Tools", StoreCategory::TOOLS))
-	{
-		DrawToolStore(workshop, false);
-		ImGui::EndTabItem();
-	}
-	if (category("Machines", StoreCategory::MACHINES))
-	{
-		DrawMachineStore(workshop);
-		ImGui::EndTabItem();
-	}
-	if (category("Furniture", StoreCategory::FURNITURE))
-	{
-		DrawFurnitureStore(workshop);
-		ImGui::EndTabItem();
-	}
-	if (category("Paint", StoreCategory::PAINT))
-	{
-		DrawToolStore(workshop, true);
-		ImGui::EndTabItem();
-	}
-	m_requestedCategory = std::nullopt;
-	ImGui::EndTabBar();
 }
 
 void WorkshopUI::DrawStoreWindow(Workshop& workshop)
 {
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
-	ImGui::SetNextWindowSize({ 1150.f, 760.f }, ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize({ 1180.f, 800.f }, ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_FirstUseEver, { 0.5f, 0.5f });
 	if (m_requestedCategory)
 	{
 		ImGui::SetNextWindowFocus();
 		ImGui::SetNextWindowCollapsed(false);
+		m_storeCategory = *m_requestedCategory;
+		m_requestedCategory = std::nullopt;
 	}
 
-	if (ImGui::Begin("Parts Computer", &m_storeOpen))
+	WebsiteTheme theme(m_darkMode);
+	const SitePalette& site = Site();
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.f, 0.f });
+	bool open = ImGui::Begin("Parts Computer", &m_storeOpen, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar
+		| ImGuiWindowFlags_NoScrollWithMouse);
+	ImGui::PopStyleVar();
+	if (!open)
 	{
-		ImGui::TextColored(COLOR_GOOD, "$%.0f", workshop.GetMoney());
-		ImGui::SameLine(0.f, 30.f);
-		ImGui::TextDisabled("Everything is delivered to the roll-up door: open it with E. Machines and stands are set up when their crate is opened.");
-		ImGui::SameLine(0.f, 30.f);
-		ImGui::TextDisabled("Tab / Esc: close");
-		ImGui::Separator();
+		ImGui::End();
+		return;
+	}
 
-		// The catalogue on the left, the cart down the right.
-		float logHeight = ImGui::GetTextLineHeightWithSpacing() * 6.f;
+	const StorePage* page = &STORE_PAGES[0];
+	for (const auto& candidate : STORE_PAGES)
+		if (candidate.category == m_storeCategory)
+			page = &candidate;
+
+	ImDrawList* drawList = ImGui::GetWindowDrawList();
+	const ImVec2 origin = ImGui::GetWindowPos();
+	const float width = ImGui::GetWindowWidth();
+	const float font = ImGui::GetFontSize();
+	const ImU32 ink = site.ink, muted = site.muted, orange = Web(255, 153, 0, 255);
+	const ImU32 brand = site.brand, white = Web(255, 255, 255, 255);
+
+	// The browser: one tab, the buttons and the address bar.
+	constexpr float BROWSER_HEIGHT = 74.f;
+	drawList->AddRectFilled(origin, { origin.x + width, origin.y + BROWSER_HEIGHT }, site.browser);
+	ImVec2 tabMin = { origin.x + 10.f, origin.y + 6.f }, tabMax = { origin.x + 290.f, origin.y + 34.f };
+	drawList->AddRectFilled(tabMin, tabMax, site.tab, 8.f, ImDrawFlags_RoundCornersTop);
+	drawList->AddRectFilled({ tabMin.x + 10.f, tabMin.y + 9.f }, { tabMin.x + 20.f, tabMin.y + 19.f }, orange, 2.f);
+	std::string tabTitle = std::format("{} | {}", page->title, STORE_NAME);
+	drawList->PushClipRect(tabMin, { tabMax.x - 24.f, tabMax.y }, true);
+	drawList->AddText({ tabMin.x + 28.f, tabMin.y + (tabMax.y - tabMin.y - font) * 0.5f }, ink, tabTitle.c_str());
+	drawList->PopClipRect();
+	drawList->AddText({ tabMax.x - 18.f, tabMin.y + (tabMax.y - tabMin.y - font) * 0.5f }, muted, "x");
+	drawList->AddText({ tabMax.x + 12.f, tabMin.y + (tabMax.y - tabMin.y - font) * 0.5f }, muted, "+");
+
+	// Closing the browser closes the store.
+	ImGui::SetCursorScreenPos({ origin.x + width - 44.f, origin.y + 4.f });
+	if (ImGui::InvisibleButton("CloseStore", { 40.f, 30.f }))
+		m_storeOpen = false;
+	bool closeHovered = ImGui::IsItemHovered();
+	if (closeHovered)
+		drawList->AddRectFilled({ origin.x + width - 44.f, origin.y + 4.f }, { origin.x + width - 4.f, origin.y + 34.f }, Web(220, 60, 50, 255), 4.f);
+	ImVec2 cross = { origin.x + width - 24.f, origin.y + 19.f };
+	ImU32 crossColor = closeHovered ? white : ink;
+	drawList->AddLine({ cross.x - 5.f, cross.y - 5.f }, { cross.x + 5.f, cross.y + 5.f }, crossColor, 1.5f);
+	drawList->AddLine({ cross.x - 5.f, cross.y + 5.f }, { cross.x + 5.f, cross.y - 5.f }, crossColor, 1.5f);
+
+	float barY = origin.y + 40.f;
+	drawList->AddRectFilled({ origin.x, barY - 4.f }, { origin.x + width, origin.y + BROWSER_HEIGHT }, site.toolbar);
+	float navX = origin.x + 14.f;
+	for (const char* glyph : { "<", ">", "@" })
+	{
+		drawList->AddCircleFilled({ navX + 10.f, barY + 14.f }, 12.f, site.navButton);
+		drawList->AddText({ navX + 10.f - ImGui::CalcTextSize(glyph).x * 0.5f, barY + 14.f - font * 0.5f }, muted, glyph);
+		navX += 30.f;
+	}
+	ImVec2 addressMin = { navX + 8.f, barY + 1.f }, addressMax = { origin.x + width - 50.f, barY + 27.f };
+	drawList->AddRectFilled(addressMin, addressMax, site.address, 13.f);
+	drawList->AddRect(addressMin, addressMax, site.addressBorder, 13.f);
+	// A padlock: the store's on https.
+	ImVec2 lock = { addressMin.x + 16.f, addressMin.y + 15.f };
+	drawList->PathArcTo({ lock.x, lock.y - 3.f }, 3.5f, 3.14159265f, 6.2831853f, 8);
+	drawList->PathStroke(site.lock, 0, 1.5f);
+	drawList->AddRectFilled({ lock.x - 5.f, lock.y - 3.f }, { lock.x + 5.f, lock.y + 4.f }, site.lock, 1.5f);
+	// The page, and the product open on it.
+	std::string product;
+	if (m_storeCategory == StoreCategory::PARTS || m_storeCategory == StoreCategory::HARDWARE)
+		product = Slug(PartCatalog::StoreName(m_order.type));
+	else if ((m_storeCategory == StoreCategory::TOOLS || m_storeCategory == StoreCategory::PAINT) && m_selectedTool >= 0
+		&& m_selectedTool < static_cast<int>(ToolCatalog::All().size()))
+		product = Slug(ToolCatalog::Of(static_cast<size_t>(m_selectedTool)).name);
+	std::string host = std::format("https://{}/", STORE_HOST);
+	std::string path = product.empty() ? page->path : std::format("{}/{}", page->path, product);
+	float textY = addressMin.y + (addressMax.y - addressMin.y - font) * 0.5f;
+	drawList->PushClipRect(addressMin, { addressMax.x - 10.f, addressMax.y }, true);
+	drawList->AddText({ addressMin.x + 30.f, textY }, muted, host.c_str());
+	drawList->AddText({ addressMin.x + 30.f + ImGui::CalcTextSize(host.c_str()).x, textY }, ink, path.c_str());
+	drawList->PopClipRect();
+	drawList->AddText({ addressMax.x + 14.f, textY }, muted, "*");
+	drawList->AddLine({ origin.x, origin.y + BROWSER_HEIGHT - 1.f }, { origin.x + width, origin.y + BROWSER_HEIGHT - 1.f }, site.browserLine);
+
+	// The site's header: the logo, the balance and the cart.
+	constexpr float HEADER_HEIGHT = 62.f;
+	float headerY = origin.y + BROWSER_HEIGHT;
+	drawList->AddRectFilled({ origin.x, headerY }, { origin.x + width, headerY + HEADER_HEIGHT }, brand);
+	const float logoSize = font * 1.9f;
+	BigText(drawList, { origin.x + 22.f, headerY + 8.f }, logoSize, orange, "Monkey");
+	BigText(drawList, { origin.x + 22.f + BigTextWidth(logoSize, "Monkey"), headerY + 8.f }, logoSize, white, "Kobo");
+	drawList->AddText({ origin.x + 24.f, headerY + 12.f + logoSize }, Web(190, 205, 225, 255),
+		"Engine parts, tools and machines, delivered to your roll-up door");
+
+	double cartTotal = workshop.CartTotal(m_cart);
+	std::string cart = std::format("Cart ({})   ${:.0f}", m_cart.size(), cartTotal);
+	float cartWidth = ImGui::CalcTextSize(cart.c_str()).x + 30.f;
+	ImVec2 cartMin = { origin.x + width - 22.f - cartWidth, headerY + 15.f }, cartMax = { origin.x + width - 22.f, headerY + HEADER_HEIGHT - 15.f };
+	drawList->AddRectFilled(cartMin, cartMax, orange, 16.f);
+	drawList->AddText({ cartMin.x + 15.f, cartMin.y + (cartMax.y - cartMin.y - font) * 0.5f }, site.cartText, cart.c_str());
+	std::string balance = std::format("${:.0f}", workshop.GetMoney());
+	float balanceSize = font * 1.35f;
+	float balanceX = cartMin.x - 28.f - (std::max)(BigTextWidth(balanceSize, balance.c_str()), ImGui::CalcTextSize("Your balance").x);
+	drawList->AddText({ balanceX, headerY + 10.f }, Web(190, 205, 225, 255), "Your balance");
+	BigText(drawList, { balanceX, headerY + 12.f + font }, balanceSize, white, balance.c_str());
+
+	// The menu: a link for each section, the open one underlined.
+	constexpr float MENU_HEIGHT = 38.f;
+	float menuY = headerY + HEADER_HEIGHT;
+	drawList->AddRectFilled({ origin.x, menuY }, { origin.x + width, menuY + MENU_HEIGHT }, site.menu);
+	drawList->AddLine({ origin.x, menuY + MENU_HEIGHT - 1.f }, { origin.x + width, menuY + MENU_HEIGHT - 1.f }, site.menuLine);
+	float linkX = origin.x + 22.f;
+	for (const auto& link : STORE_PAGES)
+	{
+		float linkWidth = ImGui::CalcTextSize(link.link).x;
+		ImGui::SetCursorScreenPos({ linkX - 8.f, menuY });
+		ImGui::PushID(link.path);
+		if (ImGui::InvisibleButton("Link", { linkWidth + 16.f, MENU_HEIGHT }))
+			m_storeCategory = link.category;
+		bool hovered = ImGui::IsItemHovered();
+		ImGui::PopID();
+		bool active = link.category == m_storeCategory;
+		if (hovered)
+			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+		drawList->AddText({ linkX, menuY + (MENU_HEIGHT - font) * 0.5f }, active ? site.linkActive : hovered ? site.linkHover : ink, link.link);
+		if (active || hovered)
+			drawList->AddRectFilled({ linkX - 2.f, menuY + MENU_HEIGHT - 4.f }, { linkX + linkWidth + 2.f, menuY + MENU_HEIGHT - 1.f },
+				active ? orange : site.linkUnderline);
+		linkX += linkWidth + 34.f;
+	}
+	const char* delivery = "Free delivery to the roll-up door";
+	drawList->AddText({ origin.x + width - 22.f - ImGui::CalcTextSize(delivery).x, menuY + (MENU_HEIGHT - font) * 0.5f }, site.delivery, delivery);
+
+	// The page: where you are, its heading, the catalogue with the cart beside it, and the footer.
+	ImGui::SetCursorScreenPos({ origin.x, menuY + MENU_HEIGHT });
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 20.f, 12.f });
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, site.page);
+	bool pageOpen = ImGui::BeginChild("Page", { 0.f, 0.f }, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+	ImGui::PopStyleColor();
+	ImGui::PopStyleVar();
+	if (pageOpen)
+	{
+		ImDrawList* pageList = ImGui::GetWindowDrawList();
+		ImGui::TextColored(site.home, "Home");
+		ImGui::SameLine(0.f, 6.f);
+		ImGui::TextDisabled(">");
+		ImGui::SameLine(0.f, 6.f);
+		ImGui::TextUnformatted(page->title);
+		ImVec2 heading = ImGui::GetCursorScreenPos();
+		const float headingSize = font * 1.6f;
+		BigText(pageList, heading, headingSize, site.heading, page->title);
+		pageList->AddText({ heading.x + BigTextWidth(headingSize, page->title) + 16.f, heading.y + headingSize - font - 2.f }, muted, page->blurb);
+		ImGui::Dummy({ 1.f, headingSize + 6.f });
+
+		const float footerHeight = ImGui::GetTextLineHeightWithSpacing() * 6.f + 26.f;
 		constexpr float CART_WIDTH = 330.f;
-		if (ImGui::BeginChild("StoreMain", { -CART_WIDTH - ImGui::GetStyle().ItemSpacing.x, -logHeight }))
+		if (ImGui::BeginChild("StoreMain", { -CART_WIDTH - ImGui::GetStyle().ItemSpacing.x, -footerHeight }, ImGuiChildFlags_None,
+			ImGuiWindowFlags_NoBackground))
 			DrawStoreTab(workshop);
 		ImGui::EndChild();
 		ImGui::SameLine();
-		if (ImGui::BeginChild("Cart", { 0.f, -logHeight }, ImGuiChildFlags_Borders))
+		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
+		if (ImGui::BeginChild("Cart", { 0.f, -footerHeight }, ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding))
 			DrawCart(workshop);
 		ImGui::EndChild();
-		DrawLog(workshop);
+		ImGui::PopStyleVar();
+
+		// The footer: order updates, and the small print.
+		ImGui::TextDisabled("Order updates");
+		if (ImGui::BeginChild("Updates", { 0.f, ImGui::GetTextLineHeightWithSpacing() * 5.f }, ImGuiChildFlags_None))
+			DrawLog(workshop);
+		ImGui::EndChild();
+		ImGui::TextDisabled("%s  |  Delivered to the roll-up door: open it with E. Machines and stands are set up when their crate is opened.  |  Tab / Esc: close",
+			std::format("(c) {} Ltd", STORE_NAME).c_str());
 	}
+	ImGui::EndChild();
 	ImGui::End();
 }
 
@@ -1606,6 +2197,9 @@ std::string WorkshopUI::CartLineName(const CartLine& line) const
 		case CartLine::Kind::FURNITURE:		return FurnitureCatalog::All()[line.index].name;
 		case CartLine::Kind::DYNO:			return "Dyno";
 		case CartLine::Kind::HOIST:			return "Engine hoist";
+		case CartLine::Kind::PROJECT_CAR:	return "LE86 project car";
+		case CartLine::Kind::FLUID:			return line.index < static_cast<size_t>(FLUID_PRODUCTS) ? std::format("{} ({:g} l)",
+			FluidProductName(static_cast<FluidProduct>(line.index)), Workshop::FluidUnitLitres(static_cast<FluidProduct>(line.index))) : "";
 	}
 	return "";
 }
@@ -1631,7 +2225,8 @@ void WorkshopUI::AddToCart(const CartLine& line)
 			existing.order.quantity = (std::min)(existing.order.quantity + line.order.quantity, 99);
 			return;
 		}
-		if (line.kind == CartLine::Kind::ENGINE_STAND || ((line.kind == CartLine::Kind::FURNITURE || line.kind == CartLine::Kind::TOOL) && existing.index == line.index))
+		if (line.kind == CartLine::Kind::ENGINE_STAND || ((line.kind == CartLine::Kind::FURNITURE || line.kind == CartLine::Kind::TOOL
+			|| line.kind == CartLine::Kind::FLUID) && existing.index == line.index))
 		{
 			existing.quantity += line.quantity;
 			return;
@@ -1645,7 +2240,8 @@ void WorkshopUI::AddToCartButton(Workshop& workshop, const CartLine& line, const
 	// One of a kind (a machine, the dyno) can only be in the cart once; tools and stands only up to the
 	// room left.
 	std::optional<std::string> problem;
-	if ((line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::DYNO || line.kind == CartLine::Kind::HOIST) && InCart(line.kind, line.index) > 0)
+	if ((line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::DYNO || line.kind == CartLine::Kind::HOIST
+		|| line.kind == CartLine::Kind::PROJECT_CAR) && InCart(line.kind, line.index) > 0)
 		problem = "In the cart.";
 	else
 	{
@@ -1692,7 +2288,8 @@ void WorkshopUI::DrawCart(Workshop& workshop)
 
 		// Parts, stands, furniture and tools come in quantities; machines are one each.
 		int* quantity = line.kind == CartLine::Kind::PART ? &line.order.quantity
-			: line.kind == CartLine::Kind::ENGINE_STAND || line.kind == CartLine::Kind::FURNITURE || line.kind == CartLine::Kind::TOOL ? &line.quantity : nullptr;
+			: line.kind == CartLine::Kind::ENGINE_STAND || line.kind == CartLine::Kind::FURNITURE || line.kind == CartLine::Kind::TOOL
+				|| line.kind == CartLine::Kind::FLUID ? &line.quantity : nullptr;
 		if (quantity)
 		{
 			ImGui::SameLine(110.f);
@@ -1786,10 +2383,7 @@ bool WorkshopUI::StoreCard(const char* id, const char* name, const std::string& 
 	ImVec2 cardMax = { cardMin.x + CARD_WIDTH, cardMin.y + CARD_HEIGHT };
 	ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-	ImU32 background = selected ? IM_COL32(60, 85, 120, 255) : hovered ? IM_COL32(55, 58, 66, 255) : IM_COL32(40, 42, 48, 255);
-	drawList->AddRectFilled(cardMin, cardMax, background, 6.f);
-	if (selected)
-		drawList->AddRect(cardMin, cardMax, IM_COL32(120, 170, 230, 255), 6.f, 0, 2.f);
+	ProductCard(drawList, cardMin, cardMax, cardMin.y + ICON_SIZE + 10.f, selected, hovered);
 
 	drawIcon(drawList, { cardMin.x + (CARD_WIDTH - ICON_SIZE) * 0.5f, cardMin.y + 8.f }, ICON_SIZE);
 
@@ -1797,13 +2391,13 @@ bool WorkshopUI::StoreCard(const char* id, const char* name, const std::string& 
 	ImVec2 textSize = ImGui::CalcTextSize(name);
 	float textX = cardMin.x + (std::max)(4.f, (CARD_WIDTH - textSize.x) * 0.5f);
 	drawList->PushClipRect(cardMin, cardMax, true);
-	drawList->AddText({ textX, cardMin.y + ICON_SIZE + 16.f }, IM_COL32(230, 230, 230, 255), name);
+	drawList->AddText({ textX, cardMin.y + ICON_SIZE + 16.f }, Site().cardInk, name);
 	drawList->PopClipRect();
 
 	std::string footer = owned ? "Owned" : price;
 	ImVec2 footerSize = ImGui::CalcTextSize(footer.c_str());
 	drawList->AddText({ cardMin.x + (CARD_WIDTH - footerSize.x) * 0.5f, cardMin.y + ICON_SIZE + 34.f },
-		owned ? IM_COL32(150, 150, 150, 255) : IM_COL32(140, 200, 140, 255), footer.c_str());
+		owned ? Site().cardMuted : Site().cardPrice, footer.c_str());
 
 	// Efficiency at a glance: one thin bar per rating along the bottom of the card.
 	for (size_t i = 0; i < ratings.size(); i++)
@@ -1972,7 +2566,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 			}
 			// One the shop hasn't the rank for yet shows the rank it needs, greyed.
 			bool locked = !workshop.ToolUnlocked(i);
-			std::string price = !locked ? std::format("${:.0f}", tool.price) : tool.skill >= 0 && workshop.SkillLevel(static_cast<SkillKind>(tool.skill)) == 0 ? std::string("Perk") : std::format("Rank {}", tool.rank);
+			std::string price = !locked ? std::format("${:.0f}", tool.price * workshop.EquipmentPriceFactor()) : tool.skill >= 0 && workshop.SkillLevel(static_cast<SkillKind>(tool.skill)) == 0 ? std::string("Perk") : std::format("Rank {}", tool.rank);
 			if (StoreCard(tool.name.c_str(), tool.name.c_str(), price, m_selectedTool == static_cast<int>(i), workshop.OwnsTool(i),
 				[&](ImDrawList* drawList, ImVec2 min, float size) {
 					ItemIcons::DrawTool(drawList, tool, min, size, locked ? IM_COL32(120, 120, 120, 160) : PartIcons::DEFAULT_COLOR); },
@@ -2004,9 +2598,14 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 		if (tool.manual)
 		{
 			ImGui::PushTextWrapPos(0.f);
-			ImGui::TextDisabled("Chapters: general information, tools, teardown, the block, crankshaft, rods, pistons and rings, bearings and "
-				"Plastigauge, the head and valves, the camshaft, the assembly sequence, torque specifications, final checks and the dyno, "
-				"and troubleshooting. Dimensions are shown in the units you play in.");
+			if (tool.manualBook == 1)
+				ImGui::TextDisabled("Chapters: general information, tools, building the car, the body and interior, front suspension and "
+					"steering, the rear axle, brakes, clutch and drivetrain, the engine in the car, fuel, electrics, cooling and exhaust, fluids "
+					"and capacities, the tune-up, wheels, tires and alignment, torque specifications, and the road test and troubleshooting.");
+			else
+				ImGui::TextDisabled("Chapters: general information, tools, teardown, the block, crankshaft, rods, pistons and rings, bearings and "
+					"Plastigauge, the head and valves, the camshaft, the assembly sequence, torque specifications, final checks and the dyno, "
+					"and troubleshooting. Dimensions are shown in the units you play in.");
 			ImGui::PopTextWrapPos();
 			ImGui::Spacing();
 			DrawToolBuy(workshop, static_cast<size_t>(m_selectedTool));
@@ -2147,7 +2746,7 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 				section = group(machine.operation);
 				ImGui::SeparatorText(GROUP_NAMES[section]);
 			}
-			if (StoreCard(machine.name.c_str(), machine.name.c_str(), std::format("${:.0f}", machine.price), m_selectedStoreMachine == static_cast<int>(i),
+			if (StoreCard(machine.name.c_str(), machine.name.c_str(), std::format("${:.0f}", machine.price * workshop.EquipmentPriceFactor()), m_selectedStoreMachine == static_cast<int>(i),
 				workshop.OwnsMachine(i), [&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawMachine(drawList, machine, min, size); },
 				{ Ratings::MachineAccuracy(machine) }))
 				m_selectedStoreMachine = static_cast<int>(i);
@@ -2229,7 +2828,7 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 			CartLine line;
 			line.kind = CartLine::Kind::MACHINE;
 			line.index = static_cast<size_t>(m_selectedStoreMachine);
-			AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", machine.price).c_str());
+			AddToCartButton(workshop, line, std::format("Add to cart (${:.0f})", machine.price * workshop.EquipmentPriceFactor()).c_str());
 		}
 	}
 	ImGui::EndChild();
@@ -2512,8 +3111,11 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 	ImGui::SeparatorText("Top ring end gap (feelers)");
 	if (beginTable("Rings"))
 	{
+		// Gapped on its own: a ring set in the bore with no piston, pushed down square with one.
+		auto rings = workshop.RingsInBore(workshop.GetActiveEngine());
 		for (int cylinder = 0; cylinder < spec.cylinders; cylinder++)
-			checkRow(std::format("Cylinder {}", cylinder + 1), AssemblyCheck::RING_GAP, cylinder, false, spec.ringGap, assembly.RingGap(cylinder));
+			checkRow(std::format("Cylinder {}", cylinder + 1), AssemblyCheck::RING_GAP, cylinder, false, spec.ringGap,
+				rings.contains(cylinder) && rings.at(cylinder) ? assembly.RingGap(cylinder) : std::nullopt);
 		ImGui::EndTable();
 	}
 
@@ -3103,6 +3705,6 @@ void WorkshopUI::DrawToolBuy(Workshop& workshop, size_t toolIndex)
 	CartLine line;
 	line.kind = CartLine::Kind::TOOL;
 	line.index = toolIndex;
-	std::string label = owned > 0 ? std::format("Buy another (${:.0f})", tool.price) : std::format("Add to cart (${:.0f})", tool.price);
+	std::string label = owned > 0 ? std::format("Buy another (${:.0f})", tool.price * workshop.EquipmentPriceFactor()) : std::format("Add to cart (${:.0f})", tool.price * workshop.EquipmentPriceFactor());
 	AddToCartButton(workshop, line, label.c_str());
 }

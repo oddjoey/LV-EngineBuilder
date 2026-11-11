@@ -12,7 +12,6 @@
 // What the menu needs to know about the game besides the settings.
 struct PauseMenuContext
 {
-	float* timeOfDay = nullptr;		// hours, editable from the Time of day settings
 	std::vector<std::pair<uint32_t, uint32_t>> resolutions = {};
 	int maxMsaa = 1;
 	bool dlssAvailable = false;
@@ -40,6 +39,18 @@ struct PauseMenuContext
 	};
 	std::vector<Player> players = {};	// everyone in the garage
 	std::vector<Server> servers = {};		// from the server list
+	// On a server, but not in a garage there yet: the garages to ask to join (or a new one to make).
+	struct GarageChoice
+	{
+		int id = 0;
+		std::string name = "";
+		int members = 0;
+		int online = 0;
+	};
+	bool choosingGarage = false;
+	std::vector<GarageChoice> garageChoices = {};
+	bool requestingGarage = false;		// asked to join one, waiting for its vote
+	std::string garageStatus = "";		// what the server last said about it
 	bool refreshingServers = false;
 	bool loggedIn = false;			// to the account server: only then are the garages shown
 	bool loggingIn = false;
@@ -56,7 +67,7 @@ class PauseMenu
 {
 public:
 	// SAVE and PLAY_OFFLINE are for offline play, in debug builds.
-	enum class Action { NONE, RESUME, QUIT, LOGIN, LOGOUT, REFRESH_SERVERS, JOIN, LEAVE, PLAY_OFFLINE, SAVE };
+	enum class Action { NONE, RESUME, QUIT, LOGIN, LOGOUT, REFRESH_SERVERS, JOIN, LEAVE, PLAY_OFFLINE, SAVE, CREATE_GARAGE, REQUEST_GARAGE, CANCEL_REQUEST };
 
 	void Open();
 	void Close();
@@ -75,6 +86,8 @@ public:
 	// The garage picked to join (with Action::JOIN).
 	const std::string& GetJoinAddress() const { return m_joinAddress; }
 	int GetJoinPort() const { return m_joinPort; }
+	// The garage asked to join on the server (with Action::REQUEST_GARAGE).
+	int GetRequestedGarage() const { return m_requestedGarage; }
 	// Waiting for the key to put a control on: the game leaves the keys alone meanwhile.
 	bool IsBinding() const { return m_binding >= 0; }
 private:
@@ -84,7 +97,6 @@ private:
 	void DrawGameSettings(GameSettings& settings);
 	void DrawVideoSettings(GameSettings& settings, const PauseMenuContext& context);
 	void DrawAudioSettings(GameSettings& settings);
-	void DrawTimeSettings(GameSettings& settings, const PauseMenuContext& context);
 	Action DrawMainMenu(GameSettings& settings, const PauseMenuContext& context);
 	void DrawControls(GameSettings& settings, const PauseMenuContext& context);
 
@@ -95,6 +107,7 @@ private:
 	bool m_newAccount = false;
 	std::string m_joinAddress = "";
 	int m_joinPort = 0;
+	int m_requestedGarage = 0;
 	// The control waiting for a key (an index into Controls), or -1; and why the last key pressed for
 	// it couldn't be used.
 	int m_binding = -1;

@@ -526,7 +526,7 @@ void GameAudio::Footsteps(float deltaTime, const FirstPersonController& player, 
 		return;		// mid-air, or a teleport
 	float speed = horizontal / deltaTime;
 	m_stride += horizontal;
-	float strideLength = speed > 3.5f ? 0.95f : 0.7f;
+	float strideLength = speed > 3.5f ? 1.35f : 1.0f;
 	if (m_stride >= strideLength)
 	{
 		m_stride = 0.f;

@@ -52,6 +52,8 @@ private:
 	bool SaveOffline();
 	// Finding a garage server, joining and leaving from the pause menu, and what the session reports.
 	void JoinGarage(const std::string& address, int port);
+	// Someone asking to join this garage: the vote, for its members.
+	void DrawVote();
 	// Logging in to the account server, before any garage is shown: whether the username and password
 	// typed could (saying why not on the menu), starting it, and seeing how it went.
 	bool CheckLogin();
@@ -69,6 +71,11 @@ private:
 	ServiceManual					m_manual = {};
 	DevMenu							m_devMenu = {};
 	Console							m_console = {};
+	// The developer start (LV_DEV_START): done once, and a game started that way is never saved.
+	bool							m_devStartDone = false;
+	bool							m_devNoSave = false;
+	std::vector<std::string>		m_devScript = {};	// the commands still to run, one a frame
+	float							m_devWait = 0.f;
 	SplashScreen					m_splash = {};
 	InventoryUI						m_inventoryUI = {};
 	ShopAssets						m_assets = {};

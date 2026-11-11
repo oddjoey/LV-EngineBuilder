@@ -12,7 +12,7 @@
 // Which screen the workshop window shows; only one at a time. BACKPACK is the inventory (Tab), the
 // rest open from their station. STORE isn't one: it opens the parts computer's own window (see
 // OpenStore).
-enum class WorkshopTab { BACKPACK, BENCH, MACHINE, ENGINE_STAND, DYNO, STORE };
+enum class WorkshopTab { BACKPACK, BENCH, MACHINE, ENGINE_STAND, DYNO, STORE, CAR, QUARRY };
 
 // A part the Bench tab can work on, and where it's sitting.
 struct BenchItem
@@ -20,8 +20,11 @@ struct BenchItem
 	pPart part = nullptr;
 	std::string location = "";
 	int machineIndex = -1;
+	// Fitted into or onto the part above it in the list (a rod's shell and piston, the piston's pin and ring), this
+	// many deep; 0 for one lying there itself.
+	int depth = 0;
 };
-enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, PAINT };
+enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, PAINT, CAR };
 
 // ImGui front end for the workshop. It only ever shows the player what they've measured;
 // the true geometry is visible only with the X-ray developer toggle.
@@ -34,6 +37,8 @@ public:
 	void Draw(Workshop& workshop);
 
 	void Open(WorkshopTab tab);
+	// Opens the Car tab on one of its pages (0 Build, 1 Fluids, 2 Tune, 3 Road Test).
+	void OpenCarPage(int page);
 	// The parts computer: a window of its own, separate from the workshop screens.
 	void OpenStore(StoreCategory category);
 	// The tab for one machine: the part set up in it and only what that machine can do to it.
@@ -63,6 +68,8 @@ public:
 	void SetModelLookup(const std::function<uint32_t(const std::string&)>& lookup);
 	// Developer x-ray: the parts' true geometry next to the player's readings.
 	void SetXray(bool xray);
+	// The store's website in dark colours (the Dark mode setting) or light.
+	void SetDarkMode(bool dark) { m_darkMode = dark; }
 private:
 	static constexpr float PULL_SECONDS = 6.f;
 
@@ -119,6 +126,15 @@ private:
 	void DrawAssemblySlots(Workshop& workshop);
 	void DrawAssemblyChecks(Workshop& workshop);
 	void DrawDynoTab(Workshop& workshop);
+	// The project car (WorkshopCarUI.cpp): building it up, its fluids, its tune and the road test; and its page of the store.
+	void DrawCarTab(Workshop& workshop);
+	void DrawCarBuild(Workshop& workshop);
+	void DrawCarFluids(Workshop& workshop);
+	void DrawCarTune(Workshop& workshop);
+	void DrawCarRoadTest(Workshop& workshop);
+	void DrawCarStore(Workshop& workshop);
+	// The desert quarry: what it makes, the hopper to empty, and its upgrades (WorkshopQuarryUI.cpp).
+	void DrawQuarryTab(Workshop& workshop);
 	void DrawLog(Workshop& workshop);
 
 	std::string Size(double mm) const;
@@ -135,6 +151,8 @@ private:
 	bool						m_storeOpen = false;
 	std::optional<WorkshopTab>	m_requestedTab = std::nullopt;
 	std::optional<StoreCategory>	m_requestedCategory = std::nullopt;
+	StoreCategory				m_storeCategory = StoreCategory::PARTS;	// the store's page open
+	bool						m_darkMode = false;
 	int							m_selectedTool = 0;
 	int							m_selectedStoreMachine = 0;
 	int							m_selectedStoreFurniture = 0;
@@ -151,6 +169,17 @@ private:
 	std::string			m_lastMachiningMessage = "";
 	PartOrder			m_order = {};
 	std::vector<CartLine>	m_cart = {};
+	int				m_carSystem = 0;			// the car system the build page shows (from FIRST_CAR_SYSTEM)
+	std::optional<CarTune>	m_tuneDraft = std::nullopt;	// the tune being set, till it's applied
+	int						m_carPageRequest = -1;		// a Car page to turn to next frame, or -1
+	int				m_pourProduct[FLUID_CIRCUITS] = {};
+	float				m_pourLitres[FLUID_CIRCUITS] = {};
+	// The car store's selection: the project (0), a part (1) or a fluid (2), and how it's ordered.
+	int					m_carStoreKind = 0;
+	PartOrder			m_carStoreOrder = {};
+	int					m_carStoreFluid = 0;
+	int					m_carStoreBottles = 1;
+	std::map<std::string, uint32_t>	m_carPick = {};		// the loose part picked to fit at each position
 	std::string			m_cartMessage = "";
 	size_t				m_lastLogSize = 0;
 

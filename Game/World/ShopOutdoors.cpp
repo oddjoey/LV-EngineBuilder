@@ -363,18 +363,22 @@ namespace
 			const float outerX = HALF_WIDTH + WALL, outerZ = HALF_DEPTH + WALL;
 			std::vector<Paved> covered(std::begin(PAVED), std::end(PAVED));
 			covered.push_back({ { -outerX, -outerZ }, { outerX, outerZ } });
+			covered.push_back(YARD);
+			covered.push_back(YARD_TRACK);
+			covered.push_back(QUARRY_PAD);
 			for (float start : { HIGHWAY_NEAR_Z, HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN })
 				covered.push_back({ { -HIGHWAY_HALF_LENGTH, start }, { HIGHWAY_HALF_LENGTH, start + HIGHWAY_CARRIAGEWAY } });
 			const std::vector<Paved> bay = { { { BAY_MIN_X, -BAY_HALF_DEPTH }, { -outerX, BAY_HALF_DEPTH } }, BAY_DRIVE, BAY_DRIVE_LINK };
 			std::vector<Paved> notOpen = covered;
 			notOpen.insert(notOpen.end(), bay.begin(), bay.end());
 
+			// One tile of sand covers about 17 m (see ProceduralTextures::Sand).
 			MeshBuilder ground;
-			ground.SetUVScale(0.3f);
+			ground.SetUVScale(0.06f);
 			SandBoxes(ground, { { { -1200.f, -1200.f }, { 1200.f, 1200.f } } }, notOpen);
 			add(ShopModels::GROUND, ground);
 			MeshBuilder baySand;
-			baySand.SetUVScale(0.3f);
+			baySand.SetUVScale(0.06f);
 			SandBoxes(baySand, bay, covered);
 			add(ShopModels::BAY_SAND, baySand);
 		}
@@ -525,6 +529,216 @@ namespace
 			for (float y : { 0.3f, 0.6f })
 				drum.SetColor({ 0.8f, 0.8f, 0.8f }).AddCylinder({ 0.f, y, 0.f }, 0.3f, 0.03f, 16);
 			add(ShopModels::OIL_DRUM, drum);
+		}
+		{
+			// The salvage yard's gravel, and the track in from the drive (see GarageLayout::YARD).
+			MeshBuilder gravel;
+			gravel.SetUVScale(0.7f);
+			for (const auto& area : { YARD, YARD_TRACK })
+			{
+				glm::vec2 middle = (area.min + area.max) * 0.5f, size = area.max - area.min;
+				Box(gravel, { middle.x, -0.05f, middle.y }, { size.x, 0.1f, size.y }, { 1.f, 0.86f, 0.68f });
+			}
+			add(ShopModels::YARD_GROUND, gravel);
+
+			// The fence: sheets of corrugated iron, a patchwork of old and rusty ones, between steel posts, all round
+			// but for the gate in the left side, where taller posts carry a crossbar and a sign board.
+			MeshBuilder fence;
+			fence.SetUVScale(1.f);
+			const glm::vec3 sheets[] = { { 0.62f, 0.6f, 0.56f }, { 0.55f, 0.36f, 0.24f }, { 0.48f, 0.5f, 0.5f }, { 0.6f, 0.42f, 0.3f }, { 0.7f, 0.68f, 0.62f } };
+			const glm::vec3 post = { 0.3f, 0.3f, 0.32f };
+			constexpr float PANEL = 2.f, THICK = 0.03f;
+			int sheet = 0;
+			// One straight run of fence from a to b (along X or Z), posts at each panel's ends.
+			auto run = [&](glm::vec2 a, glm::vec2 b) {
+				glm::vec2 along = b - a;
+				float length = glm::length(along);
+				int panels = (std::max)(1, static_cast<int>(std::round(length / PANEL)));
+				bool alongX = std::abs(along.x) > std::abs(along.y);
+				for (int i = 0; i < panels; i++)
+				{
+					glm::vec2 p0 = a + along * (static_cast<float>(i) / panels), p1 = a + along * (static_cast<float>(i + 1) / panels);
+					glm::vec2 middle = (p0 + p1) * 0.5f;
+					float span = length / panels;
+					// Each sheet a little higher or lower than the last, as they were put up.
+					float height = YARD_FENCE_HEIGHT - 0.12f * static_cast<float>((sheet * 7) % 3);
+					glm::vec3 size = alongX ? glm::vec3(span + 0.02f, height, THICK) : glm::vec3(THICK, height, span + 0.02f);
+					Box(fence, { middle.x, height * 0.5f + 0.02f, middle.y }, size, sheets[sheet++ % std::size(sheets)]);
+					fence.ResetTransform().SetColor(post).AddCylinder({ p0.x, YARD_FENCE_HEIGHT * 0.5f + 0.05f, p0.y }, 0.05f, YARD_FENCE_HEIGHT + 0.1f, 8);
+				}
+				fence.ResetTransform().SetColor(post).AddCylinder({ b.x, YARD_FENCE_HEIGHT * 0.5f + 0.05f, b.y }, 0.05f, YARD_FENCE_HEIGHT + 0.1f, 8);
+			};
+			run({ YARD_MIN_X, YARD_MIN_Z }, { YARD_MAX_X, YARD_MIN_Z });
+			run({ YARD_MAX_X, YARD_MIN_Z }, { YARD_MAX_X, YARD_MAX_Z });
+			run({ YARD_MAX_X, YARD_MAX_Z }, { YARD_MIN_X, YARD_MAX_Z });
+			run({ YARD_MIN_X, YARD_MAX_Z }, { YARD_MIN_X, YARD_GATE_MAX_Z });
+			run({ YARD_MIN_X, YARD_GATE_MIN_Z }, { YARD_MIN_X, YARD_MIN_Z });
+			// The gate: tall posts, a crossbar, and the yard's sign board.
+			constexpr float GATE_HEIGHT = 3.1f;
+			for (float z : { YARD_GATE_MIN_Z, YARD_GATE_MAX_Z })
+				fence.ResetTransform().SetColor(post).AddCylinder({ YARD_MIN_X, GATE_HEIGHT * 0.5f, z }, 0.08f, GATE_HEIGHT, 10);
+			float gateMiddle = (YARD_GATE_MIN_Z + YARD_GATE_MAX_Z) * 0.5f, gateWidth = YARD_GATE_MAX_Z - YARD_GATE_MIN_Z;
+			Box(fence, { YARD_MIN_X, GATE_HEIGHT - 0.06f, gateMiddle }, { 0.1f, 0.1f, gateWidth + 0.2f }, post);
+			Box(fence, { YARD_MIN_X - 0.06f, GATE_HEIGHT - 0.45f, gateMiddle }, { 0.04f, 0.6f, gateWidth * 0.7f }, { 0.75f, 0.68f, 0.5f });
+			Box(fence, { YARD_MIN_X - 0.085f, GATE_HEIGHT - 0.45f, gateMiddle }, { 0.01f, 0.36f, gateWidth * 0.6f }, { 0.55f, 0.15f, 0.1f });
+			add(ShopModels::YARD_FENCE, fence);
+
+			// One leaf of the gate, built out from its hinge along +X: a steel frame round a rusty sheet, a brace
+			// across it, and the latch on its free end. Each leaf is an object of its own, shut or swung open.
+			MeshBuilder leaf;
+			leaf.SetUVScale(1.f);
+			const float length = gateWidth * 0.5f - 0.03f;
+			Box(leaf, { length * 0.5f, 1.f, 0.f }, { length, 1.7f, 0.02f }, sheets[1]);
+			for (float y : { 0.14f, 1.86f })
+				Box(leaf, { length * 0.5f, y, 0.f }, { length, 0.05f, 0.05f }, post);
+			for (float x : { 0.03f, length - 0.03f })
+				Box(leaf, { x, 1.f, 0.f }, { 0.05f, 1.77f, 0.05f }, post);
+			{
+				float diagonal = std::atan2(1.6f, length);
+				glm::mat4 brace = glm::rotate(glm::translate(glm::mat4(1.f), { length * 0.5f, 1.f, 0.f }), diagonal, glm::vec3(0.f, 0.f, 1.f));
+				leaf.SetTransform(brace).SetColor(post).AddBox({}, { std::sqrt(length * length + 2.56f), 0.04f, 0.04f });
+				leaf.ResetTransform();
+			}
+			Box(leaf, { length - 0.06f, 1.05f, 0.f }, { 0.04f, 0.12f, 0.08f }, { 0.2f, 0.2f, 0.2f });
+			add(ShopModels::YARD_GATE_LEAF, leaf);
+
+		{
+			// The desert quarry (GarageLayout::QUARRY_PAD). Each piece is built about its own spot and shown when it's bought.
+			const glm::vec3 rust = { 0.55f, 0.3f, 0.18f }, yellow = { 0.9f, 0.68f, 0.12f }, steelGrey = { 0.4f, 0.41f, 0.43f };
+			const glm::vec3 rock = { 0.72f, 0.58f, 0.45f }, dark = { 0.12f, 0.12f, 0.13f };
+			// A cylinder lying along Z.
+			auto cylinderZ = [](MeshBuilder& builder, const glm::vec3& at, float radius, float length, const glm::vec3& color, int segments) {
+				builder.SetTransform(glm::rotate(glm::translate(glm::mat4(1.f), at), glm::half_pi<float>(), glm::vec3(1.f, 0.f, 0.f))).SetColor(color)
+					.AddCylinder({}, radius, length, segments);
+				builder.ResetTransform();
+			};
+
+			MeshBuilder pad;
+			pad.SetUVScale(0.7f);
+			{
+				glm::vec2 middle = (QUARRY_PAD.min + QUARRY_PAD.max) * 0.5f, size = QUARRY_PAD.max - QUARRY_PAD.min;
+				Box(pad, { middle.x, -0.05f, middle.y }, { size.x, 0.1f, size.y }, { 0.95f, 0.85f, 0.7f });
+			}
+			add(ShopModels::QUARRY_PAD, pad);
+
+			// The sign by the drive: a board on two posts.
+			MeshBuilder sign;
+			for (float x : { -0.7f, 0.7f })
+				Box(sign, { x, 1.f, 0.f }, { 0.08f, 2.f, 0.08f }, { 0.45f, 0.33f, 0.2f });
+			Box(sign, { 0.f, 1.65f, 0.f }, { 1.7f, 0.6f, 0.05f }, { 0.85f, 0.75f, 0.5f });
+			Box(sign, { 0.f, 1.65f, 0.03f }, { 1.5f, 0.12f, 0.01f }, { 0.6f, 0.16f, 0.1f });
+			Box(sign, { 0.f, 1.47f, 0.03f }, { 1.1f, 0.06f, 0.01f }, { 0.3f, 0.25f, 0.2f });
+			add(ShopModels::QUARRY_SIGN, sign);
+
+			// The jaw crusher: its frame on skids, the flywheels either side, the feed mouth on top, the motor and belt, and
+			// the chute out to the hopper (along +X).
+			MeshBuilder crusher;
+			for (float z : { -0.6f, 0.6f })
+				Box(crusher, { 0.f, 0.08f, z }, { 2.f, 0.16f, 0.14f }, dark);
+			Box(crusher, { 0.f, 0.75f, 0.f }, { 1.4f, 1.2f, 1.0f }, yellow);
+			for (float z : { -0.58f, 0.58f })
+			{
+				cylinderZ(crusher, { -0.1f, 0.95f, z }, 0.55f, 0.1f, steelGrey, 20);
+				cylinderZ(crusher, { -0.1f, 0.95f, z * 1.1f }, 0.12f, 0.08f, dark, 12);
+			}
+			// The feed mouth, wider at the top.
+			for (float side : { -1.f, 1.f })
+			{
+				TurnedBox(crusher, { 0.f, 1.55f, side * 0.45f }, { 1.2f, 0.5f, 0.06f }, side * 0.35f, yellow);
+				Box(crusher, { side * 0.6f, 1.55f, 0.f }, { 0.06f, 0.5f, 1.0f }, yellow);
+			}
+			Box(crusher, { -0.8f, 0.45f, 0.f }, { 0.35f, 0.4f, 0.4f }, { 0.25f, 0.35f, 0.55f });	// the motor
+			// The chute, down to the hopper.
+			{
+				glm::mat4 chute = glm::rotate(glm::translate(glm::mat4(1.f), { 1.05f, 0.55f, 0.f }), -0.5f, glm::vec3(0.f, 0.f, 1.f));
+				crusher.SetTransform(chute).SetColor(steelGrey).AddBox({}, { 0.9f, 0.05f, 0.6f });
+				crusher.ResetTransform();
+			}
+			add(ShopModels::QUARRY_CRUSHER, crusher);
+
+			// The conveyor: a belt on a frame rising from the rock heap to the crusher's mouth (built along +X, 4 m).
+			MeshBuilder conveyor;
+			{
+				constexpr float LENGTH = 4.2f, RISE = 1.6f;
+				float slope = std::atan2(RISE, LENGTH);
+				glm::mat4 belt = glm::rotate(glm::translate(glm::mat4(1.f), { LENGTH * 0.5f, 0.35f + RISE * 0.5f, 0.f }), slope, glm::vec3(0.f, 0.f, 1.f));
+				float run = std::sqrt(LENGTH * LENGTH + RISE * RISE);
+				conveyor.SetTransform(belt).SetColor(dark).AddBox({}, { run, 0.05f, 0.5f });
+				conveyor.SetTransform(belt).SetColor(steelGrey).AddBox({ 0.f, -0.06f, 0.29f }, { run, 0.12f, 0.05f });
+				conveyor.SetTransform(belt).SetColor(steelGrey).AddBox({ 0.f, -0.06f, -0.29f }, { run, 0.12f, 0.05f });
+				// A few stones riding it.
+				for (int i = 0; i < 5; i++)
+					conveyor.SetTransform(belt).SetColor(rock).AddSphere({ -run * 0.35f + i * run * 0.17f, 0.08f, 0.05f * (i % 2 ? 1.f : -1.f) }, 0.07f, 4, 6);
+				conveyor.ResetTransform();
+				// Its legs.
+				for (float x : { 0.6f, 2.1f, 3.6f })
+				{
+					float top = 0.35f + RISE * x / LENGTH;
+					for (float z : { -0.27f, 0.27f })
+						Box(conveyor, { x, top * 0.5f, z }, { 0.06f, top, 0.06f }, steelGrey);
+				}
+			}
+			add(ShopModels::QUARRY_CONVEYOR, conveyor);
+
+			// The hopper: a steel bin up on legs, its chute at the bottom for loading trucks.
+			MeshBuilder hopper;
+			for (float x : { -0.6f, 0.6f })
+				for (float z : { -0.6f, 0.6f })
+					Box(hopper, { x, 0.6f, z }, { 0.1f, 1.2f, 0.1f }, steelGrey);
+			Box(hopper, { 0.f, 1.65f, 0.f }, { 1.5f, 0.9f, 1.5f }, rust);
+			Box(hopper, { 0.f, 2.12f, 0.f }, { 1.6f, 0.06f, 1.6f }, steelGrey);
+			Box(hopper, { 0.f, 1.05f, 0.f }, { 0.5f, 0.3f, 0.5f }, rust);
+			add(ShopModels::QUARRY_HOPPER, hopper);
+
+			// Crushed stone: a cone of it, its height scaled by how full the hopper is.
+			MeshBuilder gravel;
+			gravel.ResetTransform().SetColor({ 0.78f, 0.72f, 0.64f }).AddCone({ 0.f, 0.f, 0.f }, 0.9f, 0.8f, 16);
+			add(ShopModels::QUARRY_GRAVEL, gravel);
+
+			// The hand's shed: a lean-to of corrugated iron, a door, and a wheelbarrow by it.
+			MeshBuilder shed;
+			Box(shed, { 0.f, 1.f, 0.f }, { 1.8f, 2.f, 1.5f }, { 0.55f, 0.5f, 0.45f });
+			TurnedBox(shed, { 0.f, 2.08f, 0.f }, { 2.f, 0.04f, 1.75f }, -0.12f, rust);
+			Box(shed, { 0.3f, 0.9f, 0.76f }, { 0.7f, 1.8f, 0.03f }, { 0.4f, 0.28f, 0.18f });
+			Box(shed, { -1.25f, 0.35f, 0.4f }, { 0.6f, 0.2f, 0.4f }, { 0.3f, 0.5f, 0.3f });
+			cylinderZ(shed, { -1.5f, 0.12f, 0.4f }, 0.12f, 0.05f, dark, 12);
+			add(ShopModels::QUARRY_SHED, shed);
+		}
+			// Junk: stacks of old tires, a heap of scrap panels, engine blocks on a pallet and a pile of exhaust pipe.
+			MeshBuilder junk;
+			const glm::vec3 rubber = { 0.08f, 0.08f, 0.08f }, rust = { 0.45f, 0.26f, 0.15f }, scrap = { 0.5f, 0.48f, 0.45f };
+			for (const auto& stack : YARD_TIRE_STACKS)
+				for (int tire = 0; tire < static_cast<int>(stack.y); tire++)
+				{
+					glm::vec3 at = { stack.x + 0.04f * static_cast<float>(tire % 2), 0.1f + tire * 0.19f, stack.z };
+					junk.ResetTransform().SetColor(rubber).AddTube(at, 0.3f, 0.17f, 0.18f, 20);
+				}
+			// The scrap heap: panels leaning every which way.
+			for (int i = 0; i < 9; i++)
+			{
+				float a = static_cast<float>(i);
+				glm::mat4 turn = glm::rotate(glm::translate(glm::mat4(1.f), YARD_SCRAP_HEAP + glm::vec3(std::sin(a * 2.3f) * 0.8f, 0.25f + 0.08f * (i % 4), std::cos(a * 1.7f) * 0.6f)),
+					a * 0.9f, glm::vec3(0.f, 1.f, 0.f));
+				turn = glm::rotate(turn, 0.3f + 0.25f * (i % 3), glm::vec3(1.f, 0.f, 0.f));
+				junk.SetTransform(turn).SetColor(i % 3 == 0 ? rust : i % 3 == 1 ? scrap : glm::vec3(0.8f, 0.78f, 0.72f)).AddBox({}, { 1.3f, 0.03f, 0.8f });
+			}
+			junk.ResetTransform();
+			// Engine blocks on a pallet.
+			Box(junk, YARD_PALLET + glm::vec3(0.f, 0.07f, 0.f), { 1.2f, 0.14f, 1.0f }, { 0.55f, 0.42f, 0.28f });
+			for (float x : { -0.3f, 0.3f })
+			{
+				Box(junk, YARD_PALLET + glm::vec3(x, 0.39f, 0.f), { 0.48f, 0.5f, 0.36f }, rust);
+				Box(junk, YARD_PALLET + glm::vec3(x, 0.68f, 0.f), { 0.44f, 0.08f, 0.32f }, { 0.35f, 0.33f, 0.31f });
+			}
+			// Exhaust pipe and bent tube in a pile.
+			for (int i = 0; i < 6; i++)
+			{
+				glm::mat4 turn = glm::rotate(glm::translate(glm::mat4(1.f), YARD_PIPE_PILE + glm::vec3(0.f, 0.04f + 0.05f * (i % 2), 0.12f * i - 0.3f)),
+					0.15f * i - 0.4f, glm::vec3(0.f, 1.f, 0.f));
+				junk.SetTransform(glm::rotate(turn, glm::half_pi<float>(), glm::vec3(0.f, 0.f, 1.f))).SetColor(i % 2 ? rust : scrap).AddCylinder({}, 0.03f, 1.6f, 10);
+			}
+			junk.ResetTransform();
+			add(ShopModels::YARD_JUNK, junk);
 		}
 	}
 

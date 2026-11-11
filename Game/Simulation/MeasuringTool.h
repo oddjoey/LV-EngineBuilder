@@ -35,7 +35,17 @@ enum class HandToolKind
 	SPRAY_CAN,		// spray paint: on the walls and floor, or a coat over a part or tool
 	THINNER,		// a rag and paint thinner: wipes paint off
 	PIN_PRESS,		// presses a piston pin into a piston on its rod, or out of it
-	RING_COMPRESSOR	// squeezes a piston's ring in, for it to go down the bore
+	RING_COMPRESSOR,	// squeezes a piston's ring in, for it to go down the bore
+	// The car's (appended)
+	FUNNEL,				// pours fluid from the shop's stock in at a filler
+	BRAKE_BLEEDER,		// a hose and catch bottle on a bleed nipple: one go at bleeding it
+	SPRING_COMPRESSOR,	// squeezes a front spring to go on or come off its strut
+	TIRE_IRONS,			// with the bead breaker: a tire onto its wheel, or off
+	TIMING_LIGHT,		// reads the ignition timing off the crank pulley on a running engine
+	TIRE_GAUGE,			// reads a tire's pressure, and its inflator pumps it up
+	ALIGNMENT_GAUGE,	// reads a front wheel's camber, caster and toe
+	SCREWDRIVER,		// the carburettor's idle speed and mixture screws, and the rockers' lash adjusters
+	PICKAXE		// breaks the desert's boulders for the quarry
 };
 
 struct MeasuringTool
@@ -72,6 +82,7 @@ struct MeasuringTool
 	double chargeAmps = 0.0;		// chargers: how fast they charge
 	// A book (the factory service manual): held and read, used on nothing.
 	bool manual = false;
+	int manualBook = 0;			// which: 0 the engine's (LV-16), 1 the project car's chassis manual
 	// Paint: the colour a marker or spray can puts on (RGB).
 	uint32_t paintColor = 0;
 	bool Paints() const { return handKind == HandToolKind::MARKER || handKind == HandToolKind::SPRAY_CAN || handKind == HandToolKind::THINNER; }

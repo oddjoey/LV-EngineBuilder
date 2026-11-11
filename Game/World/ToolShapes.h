@@ -45,7 +45,16 @@ enum class ToolShape
 	SPRAY_CAN,
 	RAG,			// the rag and thinner
 	PIN_PRESS,		// the piston pin press
-	RING_COMPRESSOR
+	RING_COMPRESSOR,
+	FUNNEL,
+	BLEEDER,
+	SPRING_COMPRESSOR,
+	TIRE_IRONS,
+	TIMING_LIGHT,
+	TIRE_GAUGE,
+	ALIGNMENT_GAUGE,
+	SCREWDRIVER,
+	PICKAXE
 };
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
@@ -64,6 +73,15 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 		case HandToolKind::THINNER:			return ToolShape::RAG;
 		case HandToolKind::PIN_PRESS:		return ToolShape::PIN_PRESS;
 		case HandToolKind::RING_COMPRESSOR:	return ToolShape::RING_COMPRESSOR;
+		case HandToolKind::FUNNEL:			return ToolShape::FUNNEL;
+		case HandToolKind::BRAKE_BLEEDER:		return ToolShape::BLEEDER;
+		case HandToolKind::SPRING_COMPRESSOR:	return ToolShape::SPRING_COMPRESSOR;
+		case HandToolKind::TIRE_IRONS:		return ToolShape::TIRE_IRONS;
+		case HandToolKind::TIMING_LIGHT:		return ToolShape::TIMING_LIGHT;
+		case HandToolKind::TIRE_GAUGE:		return ToolShape::TIRE_GAUGE;
+		case HandToolKind::ALIGNMENT_GAUGE:	return ToolShape::ALIGNMENT_GAUGE;
+		case HandToolKind::SCREWDRIVER:		return ToolShape::SCREWDRIVER;
+		case HandToolKind::PICKAXE:		return ToolShape::PICKAXE;
 		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
 		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
 		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
@@ -129,6 +147,15 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::RAG:			return { 1, 1 };
 		case ToolShape::PIN_PRESS:		return { 2, 2 };
 		case ToolShape::RING_COMPRESSOR:	return { 2, 1 };
+		case ToolShape::FUNNEL:			return { 2, 2 };
+		case ToolShape::BLEEDER:			return { 1, 2 };
+		case ToolShape::SPRING_COMPRESSOR:	return { 1, 3 };
+		case ToolShape::TIRE_IRONS:		return { 1, 4 };
+		case ToolShape::TIMING_LIGHT:		return { 2, 2 };
+		case ToolShape::TIRE_GAUGE:		return { 1, 2 };
+		case ToolShape::ALIGNMENT_GAUGE:	return { 2, 2 };
+		case ToolShape::SCREWDRIVER:		return { 1, 2 };
+		case ToolShape::PICKAXE:		return { 1, 3 };
 	}
 	return { 1, 1 };
 }

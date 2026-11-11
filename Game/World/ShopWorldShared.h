@@ -61,8 +61,13 @@ namespace ShopLayout
 	constexpr float STAND_MOUNT_HEIGHT = 1.05f;
 	constexpr float STAND_ROLL_PIVOT_Y = -0.13f;	// below the deck, about the block's middle
 	constexpr float STAND_ROLL_SPEED = 1.6f;		// radians per second
-	// How far up the bore a rod and piston sit before the ring compressor lets them go home.
-	constexpr float UNSEATED_RISE = 0.07f;
+	// A rod and piston before the ring compressor lets them go home: the ring, sprung out of its groove bigger than the bore
+	// (this much), rests on the deck (its middle this high), and the piston sits on it, its crown above the deck.
+	constexpr float UNSEATED_RING_SPREAD = 1.06f;
+	constexpr float UNSEATED_RING_Y = 0.0013f;
+	// A ring gapped on its own: set just in the top of the bore, then pushed down square to where it's read.
+	constexpr float RING_IN_BORE_Y = -0.003f;
+	constexpr float RING_SQUARED_Y = -0.02f;
 	inline const glm::vec3 DYNO_POSITION = { -2.6f, 0.f, 1.3f };
 	// Where an engine on the dyno sits, in the dyno's space: its crank on the absorber's axis, its
 	// flywheel end (engine +X) towards the absorber.
@@ -71,6 +76,17 @@ namespace ShopLayout
 	// The engine hoist: home by the door. In its own space its boom reaches out along +Z; the hook hangs
 	// over the ends of its legs, and an engine on it hangs from the hook with its crank along the boom.
 	inline const glm::vec3 HOIST_HOME = { 2.6f, 0.f, 2.3f };
+	// The project car, in the salvage yard where it was bought, its nose toward the gate so the hoist can roll in
+	// to its engine bay (its model's +X is its front, so a half turn points it at -X), and where the hoist's hook
+	// goes to reach into its engine bay, in its own space.
+	inline const glm::vec3 CAR_HOME = { 14.5f, 0.f, (GarageLayout::YARD_GATE_MIN_Z + GarageLayout::YARD_GATE_MAX_Z) * 0.5f };
+	constexpr float CAR_YAW = glm::pi<float>();
+	// The box of the car's nuts and bolts, just inside the yard's gate.
+	inline const glm::vec3 YARD_HARDWARE_CRATE = { 7.9f, 0.3f, 12.4f };
+	inline const glm::vec3 CAR_ENGINE_BAY = { 1.35f, 0.75f, 0.f };
+	// Where the engine's deck sits, its middle, in the car's space: the block between the strut towers, the crank
+	// about 0.35 m off the ground and the flywheel end at the firewall.
+	inline const glm::vec3 CAR_ENGINE_MOUNT = { 1.15f, 0.6f, 0.f };
 	inline const glm::vec3 HOIST_HOOK = { 0.f, 1.62f, 1.0f };
 	inline const glm::vec3 HOIST_HANG = { 0.f, 1.27f, 1.0f };	// the engine's deck, under the hook
 	constexpr float HOIST_REACH = 1.2f;			// how far from the hook a stand or the dyno can be, across the floor
@@ -145,7 +161,7 @@ namespace ShopLayout
 		if (type == PartType::PISTON)
 			return std::string("The piston goes onto a connecting rod off the engine, pinned, and on with it");
 		if (type == PartType::PISTON_RING)
-			return std::string("The ring goes onto its piston off the engine, and in with it");
+			return std::string("The ring goes onto its piston off the engine, and in with it (or on its own into an empty bore, the head off, to gap it)");
 		return std::format("The {} goes into a {} off the engine, and on with it", PartTypeName(type), PartTypeName(EngineAssembly::SlotPartType(*host)));
 	}
 	inline FitSpot FindFitSpot(const EngineAssembly& assembly, PartType type)

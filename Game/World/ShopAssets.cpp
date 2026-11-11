@@ -216,6 +216,34 @@ namespace
 		builder.ResetTransform();
 	}
 
+
+	// The deck is closed: solid round the tops of the bores, the water jacket under it reached only through small
+	// coolant holes, a ring of them round each cylinder (and at the ends of the block), matched in the head gasket.
+	// Each is x, z and radius.
+	std::vector<glm::vec3> DeckCoolantHoles()
+	{
+		using namespace EngineLayout;
+		std::vector<glm::vec3> holes;
+		const float ring = BORE_RADIUS + 0.012f;
+		for (int cylinder = 0; cylinder < 4; cylinder++)
+		{
+			float x = BoreX(cylinder);
+			for (float side : { -1.f, 1.f })
+			{
+				holes.push_back({ x, side * ring, 0.005f });
+				for (float lean : { -1.f, 1.f })
+				{
+					float angle = glm::radians(35.f);
+					holes.push_back({ x + lean * ring * std::sin(angle), side * ring * std::cos(angle), 0.0035f });
+				}
+			}
+			// The end cylinders have the end of the block beside them, not another bore.
+			if (cylinder == 0 || cylinder == 3)
+				holes.push_back({ x + (cylinder == 0 ? -ring : ring), 0.f, 0.004f });
+		}
+		return holes;
+	}
+
 	// A plain work stand or cabinet that a machine sits on, top surface at `height`.
 	void Stand(MeshBuilder& builder, const glm::vec2& footprint, float height, const glm::vec3& color)
 	{
@@ -537,7 +565,8 @@ void ShopAssets::LoadTools()
 			{
 				// A thick workshop book lying shut: navy covers, the page block between them, a spine down
 				// the left edge and a band across the front cover.
-				const glm::vec3 cover = { 0.12f, 0.18f, 0.36f };
+				// The engine's book is navy, the car's chassis book red.
+				const glm::vec3 cover = tool.manualBook == 1 ? glm::vec3(0.5f, 0.09f, 0.08f) : glm::vec3(0.12f, 0.18f, 0.36f);
 				Box(builder, { 0.f, 0.0015f, 0.f }, { 0.21f, 0.003f, 0.28f }, cover);
 				Box(builder, { 0.004f, 0.0155f, 0.f }, { 0.2f, 0.025f, 0.27f }, { 0.93f, 0.9f, 0.82f });
 				Box(builder, { 0.f, 0.0295f, 0.f }, { 0.21f, 0.003f, 0.28f }, cover);
@@ -642,6 +671,110 @@ void ShopAssets::LoadTools()
 				Box(builder, { 0.054f, 0.03f, 0.f }, { 0.02f, 0.03f, 0.03f }, dark);
 				Cylinder(builder, AlongX({ 0.08f, 0.03f, 0.f }), 0.004f, 0.04f, steel, 8);
 				Box(builder, { 0.1f, 0.03f, 0.f }, { 0.008f, 0.008f, 0.05f }, dark);
+				break;
+			}
+			// The project car's tools.
+			case ToolShape::FUNNEL:
+			{
+				// A funnel stood on its spout: the wide cone opening upward, its rolled rim, the dark mouth inside, the
+				// narrow spout below, and a tab on the rim to hang it by.
+				const glm::vec3 plastic = { 0.95f, 0.55f, 0.1f };
+				constexpr float SPOUT = 0.06f, CONE = 0.09f, MOUTH = 0.075f, NECK = 0.011f;
+				constexpr int SEGMENTS = 24;
+				builder.ResetTransform().SetColor(plastic);
+				for (int i = 0; i < SEGMENTS; i++)
+				{
+					float a0 = glm::two_pi<float>() * i / SEGMENTS, a1 = glm::two_pi<float>() * (i + 1) / SEGMENTS;
+					auto ring = [&](float angle, float radius, float y) { return glm::vec3(std::cos(angle) * radius, y, std::sin(angle) * radius); };
+					glm::vec3 low0 = ring(a0, NECK, SPOUT), low1 = ring(a1, NECK, SPOUT);
+					glm::vec3 high0 = ring(a0, MOUTH, SPOUT + CONE), high1 = ring(a1, MOUTH, SPOUT + CONE);
+					// The cone's outside and, inside it a touch smaller, its darker inside.
+					builder.SetColor(plastic).AddFlatTriangle(low0, high0, high1).AddFlatTriangle(low0, high1, low1);
+					glm::vec3 in0 = ring(a0, MOUTH - 0.004f, SPOUT + CONE - 0.002f), in1 = ring(a1, MOUTH - 0.004f, SPOUT + CONE - 0.002f);
+					glm::vec3 deep0 = ring(a0, NECK * 0.6f, SPOUT + 0.004f), deep1 = ring(a1, NECK * 0.6f, SPOUT + 0.004f);
+					builder.SetColor(plastic * 0.45f).AddFlatTriangle(deep0, in1, in0).AddFlatTriangle(deep0, deep1, in1);
+				}
+				Tube(builder, At({ 0.f, SPOUT + CONE, 0.f }), MOUTH + 0.004f, MOUTH - 0.004f, 0.008f, plastic, 0.f, glm::two_pi<float>(), SEGMENTS);
+				Tube(builder, At({ 0.f, SPOUT * 0.5f, 0.f }), NECK, NECK * 0.6f, SPOUT, plastic, 0.f, glm::two_pi<float>(), 12);
+				Box(builder, { MOUTH + 0.018f, SPOUT + CONE - 0.004f, 0.f }, { 0.03f, 0.004f, 0.022f }, plastic);
+				break;
+			}
+			case ToolShape::BLEEDER:
+			{
+				// A catch bottle and its coiled clear hose.
+				Cylinder(builder, At({ 0.f, 0.04f, 0.f }), 0.025f, 0.08f, { 0.85f, 0.85f, 0.8f }, 16);
+				Tube(builder, At({ 0.f, 0.085f, 0.f }), 0.03f, 0.026f, 0.008f, { 0.6f, 0.75f, 0.8f }, 0.f, glm::two_pi<float>(), 16);
+				break;
+			}
+			case ToolShape::SPRING_COMPRESSOR:
+			{
+				// Two long screws with their hooks.
+				for (float z : { -0.03f, 0.03f })
+				{
+					Cylinder(builder, AlongX({ 0.f, 0.008f, z }), 0.008f, 0.34f, steel, 10);
+					Box(builder, { -0.13f, 0.02f, z }, { 0.02f, 0.04f, 0.02f }, orange);
+					Box(builder, { 0.11f, 0.02f, z }, { 0.02f, 0.04f, 0.02f }, orange);
+				}
+				break;
+			}
+			case ToolShape::TIRE_IRONS:
+			{
+				for (float z : { -0.02f, 0.02f })
+					Box(builder, { 0.f, 0.006f, z }, { 0.4f, 0.012f, 0.02f }, steel);
+				Box(builder, { 0.2f, 0.012f, 0.f }, { 0.03f, 0.024f, 0.07f }, dark);
+				break;
+			}
+			case ToolShape::TIMING_LIGHT:
+			{
+				// A pistol-grip strobe and its leads.
+				Box(builder, { 0.02f, 0.03f, 0.f }, { 0.12f, 0.05f, 0.05f }, { 0.85f, 0.7f, 0.1f });
+				Cylinder(builder, AlongX({ 0.09f, 0.03f, 0.f }), 0.025f, 0.03f, dark, 16);
+				Box(builder, { -0.02f, 0.01f, 0.f }, { 0.03f, 0.02f, 0.09f }, dark);
+				break;
+			}
+			case ToolShape::TIRE_GAUGE:
+			{
+				// A dial gauge on the end of an air chuck and its hose.
+				Cylinder(builder, At({ -0.03f, 0.01f, 0.f }), 0.025f, 0.02f, steel, 20);
+				Cylinder(builder, At({ -0.03f, 0.021f, 0.f }), 0.021f, 0.002f, face, 20);
+				Cylinder(builder, AlongX({ 0.04f, 0.01f, 0.f }), 0.006f, 0.1f, dark, 8);
+				break;
+			}
+			case ToolShape::ALIGNMENT_GAUGE:
+			{
+				// The bubble gauge on its magnet, and the folded toe bar.
+				Box(builder, { -0.04f, 0.02f, 0.f }, { 0.07f, 0.04f, 0.06f }, { 0.1f, 0.3f, 0.7f });
+				Cylinder(builder, AlongZ({ -0.04f, 0.04f, 0.f }), 0.015f, 0.062f, face, 16);
+				Box(builder, { 0.05f, 0.006f, 0.f }, { 0.12f, 0.012f, 0.03f }, steel);
+				break;
+			}
+			case ToolShape::SCREWDRIVER:
+			{
+				// A red handle and its flat blade.
+				Cylinder(builder, AlongX({ -0.05f, 0.012f, 0.f }), 0.012f, 0.09f, { 0.75f, 0.12f, 0.1f }, 12);
+				Cylinder(builder, AlongX({ 0.04f, 0.012f, 0.f }), 0.003f, 0.09f, steel, 8);
+				Box(builder, { 0.088f, 0.012f, 0.f }, { 0.008f, 0.002f, 0.007f }, steel);
+				break;
+			}
+			case ToolShape::PICKAXE:
+			{
+				// Lying flat: a long hickory handle, taped at the grip, and the steel head across its end: a tapering point
+				// one way and a flat adze blade the other, both curving back a little toward the handle.
+				const glm::vec3 hickory = { 0.72f, 0.55f, 0.34f };
+				const glm::vec3 head = { 0.32f, 0.33f, 0.36f };
+				Cylinder(builder, AlongX({ -0.06f, 0.02f, 0.f }), 0.017f, 0.8f, hickory, 10);
+				Cylinder(builder, AlongX({ -0.4f, 0.02f, 0.f }), 0.019f, 0.12f, { 0.1f, 0.1f, 0.1f }, 10);
+				// The eye the handle goes through.
+				Box(builder, { 0.36f, 0.02f, 0.f }, { 0.07f, 0.04f, 0.075f }, head);
+				// The point (toward -Z): a four-sided cone, its tip curving back.
+				builder.SetTransform(glm::rotate(glm::rotate(glm::translate(glm::mat4(1.f), { 0.36f, 0.02f, -0.03f }), 0.22f, glm::vec3(0.f, 1.f, 0.f)),
+					-glm::half_pi<float>(), glm::vec3(1.f, 0.f, 0.f))).SetColor(head).AddCone({}, 0.024f, 0.3f, 4);
+				builder.ResetTransform();
+				// The adze (toward +Z): a flat blade widening a touch to its sharpened edge.
+				builder.SetTransform(glm::rotate(glm::translate(glm::mat4(1.f), { 0.36f, 0.02f, 0.13f }), -0.18f, glm::vec3(0.f, 1.f, 0.f)))
+					.SetColor(head).AddBox({}, { 0.05f, 0.016f, 0.19f });
+				builder.SetColor(steel).AddBox({ 0.f, 0.f, 0.1f }, { 0.062f, 0.012f, 0.02f });
+				builder.ResetTransform();
 				break;
 			}
 		}
@@ -1447,11 +1580,12 @@ void ShopAssets::LoadParts()
 	auto add = [&](PartType type, const MeshBuilder& builder) { AddModel(PartTypeName(type), builder); };
 
 	{
-		// Origin at the centre of the deck; the block hangs below it. Real bores, so pistons show through.
+		// Origin at the centre of the deck; the block hangs below it, its skirts past the crank. Real bores, so pistons
+		// show through, in a closed deck with its coolant holes.
 		MeshBuilder block;
 		block.SetUVScale(4.f);
 		float halfLength = BLOCK_LENGTH * 0.5f;
-		float crankcaseHeight = -CRANK_Y - CYLINDER_DEPTH;
+		float crankcaseHeight = -PAN_RAIL_Y - CYLINDER_DEPTH;
 
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 		{
@@ -1468,7 +1602,7 @@ void ShopAssets::LoadParts()
 		// the cylinders opening into it from above. A bulkhead at each main journal (and at each end)
 		// carries the upper half of that main's bearing saddle, cut into its bottom edge.
 		float crankcaseMiddle = -CYLINDER_DEPTH - crankcaseHeight * 0.5f;
-		const float CRANKCASE_HALF_WIDTH = 0.12f;
+		const float CRANKCASE_HALF_WIDTH = CRANKCASE_WIDTH * 0.5f;
 		const float SADDLE_RADIUS = 0.0295f;
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 		{
@@ -1498,7 +1632,9 @@ void ShopAssets::LoadParts()
 		// Core plug holes (the plugs are parts of their own) and the oil filter boss.
 		for (int plug = 0; plug < 3; plug++)
 			Cylinder(block, AlongZ({ (plug - 1) * 0.12f, -0.09f, BLOCK_WIDTH * 0.5f + 0.0005f }), 0.015f, 0.001f, DARK);
-		Cylinder(block, AlongZ({ 0.12f, -0.2f, 0.13f }), 0.035f, 0.03f);	// on the side the filter went to (see AncillaryMount)
+		Cylinder(block, AlongZ({ 0.12f, -0.2f, CRANKCASE_HALF_WIDTH + 0.01f }), 0.035f, 0.03f);	// on the side the filter went to (see AncillaryMount)
+		for (const auto& hole : DeckCoolantHoles())
+			Cylinder(block, At({ hole.x, -0.0004f, hole.y }), hole.z, 0.0012f, DARK, 12);
 		add(PartType::BLOCK, block);
 	}
 	{
@@ -1600,6 +1736,9 @@ void ShopAssets::LoadParts()
 			gasket.SetTransform(glm::rotate(glm::mat4(1.f), glm::pi<float>(), { 1.f, 0.f, 0.f }));
 			gasket.AddPlateWithHole({ BoreX(cylinder), 0.f, 0.f }, { BORE_SPACING, BLOCK_WIDTH }, BORE_RADIUS + 0.0015f, 32);
 		}
+		gasket.ResetTransform();
+		for (const auto& hole : DeckCoolantHoles())
+			Cylinder(gasket, At({ hole.x, GASKET_THICKNESS - 0.0003f, hole.y }), hole.z, 0.0008f, DARK, 12);
 		add(PartType::HEAD_GASKET, gasket);
 	}
 	{
@@ -1662,10 +1801,15 @@ void ShopAssets::LoadParts()
 		add(PartType::MAIN_CAP, cap);
 	}
 	{
-		// Origin on the cam axis: a bridge over the journal, bolted down either side of the cam.
+		// Origin on the cam axis: a dome over the journal, a low flat foot either side of it out to the edge of its tower,
+		// where the bolts go down beside the dome. Its underside is the top half of the journal's bore. A shade darker
+		// than the head, so it shows on its tower.
 		MeshBuilder cap;
 		cap.SetUVScale(6.f);
-		Box(cap, { 0.f, 0.014f, 0.f }, { 0.02f, 0.012f, 0.05f }, { 0.85f, 0.85f, 0.88f });
+		const glm::vec3 color = { 0.74f, 0.75f, 0.78f };
+		Tube(cap, AlongX({}), 0.0195f, 0.0146f, 0.018f, color, -glm::half_pi<float>(), glm::half_pi<float>(), 20);
+		for (float side : { -1.f, 1.f })
+			Box(cap, { 0.f, 0.004f, side * 0.0198f }, { 0.018f, 0.008f, 0.0104f }, color);
 		add(PartType::CAM_CAP, cap);
 	}
 	{
@@ -1708,6 +1852,7 @@ void ShopAssets::LoadParts()
 		shell(PartType::ROD_BEARING_LOWER, 0.0255f, 0.024f, 0.018f, false);
 	}
 	LoadAncillaries();
+	LoadCarParts();
 }
 
 EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
@@ -1736,7 +1881,7 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::OIL_PAN_GASKET:			return { { 0.f, PAN_RAIL_Y - 0.001f, 0.f } };
 		case PartType::OIL_PAN:					return { { 0.f, PAN_RAIL_Y - 0.002f, 0.f } };
 		case PartType::OIL_DRAIN_PLUG:			return { { 0.12f, PAN_RAIL_Y - 0.002f - OIL_PAN_DEPTH - 0.008f, 0.f } };
-		case PartType::OIL_FILTER:				return crossOver({ { 0.12f, -0.2f, -0.145f }, FACING_EXHAUST });
+		case PartType::OIL_FILTER:				return crossOver({ { 0.12f, -0.2f, -(CRANKCASE_WIDTH * 0.5f + 0.025f) }, FACING_EXHAUST });
 		case PartType::VALVE_STEM_SEAL:			return { { BoreX(cylinder), HEAD_DECK_Y + HEAD_FLOOR_Y, ValveZ(exhaust) } };
 		case PartType::VALVE_RETAINER:			return { { BoreX(cylinder), HEAD_DECK_Y + HEAD_FLOOR_Y + SPRING_INSTALLED_HEIGHT, ValveZ(exhaust) } };
 		// Each rocker arm sits on its valve tip, its pivot out on the shaft to the side: the intakes' shaft
@@ -1855,7 +2000,7 @@ void ShopAssets::LoadAncillaries()
 	}
 	{
 		MeshBuilder gasket;
-		frame(gasket, BLOCK_LENGTH, 0.24f, 0.016f, 0.0015f, RUBBER);
+		frame(gasket, BLOCK_LENGTH, CRANKCASE_WIDTH, 0.016f, 0.0015f, RUBBER);
 		add(PartType::OIL_PAN_GASKET, gasket);
 	}
 	{
@@ -1863,13 +2008,13 @@ void ShopAssets::LoadAncillaries()
 		MeshBuilder pan;
 		pan.SetUVScale(3.f);
 		float depth = OIL_PAN_DEPTH;
-		frame(pan, BLOCK_LENGTH, 0.24f, 0.016f, 0.004f, PAN_PAINT, -0.002f);
+		frame(pan, BLOCK_LENGTH, CRANKCASE_WIDTH, 0.016f, 0.004f, PAN_PAINT, -0.002f);
 		for (float side : { -1.f, 1.f })
 		{
-			Box(pan, { 0.f, -depth * 0.5f, side * 0.113f }, { BLOCK_LENGTH - 0.02f, depth, 0.004f }, PAN_PAINT);
-			Box(pan, { side * (BLOCK_LENGTH * 0.5f - 0.012f), -depth * 0.5f, 0.f }, { 0.004f, depth, 0.226f }, PAN_PAINT);
+			Box(pan, { 0.f, -depth * 0.5f, side * (CRANKCASE_WIDTH * 0.5f - 0.007f) }, { BLOCK_LENGTH - 0.02f, depth, 0.004f }, PAN_PAINT);
+			Box(pan, { side * (BLOCK_LENGTH * 0.5f - 0.012f), -depth * 0.5f, 0.f }, { 0.004f, depth, CRANKCASE_WIDTH - 0.014f }, PAN_PAINT);
 		}
-		Box(pan, { 0.f, -depth, 0.f }, { BLOCK_LENGTH - 0.02f, 0.005f, 0.226f }, PAN_PAINT);
+		Box(pan, { 0.f, -depth, 0.f }, { BLOCK_LENGTH - 0.02f, 0.005f, CRANKCASE_WIDTH - 0.014f }, PAN_PAINT);
 		add(PartType::OIL_PAN, pan);
 	}
 	{

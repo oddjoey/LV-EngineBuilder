@@ -276,6 +276,101 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Engine {} assembled.", m_workshop->GetActiveEngine() + 1));
 	});
 
+	m_console.AddCommand("hold", "hold <tool>", "Takes a tool you own straight into your hand, out of its box if it's still in one.",
+		[this, toolNames](const Console::Arguments& args) {
+		std::string error;
+		auto index = FindName(toolNames(), Joined(args), error);
+		if (!index)
+			return m_console.Error(error);
+		if (!m_world.DevHold(ItemRef::Tool(static_cast<uint32_t>(*index))))
+			return m_console.Error(std::format("You haven't a {} (give it with tool, and wait a moment for it to arrive).", ToolCatalog::All()[*index].name));
+		m_console.Print(std::format("Holding the {}.", ToolCatalog::All()[*index].name));
+	});
+
+	m_console.AddCommand("look", "look <yaw> [pitch]", "Turns the view to a heading and tilt, in degrees.", [this](const Console::Arguments& args) {
+		auto yaw = args.empty() ? std::nullopt : Number(args[0]);
+		if (!yaw)
+			return m_console.Error("Usage: look <yaw> [pitch]");
+		auto pitch = args.size() > 1 ? Number(args[1]) : std::optional<double>(0.0);
+		m_player.SetYaw(static_cast<float>(glm::radians(*yaw)));
+		m_player.SetPitch(static_cast<float>(glm::radians(pitch.value_or(0.0))));
+		m_console.Print(std::format("Looking at {:.0f}, {:.0f} degrees.", *yaw, pitch.value_or(0.0)));
+	});
+
+	m_console.AddCommand("car", "car buy|build|test|strip <part>",
+		"The project car: buy (the shell and its lot, for free), build (new OEM parts everywhere, the active engine in if it's finished, filled and bled), "
+		"test (a road test), or strip a kind of part off it, bolts and all (car strip hood).", [this, partNames](const Console::Arguments& args) {
+		std::string what = args.empty() ? "" : args[0];
+		if (what == "strip")
+		{
+			std::string error;
+			auto index = FindName(partNames(), Joined(Console::Arguments(args.begin() + 1, args.end())), error);
+			if (!index)
+				return m_console.Error(error);
+			int removed = m_workshop->DevStripCar(static_cast<PartType>(*index));
+			m_console.Print(std::format("Took {} {} off the car.", removed, PartTypeName(static_cast<PartType>(*index))));
+			return;
+		}
+		if (what == "buy")
+		{
+			if (m_workshop->OwnsCar())
+				return m_console.Error("There's a project car in the salvage yard already.");
+			m_workshop->DevAddMoney(Workshop::PROJECT_CAR_PRICE);
+			m_workshop->BuyProjectCar();
+			m_console.Print("A project car in the salvage yard.");
+		}
+		else if (what == "build")
+		{
+			m_workshop->DevAssembleCar();
+			m_console.Print(m_workshop->GetEngineInCar() >= 0 ? "Built, with an engine in." : "Built, but with no engine: finish the active one and build again.");
+		}
+		else if (what == "test")
+		{
+			if (!m_workshop->OwnsCar())
+				return m_console.Error("There's no project car.");
+			const auto& result = m_workshop->RoadTestCar();
+			m_console.Print(std::format("Cranks {}, starts {}, drives {}, steers {}, stops {}; 0-100 km/h {:.1f} s, {:.0f}% healthy.", result.cranks,
+				result.starts, result.drives, result.steers, result.stops, result.zeroToHundred, result.healthScore));
+		}
+		else
+			m_console.Error("Usage: car buy|build|test");
+	});
+
+	m_console.AddCommand("screen", "screen car [build|fluids|tune|test] | screen store", "Opens the parts computer's Car tab on one of its pages, or the store's Project Car page.",
+		[this](const Console::Arguments& args) {
+		const char* pages[] = { "build", "fluids", "tune", "test" };
+		if (!args.empty() && args[0] == "quarry")
+		{
+			m_ui.Open(WorkshopTab::QUARRY);
+			return m_console.Print("The quarry's screen.");
+		}
+		if (!args.empty() && args[0] == "store")
+		{
+			m_ui.OpenStore(args.size() > 1 && args[1] == "hardware" ? StoreCategory::HARDWARE : StoreCategory::CAR);
+			return m_console.Print("The store's Project Car page.");
+		}
+		std::string which = args.size() > 1 ? args[1] : "build";
+		for (int page = 0; page < 4; page++)
+			if (which == pages[page] && !args.empty() && args[0] == "car")
+			{
+				m_ui.OpenCarPage(page);
+				return m_console.Print(std::format("The Car tab, {} page.", which));
+			}
+		m_console.Error("Usage: screen car [build|fluids|tune|test]");
+	});
+
+	m_console.AddCommand("read","read engine|car [spread]", "Opens a service manual (the engine's or the car's), turned to a pair of pages.",
+		[this](const Console::Arguments& args) {
+		std::string which = args.empty() ? "engine" : args[0];
+		if (which != "engine" && which != "car")
+			return m_console.Error("Usage: read engine|car [spread]");
+		m_manual.Open(which == "car" ? ServiceManual::Book::CHASSIS : ServiceManual::Book::ENGINE);
+		auto spread = args.size() > 1 ? Number(args[1]) : std::nullopt;
+		if (spread)
+			m_manual.Turn(static_cast<int>(*spread));
+		m_console.Print(std::format("Reading the {} manual.", which));
+	});
+
 	m_console.AddCommand("time", "time <hour>", "Sets the time of day, 0 to 24 (e.g. time 13.5).", [this](const Console::Arguments& args) {
 		auto hour = args.empty() ? std::nullopt : Number(args[0]);
 		if (!hour || *hour < 0.0 || *hour > 24.0)
@@ -302,6 +397,47 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		auto& settings = m_devMenu.EditSettings();
 		settings.showBounds = Switch(args, settings.showBounds);
 		m_console.Print(std::format("Bounding boxes {}.", settings.showBounds ? "on" : "off"));
+	});
+
+	m_console.AddCommand("quarry", "quarry upgrade all|boulder", "The desert quarry: every upgrade bought (for free), or you taken to the nearest "
+		"boulder, facing it.", [this](const Console::Arguments& args) {
+		std::string what = args.empty() ? "" : args[0];
+		if (what == "upgrade")
+		{
+			for (int u = 0; u < QUARRY_UPGRADES; u++)
+				while (m_workshop->QuarryUpgradePrice(static_cast<QuarryUpgrade>(u)) > 0.0)
+				{
+					m_workshop->DevAddMoney(m_workshop->QuarryUpgradePrice(static_cast<QuarryUpgrade>(u)));
+					if (!m_workshop->BuyQuarryUpgrade(static_cast<QuarryUpgrade>(u)))
+						break;
+				}
+			return m_console.Print("The quarry has everything.");
+		}
+		if (what == "boulder")
+		{
+			glm::vec3 feet = m_player.GetFeetPosition();
+			// Optionally the nearest of at least a kind: 1 granite, 2 copper ore, 3 a geode, 4 gold-bearing quartz.
+			auto kind = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			auto boulder = m_world.DevNearestBoulder(feet, kind ? static_cast<int>(*kind) : 0);
+			if (!boulder)
+				return m_console.Error("There are no boulders left standing.");
+			glm::vec3 away = feet - *boulder;
+			away.y = 0.f;
+			away = glm::length(away) > 0.01f ? glm::normalize(away) : glm::vec3(0.f, 0.f, 1.f);
+			glm::vec3 stand = *boulder + away * 2.f;
+			m_player.SetPosition({ stand.x, 0.f, stand.z });
+			// Facing it: yaw 0 looks toward -Z.
+			m_player.SetYaw(std::atan2(away.x, away.z));
+			m_player.SetPitch(-0.62f);
+			return m_console.Print("At the nearest boulder.");
+		}
+		if (what == "swing")
+		{
+			auto phase = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			m_world.DevSwing(phase ? static_cast<float>(*phase) : -1.f);
+			return m_console.Print(phase ? "The pickaxe held partway through its swing." : "The pickaxe let go.");
+		}
+		m_console.Error("Usage: quarry upgrade all | quarry boulder [kind] | quarry swing [phase]");
 	});
 
 	m_console.AddCommand("tp", "tp <x> <z> [y]", "Moves you to a spot on the floor (pos shows where you are).", [this](const Console::Arguments& args) {

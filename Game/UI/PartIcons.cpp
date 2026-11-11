@@ -278,6 +278,9 @@ namespace PartIcons
 			case PartType::BOLT_M12:		bolt(0.50f, 0.18f, 0.74f); break;
 			case PartType::BOLT_M14:		bolt(0.50f, 0.14f, 0.80f); break;
 			case PartType::NUT_M8:
+			case PartType::NUT_M10:
+			case PartType::NUT_M12:
+			case PartType::LUG_NUT:
 			{
 				// A hex nut seen end on.
 				float across = 0.30f;

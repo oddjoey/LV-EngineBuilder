@@ -116,8 +116,29 @@
     <ClCompile Include="Game\Net\AccountLogin.cpp">
       <Filter>Game\Net</Filter>
     </ClCompile>
+    <ClCompile Include="Game\Simulation\CarAssembly.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\CarSpec.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
     <ClCompile Include="Game\Simulation\Dyno.cpp">
       <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\RoadTest.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\WorkshopCar.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\Simulation\WorkshopQuarry.cpp">
+      <Filter>Game\Simulation</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldQuarry.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\WorkshopQuarryUI.cpp">
+      <Filter>Game\UI</Filter>
     </ClCompile>
     <ClCompile Include="Game\Simulation\EngineAssembly.cpp">
       <Filter>Game\Simulation</Filter>
@@ -188,6 +209,9 @@
     <ClCompile Include="Game\UI\ServiceManual.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Game\UI\ServiceManualChassis.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
     <ClCompile Include="Game\UI\ServiceManualFigures.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
@@ -195,6 +219,9 @@
       <Filter>Game\UI</Filter>
     </ClCompile>
     <ClCompile Include="Game\UI\Ratings.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\UI\WorkshopCarUI.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
     <ClCompile Include="Game\UI\WorkshopUI.cpp">
@@ -210,6 +237,15 @@
       <Filter>Game\Audio</Filter>
     </ClCompile>
     <ClCompile Include="Game\World\ShopAssets.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopAssetsCar.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldCar.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldCarTools.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
     <ClCompile Include="Game\World\ShopLighting.cpp">
@@ -387,7 +423,19 @@
     <ClInclude Include="Game\Net\ClientHandshake.h">
       <Filter>Game\Net</Filter>
     </ClInclude>
+    <ClInclude Include="Game\Simulation\CarAssembly.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\CarFluids.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\CarSpec.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
     <ClInclude Include="Game\Simulation\Dyno.h">
+      <Filter>Game\Simulation</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\Simulation\RoadTest.h">
       <Filter>Game\Simulation</Filter>
     </ClInclude>
     <ClInclude Include="Game\Simulation\EngineAssembly.h">
@@ -442,6 +490,9 @@
       <Filter>Game\UI</Filter>
     </ClInclude>
     <ClInclude Include="Game\UI\ItemIcons.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\UI\MaterialText.h">
       <Filter>Game\UI</Filter>
     </ClInclude>
     <ClInclude Include="Game\UI\Console.h">

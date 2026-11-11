@@ -11,9 +11,11 @@ LV-AccountServer (port 44444)
     Keeps every account. Logs players in and hands out signed "tickets".
 
 LV-EngineServer (port 33333)
-    Holds one garage. It doesn't simulate anything: it keeps the garage as
-    text records, puts everyone's changes in one order and passes them on.
-    It also keeps the clock, saves to disk, and gives out name prefixes.
+    Holds the garages of one world. It doesn't simulate anything: it keeps
+    each garage as text records, puts everyone's changes in one order and
+    passes them on to that garage's players. It also keeps the clock, saves
+    to disk, gives out name prefixes, and runs the votes on who joins which
+    garage.
 
 The game
     Runs the whole simulation itself. Each player's game is a full copy of
@@ -63,11 +65,26 @@ servers, so it is the same on every platform:
    public identity. A good signature proves the player is who the ticket
    says.
 
-4. The server answers with "welcome", which contains:
+4. Your first time on that server, you aren't in a garage yet. The server
+   sends "garages", the list of its garages (members, and how many are
+   online), and the game asks you to choose:
+       create        a new garage, yours, on the next free plot. Your fresh
+                     shop becomes it.
+       request <id>  ask to join one. Its members who are online get a
+                     "vote"; more than half saying yes lets you in, half or
+                     more saying no turns you away ("denied", then the list
+                     again). After 60 seconds it's decided by the votes cast.
+                     If no member is online you're told it's "pending", and
+                     the vote starts when one comes in. A garage with no
+                     members at all is yours for the asking.
+   You belong to one garage from then on, and go straight into it.
+
+5. The server answers with "welcome", which contains:
        - your id and slot, and your name and prefix
+       - your garage's name and plot, and every garage's plot
        - the time of day
-       - who else is in the garage
-       - every record in the garage
+       - everyone else playing, and their garage's plot
+       - every record in your garage
        - your saved backpack layout and where you were standing
    Your game wipes its own shop and rebuilds it from those records.
 
@@ -87,9 +104,10 @@ About 10 times a second, each game (NetSession::Sync):
     3. Applies whatever batches have come in from the server since last
        time.
 
-The server (GarageServer::ApplyOps) applies each batch to its copy and sends
-it on to everyone, including the player who sent it. So every game gets the
-same changes in the same order.
+The server (GarageServer::ApplyOps) applies each batch to its copy of that
+garage and sends it on to everyone in the garage, including the player who
+sent it. So every game in a garage gets the same changes in the same order.
+Players in other garages never see them.
 
 When two players change the same record:
     While your own change to a record is on its way, your game ignores other
@@ -109,7 +127,17 @@ Money:
 
 presence (20 times a second)
     Position, facing, arms, crouching and monkey colours. The server passes
-    it on to everyone else, and remembers where you stood in your profile.
+    it on to everyone else on the server, and remembers where you stood in
+    your profile. Each game builds its own garage at the origin and draws
+    players from other garages on theirs, 40 m apart along the highway
+    (NetProtocol::PlotOffsetX).
+
+plots (when a garage is made)
+    Every garage's plot, so each game puts up the new building.
+
+vote / voteover / ballot
+    Someone asking to join your garage, how it went, and your answer
+    (Y or N in the game).
 
 profile (once a second, when it has changed)
     Your backpack and hotbar layout, kept by the server for when you come
@@ -127,8 +155,10 @@ joined / name / left (when they happen)
 ----------------------
 
 Garage server:
-    garage.lvgarage       every record
-    profiles.lvprofiles   each player's layout and position
+    garage.lvgarage       every garage: its name, plot, members and records
+                          (an old one-garage file loads as "The first
+                          garage", with nobody a member of it yet)
+    profiles.lvprofiles   each player's garage, layout and position
     server_identity.key   the server's identity
     prefixes.txt          name prefixes
     It saves automatically every 30 seconds, and when the last player

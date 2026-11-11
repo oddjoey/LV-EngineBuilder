@@ -3,12 +3,15 @@
 #include <map>
 #include <set>
 #include <memory>
+#include <array>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "CarAssembly.h"
 #include "Dyno.h"
 #include "EngineAssembly.h"
+#include "RoadTest.h"
 #include "Machine.h"
 #include "MeasuringTool.h"
 #include "PartFactory.h"
@@ -27,11 +30,52 @@ struct PartOrder
 // One line in the parts computer's cart.
 struct CartLine
 {
-	enum class Kind { PART, TOOL, MACHINE, ENGINE_STAND, FURNITURE, DYNO, HOIST };
+	enum class Kind { PART, TOOL, MACHINE, ENGINE_STAND, FURNITURE, DYNO, HOIST, PROJECT_CAR, FLUID };
 	Kind kind = Kind::PART;
 	PartOrder order = {};		// PART: what, and how many (order.quantity)
-	size_t index = 0;			// TOOL / MACHINE / FURNITURE: which one
-	int quantity = 1;			// ENGINE_STAND / FURNITURE / TOOL: how many
+	size_t index = 0;			// TOOL / MACHINE / FURNITURE: which one; FLUID: the FluidProduct
+	int quantity = 1;			// ENGINE_STAND / FURNITURE / TOOL / FLUID: how many
+};
+
+// The project car: an LE86 shell on the drive, built up round an engine from one of the stands.
+struct CarBuild
+{
+	explicit CarBuild(const CarSpec& spec) : assembly(spec) {}
+
+	CarAssembly assembly;
+	RoadTestResult lastRoadTest = {};
+	RoadTestResult previousRoadTest = {};	// the drive before it, to compare with (not saved)
+	bool roadTestCurrent = false;
+};
+
+// The desert quarry, the shop's sideline: boulders broken out in the desert with a pickaxe for what the stone
+// fetches, and a rock crusher on the plot that earns on its own into its hopper, all of it upgraded with what it makes.
+enum class QuarryUpgrade
+{
+	CRUSHER,	// the crusher itself: none, then bigger ones
+	CONVEYOR,	// feeds it faster
+	HOPPER,		// holds more before it has to be emptied
+	HAMMER,		// what the boulders are broken with: quicker, and more stone from each
+	HAND,		// a hired hand who empties the hopper (for a cut)
+	COUNT
+};
+constexpr int QUARRY_UPGRADES = static_cast<int>(QuarryUpgrade::COUNT);
+
+struct QuarryState
+{
+	std::array<int, QUARRY_UPGRADES> levels = {};
+	double hopper = 0.0;		// dollars of crushed stone waiting to be sold
+	double earned = 0.0;		// everything the quarry has made
+	int bouldersBroken = 0;
+};
+
+// The last car sold: what the buyer's road test made of it and what they paid.
+struct CarSale
+{
+	bool sold = false;
+	RoadTestResult test = {};
+	double price = 0.0;
+	double reputation = 0.0;
 };
 
 struct AssemblyReading
@@ -42,6 +86,15 @@ struct AssemblyReading
 
 // One engine being built on its own stand: what's fitted to it, the clearances checked on it, and
 // its last dyno pull.
+// A ring set on its own in a bore of a block off the engine, to be gapped: the block, the bore, and whether it's been
+// pushed down square with a piston yet.
+struct BoreRing
+{
+	uint32_t block = 0;
+	int cylinder = 0;
+	bool squared = false;
+};
+
 struct EngineBuild
 {
 	explicit EngineBuild(const EngineSpec& spec) : assembly(spec) {}
@@ -52,6 +105,8 @@ struct EngineBuild
 	bool dynoCurrent = false;
 	// Cylinders whose rod and piston are in the top of the bore, not yet pushed home with the ring compressor.
 	std::set<int> unseated = {};
+	// Cylinders whose ring, sat on its own in the bore to be gapped, has been pushed down square with a piston.
+	std::set<int> squaredRings = {};
 };
 
 // The last engine sold: the buyer's dyno pull of it, what they paid and the reputation it earned. Only
@@ -177,6 +232,13 @@ public:
 	double MeasureScatterFactor() const;
 	double BatteryUseFactor() const;
 	double SaleFactor() const;
+	// The perks: what parts, and tools and machines, cost against the list price; what a loose part sells for;
+	// how much more reputation the work earns; how much a machine's error is cut down.
+	double PartPriceFactor() const;
+	double EquipmentPriceFactor() const;
+	double PartSalePrice(const Part& part) const;
+	double ReputationFactor() const;
+	double MachiningErrorFactor() const;
 	double WalkSpeedFactor() const;
 	double DynoCost() const;
 	static constexpr int MAX_TOOL_COPIES = 8;
@@ -261,6 +323,20 @@ public:
 	// or over it till then: its cap, the oil pump, the head gasket.
 	const std::set<int>& UnseatedPistons(int engine) const;
 	bool SeatPiston(int cylinder);
+	// A ring gapped on its own: set in the top of an open bore (the head off, no piston in it), pushed down square
+	// with a piston, then the feeler gauge reads its gap. It sits in the cylinder's ring position with no piston
+	// there. On an engine, the cylinders with one and whether it's been squared yet.
+	std::map<int, bool> RingsInBore(int engine) const;
+	std::optional<std::string> RingInBoreBlockedBy(int engine, int cylinder) const;
+	bool SquareRing(int cylinder);
+	// The same off the engine, in a block on the bench, a shelf or the floor: the ring rides in the block till it's taken out.
+	pPart RingInLooseBore(const Part& block, int cylinder) const;
+	const BoreRing* LooseBoreOf(const Part& ring) const;
+	std::optional<std::string> LooseBoreBlockedBy(const Part& block, int cylinder) const;
+	bool SetRingInLooseBore(const pPart& block, int cylinder, const pPart& ring);
+	bool SquareLooseRing(const Part& ring);
+	pPart TakeRingOutOfLooseBore(const Part& ring);
+	bool MeasureLooseRingGap(Part& ring, int toolIndex);
 	// A piston pin that isn't in a piston.
 	pPart LoosePin() const;
 	// Whether a shell of that type fits a part of the other.
@@ -300,7 +376,104 @@ public:
 	// it makes and how healthy it is; only then are its figures known (GetLastSale).
 	bool SellEngine();
 	const EngineSale& GetLastSale() const;
+
+	// The project car (WorkshopCar.cpp). A shop has at most one: bought as a bare shell on the drive, with a
+	// lot of used parts off the old car (some missing, some past saving), and sold once it's built and driven.
+	static constexpr double PROJECT_CAR_PRICE = 2400.0;
+	bool OwnsCar() const;
+	bool BuyProjectCar();
+	// What came with the project car when it was bought: its parts, laid out round it in the salvage yard, and its nuts
+	// and bolts, in a crate there. Only known in the game it was bought in (not saved): the world lays them out once.
+	bool CameWithCar(const Part& part) const;
+	bool CameWithCarHardware(const Part& part) const;
+	const CarBuild* GetCar() const;
+	// Which part a car part is on, off the car: the spring compressed onto a front strut, the tire on its
+	// wheel. And the other way: what a spring or tire is on.
+	pPart CarriedOn(const Part& host) const;
+	pPart CarHostOf(const Part& part) const;
+	bool IsOnCar(const Part& part) const;
+	// The spring onto its strut (with the spring compressor), the tire onto its wheel; and off again.
+	bool FitOntoCarPart(const pPart& host, const pPart& part);
+	pPart TakeOffCarPart(const pPart& host);
+	// Following the car's build order (CarAssembly::Prerequisites), logging why not.
+	bool InstallCarPart(CarSlot slot, int index, const pPart& part);
+	bool RemoveCarPart(CarSlot slot, int index);
+	std::optional<std::string> CarTurningProblem(CarSlot slot, int index, size_t toolIndex, int sizeMm, bool tightening) const;
+	bool TightenCarFastener(CarSlot slot, int index, size_t toolIndex, int sizeMm);
+	bool LoosenCarFastener(CarSlot slot, int index, size_t toolIndex, int sizeMm);
+	// The best tool the shop has to do up (or undo) a nut or bolt of this size to this torque, and the socket
+	// or wrench size on it: a torque wrench if one reaches, else a breaker bar, ratchet or wrench.
+	std::optional<std::pair<size_t, int>> BestTurningTool(PartType fastener, double torqueNm, bool tightening) const;
+	// The engine in the car's bay: lowered in off the hoist and lifted out onto it again. While it's in, its
+	// stand stays empty for it and nothing on it can be changed.
+	int GetEngineInCar() const;
+	// What can be got at with the engine in the car, and taken off or fitted there: the valve cover (for the lash), the
+	// plugs and leads, the carburettor and the oil filter, with their gaskets and bolts.
+	static bool ServiceableInCar(AssemblySlot slot);
+	bool LowerEngineIntoCar();
+	bool HoistEngineFromCar();
+	// Fluids are bought by the bottle and kept in the shop's stock, by the litre, till they're poured.
+	static double FluidUnitLitres(FluidProduct product);
+	static double FluidUnitPrice(FluidProduct product);
+	double FluidStock(FluidProduct product) const;
+	// What went in: what's in stock, up to what it takes; poured into a circuit that's open, it runs out on the floor.
+	// quiet: poured a little at a time (held at the filler), so it isn't logged each time.
+	double PourIntoCar(FluidCircuit circuit, FluidProduct product, double litres, bool quiet = false);
+	double DrainCar(FluidCircuit circuit);
+	// Whether the shop owns a tool of that kind (the spring compressor, the tire irons...).
+	bool OwnsToolOfKind(HandToolKind kind) const;
+	// Whether the car's engine fires and keeps running (to burp the coolant, or strobe the timing).
+	bool CarStarts() const;
+	// One go at a bleed point. The air left in that line, which the player only sees as how many bubbles come out.
+	double BleedCar(BleedPoint point);
+	// Runs the engine with the radiator cap off till the thermostat opens, to let the air out.
+	bool BurpCarCoolant();
+	void SetCarTune(const CarTune& tune);
+	// A drive round the block and down the strip, the engine as it is in the car.
+	const RoadTestResult& RoadTestCar();
+	// Sells the car, engine and all: the buyer drives it and pays for what it does and how healthy it is.
+	bool SellCar();
+	const CarSale& GetLastCarSale() const;
+	// Developer shortcut: fits new OEM parts everywhere they'll go, the active engine in the bay if it's
+	// finished and free, and fills and bleeds everything.
+	void DevAssembleCar();
+	// Developer shortcut: takes every one of a kind of part off the car, and its nuts and bolts, whatever is in the way.
+	int DevStripCar(PartType type);
+	// The car, what's fitted to its loose parts and the fluids in stock, as one line of save text (for the save
+	// and the network); and back, once the inventory holds the parts.
+	std::string CarState() const;
+	bool RestoreCarState(const std::string& text);
+
+	// The desert quarry (WorkshopQuarry.cpp).
+	const QuarryState& GetQuarry() const;
+	static const char* QuarryUpgradeName(QuarryUpgrade upgrade, int level);
+	static const char* QuarryUpgradeBlurb(QuarryUpgrade upgrade);
+	static int QuarryMaxLevel(QuarryUpgrade upgrade);
+	// What the next level costs (0 when it's as good as it gets), and why it can't be bought yet, if it can't.
+	double QuarryUpgradePrice(QuarryUpgrade upgrade) const;
+	std::optional<std::string> QuarryUpgradeProblem(QuarryUpgrade upgrade) const;
+	bool BuyQuarryUpgrade(QuarryUpgrade upgrade);
+	// The crusher's output in dollars a minute, and how much its hopper holds.
+	double QuarryRate() const;
+	double QuarryCapacity() const;
+	// How long a boulder takes to break with the hammer as it is, and what it pays.
+	float BoulderSeconds() const;
+	// worth: how much more the kind of rock fetches than plain sandstone.
+	double BoulderPay(double size, double worth = 1.0) const;
+	// A boulder broken (size about 1 for an average one): its stone sold. Returns what it fetched.
+	double BreakBoulder(double size, double worth = 1.0);
+	// The crusher running for this many seconds; with a hand hired, the hopper's emptied as it fills.
+	void AdvanceQuarry(double seconds);
+	// The hopper emptied and its stone sold; returns what it fetched.
+	double CollectQuarry();
+	std::string QuarryText() const;
+	bool RestoreQuarry(const std::string& text);
 private:
+	void CarChanged();
+	// Why a tool can't turn this nut or bolt, the engine's or the car's.
+	std::optional<std::string> TurningProblemFor(const FastenerHoles* holes, const pPart& part, size_t toolIndex, int sizeMm, bool tightening) const;
+	// Does it up with the tool, as tight as that tool gets it.
+	void DoUp(const FastenerHoles& holes, Part& part, size_t toolIndex);
 	void Log(const std::string& message);
 	// What's fitted to a part in that slot's place (its shell, piston or ring), and where those are kept.
 	pPart FittedIn(const Part& host, AssemblySlot slot) const;
@@ -335,5 +508,13 @@ private:
 	std::map<uint32_t, uint32_t>				m_pistons = {};	// a loose rod's id: the piston on it
 	std::map<uint32_t, uint32_t>				m_pins = {};	// a piston's id: the pin pressed into it (on the engine too)
 	std::map<uint32_t, uint32_t>				m_rings = {};	// a loose piston's id: the ring on it
+	std::map<uint32_t, BoreRing>				m_boreRings = {};	// a ring's id: the loose block bore it's set in to be gapped
 	EngineSale									m_lastSale = {};
+	std::unique_ptr<CarBuild>					m_car = nullptr;
+	std::set<uint32_t>						m_carLot = {};
+	std::set<uint32_t>						m_carLotHardware = {};
+	std::map<uint32_t, uint32_t>				m_carCarried = {};	// a loose strut's or wheel's id: the spring or tire on it
+	std::array<double, FLUID_PRODUCTS>			m_fluidStock = {};	// litres of each
+	CarSale										m_lastCarSale = {};
+	QuarryState									m_quarry = {};
 };

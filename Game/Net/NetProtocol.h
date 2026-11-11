@@ -20,6 +20,12 @@
 // account's number is the player's id for good, so what's in their backpack stays theirs (carried by
 // them, in the garage's records) while they're away, and comes back with them.
 //
+// A server holds several garages in one world, each on a plot of its own along the highway (see PlotOffsetX).
+// A player belongs to one garage. The first time they join they choose: a new garage of their own, or asking
+// to join someone else's, which its members online vote on (a majority lets them in, VOTE_SECONDS to decide);
+// if none are online, the request waits for one. A garage's changes only go to the players in it; where
+// everyone stands goes to everyone, and each game draws the others on their own garage's plot.
+//
 // The names players are shown by are the server's: their username, and any prefix it gives them
 // (Server/GarageServer's prefixes file), sent with welcome, joined and name. The game shows a
 // prefix in front of the name, in PREFIX_COLOR.
@@ -40,22 +46,33 @@
 //                    presence <id> <x> <y> <z> <yaw> <pitch> <arms> <crouching> <fur> <skin> <cap> <tail>
 //                                                           arms: 0 down, 1 the right one out (holding something), 2 both (carrying a delivery)
 //                    profile "layout"                       how their backpack and hotbar are laid out
+//                    create                                 not in a garage yet: makes a new one, theirs
+//                    request <garage>                       asks to join one
+//                    cancel                                 takes the request back, to choose again
+//                    ballot <requester> <yes>               a member's vote on someone asking to join
 // 
 //   server -> game   info <version> "name" "region" <players> <max>
-//                    welcome <id> <slot> <seed> "prefix" "name" <time> <day length> <count> (<id> "prefix" "name")...
+//                    garages <count> (<id> "name" <members> <online>)...   not in a garage yet: the ones to choose from
+//                    pending "why"                          asked to join: waiting for a member, or for the vote
+//                    denied "why"                           turned down (garages follows, to choose again)
+//                    welcome <id> <slot> <seed> "prefix" "name" <plot> "garage" <time> <day length>
+//                            <count> (<id> "prefix" "name" <plot>)... <count> (<plot>)...
 //                            <count> ("key" "text")... "layout" <placed> <x> <y> <z> <yaw> <pitch>
+//                    plots <count> (<plot>)...              the garages' plots, whenever a new one is made
+//                    vote <requester> "name" <seconds>      to a garage's members online: someone asks to join it
+//                    voteover <requester> "outcome"
 //                    reject "why"
 //                    ops ...     (the same, with the author's number and sequence; author -1 is the server)
 //                    presence ...
 //                    clock <time> <day length>
-//                    joined <id> "prefix" "name"            someone else has come in
+//                    joined <id> "prefix" "name" <plot>     someone else has come in (to their garage, on its plot)
 //                    name <id> "prefix" "name"              a player's prefix has changed (anyone's, yours too)
 //                    left <id>
 
 namespace NetProtocol
 {
 	// Both ends have to be the same game: the records are its save text.
-	constexpr long long VERSION = 25;
+	constexpr long long VERSION = 29;
 	constexpr uint16_t DEFAULT_PORT = 33333;
 	constexpr uint16_t ACCOUNT_PORT = 44444;
 	constexpr const char* ACCOUNT_IP = "localhost";
@@ -71,6 +88,17 @@ namespace NetProtocol
 	constexpr size_t PASSWORD_MAX = 64;
 	// A name's prefix ("[Owner]") is drawn in this, whatever colour the name is.
 	constexpr uint32_t PREFIX_COLOR = 0xF2C14E;
+	// How long a garage's members have to vote on someone asking to join.
+	constexpr float VOTE_SECONDS = 60.f;
+
+	// Where each garage's plot is along the highway, from the first one's: 0, then either side of it in turn.
+	// Every game builds its own garage at the origin, and puts the others this far away from it, along X.
+	constexpr float PLOT_SPACING = 40.f;
+	inline float PlotOffsetX(int plot)
+	{
+		int step = (plot + 1) / 2;
+		return (plot % 2 == 1 ? 1.f : -1.f) * static_cast<float>(step) * PLOT_SPACING;
+	}
 
 	// Letters, digits, - and _: why not, or empty if it's fine.
 	inline std::string UsernameProblem(const std::string& username)

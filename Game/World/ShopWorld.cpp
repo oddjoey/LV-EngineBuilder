@@ -367,6 +367,8 @@ void ShopWorld::Build(const ShopAssets& assets)
 	m_stations[m_carStation].object->SetPickable(false);
 	m_carStands = Spawn(ShopModels::CAR_JACK_STANDS, ShopTextures::PAINT, CAR_HOME, CAR_YAW);
 	m_carStands->SetVisible(false);
+	m_fuelFlap = Spawn(ShopModels::FUEL_FLAP, ShopTextures::PAINT, CAR_HOME, CAR_YAW);
+	m_fuelFlap->SetVisible(false);
 	m_carStands->SetPickable(false);
 	m_fixedStations = m_stations.size();
 
@@ -736,6 +738,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 
 	UpdateDoor(deltaTime);
 	UpdateLift(deltaTime);
+	AnimateCarPanels(workshop, deltaTime);
 	{
 		PROFILE_SCOPE("world: sync");
 		// Only when the workshop's parts or tools have changed: building the lookups every frame cost more
@@ -1008,6 +1011,10 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		if (hasFitted(host))
 			TakeOff(workshop, *host);
 	}
+
+	// The left button on one of the car's doors, its hood, trunk lid or fuel flap opens or shuts it.
+	if (!m_move && UpdateCarPanels(workshop, player, input))
+		return std::nullopt;
 
 	// A click works as E with empty hands or a part in hand, and with the Valve Spring Compressor aimed at a valve (it clamps on).
 	bool clickInteracts = !held || !held->ref.IsTool() || (m_hover && m_hover->kind == TargetKind::ITEM && CanCompressAt(*Find(m_hover->item)));
@@ -2750,6 +2757,20 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 				visual.standSlot = { AssemblySlot::COUNT, -1 };
 			}
 		}
+		// A fender or door on the car's right side is the mirror of the left-hand one (it keeps that hand once it's off).
+		if (visual.part && visual.place == ItemPlace::CAR
+			&& (visual.part->GetType() == PartType::FRONT_FENDER || visual.part->GetType() == PartType::DOOR) && workshop.GetCar())
+			if (auto at = workshop.GetCar()->assembly.Find(visual.part.get()))
+			{
+				bool fender = visual.part->GetType() == PartType::FRONT_FENDER;
+				uint32_t wanted = at->second == 1 ? m_assets->Model(fender ? ShopModels::FENDER_RIGHT : ShopModels::DOOR_RIGHT)
+					: m_assets->PartModel(visual.part->GetType());
+				if (visual.object->GetModelIndex() != wanted)
+				{
+					ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+					visual.carSlot = -1;
+				}
+			}
 		auto model = ModelOf(visual.object);
 		glm::vec4 tint = glm::vec4(1.f);
 		if (visual.part)
@@ -2864,7 +2885,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 					{
 						bool raised = CarAssembly::IsFastenerSlot(at->first) && visual.part->GetTightness() == FastenerTightness::LOOSE
 							&& !PartWayDoneUp(*visual.part);
-						if (carMoved || visual.carSlot != static_cast<int>(at->first) || visual.carIndex != at->second || visual.carRaised != raised)
+						if (carMoved || m_carPanelsMoving || visual.carSlot != static_cast<int>(at->first) || visual.carIndex != at->second || visual.carRaised != raised)
 						{
 							PlaceOnCar(visual, at->first, at->second);
 							visual.carSlot = static_cast<int>(at->first);

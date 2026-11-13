@@ -7,6 +7,7 @@
 
 #include "LV/Engine/Utility/InputManager.h"
 #include "../Controls.h"
+#include "CarBody.h"
 #include "ShopWorldShared.h"
 
 using namespace ShopLayout;
@@ -25,7 +26,7 @@ namespace
 			case FluidCircuit::CLUTCH:			return { 0.98f, 0.78f, -0.6f };
 			case FluidCircuit::TRANSMISSION:	return { 0.55f, 0.22f, 0.17f };
 			case FluidCircuit::DIFFERENTIAL:	return { -1.05f, 0.15f, 0.1f };
-			case FluidCircuit::FUEL:			return { -1.5f, 0.75f, 0.81f };
+			case FluidCircuit::FUEL:			return { CarBody::FLAP_X, CarBody::FLAP_Y, CarBody::SIDE - 0.01f };	// the cap behind the flap
 			case FluidCircuit::COUNT:			break;
 		}
 		return {};
@@ -198,6 +199,14 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 		auto circuit = *aimed;
 		glm::vec3 point = CarToWorld(FillPoint(circuit));
 		m_spannerTarget = point;
+		// The fuel's cap is behind its flap.
+		if (circuit == FluidCircuit::FUEL && !IsCarPanelOpen(CarPanel::FUEL_FLAP))
+		{
+			m_prompt = "[LMB] Open the fuel flap";
+			if (leftPressed)
+				ToggleCarPanel(CarPanel::FUEL_FLAP);
+			return true;
+		}
 		const auto& fs = spec.Fluid(circuit);
 		int& picked = m_funnelProduct[static_cast<size_t>(circuit)];
 		if (picked < 0)

@@ -304,6 +304,10 @@ namespace ShopModels
 	inline const std::string ENGINE_HOIST = "Engine Hoist";
 	inline const std::string PROJECT_CAR = "LE86 Project Car";
 	inline const std::string CAR_JACK_STANDS = "Car Jack Stands";
+	// The right-hand fender and door (the parts' own models are the left-hand ones: see LoadCarParts), and the fuel filler's flap.
+	inline const std::string FENDER_RIGHT = "Front Fender (Right)";
+	inline const std::string DOOR_RIGHT = "Door (Right)";
+	inline const std::string FUEL_FLAP = "Fuel Flap";
 	inline const std::string COMPUTER_DESK = "Computer Desk";
 	inline const std::string PACKAGE_BOX = "Package: Box";
 	inline const std::string PACKAGE_CRATE = "Package: Crate";

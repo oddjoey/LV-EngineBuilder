@@ -3,10 +3,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "../Audio/Sounds.h"
+#include "../Controls.h"
+#include "CarBody.h"
 #include "ShopWorldShared.h"
 
 using namespace ShopLayout;
@@ -65,6 +68,46 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 		// The engine's own mounting nuts sit on its mounts.
 		if (parent == CarSlot::ENGINE)
 			return { { 1.45f, 0.44f, (hole == 0 ? -1.f : 1.f) * 0.25f }, NONE };
+		// The body panels' bolts, each where it really goes (the models have the lips, hinges and posts they're in).
+		using namespace CarBody;
+		const glm::quat FACING_BACK = Pitch(glm::half_pi<float>());		// its head toward the tail
+		const glm::quat HEAD_DOWN = Roll(glm::pi<float>());
+		float panelSide = SideOf(parent, parentIndex);
+		switch (slot)
+		{
+			case CarSlot::FENDER_BOLT:
+			{
+				// Six down through the fender's lip under the hood's edge onto the inner wing (reached with the hood up),
+				// and two into the hinge post behind the door's front edge (reached with the door open).
+				if (hole < 6)
+				{
+					float x = 1.04f + hole * 0.19f;
+					return { { x, HoodY(x) - 0.035f, panelSide * 0.675f }, Pitch(HoodPitch()) };
+				}
+				return { { DOOR_FRONT_X, hole == 6 ? 0.34f : 0.59f, panelSide * 0.69f }, FACING_BACK };
+			}
+			case CarSlot::DOOR_HINGE_BOLT:
+			{
+				// Two through each hinge's leaf on the hinge post, in the door's opening: they stay put as the door swings.
+				float y = (hole < 2 ? 0.42f : 0.74f) + (hole % 2 == 0 ? -0.022f : 0.022f);
+				return { { DOOR_FRONT_X - 0.01f, y, panelSide * 0.745f }, FACING_BACK };
+			}
+			case CarSlot::HOOD_HINGE_BOLT:
+			{
+				// Up through the hinge arms under the hood's back corners: they go up with it.
+				CarPose hood = PoseOnCar(CarSlot::HOOD, 0);
+				glm::vec3 local = { hole % 2 == 0 ? 0.055f : 0.125f, -0.038f, hole < 2 ? -0.6f : 0.6f };
+				return { hood.offset + hood.rotation * local, hood.rotation * HEAD_DOWN };
+			}
+			case CarSlot::BUMPER_BOLT:
+			{
+				// Up through the bottom of the bumper's beam into the ends of the chassis rails, two a side.
+				constexpr float ACROSS_Z[] = { -0.52f, -0.4f, 0.4f, 0.52f };
+				return { { NOSE_X + 0.03f, 0.25f, ACROSS_Z[std::clamp(hole, 0, 3)] }, HEAD_DOWN };
+			}
+			default:
+				break;
+		}
 		CarPose on = PoseOnCar(parent, parentIndex);
 		const auto& bounds = PartBounds(CarAssembly::SlotPartType(parent));
 		glm::vec3 extent = (bounds.second - bounds.first) * 0.5f;
@@ -81,19 +124,35 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 	switch (slot)
 	{
 		// Body
+		// The panels sit on the body's own lines (CarBody.h, which their models are cut to as well). The ones that open
+		// are placed by their hinge lines and turned about them by how far open they are.
 		case C::BODY_SHELL:			return {};
-		case C::FRONT_FENDER:		return { { 1.5f, 0.27f, side * BODY_SIDE_Z }, NONE };
-		case C::DOOR:				return { { 0.2f, 0.22f, side * BODY_SIDE_Z }, NONE };	// from the A-pillar back to the B-pillar
-		case C::HOOD:				return { { 1.5f, 0.8f, 0.f }, NONE };
-		case C::TRUNK_LID:			return { { -1.8f, 0.85f, 0.f }, NONE };
-		case C::FRONT_BUMPER:		return { { 2.17f, 0.25f, 0.f }, ACROSS };
-		case C::REAR_BUMPER:		return { { -2.12f, 0.25f, 0.f }, ACROSS };
-		case C::HEADLIGHT:			return { { 1.95f, 0.72f, side * 0.52f }, TurnY(glm::half_pi<float>()) };
-		case C::TAIL_LIGHT:			return { { -2.08f, 0.55f, side * 0.5f }, ACROSS };
-		// The glass lies along the slope of its pillars: the windshield rising back from the cowl, the rear window
-		// rising forward from the deck.
-		case C::WINDSHIELD:			return { { 0.7f, 1.04f, 0.f }, Pitch(-0.64f) * ACROSS };
-		case C::REAR_WINDOW:		return { { -1.25f, 1.05f, 0.f }, Pitch(0.61f) * ACROSS };
+		case C::FRONT_FENDER:		return { { CarBody::DOOR_FRONT_X, CarBody::SILL_Y, side * CarBody::SIDE }, NONE };
+		case C::DOOR:
+			return { { CarBody::DOOR_FRONT_X - CarBody::GAP, CarBody::ROCKER_TOP + CarBody::GAP, side * CarBody::SIDE },
+				TurnY(side * CarBody::DOOR_OPEN * CarPanelOpen(side < 0.f ? CarPanel::DOOR_LEFT : CarPanel::DOOR_RIGHT)) };
+		case C::HOOD:
+			return { { CarBody::HOOD_REAR_X + CarBody::GAP, CarBody::BELT_Y, 0.f }, Pitch(CarBody::HoodPitch() + CarBody::HOOD_OPEN * CarPanelOpen(CarPanel::HOOD)) };
+		case C::TRUNK_LID:
+			return { { CarBody::TRUNK_FRONT_X - CarBody::GAP, CarBody::BELT_Y, 0.f }, Pitch(-CarBody::TRUNK_OPEN * CarPanelOpen(CarPanel::TRUNK)) };
+		case C::FRONT_BUMPER:		return { { CarBody::NOSE_X + 0.035f, 0.25f, 0.f }, ACROSS };
+		case C::REAR_BUMPER:		return { { CarBody::TAIL_X - 0.035f, 0.25f, 0.f }, ACROSS };
+		case C::HEADLIGHT:			return { { CarBody::NOSE_X - 0.155f, 0.625f, side * 0.52f }, ACROSS };
+		case C::TAIL_LIGHT:			return { { CarBody::TAIL_X + 0.01f, 0.555f, side * 0.5f }, ACROSS };
+		// The glass lies in its opening: the windshield from the cowl back up to the roof, the rear window from the roof
+		// back down to the deck, each about the middle of its slope.
+		case C::WINDSHIELD:
+		{
+			using namespace CarBody;
+			float rise = ROOF_Y - BELT_Y;
+			return { { (WINDSHIELD_BASE_X + WINDSHIELD_TOP_X) * 0.5f, BELT_Y + rise * 0.5f, 0.f }, Pitch(-std::atan2(rise, WINDSHIELD_BASE_X - WINDSHIELD_TOP_X)) * ACROSS };
+		}
+		case C::REAR_WINDOW:
+		{
+			using namespace CarBody;
+			float rise = ROOF_Y - BELT_Y;
+			return { { (REAR_WINDOW_BASE_X + REAR_WINDOW_TOP_X) * 0.5f, BELT_Y + rise * 0.5f, 0.f }, Pitch(std::atan2(rise, REAR_WINDOW_TOP_X - REAR_WINDOW_BASE_X)) * ACROSS };
+		}
 		// Interior
 		case C::DASHBOARD:			return { { 0.6f, 0.55f, 0.f }, ACROSS };
 		case C::INSTRUMENT_CLUSTER:	return { { 0.5f, 0.9f, -0.37f }, ACROSS };
@@ -187,7 +246,107 @@ glm::vec3 ShopWorld::CarSlotCenter(CarSlot slot, int index) const
 		return CarToWorld(CAR_ENGINE_MOUNT);
 	const auto& bounds = PartBounds(type);
 	glm::vec3 center = (bounds.first + bounds.second) * 0.5f;
+	// The right-hand fender and door are the mirror of the part's own (left-hand) model.
+	if ((slot == CarSlot::FRONT_FENDER || slot == CarSlot::DOOR) && index == 1)
+		center.z = -center.z;
 	return CarToWorld(pose.offset + pose.rotation * center);
+}
+
+float ShopWorld::CarPanelOpen(CarPanel panel) const
+{
+	return glm::smoothstep(0.f, 1.f, m_carPanels[static_cast<size_t>(panel)].amount);
+}
+
+void ShopWorld::ToggleCarPanel(CarPanel panel)
+{
+	auto& state = m_carPanels[static_cast<size_t>(panel)];
+	state.open = !state.open;
+	Cue(state.open ? Sound::PICK_UP : Sound::SET_DOWN, CarToWorld({ 0.f, 0.8f, 0.f }));
+}
+
+std::optional<ShopWorld::CarPanel> ShopWorld::AimedCarPanel(const Workshop& workshop, const FirstPersonController& player) const
+{
+	const auto* build = workshop.GetCar();
+	if (!build || m_carStation >= m_stations.size() || !m_stations[m_carStation].present || !m_hover)
+		return std::nullopt;
+	// A door, the hood or the lid on the car, under the crosshair.
+	if (m_hover->kind == TargetKind::ITEM)
+	{
+		const auto* visual = Find(m_hover->item);
+		if (visual && visual->part && visual->place == ItemPlace::CAR)
+			if (auto at = build->assembly.Find(visual->part.get()))
+				switch (at->first)
+				{
+					case CarSlot::DOOR:			return at->second == 0 ? CarPanel::DOOR_LEFT : CarPanel::DOOR_RIGHT;
+					case CarSlot::HOOD:			return CarPanel::HOOD;
+					case CarSlot::TRUNK_LID:	return CarPanel::TRUNK;
+					default:					break;
+				}
+		return std::nullopt;
+	}
+	// The fuel flap isn't a part: aimed at by its own box, on the car's quarter.
+	if (m_fuelFlap && m_fuelFlap->IsVisible() && m_hover->kind == TargetKind::STATION && m_hover->stationIndex == m_carStation)
+	{
+		auto box = WorldBounds(m_fuelFlap);
+		if (auto distance = RayBox(player.GetEyePosition(), player.GetForward(), box.min - glm::vec3(0.02f), box.max + glm::vec3(0.02f));
+				distance && *distance <= INTERACT_DISTANCE)
+			return CarPanel::FUEL_FLAP;
+	}
+	return std::nullopt;
+}
+
+void ShopWorld::AnimateCarPanels(const Workshop& workshop, float deltaTime)
+{
+	constexpr float SWING_SECONDS = 0.45f;
+	m_carPanelsMoving = false;
+	const auto* build = workshop.GetCar();
+	bool present = build && m_carStation < m_stations.size() && m_stations[m_carStation].present;
+	auto fitted = [&](CarPanel panel) {
+		if (!present)
+			return false;
+		const auto& car = build->assembly;
+		switch (panel)
+		{
+			case CarPanel::DOOR_LEFT:	return car.IsFilled(CarSlot::DOOR, 0);
+			case CarPanel::DOOR_RIGHT:	return car.IsFilled(CarSlot::DOOR, 1);
+			case CarPanel::HOOD:		return car.IsFilled(CarSlot::HOOD, 0);
+			case CarPanel::TRUNK:		return car.IsFilled(CarSlot::TRUNK_LID, 0);
+			default:					return true;
+		}
+	};
+	for (size_t p = 0; p < m_carPanels.size(); p++)
+	{
+		auto& state = m_carPanels[p];
+		// One that's off the car is shut again for when it goes back on.
+		if (!fitted(static_cast<CarPanel>(p)))
+			state.open = false;
+		float target = state.open ? 1.f : 0.f;
+		if (state.amount == target)
+			continue;
+		float step = fitted(static_cast<CarPanel>(p)) ? deltaTime / SWING_SECONDS : 1.f;
+		state.amount = state.amount < target ? (std::min)(target, state.amount + step) : (std::max)(target, state.amount - step);
+		m_carPanelsMoving = true;
+	}
+	if (m_fuelFlap)
+	{
+		m_fuelFlap->SetVisible(present);
+		m_fuelFlap->SetPosition(CarToWorld({ CarBody::FLAP_X + CarBody::FLAP_HALF, CarBody::FLAP_Y, CarBody::SIDE }));
+		m_fuelFlap->SetRotation(CarRotation() * TurnY(CarBody::FLAP_OPEN * CarPanelOpen(CarPanel::FUEL_FLAP)));
+	}
+}
+
+bool ShopWorld::UpdateCarPanels(const Workshop& workshop, const FirstPersonController& player, const InputManager& input)
+{
+	auto aimed = AimedCarPanel(workshop, player);
+	if (!aimed)
+		return false;
+	static const char* NAMES[] = { "door", "door", "hood", "trunk", "fuel flap" };
+	std::string hint = std::format("[LMB] {} the {}", IsCarPanelOpen(*aimed) ? "Shut" : "Open", NAMES[static_cast<size_t>(*aimed)]);
+	m_prompt = m_prompt.empty() ? hint : m_prompt + "   " + hint;
+	if (!Controls::Pressed(input, Control::PRIMARY))
+		return false;
+	ToggleCarPanel(*aimed);
+	return true;
 }
 
 void ShopWorld::PlaceOnCar(ItemVisual& visual, CarSlot slot, int index) const

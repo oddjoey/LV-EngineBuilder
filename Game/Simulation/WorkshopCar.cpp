@@ -1061,3 +1061,54 @@ bool Workshop::RestoreCarState(const std::string& text)
 	return true;
 }
 
+
+Workshop::CarDrive Workshop::StartCar()
+{
+	CarDrive drive;
+	if (!m_car)
+	{
+		drive.problem = "There's no car.";
+		return drive;
+	}
+	auto& build = *m_car;
+	int engine = GetEngineInCar();
+	DynoResult pull;
+	bool complete = false;
+	if (engine >= 0)
+	{
+		complete = GetAssembly(engine).IsComplete();
+		if (complete)
+			pull = Dyno::Run(m_engines[engine]->assembly);
+	}
+	RoadTestResult result = RoadTest::Run(build.assembly, pull, complete);
+	if (result.starts)
+		build.engineHeat = (std::max)(build.engineHeat, 0.4);
+	drive.goes = result.starts && result.drives && result.steers && result.stops && result.topSpeed > 1.0;
+	if (!drive.goes)
+	{
+		drive.problem = engine < 0 ? "There's no engine in it."
+			: !result.findings.empty() ? result.findings.back().message
+			: !result.starts ? "It won't start."
+			: !result.drives ? "It runs, but it won't move."
+			: !result.steers ? "It can't be steered." : "It has no brakes.";
+		return drive;
+	}
+	drive.topSpeed = result.topSpeed;
+	drive.zeroToHundred = result.zeroToHundred;
+	drive.brakingDistance = result.brakingDistance;
+	drive.lateralGrip = result.lateralGrip;
+	drive.idleRpm = result.idleRpm;
+	return drive;
+}
+
+bool Workshop::DriveCar(double seconds, double metres, double throttle)
+{
+	if (!m_car)
+		return false;
+	auto& build = *m_car;
+	// About a litre an hour ticking over, and nine litres a hundred kilometres on the move (more with the foot down).
+	double litres = seconds / 3600.0 * 1.0 + metres / 100000.0 * 9.0 * (0.7 + 0.9 * std::clamp(throttle, 0.0, 1.0));
+	build.assembly.Run(seconds / 3600.0, litres);
+	build.engineHeat = (std::min)(1.0, build.engineHeat + seconds / 120.0);
+	return build.assembly.GetFluid(FluidCircuit::FUEL).Total() > 0.01;
+}

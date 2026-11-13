@@ -376,7 +376,7 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Looking at {:.0f}, {:.0f} degrees.", *yaw, pitch.value_or(0.0)));
 	});
 
-	m_console.AddCommand("car", "car build|test|strip <part>",
+	m_console.AddCommand("car", "car build|test|open|shut|strip <part>",
 		"The LE86: build (new OEM parts wherever one's missing, the active engine in if it's finished, filled and bled), "
 		"test (a road test), or strip a kind of part off it, bolts and all (car strip hood).", [this, partNames](const Console::Arguments& args) {
 		std::string what = args.empty() ? "" : args[0];
@@ -390,7 +390,12 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_console.Print(std::format("Took {} {} off the car.", removed, PartTypeName(static_cast<PartType>(*index))));
 			return;
 		}
-		if (what == "build")
+		if (what == "open" || what == "shut")
+		{
+			m_world.DevOpenCar(what == "open");
+			m_console.Print(what == "open" ? "The car's doors, hood, trunk and fuel flap are open." : "The car's shut.");
+		}
+		else if (what == "build")
 		{
 			m_workshop->DevAssembleCar();
 			m_console.Print(m_workshop->GetEngineInCar() >= 0 ? "Built, with an engine in." : "Built, but with no engine: finish the active one and build again.");
@@ -404,7 +409,7 @@ void EngineBuilderGame::RegisterConsoleCommands()
 				result.starts, result.drives, result.steers, result.stops, result.zeroToHundred, result.healthScore));
 		}
 		else
-			m_console.Error("Usage: car build|test|strip <part>");
+			m_console.Error("Usage: car build|test|open|shut|strip <part>");
 	});
 
 	m_console.AddCommand("screen", "screen car [build|fluids|tune|test] | screen store", "Opens the parts computer's Car tab on one of its pages, or the store's LE86 Parts page.",

@@ -438,6 +438,21 @@ public:
 	void SetCarTune(const CarTune& tune);
 	// A drive round the block and down the strip, the engine as it is in the car.
 	const RoadTestResult& RoadTestCar();
+	// Getting in and turning the key, to drive it about the place. What it does there comes from the same sums as the
+	// road test (which isn't run, or logged): how hard it pulls, how fast it'll go, how it stops and holds the road.
+	struct CarDrive
+	{
+		bool goes = false;				// it starts, moves, steers and stops
+		std::string problem = "";		// why not, when it doesn't
+		double topSpeed = 0.0;			// km/h
+		double zeroToHundred = 0.0;		// s (0: it never gets there)
+		double brakingDistance = 0.0;	// m, 100 to 0 km/h
+		double lateralGrip = 0.0;		// g
+		double idleRpm = 0.0;
+	};
+	CarDrive StartCar();
+	// Driven for this long, this far: fuel burned, the oil and coolant aged, the engine warmed. False once the tank is dry.
+	bool DriveCar(double seconds, double metres, double throttle);
 	// The engine in the car cooling for this many seconds (a road test warms it right up).
 	void CoolCarEngine(double seconds);
 	double CarEngineHeat() const { return m_car ? m_car->engineHeat : 0.0; }

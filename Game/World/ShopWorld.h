@@ -246,6 +246,20 @@ public:
 		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
 	};
 	CameraView UpdateThirdPersonCamera(const FirstPersonController& player);
+	// Driving the car (ShopWorldCar.cpp). [F] at the car gets in and turns the key; it then goes where it's driven, about
+	// the yard, down the drive and along the highway, and stays where it's left.
+	bool IsDriving() const { return m_drive.active; }
+	// Each frame at the wheel, in place of walking: the pedals and the wheel, the car moved, the player kept in the seat
+	// (turned with the car, free to look about), and put out beside the door when they get out.
+	void Drive(float deltaTime, Workshop& workshop, FirstPersonController& player, const InputManager& input, bool playerHasControl);
+	// From the driver's seat, or (third person) from behind and above the car, swung round it with the mouse.
+	CameraView DriveCamera(const FirstPersonController& player);
+	// The engine's note at the wheel, and where the car is, for the sound of it.
+	float GetDriveRpm() const { return m_drive.active ? m_drive.rpm : 0.f; }
+	glm::vec3 GetCarPosition() const { return CarToWorld({ 1.2f, 0.6f, 0.f }); }
+	// Developer shortcuts: gets in (true if it started), and holds the throttle down for a while with the wheel turned.
+	bool DevStartDrive(Workshop& workshop) { return StartDrive(workshop); }
+	void DevDrive(float seconds, float steer) { m_drive.devSeconds = seconds; m_drive.devSteer = steer; }
 
 	std::optional<UIRequest> Update(float deltaTime, Workshop& workshop, const FirstPersonController& player,
 		const InputManager& input, bool playerHasControl);
@@ -305,6 +319,8 @@ public:
 	bool DevDropHeld(const glm::vec3& position, float yaw, bool upsideDown);
 	// Dev: clamps the Valve Spring Compressor over a spring in a loose head, as E with it in hand does.
 	bool DevClampCompressor(Workshop& workshop, const pPart& head, int index);
+	// Dev: every door, the hood, the trunk lid and the fuel flap open (or all shut).
+	void DevOpenCar(bool open) { for (auto& panel : m_carPanels) panel.open = open; }
 	void DevRollStand(int stand, float radians) { m_engineRolls[std::clamp(stand, 0, Workshop::MAX_ENGINES - 1)] = radians; }
 	// Dev: keeps a stand rolling at this many radians a second (0 stops it), to profile a moving engine.
 	void DevSpinStand(int stand, float radiansPerSecond) { m_devSpin = { std::clamp(stand, 0, Workshop::MAX_ENGINES - 1), radiansPerSecond }; }
@@ -646,6 +662,23 @@ private:
 		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
 	};
 	CarPose PoseOnCar(CarSlot slot, int index) const;
+	// What opens on the car, with the left button aimed at it: the doors, the hood, the trunk lid and the fuel filler's flap.
+	enum class CarPanel { DOOR_LEFT, DOOR_RIGHT, HOOD, TRUNK, FUEL_FLAP, COUNT };
+	struct CarPanelState
+	{
+		float amount = 0.f;		// 0 shut to 1 open, on its way to where it's going
+		bool open = false;
+	};
+	// How far open one is, eased (0 shut to 1 open).
+	float CarPanelOpen(CarPanel panel) const;
+	bool IsCarPanelOpen(CarPanel panel) const { return m_carPanels[static_cast<size_t>(panel)].open; }
+	void ToggleCarPanel(CarPanel panel);
+	// The one being aimed at, if any (a door, the hood or the lid on the car under the crosshair, or the fuel flap).
+	std::optional<CarPanel> AimedCarPanel(const Workshop& workshop, const FirstPersonController& player) const;
+	// Swings them toward open or shut (one that's been taken off the car is shut), and keeps the fuel flap on the car.
+	void AnimateCarPanels(const Workshop& workshop, float deltaTime);
+	// The left button on one opens or shuts it; says so in the prompt. True when it took the click.
+	bool UpdateCarPanels(const Workshop& workshop, const FirstPersonController& player, const InputManager& input);
 	glm::vec3 CarToWorld(const glm::vec3& offset) const;
 	glm::quat CarRotation() const;
 	// The middle of the part that goes in a position, where it would sit, in the world.
@@ -849,6 +882,34 @@ private:
 	size_t									m_hoistStation = SIZE_MAX;
 	size_t									m_carStation = SIZE_MAX;
 	pObject									m_carStands = nullptr;	// under the car till it's on its wheels
+	pObject									m_fuelFlap = nullptr;	// the fuel filler's flap, in the right rear quarter
+	std::array<CarPanelState, static_cast<size_t>(CarPanel::COUNT)>	m_carPanels = {};
+	bool									m_carPanelsMoving = false;	// one swung this frame: what's on the car is posed again
+	struct DriveState
+	{
+		bool active = false;
+		bool justIn = false;			// got in this frame: the player is turned to face forward
+		float speed = 0.f;				// m/s along the car's nose (backward when negative)
+		float steer = 0.f;				// the front wheels' angle, radians, left positive
+		float spin = 0.f;				// how far the wheels have turned, radians
+		float rpm = 0.f;
+		int gear = 1;					// 0 reverse
+		float throttle = 0.f;
+		float topSpeed = 40.f;			// m/s
+		float pull = 3.f;				// m/s2 off the line
+		float braking = 8.f;			// m/s2
+		float grip = 7.f;				// m/s2 sideways
+		float idleRpm = 850.f;
+		float lastYaw = 0.f;			// the car's, last frame: the driver is turned by what it's turned since
+		float bumped = 0.f;				// seconds since it last hit something, so it doesn't clatter
+		float devSeconds = 0.f;
+		float devSteer = 0.f;
+	};
+	DriveState								m_drive = {};
+	bool StartDrive(Workshop& workshop);
+	void StopDrive(FirstPersonController* player);
+	// Whether the car, standing there turned that way, would be in something solid.
+	bool CarBlocked(const glm::vec3& position, float yaw) const;
 	bool											m_bayDoorOpen = false;
 	float											m_bayDoorAmount = 0.f;
 	std::unordered_map<ItemRef, ItemVisual, ItemRefHash>	m_items = {};

@@ -408,14 +408,15 @@ namespace ToolCatalog
 			chassisManual.manualBook = 1;
 			chassisManual.price = 45.0;
 			list.push_back(chassisManual);
-			hand("Pickaxe", "For the desert's boulders: hold the left button on one to break it up, and the stone's sold where it lies. "
-				"Better ways of breaking rock are bought for the quarry.", HandToolKind::PICKAXE, 25.0);
+			hand("Valve Spring Compressor", "A C-clamp for the head off the engine: its cup over a valve's spring, its foot under the valve. Aim it "
+				"at a valve with its spring in and press E: it squeezes the spring down so the retainer and keepers go on (or come off). Then E "
+				"on the compressor takes it off, for the next valve.", HandToolKind::VALVE_SPRING_COMPRESSOR, 35.0);
 
 			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
 			// and the service manual (hung on the tool board with the rest). Everything else is bought, the pin press and
 			// ring compressor included (the starting money covers those).
 			for (auto& tool : list)
-				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual", "Pickaxe" })
+				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual" })
 					if (tool.name == starter)
 						tool.ownedAtStart = true;
 

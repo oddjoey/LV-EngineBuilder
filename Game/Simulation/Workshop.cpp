@@ -24,11 +24,13 @@ Workshop::Workshop(const EngineSpec& spec, double startingMoney) : m_spec(&spec)
 		m_ownedMachines.push_back(machine.ownedAtStart);
 	m_upgrades.assign(UpgradeCatalog::All().size(), false);
 
-	// One engine stand, and a tired core engine dragged in off a trailer to put on it.
+	// One engine stand, standing empty: the shop's LV-16 is in the LE86 out on the drive (it keeps the stand's number,
+	// and comes out onto it on the hoist).
 	m_engines.push_back(std::make_unique<EngineBuild>(spec));
-	AddCore();
+	SetUpStartingCar();
 
-	Log(std::format("Opened the shop with ${:.0f} and a worn-out {} core.", startingMoney, spec.name));
+	Log(std::format("Opened the shop with ${:.0f} and the LE86 out on the drive: its {} runs, but tired. Put it right a fault at a time.",
+		startingMoney, spec.name));
 }
 
 Workshop::~Workshop()
@@ -58,100 +60,12 @@ namespace
 		return std::clamp(Random::Normal(0.9, 0.07), 0.75, 1.1);
 	}
 
-	// Builds an engine out of these parts, with new OEM parts wherever they run out, every nut and bolt done
-	// up by feel with the combination wrenches a new shop has, and runs it on the dyno.
-	bool PassesWithNewParts(const std::vector<pPart>& parts, const EngineSpec& spec)
-	{
-		EngineAssembly assembly(spec);
-		for (bool progress = true; progress;)
-		{
-			progress = false;
-			for (int slotIndex = 0; slotIndex < static_cast<int>(AssemblySlot::COUNT); slotIndex++)
-			{
-				auto slot = static_cast<AssemblySlot>(slotIndex);
-				for (int index = 0; index < assembly.SlotCount(slot); index++)
-				{
-					if (assembly.Get(slot, index) || assembly.MissingPrerequisite(slot, index))
-						continue;
-					auto type = EngineAssembly::SlotPartType(slot);
-					std::string error;
-					pPart fitted = nullptr;
-					for (const auto& part : parts)
-						if (part->GetType() == type && !assembly.Contains(part) && assembly.Install(slot, index, part, error))
-						{
-							fitted = part;
-							break;
-						}
-					if (!fitted)
-					{
-						auto part = PartFactory::Create(type, spec, PartQuality::OEM, PartCondition::NEW);
-						if (!assembly.Install(slot, index, part, error))
-							continue;
-						fitted = part;
-					}
-					if (const auto* holes = EngineAssembly::Holes(slot))
-					{
-						fitted->SetTorque(holes->torqueNm * WrenchFeel());
-						fitted->SetTightness(FastenerTightness::SNUG);
-					}
-					progress = true;
-				}
-			}
-		}
-		return assembly.IsComplete() && !Dyno::Run(assembly).failed;
-	}
 }
 
-double Workshop::StartingMoney(const EngineSpec& spec)
+double Workshop::StartingMoney(const EngineSpec&)
 {
-	// Exactly enough for the first engine: new OEM parts for everything the core doesn't come with. A new
-	// shop has no dyno: the buyer runs it.
-	// Bought as the store sells them: the parts that come with a partner (lower shells, caps) are in its
-	// price, and the core's caps came with its rods, block and head.
-	double money = 0.0;
-	for (auto type : PartCatalog::All())
-		// (A piston comes with its pin, which is sold on its own too.)
-		if (const auto& info = PartCatalog::Get(type); !info.inCore && info.listed && type != PartType::PISTON_PIN)
-			money += PartFactory::PriceWithCompanions(type, PartQuality::OEM, PartCondition::NEW, spec) * PartCatalog::CountPerEngine(type, spec);
-	// And the tools the first engine can't be built without that a new shop hasn't got: the pin press and the ring
-	// compressor.
-	for (size_t tool = 0; tool < ToolCatalog::All().size(); tool++)
-		if (auto kind = ToolCatalog::Of(tool).handKind; kind == HandToolKind::PIN_PRESS || kind == HandToolKind::RING_COMPRESSOR)
-			money += ToolCatalog::Of(tool).price;
-	return money;
-}
-
-void Workshop::AddCore()
-{
-	// A torn-down core: every hard part, worn. The pistons, rings and bearings are scrap, and the
-	// gaskets, seals, filter and head bolts are never reused, so those all have to be bought.
-	// The starting money only covers those, so the core has to be one that runs with them: worn, but
-	// nothing on it so far gone it has to be machined or replaced. Without that, about half of cores have
-	// a carburettor, a bore or a belt past saving. It has to pass a few times, with different new parts and
-	// bolts done up by hand each time, so it isn't only just passing.
-	const auto& spec = *m_spec;
-	constexpr int MOST_TRIES = 50;
-	std::vector<pPart> core;
-	for (int attempt = 0; attempt < MOST_TRIES; attempt++)
-	{
-		core.clear();
-		for (auto type : PartCatalog::All())
-			if (PartCatalog::Get(type).inCore)
-				for (int i = 0; i < PartCatalog::CountPerEngine(type, spec); i++)
-				{
-					auto part = PartFactory::Create(type, spec, PartQuality::OEM, PartCondition::USED);
-					core.push_back(part);
-					for (const auto& companion : PartFactory::CreateCompanions(part, spec))
-						core.push_back(companion);
-				}
-		constexpr int PASSES = 4;
-		int passes = 0;
-		while (passes < PASSES && PassesWithNewParts(core, spec))
-			passes++;
-		if (passes == PASSES)
-			break;
-	}
-	m_inventory.insert(m_inventory.end(), core.begin(), core.end());
+	// A small budget: the car's there already, so it's for parts and tools to put it right a fault at a time.
+	return 1500.0;
 }
 
 void Workshop::AddPart(const pPart& part)
@@ -332,7 +246,9 @@ std::vector<double> Workshop::SizeOptions(PartType type)
 	switch (type)
 	{
 		case PartType::PISTON:
-		case PartType::PISTON_RING:		return { 0.0, 0.25, 0.50, 0.75, 1.00 };
+		case PartType::PISTON_RING:
+		// A head gasket's fire rings are cut to the bore it's for.
+		case PartType::HEAD_GASKET:		return { 0.0, 0.25, 0.50, 0.75, 1.00 };
 		case PartType::MAIN_BEARING:
 		case PartType::ROD_BEARING:		return { 0.0, -0.25, -0.50, -0.75 };
 		case PartType::INTAKE_VALVE:
@@ -376,7 +292,86 @@ bool Workshop::Buy(const PartOrder& order)
 	return true;
 }
 
+pPart Workshop::DevPullHead()
+{
+	auto& assembly = GetAssembly();
+	auto head = assembly.Get(AssemblySlot::CYLINDER_HEAD, 0);
+	if (!head)
+		return nullptr;
+	// Everything that comes off before it, loosened, top down, leaving the bottom end the gasket sits on.
+	const auto under = assembly.Prerequisites(AssemblySlot::HEAD_GASKET, 0);
+	for (int pass = 0; pass < 60 && assembly.Get(AssemblySlot::CYLINDER_HEAD, 0); pass++)
+		for (int slot = static_cast<int>(AssemblySlot::COUNT) - 1; slot >= 0; slot--)
+		{
+			auto at = static_cast<AssemblySlot>(slot);
+			if (at == AssemblySlot::BLOCK || at == AssemblySlot::HEAD_GASKET || AtFlywheel(at))
+				continue;
+			for (int index = 0; index < assembly.SlotCount(at); index++)
+				if (auto part = assembly.Get(at, index); part && std::find(under.begin(), under.end(), std::pair{ at, index }) == under.end())
+				{
+					part->SetTightness(FastenerTightness::LOOSE);
+					part->SetTorque(0.0);
+					if (!assembly.RemovalBlockedBy(at, index))
+						RemovePart(at, index);
+				}
+		}
+	return assembly.Get(AssemblySlot::CYLINDER_HEAD, 0) ? nullptr : head;
+}
+
+int Workshop::DevStrip(AssemblySlot target)
+{
+	auto& assembly = GetAssembly();
+	// The slot's positions and everything built on them, however far up.
+	std::vector<std::pair<AssemblySlot, int>> over;
+	auto isOver = [&](AssemblySlot slot, int index) { return std::find(over.begin(), over.end(), std::pair{ slot, index }) != over.end(); };
+	for (int index = 0; index < assembly.SlotCount(target); index++)
+		over.push_back({ target, index });
+	for (bool grew = true; grew;)
+	{
+		grew = false;
+		for (int slot = 0; slot < static_cast<int>(AssemblySlot::COUNT); slot++)
+		{
+			auto at = static_cast<AssemblySlot>(slot);
+			for (int index = 0; index < assembly.SlotCount(at); index++)
+				if (!isOver(at, index))
+					for (const auto& [other, otherIndex] : assembly.Prerequisites(at, index))
+						if (isOver(other, otherIndex))
+						{
+							over.push_back({ at, index });
+							grew = true;
+							break;
+						}
+		}
+	}
+	int removed = 0;
+	for (int pass = 0; pass < 60; pass++)
+	{
+		bool any = false;
+		for (auto it = over.rbegin(); it != over.rend(); ++it)
+			if (auto part = assembly.Get(it->first, it->second))
+			{
+				part->SetTightness(FastenerTightness::LOOSE);
+				part->SetTorque(0.0);
+				if (!assembly.RemovalBlockedBy(it->first, it->second))
+				{
+					RemovePart(it->first, it->second);
+					removed++;
+				}
+				any = true;
+			}
+		if (!any)
+			break;
+	}
+	return removed;
+}
+
 void Workshop::DevAssembleEngine()
+{
+	int fitted = FitNewEngineParts();
+	Log(std::format("Dev: fitted {} new OEM parts to engine {}.", fitted, m_activeEngine + 1));
+}
+
+int Workshop::FitNewEngineParts()
 {
 	// Keep passing over the slots until nothing more will go on: each pass fits whatever its
 	// prerequisites now allow.
@@ -392,7 +387,9 @@ void Workshop::DevAssembleEngine()
 			{
 				if (assembly.Get(slot, index) || assembly.MissingPrerequisite(slot, index))
 					continue;
-				auto part = PartFactory::Create(EngineAssembly::SlotPartType(slot), *m_spec, PartQuality::OEM, PartCondition::NEW);
+				// A head gasket to suit however far the cylinders have been bored.
+				double sizeOffset = slot == AssemblySlot::HEAD_GASKET ? assembly.BoreClass().value_or(0.0) : 0.0;
+				auto part = PartFactory::Create(EngineAssembly::SlotPartType(slot), *m_spec, PartQuality::OEM, PartCondition::NEW, sizeOffset);
 				// Caps are matched to what's already on the engine.
 				if (slot == AssemblySlot::ROD_CAP)
 					part->MatchTo(assembly.Get(AssemblySlot::CONNECTING_ROD, index)->GetId());
@@ -425,7 +422,7 @@ void Workshop::DevAssembleEngine()
 	}
 	if (fitted > 0)
 		AssemblyChanged();
-	Log(std::format("Dev: fitted {} new OEM parts to engine {}.", fitted, m_activeEngine + 1));
+	return fitted;
 }
 
 const std::vector<pPart>& Workshop::GetInventory() const
@@ -793,6 +790,8 @@ int Workshop::BestToolFor(AssemblyCheck check) const
 
 std::optional<std::string> Workshop::TurningProblem(AssemblySlot slot, int index, size_t toolIndex, int sizeMm, bool tightening) const
 {
+	if (auto problem = EngineWorkProblem(m_activeEngine, slot))
+		return problem;
 	return TurningProblemFor(EngineAssembly::Holes(slot), GetAssembly().Get(slot, index), toolIndex, sizeMm, tightening);
 }
 
@@ -816,32 +815,28 @@ std::optional<std::string> Workshop::TurningProblemFor(const FastenerHoles* hole
 		return std::format("Fit a socket to the {} first: look at one in a socket set and press [E].", tool.name);
 	if (sizeMm != fastener.headMm)
 		return std::format("A {} mm {} doesn't fit a {} mm {}.", sizeMm, drive ? "socket" : "wrench", fastener.headMm, fastener.nut ? "nut" : "bolt head");
-	if (tool.handKind == HandToolKind::TORQUE_WRENCH)
-	{
-		if (!tightening)
-			return std::format("Don't loosen with the {}: it knocks it out of calibration. Use a ratchet, breaker bar or wrench.", tool.name);
-		if (tool.maxTorque < holes->torqueNm)
-			return std::format("The {} only goes to {:.0f} Nm; this takes {:.0f}.", tool.name, tool.maxTorque, holes->torqueNm);
-	}
+	// A torque wrench is set no higher than it goes (see ShopWorld), so it turns whatever it's set to.
+	if (tool.handKind == HandToolKind::TORQUE_WRENCH && !tightening)
+		return std::format("Don't loosen with the {}: it knocks it out of calibration. Use a ratchet, breaker bar or wrench.", tool.name);
 	// A motor only turns so hard: past that it stalls (and a tight one won't crack loose).
 	if (tool.powered && tool.maxTorque < holes->torqueNm)
-		return std::format("The {} stalls at {:.0f} Nm; this one takes {:.0f}. Use a hand tool.", tool.name, tool.maxTorque, holes->torqueNm);
+		return std::format("The {} stalls on this one: it takes more than its {:.0f} Nm. Use a hand tool.", tool.name, tool.maxTorque);
 	return std::nullopt;
 }
 
-bool Workshop::TightenFastener(AssemblySlot slot, int index, size_t toolIndex, int sizeMm)
+bool Workshop::TightenFastener(AssemblySlot slot, int index, size_t toolIndex, int sizeMm, double setNm)
 {
 	if (auto problem = TurningProblem(slot, index, toolIndex, sizeMm, true))
 	{
 		Log(*problem);
 		return false;
 	}
-	DoUp(*EngineAssembly::Holes(slot), *GetAssembly().Get(slot, index), toolIndex);
+	DoUp(*EngineAssembly::Holes(slot), *GetAssembly().Get(slot, index), toolIndex, setNm);
 	AssemblyChanged();
 	return true;
 }
 
-void Workshop::DoUp(const FastenerHoles& holesRef, Part& partRef, size_t toolIndex)
+void Workshop::DoUp(const FastenerHoles& holesRef, Part& partRef, size_t toolIndex, double setNm)
 {
 	const auto* holes = &holesRef;
 	auto* part = &partRef;
@@ -850,9 +845,18 @@ void Workshop::DoUp(const FastenerHoles& holesRef, Part& partRef, size_t toolInd
 	double torque = 0.0;
 	if (tool.handKind == HandToolKind::TORQUE_WRENCH)
 	{
-		// As tight as the wrench clicks, give or take its accuracy.
-		torque = holes->torqueNm * (std::max)(0.3, 1.0 + Random::Normal(0.0, tool.torqueError));
+		// As tight as the wrench clicks at what it's set to, give or take its accuracy. Set below how tight
+		// it already is, it clicks before it turns: it stays as it was.
+		double set = setNm > 0.0 ? (std::min)(setNm, tool.maxTorque) : holes->torqueNm;
+		torque = set * (std::max)(0.3, 1.0 + Random::Normal(0.0, tool.torqueError));
+		// A stretched one is already past yield: it goes on, but it won't clamp as it should.
+		if (part->GetCondition() == PartCondition::DAMAGED)
+			torque *= 0.7;
+		if (part->GetTightness() != FastenerTightness::LOOSE)
+			torque = (std::max)(torque, part->GetTorque());
 		part->SetTightness(FastenerTightness::TORQUED);
+		part->SetTorque(torque);
+		return;
 	}
 	else
 	{
@@ -972,6 +976,13 @@ MachiningResult Workshop::MachineFeature(size_t machineIndex, Part& part, const 
 
 	if (EngineOf(part) >= 0)
 		return { false, "Pull it off the engine stand before machining it." };
+	// A head (or a rocker shaft) is machined bare: what's fitted to it out first.
+	if (std::any_of(m_headFittings.begin(), m_headFittings.end(),
+		[&](const auto& entry) { return entry.second.head == part.GetId(); }))
+		return { false, std::format("Take what's fitted to the {} off it before machining it.", part.GetName()) };
+	// And a valve is machined out of its head.
+	if (m_headFittings.contains(part.GetId()))
+		return { false, "Take it out of the head before machining it." };
 
 	auto feature = part.FindFeature(featureName);
 	if (!feature)
@@ -1049,7 +1060,6 @@ double Workshop::LineTotal(const CartLine& line) const
 		case CartLine::Kind::FURNITURE:		return line.index < FurnitureCatalog::All().size() ? FurnitureCatalog::All()[line.index].price * line.quantity : 0.0;
 		case CartLine::Kind::DYNO:			return DYNO_PRICE;
 		case CartLine::Kind::HOIST:			return HOIST_PRICE;
-		case CartLine::Kind::PROJECT_CAR:	return PROJECT_CAR_PRICE;
 		case CartLine::Kind::FLUID:			return line.index < static_cast<size_t>(FLUID_PRODUCTS)
 			? FluidUnitPrice(static_cast<FluidProduct>(line.index)) * line.quantity * PartPriceFactor() : 0.0;
 	}
@@ -1062,6 +1072,12 @@ double Workshop::CartTotal(const std::vector<CartLine>& cart) const
 	for (const auto& line : cart)
 		total += LineTotal(line);
 	return total;
+}
+
+double Workshop::CartTax(const std::vector<CartLine>& cart) const
+{
+	// To the cent.
+	return std::round(CartTotal(cart) * SALES_TAX * 100.0) / 100.0;
 }
 
 std::optional<std::string> Workshop::CartLineProblem(const CartLine& line, const std::vector<CartLine>& cart) const
@@ -1085,10 +1101,6 @@ std::optional<std::string> Workshop::CartLineProblem(const CartLine& line, const
 		case CartLine::Kind::HOIST:
 			if (m_ownsHoist)
 				return "Already owned.";
-			break;
-		case CartLine::Kind::PROJECT_CAR:
-			if (m_car)
-				return "There's room in the salvage yard for one project car: sell this one first.";
 			break;
 		case CartLine::Kind::FLUID:
 			if (line.index >= static_cast<size_t>(FLUID_PRODUCTS) || line.quantity <= 0)
@@ -1124,12 +1136,15 @@ bool Workshop::Checkout(const std::vector<CartLine>& cart)
 			Log(std::format("Can't check out: {}", *problem));
 			return false;
 		}
-	double total = CartTotal(cart);
+	double tax = CartTax(cart);
+	double total = CartTotal(cart) + tax;
 	if (total > m_money)
 	{
-		Log(std::format("Can't afford the order (${:.0f}).", total));
+		Log(std::format("Can't afford the order (${:.2f} with tax).", total));
 		return false;
 	}
+	// The tax first, so the lines below still each find their own price there.
+	Spend(tax, "sales tax");
 
 	// Paid for line by line, so each purchase is logged and counted as usual; the total was
 	// checked above, so none of them can fail for money.
@@ -1143,7 +1158,6 @@ bool Workshop::Checkout(const std::vector<CartLine>& cart)
 			case CartLine::Kind::FURNITURE:		for (int i = 0; i < line.quantity; i++) BuyFurniture(line.index); break;
 			case CartLine::Kind::DYNO:			BuyDyno(); break;
 			case CartLine::Kind::HOIST:			BuyHoist(); break;
-			case CartLine::Kind::PROJECT_CAR:	BuyProjectCar(); break;
 			case CartLine::Kind::FLUID:
 			{
 				auto product = static_cast<FluidProduct>(line.index);
@@ -1155,7 +1169,7 @@ bool Workshop::Checkout(const std::vector<CartLine>& cart)
 				break;
 			}
 		}
-	Log(std::format("Order placed: {} line{}, ${:.0f}. It's on its way to the roll-up door.", cart.size(), cart.size() == 1 ? "" : "s", total));
+	Log(std::format("Order placed: {} line{}, ${:.2f} with ${:.2f} sales tax. It's on its way to the roll-up door.", cart.size(), cart.size() == 1 ? "" : "s", total, tax));
 	return true;
 }
 
@@ -1228,6 +1242,8 @@ pPart Workshop::HostOf(const Part& part) const
 				return FindPart(host);
 	if (auto ring = m_boreRings.find(part.GetId()); ring != m_boreRings.end())
 		return FindPart(ring->second.block);
+	if (auto valve = m_headFittings.find(part.GetId()); valve != m_headFittings.end())
+		return FindPart(valve->second.head);
 	return nullptr;
 }
 
@@ -1507,6 +1523,154 @@ pPart Workshop::TakeRingOutOfLooseBore(const Part& ring)
 	return part;
 }
 
+pPart Workshop::InLooseHead(const Part& head, AssemblySlot slot, int index) const
+{
+	for (const auto& [part, at] : m_headFittings)
+		if (at.head == head.GetId() && at.slot == slot && at.index == index)
+			return FindPart(part);
+	return nullptr;
+}
+
+const HeadFitting* Workshop::LooseHeadFittingOf(const Part& part) const
+{
+	auto it = m_headFittings.find(part.GetId());
+	return it == m_headFittings.end() ? nullptr : &it->second;
+}
+
+std::string Workshop::LooseFittingName(AssemblySlot slot, int index) const
+{
+	return slot == AssemblySlot::ROCKER_ARM ? std::format("the arm over cylinder {}", index + 1) : GetAssembly().PositionName(slot, index);
+}
+
+std::optional<std::string> Workshop::HeadFitBlockedBy(const Part& head, AssemblySlot slot, int index) const
+{
+	const auto& assembly = GetAssembly();
+	// A rocker arm onto a loose rocker shaft, over the cylinder it's at along it.
+	if (slot == AssemblySlot::ROCKER_ARM)
+	{
+		if (head.GetType() != PartType::ROCKER_SHAFT || index < 0 || index >= m_spec->cylinders)
+			return "That doesn't go on a rocker shaft.";
+		if (EngineOf(head) >= 0)
+			return "The arms go onto the shaft off the engine: take the shaft off first.";
+		if (InLooseHead(head, slot, index))
+			return "There's an arm there already.";
+		return std::nullopt;
+	}
+	if (head.GetType() != PartType::CYLINDER_HEAD || !EngineAssembly::InHead(slot) || index < 0 || index >= assembly.SlotCount(slot))
+		return "That doesn't go in a head.";
+	if (EngineOf(head) >= 0)
+		return "The valvetrain goes into the head off the engine: take the head off first.";
+	if (InLooseHead(head, slot, index))
+		return std::format("There's a {} in there already.", PartTypeName(EngineAssembly::SlotPartType(slot)));
+	if (auto first = EngineAssembly::HeadPrerequisite(slot, index); first && !InLooseHead(head, first->first, first->second))
+		return std::format("The {} has to go in first.", assembly.PositionName(first->first, first->second));
+	// The retainer and its keepers only go on with the spring squeezed down off the top of the stem.
+	if (slot == AssemblySlot::VALVE_RETAINER && !CompressedAt(head, index))
+		return "Squeeze its spring down first: put the Valve Spring Compressor over the valve (E with it in hand).";
+	// Nothing else goes in under a compressor.
+	if (m_valveCompressor && m_valveCompressor->head == head.GetId() && slot != AssemblySlot::VALVE_RETAINER)
+		if (auto [cylinder, exhaust] = std::pair{ slot == AssemblySlot::INTAKE_VALVE || slot == AssemblySlot::EXHAUST_VALVE ? index : index / 2,
+			slot == AssemblySlot::EXHAUST_VALVE || (slot != AssemblySlot::INTAKE_VALVE && index % 2 == 1) };
+			EngineAssembly::SpringIndex(cylinder, exhaust) == m_valveCompressor->index)
+			return "The Valve Spring Compressor is over that valve: take it off first.";
+	return std::nullopt;
+}
+
+std::optional<std::string> Workshop::CompressValveSpringBlockedBy(const Part& head, int index) const
+{
+	if (!OwnsToolOfKind(HandToolKind::VALVE_SPRING_COMPRESSOR))
+		return "It takes a Valve Spring Compressor: they're sold at the parts computer.";
+	if (head.GetType() != PartType::CYLINDER_HEAD || index < 0 || index >= GetAssembly().SlotCount(AssemblySlot::VALVE_SPRING))
+		return "That's not a valve.";
+	if (EngineOf(head) >= 0)
+		return "The springs are squeezed with the head off the engine.";
+	if (m_valveCompressor)
+		return "The compressor is on a valve already: take it off that one first.";
+	if (!InLooseHead(head, AssemblySlot::VALVE_SPRING, index))
+		return std::format("There's no spring on the {} to squeeze.", GetAssembly().PositionName(AssemblySlot::VALVE_SPRING, index));
+	return std::nullopt;
+}
+
+bool Workshop::CompressValveSpring(const pPart& head, int index)
+{
+	if (!head)
+		return false;
+	if (auto blocked = CompressValveSpringBlockedBy(*head, index))
+	{
+		Log(*blocked);
+		return false;
+	}
+	m_valveCompressor = ValveCompressor{ head->GetId(), index };
+	Log(std::format("Clamped the Valve Spring Compressor over the {} and squeezed its spring down: the retainer and keepers go {} now.",
+		GetAssembly().PositionName(AssemblySlot::VALVE_SPRING, index), InLooseHead(*head, AssemblySlot::VALVE_RETAINER, index) ? "off" : "on"));
+	return true;
+}
+
+void Workshop::ReleaseValveSpring()
+{
+	if (!m_valveCompressor)
+		return;
+	m_valveCompressor.reset();
+	Log("Let the spring back up and took the Valve Spring Compressor off.");
+}
+
+bool Workshop::FitIntoHead(const pPart& head, AssemblySlot slot, int index, const pPart& part)
+{
+	if (!head || !part || EngineAssembly::SlotPartType(slot) != part->GetType() || EngineOf(*part) >= 0 || HostOf(*part))
+		return false;
+	if (part->GetCondition() == PartCondition::DAMAGED)
+	{
+		Log(std::format("{} is damaged: {}", part->GetName(), part->GetDamageReason()));
+		return false;
+	}
+	if (auto blocked = HeadFitBlockedBy(*head, slot, index))
+	{
+		Log(*blocked);
+		return false;
+	}
+	m_headFittings[part->GetId()] = { head->GetId(), slot, index };
+	m_stats.partsFitted++;
+	Log(std::format("Fitted the {} {} the {}: {}.", part->GetName(), slot == AssemblySlot::ROCKER_ARM ? "onto" : "into", head->GetName(), LooseFittingName(slot, index)));
+	return true;
+}
+
+std::optional<std::string> Workshop::HeadTakeOutBlockedBy(const Part& part) const
+{
+	const HeadFitting* at = LooseHeadFittingOf(part);
+	auto head = at ? FindPart(at->head) : nullptr;
+	if (!head)
+		return "It isn't in a head.";
+	if (auto over = EngineAssembly::HeadDependent(at->slot, at->index); over && InLooseHead(*head, over->first, over->second))
+		return std::format("The {} has to come out first.", GetAssembly().PositionName(over->first, over->second));
+	// A retainer only comes off its stem with the spring squeezed down; and under the compressor, nothing else comes out.
+	if (at->slot == AssemblySlot::VALVE_RETAINER)
+		return CompressedAt(*head, at->index) ? std::nullopt
+			: std::optional<std::string>("Squeeze its spring down first: put the Valve Spring Compressor over the valve (E with it in hand).");
+	bool valve = at->slot == AssemblySlot::INTAKE_VALVE || at->slot == AssemblySlot::EXHAUST_VALVE;
+	int spring = valve ? EngineAssembly::SpringIndex(at->index, at->slot == AssemblySlot::EXHAUST_VALVE) : at->index;
+	if (CompressedAt(*head, spring))
+		return "The Valve Spring Compressor is over that valve: take it off first.";
+	return std::nullopt;
+}
+
+pPart Workshop::TakeOutOfHead(const Part& part)
+{
+	if (auto blocked = HeadTakeOutBlockedBy(part))
+	{
+		Log(*blocked);
+		return nullptr;
+	}
+	m_headFittings.erase(part.GetId());
+	auto taken = FindPart(part.GetId());
+	if (!taken)
+		return nullptr;
+	// A stem seal tears coming off its guide: once fitted, it's done.
+	if (PartCatalog::Get(taken->GetType()).singleUse && taken->GetCondition() != PartCondition::DAMAGED)
+		taken->MarkDamaged("Single use: it was fitted once and can't go back on");
+	Log(std::format("Took the {} {}.", taken->GetName(), taken->GetType() == PartType::ROCKER_ARM ? "off its shaft" : "out of the head"));
+	return taken;
+}
+
 bool Workshop::MeasureLooseRingGap(Part& ring, int toolIndex)
 {
 	const BoreRing* at = LooseBoreOf(ring);
@@ -1532,7 +1696,7 @@ bool Workshop::MeasureLooseRingGap(Part& ring, int toolIndex)
 	const auto& tool = ToolCatalog::Of(toolIndex);
 	// The ring has to pass through the tightest part of its bore, so that's where it's gapped (as EngineAssembly::RingGap).
 	double gap = std::numbers::pi * (bore->MinSample() - closed->Size());
-	RecordEndGap(ring, (std::max)(0.0, tool.Read(gap, MeasureScatterFactor())), std::format("{}, in bore {} of block #{}", tool.name, at->cylinder + 1, block->GetId()));
+	RecordEndGap(ring, (std::max)(0.0, tool.Read(gap, MeasureScatterFactor())), std::format("{}, in bore {}", tool.name, at->cylinder + 1));
 	m_stats.measurements++;
 	Log(std::format("Checked the {}'s end gap in bore {} of the {} with the {}.", ring.GetName(), at->cylinder + 1, block->GetName(), tool.name));
 	return true;
@@ -1540,19 +1704,9 @@ bool Workshop::MeasureLooseRingGap(Part& ring, int toolIndex)
 
 bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 {
-	if (m_activeEngine == m_engineOnDyno)
+	if (auto problem = EngineWorkProblem(m_activeEngine, slot))
 	{
-		Log("That engine is on the dyno: put it back on a stand to work on it.");
-		return false;
-	}
-	if (m_activeEngine == m_engineOnHoist)
-	{
-		Log("That engine is hanging from the hoist: lower it onto a stand to work on it.");
-		return false;
-	}
-	if (m_activeEngine == GetEngineInCar() && !ServiceableInCar(slot))
-	{
-		Log("That engine is in the car: only the top-end service parts (valve cover, plugs and leads, carburettor, oil filter) can be got at. Lift it out with the hoist for the rest.");
+		Log(*problem);
 		return false;
 	}
 	if (std::find(m_inventory.begin(), m_inventory.end(), part) == m_inventory.end())
@@ -1601,6 +1755,16 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 	}
 	// A shell, piston or ring goes in with the rod, cap or piston it's fitted to, and a rod or cap only with them: its
 	// shell in, and a rod's piston pinned on, ringed, and the ring squeezed in the compressor to go down the bore.
+	if (EngineAssembly::InHead(slot))
+	{
+		Log(std::format("The {} goes into the cylinder head off the engine (on the bench, a shelf or the floor), and on with it.", part->GetName()));
+		return false;
+	}
+	if (slot == AssemblySlot::ROCKER_ARM)
+	{
+		Log(std::format("The {} goes onto its rocker shaft off the engine (on the bench, a shelf or the floor), and on with it.", part->GetName()));
+		return false;
+	}
 	if (auto host = EngineAssembly::CarriedBy(slot))
 	{
 		Log(std::format("The {} goes {} a {} off the engine, and in with it.", part->GetName(), slot == AssemblySlot::PISTON || slot == AssemblySlot::PISTON_RING ? "onto" : "into",
@@ -1629,6 +1793,38 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 			carried.push_back({ with, fitted });
 			hosts.push_back({ with, fitted });
 		}
+	// A head goes on with its whole valvetrain in it, and nothing clamped over it.
+	if (slot == AssemblySlot::CYLINDER_HEAD && m_valveCompressor && m_valveCompressor->head == part->GetId())
+	{
+		Log("The Valve Spring Compressor is still on the head: take it off first.");
+		return false;
+	}
+	std::vector<std::tuple<AssemblySlot, int, pPart>> inHead;
+	if (slot == AssemblySlot::CYLINDER_HEAD)
+		for (const auto& [with, at] : GetAssembly().CarriedPositions(slot, index))
+		{
+			auto fitted = InLooseHead(*part, with, at);
+			if (!fitted)
+			{
+				Log(std::format("The {} isn't in the head: the valves, stem seals, springs and retainers all go into it off the engine first.",
+					GetAssembly().PositionName(with, at)));
+				return false;
+			}
+			inHead.push_back({ with, at, fitted });
+		}
+	// A rocker shaft goes on with an arm over each cylinder on it (fitted along it off the engine: on its side then).
+	if (slot == AssemblySlot::ROCKER_SHAFT)
+		for (const auto& [with, at] : GetAssembly().CarriedPositions(slot, index))
+		{
+			int cylinder = at / 2;
+			auto fitted = InLooseHead(*part, AssemblySlot::ROCKER_ARM, cylinder);
+			if (!fitted)
+			{
+				Log(std::format("There's no arm on the shaft over cylinder {}: the rocker arms go onto it off the engine first.", cylinder + 1));
+				return false;
+			}
+			inHead.push_back({ with, at, fitted });
+		}
 	// Nothing goes on under or over a piston sat in the top of its bore: its rod cap, the oil pump, the head gasket.
 	const auto& unseated = Active().unseated;
 	if (!unseated.empty() && ((slot == AssemblySlot::ROD_CAP && unseated.contains(index)) || slot == AssemblySlot::OIL_PUMP || slot == AssemblySlot::HEAD_GASKET))
@@ -1644,6 +1840,12 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 		Log(*missing);
 		return false;
 	}
+	if (slot == AssemblySlot::HEAD_GASKET)
+		if (auto problem = assembly.GasketProblem(*part))
+		{
+			Log(*problem);
+			return false;
+		}
 	// Nuts and bolts go in finger tight: doing them up is a job for the tool in your hand
 	// (TightenFastener).
 
@@ -1672,6 +1874,14 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 		m_pistons.erase(on->GetId());
 		m_rings.erase(on->GetId());
 	}
+	for (const auto& [with, at, fitted] : inHead)
+	{
+		if (assembly.Get(with, at))
+			assembly.Remove(with, at);
+		if (assembly.Install(with, at, fitted, error))
+			m_stats.partsFitted++;
+		m_headFittings.erase(fitted->GetId());
+	}
 	// A rod and piston go in only as far as the ring, till the ring compressor pushes them home.
 	if (slot == AssemblySlot::CONNECTING_ROD)
 	{
@@ -1685,19 +1895,9 @@ bool Workshop::InstallPart(AssemblySlot slot, int index, const pPart& part)
 
 bool Workshop::RemovePart(AssemblySlot slot, int index)
 {
-	if (m_activeEngine == m_engineOnDyno)
+	if (auto problem = EngineWorkProblem(m_activeEngine, slot))
 	{
-		Log("That engine is on the dyno: put it back on a stand to work on it.");
-		return false;
-	}
-	if (m_activeEngine == m_engineOnHoist)
-	{
-		Log("That engine is hanging from the hoist: lower it onto a stand to work on it.");
-		return false;
-	}
-	if (m_activeEngine == GetEngineInCar() && !ServiceableInCar(slot))
-	{
-		Log("That engine is in the car: only the top-end service parts (valve cover, plugs and leads, carburettor, oil filter) can be got at. Lift it out with the hoist for the rest.");
+		Log(*problem);
 		return false;
 	}
 	// In reverse build order: nothing comes off while something is fitted on top of it.
@@ -1730,6 +1930,16 @@ bool Workshop::RemovePart(AssemblySlot slot, int index)
 					FittingsFor(with)[hosts[host].second->GetId()] = fitted->GetId();
 					hosts.push_back({ with, fitted });
 				}
+		// The head's valvetrain stays in it.
+		if (slot == AssemblySlot::CYLINDER_HEAD)
+			for (const auto& [with, at] : GetAssembly().CarriedPositions(slot, index))
+				if (auto fitted = GetAssembly().Remove(with, at))
+					m_headFittings[fitted->GetId()] = { removed->GetId(), with, at };
+		// And a rocker shaft's arms on it, each over its cylinder.
+		if (slot == AssemblySlot::ROCKER_SHAFT)
+			for (const auto& [with, at] : GetAssembly().CarriedPositions(slot, index))
+				if (auto fitted = GetAssembly().Remove(with, at))
+					m_headFittings[fitted->GetId()] = { removed->GetId(), AssemblySlot::ROCKER_ARM, at / 2 };
 		// Gaskets crush, seals tear and torque-to-yield bolts stretch: once fitted, they're done.
 		if (PartCatalog::Get(removed->GetType()).singleUse && removed->GetCondition() != PartCondition::DAMAGED)
 			removed->MarkDamaged("Single use: it was fitted once and can't go back on");

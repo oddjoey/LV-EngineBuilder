@@ -1,0 +1,118 @@
+HOW TO BUILD LV: ENGINE BUILDER ON A MAC
+=======================================
+
+Works on macOS 13.3 or later, Apple silicon or Intel. The Mac build uses CMake
+(CMakeLists.txt in this folder). Windows keeps using LV-EngineBuilder.sln.
+
+
+1. INSTALL THE TOOLS (once)
+---------------------------
+
+  a) Xcode command line tools (the compiler):
+
+       xcode-select --install
+
+  b) The LunarG Vulkan SDK for macOS:
+       https://vulkan.lunarg.com/sdk/home#mac
+     Run its installer and tick "System Global Installation". That puts MoltenVK
+     (Vulkan on top of Metal), the Vulkan loader and the validation layers where
+     CMake and the game can find them.
+
+  c) Homebrew (https://brew.sh), then:
+
+       brew install cmake glfw
+
+
+2. GET THE CODE AND ITS LIBRARIES
+---------------------------------
+
+  a) The engine is a git submodule (LV/). After cloning, from this folder:
+
+       git submodule update --init
+
+  b) ImGui, glm and magic_enum come with the submodules. These header-only
+     libraries have to be put into LV/Libraries/ by hand (see the README's
+     Libraries table for the exact versions and folder names):
+
+       LV/Libraries/stb
+       LV/Libraries/termcolor
+       LV/Libraries/tinyobjloader
+       LV/Libraries/ufbx
+
+     The Vulkan, GLFW and DLSS folders that Windows uses aren't needed: the SDK
+     and Homebrew provide the first two, and there's no DLSS on a Mac.
+
+
+3. BUILD
+--------
+
+  From this folder (where CMakeLists.txt is).
+
+  Debug (use this one to play offline: see the note below):
+
+       cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug
+       cmake --build build-debug -j
+
+  Release:
+
+       cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+       cmake --build build -j
+
+  (Note: MACOS.md's build snippet has a stray "\" at the end of its cmake line,
+  which joins it onto the next command. Type the two commands separately, as
+  above.)
+
+  The build copies the compiled shaders and the Resources folder next to the
+  game, so it runs from its build folder. The shaders are the same SPIR-V files
+  as on Windows: nothing needs recompiling.
+
+
+4. RUN
+------
+
+       cd build-debug
+       ./LV-EngineBuilder
+
+  IMPORTANT: only a Debug build can play offline. A Release build starts at the
+  server login screen and needs a garage server to play.
+
+  Debug also turns on the dev menu (F3), the console (`) with its cheats, and the
+  Vulkan validation layers.
+
+  Saves and settings (savegame.lvsave, game_settings.cfg) are written to the
+  folder you run the game from.
+
+
+5. THE SERVERS (optional, for multiplayer)
+------------------------------------------
+
+  Built with the game, into the build folder's Server/ subfolder:
+
+       ./Server/LV-EngineServer      (the garage server)
+       ./Server/LV-AccountServer     (the account server)
+
+  Ctrl+C stops them and saves. See NETWORKING.txt for how to set them up. A Mac
+  can join a Windows-hosted garage and the other way round.
+
+
+6. WHAT'S DIFFERENT ON A MAC
+----------------------------
+
+  - No DLSS (it's NVIDIA's, Windows only). The setting stays off and the game
+    renders at full resolution.
+  - Sound goes through Core Audio (XAudio2 on Windows).
+  - Networking uses BSD sockets. The encryption (Monocypher) is the same on
+    every platform.
+
+
+7. IF SOMETHING GOES WRONG
+-------------------------
+
+  - "Could NOT find Vulkan": the Vulkan SDK isn't installed system-wide. Rerun its
+    installer with "System Global Installation" ticked, or source the SDK's
+    setup-env.sh in your terminal before running cmake.
+  - "Could NOT find glfw3": brew install glfw (it needs 3.4 or later).
+  - A missing header such as stb_image.h, termcolor.hpp, tiny_obj_loader.h or
+    ufbx.h: that library isn't in LV/Libraries/ yet (step 2b).
+  - Empty or black window, or "failed to create instance": the Vulkan loader
+    can't find MoltenVK. Check the SDK install (step 1b).

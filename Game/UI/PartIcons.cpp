@@ -239,6 +239,11 @@ namespace PartIcons
 			case PartType::TIMING_COVER_GASKET:		gasket({ 0.22f, 0.06f }, { 0.78f, 0.94f }, 3); break;
 			case PartType::VALVE_COVER_GASKET:		gasket({ 0.04f, 0.32f }, { 0.96f, 0.68f }, 5); break;
 			case PartType::WATER_PUMP_GASKET:		gasket({ 0.22f, 0.22f }, { 0.78f, 0.78f }, 2); break;
+			case PartType::THERMOSTAT_HOUSING_GASKET:	gasket({ 0.2f, 0.26f }, { 0.8f, 0.74f }, 2); break;
+			case PartType::THERMOSTAT_GASKET:
+				// A thick rubber ring.
+				drawList->AddCircle(p(0.5f, 0.5f), size * 0.26f, color, 28, line * 3.2f);
+				break;
 			case PartType::INTAKE_MANIFOLD_GASKET:
 			case PartType::EXHAUST_MANIFOLD_GASKET:
 				drawList->AddRect(p(0.04f, 0.32f), p(0.96f, 0.68f), color, size * 0.03f, 0, line * 1.3f);
@@ -264,6 +269,17 @@ namespace PartIcons
 				drawList->AddRectFilled(p(0.30f, 0.20f), p(0.70f, 0.38f), color, size * 0.02f);
 				drawList->AddRectFilled(p(0.26f, 0.38f), p(0.74f, 0.42f), dim);
 				bolt(0.50f, 0.32f, 0.82f);
+				break;
+			case PartType::FUEL_PUMP_GASKET:
+				// A flange outline round its hole, with its two bolt ears.
+				drawList->AddCircle(p(0.5f, 0.5f), size * 0.24f, color, 24, line * 1.4f);
+				drawList->AddCircle(p(0.5f, 0.5f), size * 0.1f, color, 16, line);
+				drawList->AddRect(p(0.1f, 0.42f), p(0.26f, 0.58f), color, 0.f, 0, line);
+				drawList->AddRect(p(0.74f, 0.42f), p(0.9f, 0.58f), color, 0.f, 0, line);
+				break;
+			case PartType::DRAIN_PLUG_WASHER:
+				// A flat ring.
+				drawList->AddCircle(p(0.5f, 0.5f), size * 0.3f, color, 24, line * 2.4f);
 				break;
 			case PartType::OIL_FILTER:
 				drawList->AddRectFilled(p(0.24f, 0.16f), p(0.76f, 0.84f), dim, size * 0.06f);
@@ -412,6 +428,18 @@ namespace PartIcons
 				drawList->AddCircle(p(0.50f, 0.50f), size * 0.26f, color, 28, line * 1.4f);
 				drawList->AddLine(p(0.10f, 0.32f), p(0.90f, 0.32f), color, line * 2.f);
 				drawList->AddLine(p(0.20f, 0.84f), p(0.80f, 0.84f), color, line * 2.f);
+				break;
+			case PartType::ALTERNATOR_BRACKET:
+				// The plate with its bolt holes, the arm out to the pivot's boss, and the post up to the slotted strap.
+				drawList->AddRectFilled(p(0.08f, 0.56f), p(0.34f, 0.90f), dim);
+				drawList->AddRect(p(0.08f, 0.56f), p(0.34f, 0.90f), color, 0.f, 0, line * 1.3f);
+				drawList->AddCircle(p(0.21f, 0.66f), size * 0.04f, color, 12, line);
+				drawList->AddCircle(p(0.21f, 0.81f), size * 0.04f, color, 12, line);
+				drawList->AddLine(p(0.34f, 0.76f), p(0.80f, 0.76f), color, line * 3.f);
+				drawList->AddCircle(p(0.84f, 0.76f), size * 0.07f, color, 16, line * 1.6f);
+				drawList->AddLine(p(0.42f, 0.76f), p(0.42f, 0.18f), color, line * 3.f);
+				drawList->AddRect(p(0.42f, 0.10f), p(0.88f, 0.26f), color, size * 0.02f, 0, line * 1.4f);
+				drawList->AddLine(p(0.54f, 0.18f), p(0.80f, 0.18f), color, line * 1.6f);
 				break;
 			case PartType::ALTERNATOR:
 				drawList->AddCircleFilled(p(0.56f, 0.52f), size * 0.32f, dim, 32);

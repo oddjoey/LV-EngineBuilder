@@ -23,8 +23,8 @@ namespace
 	constexpr float HAND_REACH = 0.46f;			// shoulder to the middle of the hand
 	constexpr float STEP_LENGTH = 0.6f;			// metres a foot moves on, each step
 	constexpr float WALK_SPEED = 2.6f;			// FirstPersonController's
-	// Crouched, the hips come down this far and the back leans forward this far (radians). The monkey is
-	// built small, with a big head (ShopAssets), so its eyes are below FirstPersonController's, standing
+	// Crouched, the hips come down this far and the back leans forward this far (radians). The camera sits
+	// at these eyes (FirstPersonController), standing
 	// or crouched.
 	constexpr float CROUCH_DROP = 0.3f;
 	constexpr float CROUCH_LEAN = 0.35f;

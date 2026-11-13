@@ -54,7 +54,7 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 	// Wrapped to the grid's width: any wider and it pushes the details panel off the window.
 	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + gridWidth);
 	ImGui::TextDisabled("Drag to move   R while dragging: turn   Drag out: drop   Right click: options   "
-		"Shift+click: between hotbar and backpack   1-0 on an item: onto that hotbar slot");
+		"Shift+click: between the selected hotbar slot and backpack   1-0 on an item: onto that hotbar slot");
 	ImGui::PopTextWrapPos();
 
 	ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -100,9 +100,10 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 
 		if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyShift)
 		{
-			// Into the selected slot if it's empty, else the first empty one.
-			auto slot = inventory.FreeHotbarSlot();
-			m_status = slot && world.MoveToHotbar(hovered, *slot) ? "" : "The hotbar's full.";
+			// Into the selected hotbar slot, the hand: what was there goes into the backpack in its place
+			// (MoveToHotbar says why if it can't).
+			world.MoveToHotbar(hovered, inventory.GetSelected());
+			m_status = "";
 		}
 		else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 		{
@@ -119,7 +120,7 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 		}
 	}
 
-	// Hotbar row: the items themselves, whatever their size. The selected slot is the one in hand.
+	// Hotbar row: the items themselves, whatever their size. Which slot is selected shows on the hotbar in play, not here.
 	ImGui::Spacing();
 	ImGui::TextUnformatted("Hotbar");
 	ImVec2 hotbarMin = ImGui::GetCursorScreenPos();
@@ -136,9 +137,8 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 			hoveredSlot = slot;
 
 		auto item = inventory.GetHotbar(slot);
-		bool selected = slot == inventory.GetSelected() && !world.IsHandEmptied();
 		drawList->AddRectFilled(min, max, over && !m_dragging.IsNone() ? IM_COL32(60, 80, 110, 255) : CELL_COLOR, 4.f);
-		drawList->AddRect(min, max, selected ? EQUIPPED_LINE : CELL_LINE, 4.f, 0, selected ? 2.f : 1.f);
+		drawList->AddRect(min, max, CELL_LINE, 4.f);
 		if (!item.IsNone() && item != m_dragging)
 		{
 			auto info = world.DescribeItem(item, workshop);

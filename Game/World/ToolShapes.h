@@ -54,7 +54,7 @@ enum class ToolShape
 	TIRE_GAUGE,
 	ALIGNMENT_GAUGE,
 	SCREWDRIVER,
-	PICKAXE
+	VALVE_SPRING_COMPRESSOR	// a C-clamp: a cup over the spring, a foot under the valve
 };
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
@@ -81,7 +81,7 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 		case HandToolKind::TIRE_GAUGE:		return ToolShape::TIRE_GAUGE;
 		case HandToolKind::ALIGNMENT_GAUGE:	return ToolShape::ALIGNMENT_GAUGE;
 		case HandToolKind::SCREWDRIVER:		return ToolShape::SCREWDRIVER;
-		case HandToolKind::PICKAXE:		return ToolShape::PICKAXE;
+		case HandToolKind::VALVE_SPRING_COMPRESSOR:	return ToolShape::VALVE_SPRING_COMPRESSOR;
 		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
 		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
 		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
@@ -155,7 +155,7 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::TIRE_GAUGE:		return { 1, 2 };
 		case ToolShape::ALIGNMENT_GAUGE:	return { 2, 2 };
 		case ToolShape::SCREWDRIVER:		return { 1, 2 };
-		case ToolShape::PICKAXE:		return { 1, 3 };
+		case ToolShape::VALVE_SPRING_COMPRESSOR:	return { 2, 2 };
 	}
 	return { 1, 1 };
 }

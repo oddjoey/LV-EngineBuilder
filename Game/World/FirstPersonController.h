@@ -88,8 +88,9 @@ private:
 	// How far past the edge of something the player's centre can go and still be standing on it, as a
 	// fraction of their radius.
 	static constexpr float SUPPORT_FRACTION = 0.6f;
-	static constexpr float STAND_EYE_HEIGHT = 1.68f;
-	static constexpr float CROUCH_EYE_HEIGHT = 1.0f;
+	// The monkey's eyes (PlayerAvatar: its neck 0.97 m up, its eyes 0.28 above that; crouched, its hips down and its back leant over).
+	static constexpr float STAND_EYE_HEIGHT = 1.25f;
+	static constexpr float CROUCH_EYE_HEIGHT = 0.92f;
 	static constexpr float CROUCH_HEAD_HEIGHT = 1.15f;
 	static constexpr float CROUCH_EASE = 12.f;	// how quickly the eye settles at its new height, per second
 };

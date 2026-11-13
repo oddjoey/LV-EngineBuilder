@@ -376,7 +376,7 @@ std::vector<FeatureAnchor> ShopAssets::BuildFeatureAnchors(PartType type)
 		case PartType::TIMING_COVER:		add(FeatureNames::FACE_FLATNESS, { 0.2f, -0.022f, 0.1f }); break;
 		case PartType::CRANK_PULLEY:		add(FeatureNames::RING_RUNOUT, { -0.008f, 0.066f, 0.f }); break;
 		case PartType::VALVE_COVER:			add(FeatureNames::RAIL_FLATNESS, { 0.18f, 0.f, 0.1f }); break;
-		case PartType::SPARK_PLUG:			add(FeatureNames::ELECTRODE_GAP, { 0.003f, -0.001f, 0.f }); break;
+		case PartType::SPARK_PLUG:			add(FeatureNames::ELECTRODE_GAP, { 0.003f, -0.02f, 0.f }); break;
 		case PartType::INTAKE_MANIFOLD:		add(FeatureNames::FLANGE_FLATNESS, { 0.15f, 0.f, 0.f }); break;
 		case PartType::CARBURETTOR:
 			add(FeatureNames::THROTTLE_BORE, { 0.f, 0.076f, -0.015f });
@@ -756,25 +756,22 @@ void ShopAssets::LoadTools()
 				Box(builder, { 0.088f, 0.012f, 0.f }, { 0.008f, 0.002f, 0.007f }, steel);
 				break;
 			}
-			case ToolShape::PICKAXE:
+			case ToolShape::VALVE_SPRING_COMPRESSOR:
 			{
-				// Lying flat: a long hickory handle, taped at the grip, and the steel head across its end: a tapering point
-				// one way and a flat adze blade the other, both curving back a little toward the handle.
-				const glm::vec3 hickory = { 0.72f, 0.55f, 0.34f };
-				const glm::vec3 head = { 0.32f, 0.33f, 0.36f };
-				Cylinder(builder, AlongX({ -0.06f, 0.02f, 0.f }), 0.017f, 0.8f, hickory, 10);
-				Cylinder(builder, AlongX({ -0.4f, 0.02f, 0.f }), 0.019f, 0.12f, { 0.1f, 0.1f, 0.1f }, 10);
-				// The eye the handle goes through.
-				Box(builder, { 0.36f, 0.02f, 0.f }, { 0.07f, 0.04f, 0.075f }, head);
-				// The point (toward -Z): a four-sided cone, its tip curving back.
-				builder.SetTransform(glm::rotate(glm::rotate(glm::translate(glm::mat4(1.f), { 0.36f, 0.02f, -0.03f }), 0.22f, glm::vec3(0.f, 1.f, 0.f)),
-					-glm::half_pi<float>(), glm::vec3(1.f, 0.f, 0.f))).SetColor(head).AddCone({}, 0.024f, 0.3f, 4);
-				builder.ResetTransform();
-				// The adze (toward +Z): a flat blade widening a touch to its sharpened edge.
-				builder.SetTransform(glm::rotate(glm::translate(glm::mat4(1.f), { 0.36f, 0.02f, 0.13f }), -0.18f, glm::vec3(0.f, 1.f, 0.f)))
-					.SetColor(head).AddBox({}, { 0.05f, 0.016f, 0.19f });
-				builder.SetColor(steel).AddBox({ 0.f, 0.f, 0.1f }, { 0.062f, 0.012f, 0.02f });
-				builder.ResetTransform();
+				// Built as it sits over a valve, its origin where the cup bears on the spring's retainer: the screw up through the
+				// frame's top arm with a tommy bar through its head, the cup on its end; the frame out to the side (+Z), down past
+				// the head and back in under it, its foot's pad pressing up on the valve's face.
+				const glm::vec3 frame = { 0.75f, 0.2f, 0.16f };
+				constexpr float REACH = 0.1f;		// out past the side of the head from the valve
+				constexpr float TOP = 0.075f, FOOT = -0.125f;
+				Tube(builder, At({ 0.f, 0.006f, 0.f }), 0.0155f, 0.0125f, 0.012f, steel, 0.f, glm::two_pi<float>(), 20);
+				Cylinder(builder, At({ 0.f, 0.013f, 0.f }), 0.0155f, 0.002f, steel, 20);
+				Cylinder(builder, At({ 0.f, 0.055f, 0.f }), 0.0045f, 0.085f, steel, 10);
+				Cylinder(builder, AlongX({ 0.f, 0.096f, 0.f }), 0.003f, 0.075f, steel, 8);
+				Box(builder, { 0.f, TOP, REACH * 0.5f }, { 0.018f, 0.012f, REACH + 0.009f }, frame);
+				Box(builder, { 0.f, (TOP + FOOT) * 0.5f, REACH }, { 0.018f, TOP - FOOT + 0.012f, 0.012f }, frame);
+				Box(builder, { 0.f, FOOT, REACH * 0.5f }, { 0.018f, 0.012f, REACH + 0.009f }, frame);
+				Cylinder(builder, At({ 0.f, FOOT + 0.009f, 0.f }), 0.012f, 0.006f, steel, 16);
 				break;
 			}
 		}
@@ -1635,33 +1632,228 @@ void ShopAssets::LoadParts()
 		Cylinder(block, AlongZ({ 0.12f, -0.2f, CRANKCASE_HALF_WIDTH + 0.01f }), 0.035f, 0.03f);	// on the side the filter went to (see AncillaryMount)
 		for (const auto& hole : DeckCoolantHoles())
 			Cylinder(block, At({ hole.x, -0.0004f, hole.y }), hole.z, 0.0012f, DARK, 12);
+		// The water pump's coolant boss, cast out of the front corner on the intake side: its face flush with the front of
+		// the block (the timing cover's ear seals on it), the pump's inlet and bolt holes in it, and the passage from it
+		// running back along the side into the water jacket.
+		{
+			constexpr float INNER = BLOCK_WIDTH * 0.5f - 0.004f, DEPTH = 0.034f;
+			Box(block, { FRONT_X + DEPTH * 0.5f, WATER_PUMP_Y, -(INNER + WATER_PUMP_EAR) * 0.5f },
+				{ DEPTH, 2.f * WATER_PUMP_EAR_HALF, WATER_PUMP_EAR - INNER });
+			Cylinder(block, AlongX({ FRONT_X + DEPTH + 0.03f, WATER_PUMP_Y, WATER_PUMP_Z + 0.006f }), 0.019f, 0.06f, WHITE, 20);
+			Cylinder(block, AlongX({ FRONT_X + DEPTH + 0.0625f, WATER_PUMP_Y, WATER_PUMP_Z + 0.006f }), 0.013f, 0.005f, WHITE, 18);
+			Cylinder(block, AlongX({ FRONT_X - 0.0003f, WATER_PUMP_Y, WATER_PUMP_Z }), WATER_PUMP_NOSE + 0.0005f, 0.0008f, DARK, 24);
+			for (int bolt = 0; bolt < 4; bolt++)
+			{
+				float angle = glm::quarter_pi<float>() + bolt * glm::half_pi<float>();
+				Cylinder(block, AlongX({ FRONT_X - 0.0003f, WATER_PUMP_Y + std::sin(angle) * WATER_PUMP_BOLT_RING,
+					WATER_PUMP_Z + std::cos(angle) * WATER_PUMP_BOLT_RING }), 0.0035f, 0.0008f, DARK, 10);
+			}
+		}
 		add(PartType::BLOCK, block);
 	}
 	{
 		// Origin at the centre of the head's deck face. Open on top (no cam cover) so the springs,
-		// valve tips and camshaft can be seen working.
+		// valve tips and camshaft can be seen working. Cast aluminium: its machined faces (the deck, the rail
+		// the valve cover sits on, the port faces, the tops of the rocker pedestals) a shade brighter than the
+		// casting round them.
 		MeshBuilder head;
 		head.SetUVScale(4.f);
-		float halfLength = BLOCK_LENGTH * 0.5f;
-		float railHeight = HEAD_RAIL_TOP - HEAD_FLOOR_Y;
-		Box(head, { 0.f, HEAD_FLOOR_Y * 0.5f, 0.f }, { BLOCK_LENGTH, HEAD_FLOOR_Y, 0.21f });
-		for (float side : { -1.f, 1.f })
-		{
-			Box(head, { 0.f, HEAD_FLOOR_Y + railHeight * 0.5f, side * 0.1f }, { BLOCK_LENGTH, railHeight, 0.01f });
-			Box(head, { side * (halfLength - 0.005f), HEAD_FLOOR_Y + railHeight * 0.5f, 0.f }, { 0.01f, railHeight, 0.21f });
-		}
-		// Cam towers under the cam's journals; the caps over the cam bores are parts of their own.
-		for (int journal = 0; journal < CAM_JOURNALS; journal++)
-			Box(head, { CamTowerX(journal), (HEAD_FLOOR_Y + CAM_Y) * 0.5f, 0.f }, { 0.018f, CAM_Y - HEAD_FLOOR_Y, 0.05f });
+		const glm::vec3 CAST = { 0.86f, 0.86f, 0.88f };
+		const glm::vec3 CHAMBER = { 0.60f, 0.58f, 0.56f };	// a little sooted
+		const glm::vec3 SEAT = { 0.74f, 0.74f, 0.76f };		// hardened valve seats, cut bright
+		const float halfLength = BLOCK_LENGTH * 0.5f;
+		const float headWidth = 0.21f, halfWidth = headWidth * 0.5f;
+		const float boresEnd = 2.f * BORE_SPACING;
+		const float CHAMBER_DEPTH = 0.008f;
+		const float chamberRadius = BORE_RADIUS - 0.001f;
+		const float LIP = 0.004f;									// the machined rail under the valve cover
+		const float wallTop = HEAD_RAIL_TOP - LIP;
+		const float wallHeight = wallTop - HEAD_FLOOR_Y;
+		const float CAM_BORE = 0.0146f;
+		const float SHAFT_UNDER = HEAD_FLOOR_Y + 0.039f;				// the underside of the rocker shafts
+		const float HEAD_BOLT_Z = 0.085f, ROCKER_SHAFT_Z = VALVE_Z + ROCKER_PIVOT_Z;
+		auto headBoltX = [](int pair) { return std::clamp(MainX(pair), -0.19f, 0.19f); };
+
+		// The deck: machined flat, a combustion chamber cast up into it over each bore (its plate faces down).
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 		{
 			float x = BoreX(cylinder);
-			Cylinder(head, At({ x, HEAD_FLOOR_Y + 0.02f, 0.f }), 0.011f, 0.04f, { 0.8f, 0.8f, 0.82f });
-			// Intake ports on -Z, exhaust on +Z.
-			Cylinder(head, AlongZ({ x, 0.035f, -0.125f }), 0.018f, 0.04f);
-			Cylinder(head, AlongZ({ x, 0.035f, 0.125f }), 0.016f, 0.04f, { 0.6f, 0.55f, 0.5f });
+			head.ResetTransform().SetColor(WHITE);
+			head.SetTransform(glm::rotate(glm::mat4(1.f), glm::pi<float>(), { 1.f, 0.f, 0.f })).AddPlateWithHole({ x, 0.f, 0.f }, { BORE_SPACING, headWidth }, chamberRadius, 32);
+			head.ResetTransform();
+			// Its wall and roof; in the roof, the two valve seats round their ports' throats and the plug hole between them.
+			Tube(head, At({ x, (CHAMBER_DEPTH + 0.0002f) * 0.5f, 0.f }), chamberRadius + 0.002f, chamberRadius, CHAMBER_DEPTH - 0.0002f, CHAMBER,
+				0.f, glm::two_pi<float>(), 32);
+			Cylinder(head, At({ x, CHAMBER_DEPTH - 0.0002f, 0.f }), chamberRadius, 0.0004f, CHAMBER, 32);
 			for (bool exhaust : { false, true })
-				Cylinder(head, At({ x, HEAD_FLOOR_Y + 0.0005f, ValveZ(exhaust) }), 0.0135f, 0.001f, { 0.5f, 0.5f, 0.52f });
+			{
+				float throat = exhaust ? 0.0115f : 0.013f;
+				Tube(head, At({ x, CHAMBER_DEPTH - 0.0007f, ValveZ(exhaust) }), throat + 0.003f, throat, 0.0006f, SEAT, 0.f, glm::two_pi<float>(), 24);
+				Cylinder(head, At({ x, CHAMBER_DEPTH - 0.0006f, ValveZ(exhaust) }), throat, 0.0004f, DARK, 24);
+			}
+			// The plug's hole, beside the valves where its tube comes in from the side.
+			Cylinder(head, At({ PlugTip(cylinder).x, CHAMBER_DEPTH - 0.0006f, PlugTip(cylinder).z }), 0.0055f, 0.0004f, DARK, 16);
+		}
+		// The deck past the end bores, and its edges along the sides.
+		for (float side : { -1.f, 1.f })
+		{
+			Box(head, { side * (boresEnd + halfLength) * 0.5f, CHAMBER_DEPTH * 0.5f, 0.f }, { halfLength - boresEnd, CHAMBER_DEPTH, headWidth });
+			Box(head, { 0.f, CHAMBER_DEPTH * 0.5f, side * (halfWidth - 0.0005f) }, { 2.f * boresEnd, CHAMBER_DEPTH, 0.001f });
+		}
+		// Through the deck: the coolant holes the gasket and block match, and the head bolts' holes.
+		for (const auto& hole : DeckCoolantHoles())
+			Cylinder(head, At({ hole.x, -0.0004f, hole.y }), hole.z, 0.0012f, DARK, 12);
+		for (int pair = 0; pair < 5; pair++)
+			for (float side : { -1.f, 1.f })
+				Cylinder(head, At({ headBoltX(pair), -0.0004f, side * HEAD_BOLT_Z }), 0.0065f, 0.0012f, DARK, 16);
+
+		// The body up to the floor the springs sit on: the ports run through it, out to the faces either side. Each spark
+		// plug's tube runs through it too, from the chamber's roof up and out through the wall on the plug side: round the
+		// tube the body's cast away (a pocket under the floor), so it's open all the way down to the plug.
+		// A box from (x0, y0, u0) to (x1, y1, u1), u being across the head towards the plugs' side.
+		auto span = [&](float x0, float x1, float y0, float y1, float u0, float u1) {
+			if (x1 > x0 && y1 > y0 && u1 > u0)
+				Box(head, { (x0 + x1) * 0.5f, (y0 + y1) * 0.5f, PLUG_SIDE * (u0 + u1) * 0.5f }, { x1 - x0, y1 - y0, u1 - u0 }, CAST);
+		};
+		{
+			const float tanTilt = std::tan(PLUG_TILT);
+			float from = -halfLength;
+			for (int cylinder = 0; cylinder < 4; cylinder++)
+			{
+				glm::vec3 tip = PlugTip(cylinder);
+				float b0 = tip.x - PLUG_TUBE, b1 = tip.x + PLUG_TUBE, tipU = std::abs(tip.z);
+				span(from, b0, CHAMBER_DEPTH, HEAD_FLOOR_Y, -halfWidth, halfWidth);
+				// Along the tube: the body short of it, the pocket's bottom over the chamber, its face on the side, and the
+				// floor over it except where the tube comes up through.
+				float pocket = tipU - PLUG_TUBE;
+				float up = tipU + (HEAD_FLOOR_Y - tip.y) * tanTilt, across = PLUG_TUBE / std::cos(PLUG_TILT);
+				span(b0, b1, CHAMBER_DEPTH, HEAD_FLOOR_Y, -halfWidth, pocket);
+				span(b0, b1, CHAMBER_DEPTH, CHAMBER_DEPTH + 0.0005f, pocket, halfWidth);
+				span(b0, b1, CHAMBER_DEPTH, HEAD_FLOOR_Y, halfWidth - 0.001f, halfWidth);
+				span(b0, b1, HEAD_FLOOR_Y - 0.002f, HEAD_FLOOR_Y, pocket, up - across);
+				span(b0, b1, HEAD_FLOOR_Y - 0.002f, HEAD_FLOOR_Y, up + across, halfWidth - 0.001f);
+				from = b1;
+			}
+			span(from, halfLength, CHAMBER_DEPTH, HEAD_FLOOR_Y, -halfWidth, halfWidth);
+		}
+		for (float side : { -1.f, 1.f })
+		{
+			bool exhaust = side > 0.f;
+			// The port face, machined for the manifold's gasket, standing a whisker proud of the casting.
+			Box(head, { 0.f, PORT_Y, side * (halfWidth + 0.00025f) }, { 2.f * boresEnd - 0.01f, 0.036f, 0.0005f }, WHITE);
+			for (int cylinder = 0; cylinder < 4; cylinder++)
+			{
+				float x = BoreX(cylinder);
+				glm::vec3 at = { x, PORT_Y, side * (halfWidth + 0.0006f) };
+				if (exhaust)
+					Cylinder(head, AlongZ(at), 0.0125f, 0.0004f, DARK, 20);
+				else
+				{
+					// The intakes are wider than they're tall: a rounded slot.
+					Box(head, at, { 0.012f, 0.026f, 0.0004f }, DARK);
+					for (float end : { -1.f, 1.f })
+						Cylinder(head, AlongZ(at + glm::vec3(end * 0.006f, 0.f, 0.f)), 0.013f, 0.0004f, DARK, 20);
+				}
+				// The manifold's studs above and below each port.
+				for (float up : { -1.f, 1.f })
+					Cylinder(head, AlongZ({ x + 0.03f, PORT_Y + up * 0.012f, side * (halfWidth + 0.0006f) }), 0.003f, 0.0004f, DARK, 10);
+			}
+		}
+
+		// The walls up round the valvetrain, and the machined rail on top of them the valve cover's gasket sits on.
+		for (float side : { -1.f, 1.f })
+		{
+			// On the plugs' side, a slot through the wall for each plug's tube.
+			if (side == PLUG_SIDE)
+			{
+				const float tanTilt = std::tan(PLUG_TILT);
+				float from = -halfLength;
+				for (int cylinder = 0; cylinder < 4; cylinder++)
+				{
+					glm::vec3 tip = PlugTip(cylinder);
+					float b0 = tip.x - PLUG_TUBE, b1 = tip.x + PLUG_TUBE;
+					float slotTop = tip.y + (halfWidth - std::abs(tip.z)) / tanTilt + PLUG_TUBE / std::sin(PLUG_TILT) + 0.001f;
+					span(from, b0, HEAD_FLOOR_Y, wallTop, halfWidth - 0.01f, halfWidth);
+					span(b0, b1, slotTop, wallTop, halfWidth - 0.01f, halfWidth);
+					from = b1;
+				}
+				span(from, halfLength, HEAD_FLOOR_Y, wallTop, halfWidth - 0.01f, halfWidth);
+			}
+			else
+				Box(head, { 0.f, HEAD_FLOOR_Y + wallHeight * 0.5f, side * (halfWidth - 0.005f) }, { BLOCK_LENGTH, wallHeight, 0.01f }, CAST);
+			Box(head, { side * (halfLength - 0.005f), HEAD_FLOOR_Y + wallHeight * 0.5f, 0.f }, { 0.01f, wallHeight, headWidth }, CAST);
+			Box(head, { 0.f, wallTop + LIP * 0.5f, side * (halfWidth - 0.0055f) }, { BLOCK_LENGTH + 0.002f, LIP, 0.013f });
+			Box(head, { side * (halfLength - 0.0055f), wallTop + LIP * 0.5f, 0.f }, { 0.013f, LIP, headWidth + 0.002f });
+		}
+		// Ribs cast down the exhaust side's wall, stiffening it between the head bolts.
+		for (int pair = 1; pair < 4; pair++)
+			Box(head, { headBoltX(pair), HEAD_FLOOR_Y + wallHeight * 0.5f, halfWidth + 0.0015f }, { 0.006f, wallHeight, 0.003f }, CAST);
+		// The coolant outlet's pad, at the front of the intake side, the thermostat and its housing over it.
+		Cylinder(head, AlongZ({ -0.17f, 0.095f, -(halfWidth + 0.00025f) }), 0.036f, 0.0005f, WHITE, 28);
+		Cylinder(head, AlongZ({ -0.17f, 0.095f, -(halfWidth + 0.0006f) }), 0.011f, 0.0004f, DARK, 20);
+		// The fuel pump's mounting pad on the intake side, just under the cam (all of it below the valve cover's joint), the
+		// hole its arm goes in through up onto the cam's eccentric, and its two bolt holes either side.
+		Box(head, { FUEL_PUMP_X, CAM_Y - FUEL_PUMP_DROP, -(halfWidth + 0.00025f) }, { 0.07f, 0.032f, 0.0005f }, WHITE);
+		Cylinder(head, AlongZ({ FUEL_PUMP_X, CAM_Y - FUEL_PUMP_DROP, -(halfWidth + 0.0006f) }), 0.009f, 0.0004f, DARK, 18);
+		for (float side : { -1.f, 1.f })
+			Cylinder(head, AlongZ({ FUEL_PUMP_X + side * 0.027f, CAM_Y - FUEL_PUMP_DROP, -(halfWidth + 0.0006f) }), 0.0035f, 0.0004f, DARK, 10);
+		// The cam's seal boss out the front, under the cam, and a lifting eye at each end on opposite sides.
+		Box(head, { -(halfLength + 0.002f), CAM_Y - 0.013f, 0.f }, { 0.004f, 0.026f, 0.05f }, CAST);
+		for (float end : { -1.f, 1.f })
+		{
+			glm::vec3 eye = { end * (halfLength + 0.003f), 0.098f, end * -0.07f };
+			Box(head, eye, { 0.006f, 0.034f, 0.022f }, CAST);
+			Cylinder(head, AlongX(eye + glm::vec3(0.f, 0.006f, 0.f)), 0.0045f, 0.0066f, DARK, 14);
+		}
+
+		// On the floor: the head bolts' bosses (their heads seat on top), the oil's drain-backs to the sump at the
+		// corners, and the rocker shafts' pedestals, one under each bolt, either side.
+		for (int pair = 0; pair < 5; pair++)
+			for (float side : { -1.f, 1.f })
+				Cylinder(head, At({ headBoltX(pair), HEAD_FLOOR_Y + 0.005f, side * HEAD_BOLT_Z }), 0.0095f, 0.01f, CAST, 20);
+		for (float end : { -1.f, 1.f })
+			for (float side : { -1.f, 1.f })
+				Cylinder(head, At({ end * 0.165f, HEAD_FLOOR_Y + 0.0002f, side * 0.068f }), 0.006f, 0.0006f, DARK, 14);
+		for (int hole = 0; hole < 5; hole++)
+			for (float side : { -1.f, 1.f })
+			{
+				float x = RockerBoltX(hole), z = side * ROCKER_SHAFT_Z;
+				Box(head, { x, (HEAD_FLOOR_Y + SHAFT_UNDER - 0.001f) * 0.5f, z }, { 0.014f, SHAFT_UNDER - 0.001f - HEAD_FLOOR_Y, 0.016f }, CAST);
+				Box(head, { x, SHAFT_UNDER - 0.0005f, z }, { 0.0142f, 0.001f, 0.0162f });
+			}
+		// Cam towers under the cam's journals, each with its half of the bearing bore cut in its top; the caps
+		// over the cam are parts of their own.
+		for (int journal = 0; journal < CAM_JOURNALS; journal++)
+		{
+			float x = CamTowerX(journal);
+			float saddle = CAM_Y - CAM_BORE;
+			Box(head, { x, (HEAD_FLOOR_Y + saddle) * 0.5f, 0.f }, { 0.018f, saddle - HEAD_FLOOR_Y, 0.05f }, CAST);
+			for (float side : { -1.f, 1.f })
+				Box(head, { x, (saddle + CAM_Y) * 0.5f, side * (CAM_BORE + 0.025f) * 0.5f }, { 0.018f, CAM_BORE, 0.025f - CAM_BORE }, CAST);
+			Tube(head, AlongX({ x, CAM_Y, 0.f }), CAM_BORE * 1.45f, CAM_BORE, 0.0178f, WHITE, glm::half_pi<float>(), glm::pi<float>() * 1.5f, 20);
+		}
+		for (int cylinder = 0; cylinder < 4; cylinder++)
+		{
+			float x = BoreX(cylinder);
+			// The plug's tube, in from the side of the head: from the chamber's roof, where the plug screws in, up through the
+			// pocket in the body and the slot in the wall, out under the rail as a boss. It's open all the way down: the plug
+			// can be seen at the bottom of it, and its lead's boot goes down it onto the plug.
+			{
+				glm::vec3 tip = PlugTip(cylinder), axis = PlugAxis();
+				float fromRoof = (CHAMBER_DEPTH + 0.001f - tip.y) / axis.y;
+				float toFace = (halfWidth - std::abs(tip.z)) / std::abs(axis.z);
+				float outEnd = toFace + 0.006f;
+				glm::mat4 along = At(tip + axis * ((fromRoof + outEnd) * 0.5f)) * glm::mat4_cast(PlugTurn());
+				Tube(head, along, PLUG_TUBE, 0.0095f, outEnd - fromRoof, CAST, 0.f, glm::two_pi<float>(), 20);
+				// The thread at the bottom, where the plug screws into the chamber's roof.
+				Cylinder(head, At(tip + axis * (fromRoof + 0.0005f)) * glm::mat4_cast(PlugTurn()), 0.0095f, 0.0008f, DARK, 16);
+			}
+			// Each valve's spring seat, and its guide standing up through it for the stem seal to push onto.
+			for (bool exhaust : { false, true })
+			{
+				Cylinder(head, At({ x, HEAD_FLOOR_Y + 0.0005f, ValveZ(exhaust) }), 0.0135f, 0.001f, SEAT, 24);
+				Tube(head, At({ x, HEAD_FLOOR_Y + 0.004f, ValveZ(exhaust) }), 0.0055f, 0.0035f, 0.007f, CAST, 0.f, glm::two_pi<float>(), 14);
+			}
 		}
 		add(PartType::CYLINDER_HEAD, head);
 	}
@@ -1728,15 +1920,25 @@ void ShopAssets::LoadParts()
 		AddModel(ShopModels::PACKAGE_CRATE, crate);
 	}
 	{
+		// A little bigger than the deck all round, so it shows as a lip between the block and the head.
 		MeshBuilder gasket;
 		gasket.SetUVScale(6.f);
+		const float width = BLOCK_WIDTH + 2.f * GASKET_LIP;
+		const glm::vec3 GASKET_GREY = { 0.55f, 0.57f, 0.6f };	// coated steel layers
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 		{
-			gasket.ResetTransform().SetColor(WHITE).AddPlateWithHole({ BoreX(cylinder), GASKET_THICKNESS, 0.f }, { BORE_SPACING, BLOCK_WIDTH }, BORE_RADIUS + 0.0015f, 32);
+			gasket.ResetTransform().SetColor(GASKET_GREY).AddPlateWithHole({ BoreX(cylinder), GASKET_THICKNESS, 0.f }, { BORE_SPACING, width }, BORE_RADIUS + 0.0015f, 32);
 			gasket.SetTransform(glm::rotate(glm::mat4(1.f), glm::pi<float>(), { 1.f, 0.f, 0.f }));
-			gasket.AddPlateWithHole({ BoreX(cylinder), 0.f, 0.f }, { BORE_SPACING, BLOCK_WIDTH }, BORE_RADIUS + 0.0015f, 32);
+			gasket.AddPlateWithHole({ BoreX(cylinder), 0.f, 0.f }, { BORE_SPACING, width }, BORE_RADIUS + 0.0015f, 32);
 		}
 		gasket.ResetTransform();
+		// The ends past the outer bores, out to the lip; and the edge all round.
+		const float boresEnd = 2.f * BORE_SPACING, end = BLOCK_LENGTH * 0.5f + GASKET_LIP;
+		for (float side : { -1.f, 1.f })
+		{
+			Box(gasket, { side * (boresEnd + end) * 0.5f, GASKET_THICKNESS * 0.5f, 0.f }, { end - boresEnd, GASKET_THICKNESS, width }, GASKET_GREY);
+			Box(gasket, { 0.f, GASKET_THICKNESS * 0.5f, side * (width * 0.5f - 0.0002f) }, { 2.f * boresEnd, GASKET_THICKNESS, 0.0004f }, GASKET_GREY);
+		}
 		for (const auto& hole : DeckCoolantHoles())
 			Cylinder(gasket, At({ hole.x, GASKET_THICKNESS - 0.0003f, hole.y }), hole.z, 0.0008f, DARK, 12);
 		add(PartType::HEAD_GASKET, gasket);
@@ -1880,7 +2082,8 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::OIL_PICKUP:				return { { FRONT_X - 0.009f, CRANK_Y - 0.075f, 0.f } };	// its flange under the pump's lug
 		case PartType::OIL_PAN_GASKET:			return { { 0.f, PAN_RAIL_Y - 0.001f, 0.f } };
 		case PartType::OIL_PAN:					return { { 0.f, PAN_RAIL_Y - 0.002f, 0.f } };
-		case PartType::OIL_DRAIN_PLUG:			return { { 0.12f, PAN_RAIL_Y - 0.002f - OIL_PAN_DEPTH - 0.008f, 0.f } };
+		// Under the drain plug's head, against the bottom of the pan (the plug itself is a fastener, on it: see ShopWorld).
+		case PartType::DRAIN_PLUG_WASHER:		return { { 0.12f, PAN_RAIL_Y - 0.002f - OIL_PAN_DEPTH - 0.002f, 0.f } };
 		case PartType::OIL_FILTER:				return crossOver({ { 0.12f, -0.2f, -(CRANKCASE_WIDTH * 0.5f + 0.025f) }, FACING_EXHAUST });
 		case PartType::VALVE_STEM_SEAL:			return { { BoreX(cylinder), HEAD_DECK_Y + HEAD_FLOOR_Y, ValveZ(exhaust) } };
 		case PartType::VALVE_RETAINER:			return { { BoreX(cylinder), HEAD_DECK_Y + HEAD_FLOOR_Y + SPRING_INSTALLED_HEIGHT, ValveZ(exhaust) } };
@@ -1893,14 +2096,14 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::TIMING_BELT:			return { { TIMING_PLANE_X, 0.f, 0.f } };
 		case PartType::BELT_IDLER:				return { { TIMING_PLANE_X + 0.012f, -0.05f, index == 0 ? 0.062f : -0.062f }, FACING_FRONT };
 		case PartType::BELT_TENSIONER:			return { { TIMING_PLANE_X, TIMING_IDLER_Y, TIMING_IDLER_Z } };
-		case PartType::TIMING_COVER_GASKET:		return { { TIMING_COVER_X + 0.0055f, TIMING_COVER_Y, 0.f }, FACING_FRONT };
+		case PartType::TIMING_COVER_GASKET:		return { { FRONT_X, TIMING_COVER_Y, 0.f }, FACING_FRONT };	// against the block, under the cover's rim
 		case PartType::TIMING_COVER:			return { { TIMING_COVER_X, TIMING_COVER_Y, 0.f }, FACING_FRONT };
-		case PartType::FRONT_CRANK_SEAL:		return { { TIMING_COVER_X - 0.012f, CRANK_Y, 0.f }, FACING_FRONT };
+		case PartType::FRONT_CRANK_SEAL:		return { { FRONT_X - 0.009f, CRANK_Y, 0.f }, FACING_FRONT };	// in the oil pump's housing
 		case PartType::CRANK_PULLEY:			return { { TIMING_COVER_X - 0.03f, CRANK_Y, 0.f } };
 		case PartType::VALVE_COVER_GASKET:		return { { 0.f, HEAD_TOP_Y, 0.f } };
 		case PartType::VALVE_COVER:				return { { 0.f, HEAD_TOP_Y + 0.003f, 0.f } };
 		case PartType::SPARK_PLUG:				return { { BoreX(index), HEAD_DECK_Y + 0.012f, 0.f } };
-		case PartType::PLUG_LEAD:				return { { BoreX(index), HEAD_DECK_Y + 0.093f, 0.f } };
+		case PartType::PLUG_LEAD:				return { glm::vec3(0.f, HEAD_DECK_Y, 0.f) + PlugTip(index) + PlugAxis() * PLUG_TERMINAL };	// on its plug's terminal
 		// Gear-driven off the back of the cam, sticking out of the back of the head.
 		case PartType::DISTRIBUTOR:				return { { -FRONT_X + 0.001f, CamAxisY(), 0.f }, FACING_REAR };
 		case PartType::FLYWHEEL:				return { { -FRONT_X + 0.002f, CRANK_Y, 0.f }, FACING_REAR };
@@ -1910,18 +2113,24 @@ EngineLayout::Mount EngineLayout::AncillaryMount(PartType type, int index)
 		case PartType::CARBURETTOR:				return otherSide({ { 0.f, PORT_Y + 0.08f, PORT_FACE_Z + 0.137f } });
 		case PartType::FUEL_INJECTOR:			return crossOver({ { BoreX(index), PORT_Y + 0.012f, PORT_FACE_Z + 0.04f } });
 		// On the intake side of the head at the cam's height, its arm in through the head onto the eccentric.
-		case PartType::FUEL_PUMP:				return { { FUEL_PUMP_X, CamAxisY(), -PORT_FACE_Z - 0.001f }, FACING_EXHAUST };
+		// Its gasket on the side of the head, then the pump on that (both standing out from the head, -Z).
+		case PartType::FUEL_PUMP_GASKET:		return { { FUEL_PUMP_X, CamAxisY() - FUEL_PUMP_DROP, -PORT_FACE_Z }, FACING_EXHAUST };
+		case PartType::FUEL_PUMP:				return { { FUEL_PUMP_X, CamAxisY() - FUEL_PUMP_DROP, -PORT_FACE_Z - 0.001f }, FACING_EXHAUST };
 		// At the front, beside the water pump, its pulley in the belt's plane.
 		case PartType::ALTERNATOR:				return { { ACCESSORY_BELT_X, ALTERNATOR_Y, ALTERNATOR_Z } };
+		case PartType::ALTERNATOR_BRACKET:		return { { ALTERNATOR_BRACKET_X, ALTERNATOR_BRACKET_Y, ALTERNATOR_Z } };
 		case PartType::DRIVE_BELT:				return { { ACCESSORY_BELT_X, 0.f, 0.f } };
 		case PartType::DRIVE_BELT_TENSIONER:		return { { ACCESSORY_BELT_X, DRIVE_TENSIONER_Y, DRIVE_TENSIONER_Z } };
 		case PartType::EXHAUST_MANIFOLD_GASKET:	return otherSide({ { 0.f, PORT_Y, -PORT_FACE_Z - 0.001f }, FACING_EXHAUST });
 		case PartType::EXHAUST_MANIFOLD:
 		case PartType::EXHAUST_PIPE:			return otherSide({ { 0.f, PORT_Y, -PORT_FACE_Z - 0.002f } });
-		case PartType::WATER_PUMP_GASKET:		return { { TIMING_COVER_X - 0.0125f, -0.04f, 0.06f }, FACING_FRONT };
-		case PartType::WATER_PUMP:				return { { TIMING_COVER_X - 0.014f, WATER_PUMP_Y, WATER_PUMP_Z } };
-		case PartType::THERMOSTAT:				return crossOver({ { -0.17f, 0.10f, PORT_FACE_Z + 0.001f }, FACING_INTAKE });
-		case PartType::THERMOSTAT_HOUSING:		return crossOver({ { -0.17f, 0.10f, PORT_FACE_Z + 0.004f }, FACING_INTAKE });
+		case PartType::WATER_PUMP_GASKET:		return { { WATER_PUMP_GASKET_X, WATER_PUMP_Y, WATER_PUMP_Z }, FACING_FRONT };	// under the pump, on the pad round its hole in the cover's ear
+		case PartType::WATER_PUMP:				return { { WATER_PUMP_X, WATER_PUMP_Y, WATER_PUMP_Z } };
+		// The thermostat's flange between its two gaskets, the housing over them.
+		case PartType::THERMOSTAT_GASKET:		return crossOver({ { -0.17f, 0.095f, PORT_FACE_Z }, FACING_INTAKE });
+		case PartType::THERMOSTAT:				return crossOver({ { -0.17f, 0.095f, PORT_FACE_Z + 0.001f }, FACING_INTAKE });
+		case PartType::THERMOSTAT_HOUSING_GASKET:	return crossOver({ { -0.17f, 0.095f, PORT_FACE_Z + 0.003f }, FACING_INTAKE });
+		case PartType::THERMOSTAT_HOUSING:		return crossOver({ { -0.17f, 0.095f, PORT_FACE_Z + 0.004f }, FACING_INTAKE });
 		default:								return {};
 	}
 }
@@ -1983,8 +2192,9 @@ void ShopAssets::LoadAncillaries()
 		// Lies face down; on the engine its back is against the block, round the crank snout.
 		MeshBuilder pump;
 		pump.SetUVScale(8.f);
-		Tube(pump, At({ 0.f, 0.008f, 0.f }), 0.055f, 0.019f, 0.016f, WHITE, 0.f, glm::two_pi<float>(), 32);
-		Cylinder(pump, At({ 0.f, 0.0163f, 0.f }), 0.034f, 0.0008f, DARK, 24);
+		// Its bore round the crank snout is the front crank seal's housing: the seal's pressed in from the front.
+		Tube(pump, At({ 0.f, 0.008f, 0.f }), 0.055f, 0.0305f, 0.016f, WHITE, 0.f, glm::two_pi<float>(), 32);
+		Tube(pump, At({ 0.f, 0.0163f, 0.f }), 0.034f, 0.0305f, 0.0008f, DARK, 0.f, glm::two_pi<float>(), 24);
 		Box(pump, { -0.06f, 0.008f, 0.f }, { 0.03f, 0.016f, 0.026f });
 		add(PartType::OIL_PUMP, pump);
 	}
@@ -2000,28 +2210,48 @@ void ShopAssets::LoadAncillaries()
 	}
 	{
 		MeshBuilder gasket;
-		frame(gasket, BLOCK_LENGTH, CRANKCASE_WIDTH, 0.016f, 0.0015f, RUBBER);
+		frame(gasket, BLOCK_LENGTH, CRANKCASE_WIDTH, OIL_PAN_LIP, 0.0015f, RUBBER);
 		add(PartType::OIL_PAN_GASKET, gasket);
 	}
 	{
-		// Rail on top at y = 0, the sump hanging below.
+		// Rail on top at y = 0, the sump hanging below from its inner edge, so the rail stands out round it as a
+		// lip for the bolts.
 		MeshBuilder pan;
 		pan.SetUVScale(3.f);
 		float depth = OIL_PAN_DEPTH;
-		frame(pan, BLOCK_LENGTH, CRANKCASE_WIDTH, 0.016f, 0.004f, PAN_PAINT, -0.002f);
+		frame(pan, BLOCK_LENGTH, CRANKCASE_WIDTH, OIL_PAN_LIP, 0.004f, PAN_PAINT, -0.002f);
+		float wallLength = BLOCK_LENGTH - 2.f * OIL_PAN_LIP, wallWidth = CRANKCASE_WIDTH - 2.f * OIL_PAN_LIP;
 		for (float side : { -1.f, 1.f })
 		{
-			Box(pan, { 0.f, -depth * 0.5f, side * (CRANKCASE_WIDTH * 0.5f - 0.007f) }, { BLOCK_LENGTH - 0.02f, depth, 0.004f }, PAN_PAINT);
-			Box(pan, { side * (BLOCK_LENGTH * 0.5f - 0.012f), -depth * 0.5f, 0.f }, { 0.004f, depth, CRANKCASE_WIDTH - 0.014f }, PAN_PAINT);
+			Box(pan, { 0.f, -depth * 0.5f, side * (wallWidth * 0.5f - 0.002f) }, { wallLength, depth, 0.004f }, PAN_PAINT);
+			Box(pan, { side * (wallLength * 0.5f - 0.002f), -depth * 0.5f, 0.f }, { 0.004f, depth, wallWidth }, PAN_PAINT);
 		}
-		Box(pan, { 0.f, -depth, 0.f }, { BLOCK_LENGTH - 0.02f, 0.005f, CRANKCASE_WIDTH - 0.014f }, PAN_PAINT);
+		Box(pan, { 0.f, -depth, 0.f }, { wallLength, 0.005f, wallWidth }, PAN_PAINT);
 		add(PartType::OIL_PAN, pan);
 	}
 	{
+		// Built as the nuts and bolts are (origin under its head, the shank down -Y): a 14 mm hex head with a flange,
+		// the threaded shank and its magnet on the end.
 		MeshBuilder plug;
-		Cylinder(plug, At({ 0.f, 0.004f, 0.f }), 0.0095f, 0.008f, STEEL_GREY, 6);
-		Cylinder(plug, At({ 0.f, 0.014f, 0.f }), 0.006f, 0.012f, STEEL_GREY, 12);
+		Cylinder(plug, At({ 0.f, 0.0045f, 0.f }), 0.0081f, 0.007f, STEEL_GREY, 6);
+		Cylinder(plug, At({ 0.f, 0.0006f, 0.f }), 0.0095f, 0.0012f, STEEL_GREY, 20);
+		Cylinder(plug, At({ 0.f, -0.006f, 0.f }), 0.006f, 0.012f, STEEL_GREY, 12);
+		Cylinder(plug, At({ 0.f, -0.0125f, 0.f }), 0.0045f, 0.002f, DARK, 12);
 		add(PartType::OIL_DRAIN_PLUG, plug);
+	}
+	{
+		// The fuel pump's gasket: a thin fibre flange outline with the hole the pump's arm goes in through.
+		MeshBuilder gasket;
+		Tube(gasket, At({ 0.f, 0.0005f, 0.f }), 0.022f, 0.009f, 0.001f, GASKET, 0.f, glm::two_pi<float>(), 24);
+		for (float side : { -1.f, 1.f })
+			Box(gasket, { side * 0.027f, 0.0005f, 0.f }, { 0.012f, 0.001f, 0.014f }, GASKET);
+		add(PartType::FUEL_PUMP_GASKET, gasket);
+	}
+	{
+		// A thin copper ring, lying flat.
+		MeshBuilder washer;
+		Tube(washer, At({ 0.f, 0.001f, 0.f }), 0.0095f, 0.0063f, 0.002f, { 0.85f, 0.48f, 0.3f }, 0.f, glm::two_pi<float>(), 20);
+		add(PartType::DRAIN_PLUG_WASHER, washer);
 	}
 	{
 		MeshBuilder filter;
@@ -2033,7 +2263,8 @@ void ShopAssets::LoadAncillaries()
 	for (int type = 0; type < static_cast<int>(PartType::COUNT); type++)
 	{
 		const auto& fastener = PartCatalog::Get(static_cast<PartType>(type)).fastener;
-		if (!fastener.IsFastener())
+		// (The drain plug and the spark plugs have models of their own.)
+		if (!fastener.IsFastener() || static_cast<PartType>(type) == PartType::OIL_DRAIN_PLUG || static_cast<PartType>(type) == PartType::SPARK_PLUG)
 			continue;
 		MeshBuilder builder;
 		builder.SetUVScale(20.f);
@@ -2130,9 +2361,31 @@ void ShopAssets::LoadAncillaries()
 		Cylinder(tensioner, At({ 0.018f, 0.045f, -0.006f }), 0.003f, 0.03f, STEEL_GREY, 8);
 		add(PartType::BELT_TENSIONER, tensioner);
 	}
+	// The timing cover and its gasket run from under the crank up to the top of the head (where the valve cover's rail is),
+	// not past it: in their own space (lying face up, +X up the engine), from BOTTOM to TOP about the cover's middle.
+	constexpr float COVER_BOTTOM = -0.25f, COVER_TOP = HEAD_TOP_Y - TIMING_COVER_Y;
+	constexpr float COVER_LENGTH = COVER_TOP - COVER_BOTTOM, COVER_MIDDLE = (COVER_TOP + COVER_BOTTOM) * 0.5f;
+	// Its rim reaches all the way back to the block, the gasket between: no gap.
+	constexpr float COVER_RIM = -TIMING_COVER_X + FRONT_X - 0.0015f;
+	// The ear out the left side for the water pump, from EAR_LOW to EAR_HIGH up the cover, out to -WATER_PUMP_EAR.
+	constexpr float EAR_LOW = WATER_PUMP_Y - TIMING_COVER_Y - WATER_PUMP_EAR_HALF, EAR_HIGH = EAR_LOW + 2.f * WATER_PUMP_EAR_HALF;
 	{
+		// Its outline: a band round the rim's edge, lying against the front of the block, out round the pump's ear on the
+		// left (and round the ear's passage, which the pump's coolant goes through, sealing it off from the belt).
 		MeshBuilder gasket;
-		frame(gasket, 0.50f, 0.21f, 0.012f, 0.0015f, GASKET);
+		constexpr float BAND = 0.012f, HALF = TIMING_COVER_HALF_WIDTH, THICK = 0.0015f;
+		auto band = [&](float x0, float x1, float z0, float z1) {
+			Box(gasket, { (x0 + x1) * 0.5f, THICK * 0.5f, (z0 + z1) * 0.5f }, { x1 - x0, THICK, z1 - z0 }, GASKET);
+		};
+		band(COVER_BOTTOM, COVER_TOP, HALF - BAND, HALF);
+		band(COVER_BOTTOM, EAR_LOW + BAND, -HALF, -HALF + BAND);
+		band(EAR_HIGH - BAND, COVER_TOP, -HALF, -HALF + BAND);
+		band(COVER_BOTTOM, COVER_BOTTOM + BAND, -HALF + BAND, HALF - BAND);
+		band(COVER_TOP - BAND, COVER_TOP, -HALF + BAND, HALF - BAND);
+		band(EAR_LOW, EAR_LOW + BAND, -WATER_PUMP_EAR, -HALF);
+		band(EAR_HIGH - BAND, EAR_HIGH, -WATER_PUMP_EAR, -HALF);
+		band(EAR_LOW + BAND, EAR_HIGH - BAND, -WATER_PUMP_EAR, -WATER_PUMP_EAR + BAND);
+		Tube(gasket, At({ WATER_PUMP_Y - TIMING_COVER_Y, THICK * 0.5f, WATER_PUMP_Z }), 0.034f, 0.028f, THICK, GASKET, 0.f, glm::two_pi<float>(), 28);
 		add(PartType::TIMING_COVER_GASKET, gasket);
 	}
 	{
@@ -2140,14 +2393,55 @@ void ShopAssets::LoadAncillaries()
 		// The crank seal boss sits 0.19 m below the cover's middle, the water pump boss just above it.
 		MeshBuilder cover;
 		cover.SetUVScale(4.f);
-		Box(cover, { 0.f, TIMING_COVER_FACE * 0.5f, 0.f }, { 0.50f, TIMING_COVER_FACE, 0.21f });
+		// The face, with a hole through it for the crank's snout (the crank pulley's hub goes in through it onto the snout) and
+		// one for the water pump (its nose goes in through it): a ring of boss round each. In strips up the cover: plain,
+		// then one with a hole in it, built from a plate each side and the hole's bore through it.
+		{
+			constexpr float HALF_WIDTH = TIMING_COVER_HALF_WIDTH;
+			const glm::vec2 crankHole = { CRANK_Y - TIMING_COVER_Y, 0.f }, pumpHole = { WATER_PUMP_Y - TIMING_COVER_Y, WATER_PUMP_Z };
+			auto solid = [&](float x0, float x1, float z0, float z1) {
+				if (x1 > x0 && z1 > z0)
+					Box(cover, { (x0 + x1) * 0.5f, TIMING_COVER_FACE * 0.5f, (z0 + z1) * 0.5f }, { x1 - x0, TIMING_COVER_FACE, z1 - z0 });
+			};
+			auto holed = [&](const glm::vec2& at, float hole, float strip, float boss, float height) {
+				// The square round the hole, front and back, the hole's bore, and the solid either side of the square.
+				cover.ResetTransform().SetColor(WHITE).AddPlateWithHole({ at.x, TIMING_COVER_FACE, at.y }, { strip, strip }, hole, 28);
+				cover.SetTransform(glm::rotate(glm::mat4(1.f), glm::pi<float>(), { 1.f, 0.f, 0.f })).AddPlateWithHole({ at.x, 0.f, -at.y }, { strip, strip }, hole, 28);
+				cover.ResetTransform();
+				Tube(cover, At({ at.x, TIMING_COVER_FACE * 0.5f, at.y }), hole + 0.001f, hole, TIMING_COVER_FACE, WHITE, 0.f, glm::two_pi<float>(), 28);
+				solid(at.x - strip * 0.5f, at.x + strip * 0.5f, -HALF_WIDTH, at.y - strip * 0.5f);
+				solid(at.x - strip * 0.5f, at.x + strip * 0.5f, at.y + strip * 0.5f, HALF_WIDTH);
+				// Its boss, standing out of the face round it (the pump's, a low pad its flange sits flat on).
+				Tube(cover, At({ at.x, TIMING_COVER_FACE + height * 0.5f, at.y }), hole + boss, hole, height, WHITE, 0.f, glm::two_pi<float>(), 28);
+			};
+			// The crank's hole; the pump's, in its ear, the strip round it reaching out to the ear's edge.
+			constexpr float CRANK_STRIP = 0.1f, PUMP_STRIP = 2.f * WATER_PUMP_EAR_HALF, PUMP_HOLE = WATER_PUMP_NOSE + 0.002f;
+			solid(COVER_BOTTOM, crankHole.x - CRANK_STRIP * 0.5f, -HALF_WIDTH, HALF_WIDTH);
+			holed(crankHole, 0.03f, CRANK_STRIP, 0.01f, 0.006f);
+			solid(crankHole.x + CRANK_STRIP * 0.5f, EAR_LOW, -HALF_WIDTH, HALF_WIDTH);
+			holed(pumpHole, PUMP_HOLE, PUMP_STRIP, 0.0095f, WATER_PUMP_PAD);
+			solid(EAR_HIGH, COVER_TOP, -HALF_WIDTH, HALF_WIDTH);
+			// Behind the pump's hole, a sleeve back to the block: the coolant goes through it, the belt runs dry outside it.
+			Tube(cover, At({ pumpHole.x, -COVER_RIM * 0.5f, pumpHole.y }), PUMP_HOLE + 0.004f, PUMP_HOLE, COVER_RIM, WHITE, 0.f, glm::two_pi<float>(), 28);
+		}
+		// The rim: the right side straight, the left stepping out round the pump's ear; and the bottom end.
+		Box(cover, { COVER_MIDDLE, -COVER_RIM * 0.5f, TIMING_COVER_HALF_WIDTH - 0.003f }, { COVER_LENGTH, COVER_RIM, 0.006f });
+		Box(cover, { (COVER_BOTTOM + EAR_LOW) * 0.5f, -COVER_RIM * 0.5f, -TIMING_COVER_HALF_WIDTH + 0.003f }, { EAR_LOW - COVER_BOTTOM, COVER_RIM, 0.006f });
+		Box(cover, { (EAR_HIGH + COVER_TOP) * 0.5f, -COVER_RIM * 0.5f, -TIMING_COVER_HALF_WIDTH + 0.003f }, { COVER_TOP - EAR_HIGH, COVER_RIM, 0.006f });
+		Box(cover, { (EAR_LOW + EAR_HIGH) * 0.5f, -COVER_RIM * 0.5f, -WATER_PUMP_EAR + 0.003f }, { EAR_HIGH - EAR_LOW, COVER_RIM, 0.006f });
+		for (float end : { EAR_LOW + 0.003f, EAR_HIGH - 0.003f })
+			Box(cover, { end, -COVER_RIM * 0.5f, -(WATER_PUMP_EAR + TIMING_COVER_HALF_WIDTH) * 0.5f }, { 0.006f, COVER_RIM, WATER_PUMP_EAR - TIMING_COVER_HALF_WIDTH + 0.006f });
+		Box(cover, { COVER_BOTTOM + 0.003f, -COVER_RIM * 0.5f, 0.f }, { 0.006f, COVER_RIM, 2.f * TIMING_COVER_HALF_WIDTH });
+		// The top edge is at the cam's axis: a half-round cutout there for the cam's pulley (its lower half shrouded, its top
+		// out above the cover), the top wall either side of it.
+		constexpr float CAM_CUTOUT = 0.052f;
 		for (float side : { -1.f, 1.f })
 		{
-			Box(cover, { 0.f, -0.011f, side * 0.102f }, { 0.50f, 0.022f, 0.006f });
-			Box(cover, { side * 0.247f, -0.011f, 0.f }, { 0.006f, 0.022f, 0.21f });
+			float width = 0.105f - CAM_CUTOUT;
+			Box(cover, { COVER_TOP - 0.003f, -COVER_RIM * 0.5f, side * (CAM_CUTOUT + width * 0.5f) }, { 0.006f, COVER_RIM, width });
 		}
-		Cylinder(cover, At({ CRANK_Y - TIMING_COVER_Y, 0.016f, 0.f }), 0.034f, 0.008f, WHITE, 28);
-		Cylinder(cover, At({ -0.04f - TIMING_COVER_Y, 0.015f, 0.06f }), 0.046f, 0.006f, WHITE, 28);
+		Tube(cover, At({ COVER_TOP, -COVER_RIM * 0.5f, 0.f }), CAM_CUTOUT + 0.004f, CAM_CUTOUT, COVER_RIM, WHITE, glm::half_pi<float>(),
+			glm::pi<float>() * 1.5f, 24);
 		add(PartType::TIMING_COVER, cover);
 	}
 	{
@@ -2160,6 +2454,9 @@ void ShopAssets::LoadAncillaries()
 		MeshBuilder pulley;
 		pulley.SetUVScale(6.f);
 		Cylinder(pulley, AlongX({ 0.f, 0.f, 0.f }), 0.028f, 0.03f, STEEL_GREY, 24);
+		// Its hub's nose, back through the timing cover's hole onto the crank's snout, up against the crank's timing pulley.
+		constexpr float NOSE_END = (TIMING_PLANE_X - 0.005f) - (TIMING_COVER_X - 0.03f);
+		Cylinder(pulley, AlongX({ (0.015f + NOSE_END) * 0.5f, 0.f, 0.f }), 0.022f, NOSE_END - 0.015f, STEEL_GREY, 20);
 		Tube(pulley, AlongX({ -0.004f, 0.f, 0.f }), 0.052f, 0.028f, 0.006f, WHITE, 0.f, glm::two_pi<float>(), 32);
 		Tube(pulley, AlongX({ -0.008f, 0.f, 0.f }), 0.055f, 0.052f, 0.018f, RUBBER, 0.f, glm::two_pi<float>(), 32);
 		Tube(pulley, AlongX({ -0.008f, 0.f, 0.f }), 0.066f, 0.055f, 0.018f, WHITE, 0.f, glm::two_pi<float>(), 32);
@@ -2176,31 +2473,38 @@ void ShopAssets::LoadAncillaries()
 		add(PartType::VALVE_COVER_GASKET, gasket);
 	}
 	{
+		// Origin at its rail, on the head's. Its top plate with ribs cast across it over each cylinder, the oil filler cap,
+		// and a baffle plate inside. (The spark plugs come in from the side of the head, under it: see PlugTip.)
 		MeshBuilder cover;
 		cover.SetUVScale(4.f);
+		constexpr float WIDTH = 0.21f, PLATE = 0.006f;
 		for (float side : { -1.f, 1.f })
 		{
 			Box(cover, { 0.f, 0.025f, side * 0.1025f }, { BLOCK_LENGTH, 0.05f, 0.005f }, PAINT_RED);
-			Box(cover, { side * (BLOCK_LENGTH * 0.5f - 0.0025f), 0.025f, 0.f }, { 0.005f, 0.05f, 0.21f }, PAINT_RED);
+			Box(cover, { side * (BLOCK_LENGTH * 0.5f - 0.0025f), 0.025f, 0.f }, { 0.005f, 0.05f, WIDTH }, PAINT_RED);
 		}
-		Box(cover, { 0.f, VALVE_COVER_TOP - 0.003f, 0.f }, { BLOCK_LENGTH, 0.006f, 0.21f }, PAINT_RED);
+		Box(cover, { 0.f, VALVE_COVER_TOP - PLATE * 0.5f, 0.f }, { BLOCK_LENGTH, PLATE, WIDTH }, PAINT_RED);
 		for (int cylinder = 0; cylinder < 4; cylinder++)
-			Cylinder(cover, At({ BoreX(cylinder), 0.0555f, 0.f }), 0.014f, 0.001f, DARK, 20);
+			for (float side : { -1.f, 1.f })
+				Box(cover, { BoreX(cylinder), VALVE_COVER_TOP + 0.003f, side * 0.06f }, { 0.006f, 0.006f, 0.06f }, PAINT_RED);
+		// The baffle under the top, keeping the oil thrown off the cam out of the breather: a plate along one side.
+		Box(cover, { 0.f, VALVE_COVER_TOP - 0.015f, -0.07f }, { BLOCK_LENGTH - 0.04f, 0.002f, 0.05f }, { 0.6f, 0.6f, 0.62f });
 		Cylinder(cover, At({ 0.12f, 0.059f, 0.055f }), 0.018f, 0.008f, BLACK, 20);
 		add(PartType::VALVE_COVER, cover);
 	}
 	{
-		// Origin at the firing tip.
+		// Built as the nuts and bolts are: origin at its seat, under the hex, the threads (and the firing tip on their end) down
+		// -Y, the hex, the insulator and the terminal up.
 		MeshBuilder plug;
-		Box(plug, { 0.003f, -0.001f, 0.f }, { 0.006f, 0.0015f, 0.002f }, STEEL_GREY);
-		Cylinder(plug, At({ 0.f, 0.0095f, 0.f }), 0.007f, 0.019f, STEEL_GREY, 12);
-		Cylinder(plug, At({ 0.f, 0.026f, 0.f }), 0.009f, 0.014f, { 0.7f, 0.7f, 0.72f }, 6);
-		Cylinder(plug, At({ 0.f, 0.054f, 0.f }), 0.0055f, 0.042f, { 0.95f, 0.95f, 0.92f }, 16);
-		Cylinder(plug, At({ 0.f, 0.078f, 0.f }), 0.003f, 0.006f, STEEL_GREY, 8);
+		Box(plug, { 0.003f, -0.02f, 0.f }, { 0.006f, 0.0015f, 0.002f }, STEEL_GREY);
+		Cylinder(plug, At({ 0.f, -0.0095f, 0.f }), 0.007f, 0.019f, STEEL_GREY, 12);
+		Cylinder(plug, At({ 0.f, 0.007f, 0.f }), 0.009f, 0.014f, { 0.7f, 0.7f, 0.72f }, 6);
+		Cylinder(plug, At({ 0.f, 0.035f, 0.f }), 0.0055f, 0.042f, { 0.95f, 0.95f, 0.92f }, 16);
+		Cylinder(plug, At({ 0.f, 0.059f, 0.f }), 0.003f, 0.006f, STEEL_GREY, 8);
 		add(PartType::SPARK_PLUG, plug);
 	}
 	{
-		// Origin on the plug's terminal: a long boot up its well through the cover, then the lead off
+		// Origin on the plug's terminal: a long boot out of its tube in the side of the head, then the lead off
 		// towards the distributor at the back.
 		MeshBuilder lead;
 		Cylinder(lead, At({ 0.f, 0.05f, 0.f }), 0.008f, 0.1f, BLACK, 12);
@@ -2226,24 +2530,34 @@ void ShopAssets::LoadAncillaries()
 		};
 		for (int cylinder = 0; cylinder < 4; cylinder++)
 		{
-			glm::vec3 terminal = { BoreX(cylinder), HEAD_DECK_Y + 0.093f, 0.f };
+			// The plug's in from the side of the head (PlugTip): the lead's long boot runs down its tube onto the terminal, and
+			// the lead comes out of the tube's end, up along that side of the valve cover and back to the distributor.
+			const glm::vec3 deck = { 0.f, HEAD_DECK_Y, 0.f };
+			const glm::vec3 axis = PlugAxis();
+			glm::vec3 terminal = deck + PlugTip(cylinder) + axis * PLUG_TERMINAL;
+			float tubeEnd = (0.105f - std::abs(PlugTip(cylinder).z)) / std::abs(axis.z) + 0.006f;
+			glm::vec3 bootEnd = deck + PlugTip(cylinder) + axis * (tubeEnd + 0.014f);
 			// The distributor stands out of the back of the head, +Y turned to +X: a tower's (x, z) round the
 			// cap comes out as (-y, z) behind it.
 			float angle = TOWER_OF_CYLINDER[cylinder] * glm::half_pi<float>();
-			glm::vec3 tower = distributor + glm::vec3(CAP_TOWER_TOP, -std::cos(angle) * CAP_TOWER_RADIUS, std::sin(angle) * CAP_TOWER_RADIUS) - terminal;
-			float lane = (cylinder - 1.5f) * 0.009f;
-			float overCover = 0.125f;
+			glm::vec3 tower = distributor + glm::vec3(CAP_TOWER_TOP, -std::cos(angle) * CAP_TOWER_RADIUS, std::sin(angle) * CAP_TOWER_RADIUS);
+			// Along the side of the valve cover, each in its own lane.
+			float lane = PLUG_SIDE * (0.122f + (3 - cylinder) * 0.007f);
+			float alongSide = HEAD_TOP_Y + 0.03f + cylinder * 0.004f;
 			std::vector<glm::vec3> path = {
-				{ 0.f, 0.1f, 0.f },
-				{ 0.f, 0.117f, 0.f },
-				{ 0.015f, overCover, lane },
-				{ tower.x - 0.04f, overCover, lane },
-				{ tower.x + 0.02f, (overCover + tower.y) * 0.5f + 0.01f, (lane + tower.z) * 0.5f },
+				bootEnd,
+				bootEnd + axis * 0.012f + glm::vec3(0.f, 0.01f, 0.f),
+				{ bootEnd.x, alongSide, lane },
+				{ tower.x - 0.04f, alongSide, lane },
+				{ tower.x + 0.02f, (alongSide + tower.y) * 0.5f + 0.01f, (lane + tower.z) * 0.5f },
 				{ tower.x + 0.03f, tower.y, tower.z },
 				{ tower.x + 0.004f, tower.y, tower.z },
 			};
+			for (auto& point : path)
+				point -= terminal;
+			tower -= terminal;
 			MeshBuilder fitted;
-			Cylinder(fitted, At({ 0.f, 0.05f, 0.f }), 0.008f, 0.1f, BLACK, 12);
+			run(fitted, { 0.f, 0.f, 0.f }, bootEnd - terminal, 0.008f);
 			for (size_t i = 0; i + 1 < path.size(); i++)
 				run(fitted, path[i], path[i + 1], 0.0035f);
 			// The boot over the tower.
@@ -2288,27 +2602,132 @@ void ShopAssets::LoadAncillaries()
 		portGasket(gasket, 0.017f, STEEL_GREY);
 		add(PartType::EXHAUST_MANIFOLD_GASKET, gasket);
 	}
+	// A cast pipe along a curve (a cubic Bézier through four points): short straight lengths, their joints rounded, its
+	// radius going from one to the other along it.
+	auto bend = [&](MeshBuilder& builder, const std::array<glm::vec3, 4>& p, float r0, float r1, const glm::vec3& color, int pieces = 8) {
+		auto at = [&](float t) {
+			float u = 1.f - t;
+			return u * u * u * p[0] + 3.f * u * u * t * p[1] + 3.f * u * t * t * p[2] + t * t * t * p[3];
+		};
+		for (int i = 0; i < pieces; i++)
+		{
+			float t0 = static_cast<float>(i) / pieces, t1 = static_cast<float>(i + 1) / pieces;
+			glm::vec3 a = at(t0), b = at(t1), run = b - a;
+			float length = glm::length(run), radius = glm::mix(r0, r1, (t0 + t1) * 0.5f);
+			glm::vec3 dir = run / length, up = { 0.f, 1.f, 0.f }, axis = glm::cross(up, dir);
+			glm::mat4 turn = glm::length(axis) < 1e-5f ? (dir.y < 0.f ? glm::rotate(glm::mat4(1.f), glm::pi<float>(), glm::vec3(1.f, 0.f, 0.f)) : glm::mat4(1.f))
+				: glm::rotate(glm::mat4(1.f), std::acos(glm::clamp(glm::dot(up, dir), -1.f, 1.f)), glm::normalize(axis));
+			Cylinder(builder, At((a + b) * 0.5f) * turn, radius, length, color, 14);
+			if (i > 0)
+				builder.ResetTransform().SetColor(color).AddSphere(a, radius, 4, 14);
+		}
+	};
+	auto flangeNut = [](int nut) { return ManifoldNut(nut); };
+	// A head flange: a pad round each port, a web joining them, and a boss round each stud, its face at FLANGE out
+	// along +Z (or -Z, out).
+	auto headFlange = [&](MeshBuilder& builder, float out, const glm::vec3& color) {
+		for (int cylinder = 0; cylinder < 4; cylinder++)
+			Box(builder, { BoreX(cylinder), 0.f, out * MANIFOLD_FLANGE * 0.5f }, { 0.062f, 0.05f, MANIFOLD_FLANGE }, color);
+		Box(builder, { 0.f, 0.f, out * MANIFOLD_FLANGE * 0.4f }, { 0.40f, 0.03f, MANIFOLD_FLANGE * 0.8f }, color);
+		for (int nut = 0; nut < 8; nut++)
+		{
+			glm::vec2 at = flangeNut(nut);
+			Cylinder(builder, AlongZ({ at.x, at.y, out * MANIFOLD_FLANGE * 0.5f }), 0.009f, MANIFOLD_FLANGE, color, 16);
+		}
+	};
 	{
-		// Origin at the middle of the head flange; runners out along +Z into the plenum.
+		// Origin at the middle of the head flange; the runners out along +Z, rising as they go, into the plenum: a round log
+		// along the engine with the carburettor's pad on top, a vacuum take-off and the brake servo's on it, and the
+		// coolant's hose nipples at the front (it's warmed by the coolant, so the mixture doesn't ice up).
 		MeshBuilder manifold;
 		manifold.SetUVScale(4.f);
-		Box(manifold, { 0.f, 0.f, 0.006f }, { 0.40f, 0.06f, 0.012f });
+		headFlange(manifold, 1.f, WHITE);
+		constexpr glm::vec3 PLENUM = { 0.f, 0.038f, 0.135f };
+		constexpr float PLENUM_RADIUS = 0.042f, PLENUM_LENGTH = 0.40f;
 		for (int cylinder = 0; cylinder < 4; cylinder++)
-			Cylinder(manifold, AlongZ({ BoreX(cylinder), 0.f, 0.06f }), 0.018f, 0.10f, WHITE, 18);
-		Box(manifold, { 0.f, 0.03f, 0.135f }, { 0.42f, 0.10f, 0.07f });
+		{
+			float x = BoreX(cylinder);
+			bend(manifold, { glm::vec3(x, 0.f, MANIFOLD_FLANGE - 0.002f), glm::vec3(x, 0.f, 0.065f), glm::vec3(x, 0.004f, 0.095f), glm::vec3(x, 0.022f, 0.122f) },
+				0.018f, 0.016f, WHITE);
+		}
+		Cylinder(manifold, AlongX(PLENUM), PLENUM_RADIUS, PLENUM_LENGTH, WHITE, 28);
+		for (float end : { -1.f, 1.f })
+			Cylinder(manifold, AlongX(PLENUM + glm::vec3(end * PLENUM_LENGTH * 0.5f, 0.f, 0.f)), PLENUM_RADIUS + 0.003f, 0.008f, WHITE, 28);
+		// The carburettor's pad, its top at the carburettor's seat.
+		Box(manifold, { 0.f, 0.071f, PLENUM.z }, { 0.09f, 0.018f, 0.08f });
+		// Its ribs between the runners, underneath.
+		for (int rib = 0; rib < 3; rib++)
+			Box(manifold, { (rib - 1.f) * BORE_SPACING, 0.004f, 0.075f }, { 0.006f, 0.03f, 0.11f });
+		// The servo's take-off out the back end, the vacuum nipple on top, and the coolant's two nipples at the front.
+		Cylinder(manifold, AlongX(PLENUM + glm::vec3(PLENUM_LENGTH * 0.5f + 0.014f, 0.f, 0.f)), 0.009f, 0.022f, WHITE, 14);
+		Tube(manifold, AlongX(PLENUM + glm::vec3(PLENUM_LENGTH * 0.5f + 0.022f, 0.f, 0.f)), 0.011f, 0.006f, 0.004f, WHITE, 0.f, glm::two_pi<float>(), 14);
+		Cylinder(manifold, At(PLENUM + glm::vec3(0.12f, PLENUM_RADIUS + 0.006f, 0.02f)), 0.004f, 0.016f, STEEL_GREY, 10);
+		for (float y : { -0.012f, 0.014f })
+			Cylinder(manifold, AlongX(PLENUM + glm::vec3(-PLENUM_LENGTH * 0.5f - 0.012f, y, 0.01f)), 0.006f, 0.018f, WHITE, 12);
 		add(PartType::INTAKE_MANIFOLD, manifold);
 	}
 	{
 		// Origin under its base flange, sitting on the plenum: the body, the float bowl on the side, and
 		// the two barrels opening up through the air horn.
+		// A two-barrel downdraft in bare zinc alloy, the barrels side by side across it (along Z): primary at -Z, secondary at +Z.
 		MeshBuilder carburettor;
 		carburettor.SetUVScale(6.f);
-		Box(carburettor, { 0.f, 0.003f, 0.f }, { 0.08f, 0.006f, 0.07f });
-		Box(carburettor, { 0.f, 0.036f, 0.f }, { 0.066f, 0.06f, 0.06f }, WHITE);
-		Box(carburettor, { 0.045f, 0.03f, 0.f }, { 0.024f, 0.04f, 0.05f }, WHITE);
-		for (float z : { -0.015f, 0.015f })
-			Tube(carburettor, At({ 0.f, 0.07f, z }), 0.013f, 0.011f, 0.012f, STEEL_GREY, 0.f, glm::two_pi<float>(), 16);
-		Box(carburettor, { -0.036f, 0.04f, 0.02f }, { 0.006f, 0.012f, 0.02f }, STEEL_GREY);
+		const glm::vec3 ZINC = { 0.80f, 0.79f, 0.74f }, ZINC_DARK = { 0.66f, 0.65f, 0.60f }, BORE = { 0.12f, 0.12f, 0.13f };
+		constexpr float BARREL_Z = 0.016f, BARREL = 0.0125f;
+		// The base flange on the manifold's pad, a boss round each of its four bolts, its top where their heads sit.
+		Box(carburettor, { 0.f, 0.003f, 0.f }, { 0.08f, 0.006f, 0.07f }, ZINC_DARK);
+		for (float x : { -0.036f, 0.036f })
+			for (float z : { -0.03f, 0.03f })
+				Cylinder(carburettor, At({ x, 0.003f, z }), 0.0065f, 0.006f, ZINC_DARK, 12);
+		// The throttle body, the throttle shaft across both barrels, and on its end the throttle lever, the cable's arm
+		// and the return spring.
+		Box(carburettor, { 0.f, 0.017f, 0.f }, { 0.062f, 0.022f, 0.052f }, ZINC);
+		Cylinder(carburettor, AlongZ({ -0.012f, 0.016f, 0.f }), 0.003f, 0.074f, STEEL_GREY, 10);
+		Box(carburettor, { -0.012f, 0.016f, 0.0375f }, { 0.03f, 0.008f, 0.002f }, STEEL_GREY);
+		Cylinder(carburettor, AlongZ({ -0.026f, 0.02f, 0.039f }), 0.0025f, 0.006f, STEEL_GREY, 8);
+		Cylinder(carburettor, At({ 0.004f, 0.022f, 0.035f }), 0.003f, 0.014f, { 0.35f, 0.35f, 0.38f }, 8);
+		// The main body, and the float bowl on its +X side with its sight glass and the fuel's inlet.
+		Box(carburettor, { 0.f, 0.045f, 0.f }, { 0.064f, 0.034f, 0.058f }, ZINC);
+		Box(carburettor, { 0.043f, 0.042f, 0.f }, { 0.024f, 0.042f, 0.05f }, ZINC);
+		Cylinder(carburettor, AlongX({ 0.0555f, 0.04f, -0.008f }), 0.007f, 0.001f, { 0.45f, 0.55f, 0.62f }, 14);
+		Cylinder(carburettor, AlongX({ 0.06f, 0.054f, 0.014f }), 0.004f, 0.018f, STEEL_GREY, 10);
+		Cylinder(carburettor, AlongX({ 0.066f, 0.054f, 0.014f }), 0.0048f, 0.003f, STEEL_GREY, 10);
+		// The accelerator pump's housing on the primary side, and the secondary's vacuum pod on the -X side with its rod.
+		Cylinder(carburettor, AlongZ({ 0.026f, 0.05f, -0.032f }), 0.008f, 0.01f, ZINC, 12);
+		Cylinder(carburettor, AlongX({ -0.039f, 0.032f, 0.016f }), 0.012f, 0.008f, ZINC_DARK, 16);
+		Cylinder(carburettor, AlongX({ -0.0435f, 0.032f, 0.016f }), 0.0125f, 0.002f, ZINC, 16);
+		Box(carburettor, { -0.038f, 0.022f, 0.016f }, { 0.002f, 0.018f, 0.002f }, STEEL_GREY);
+		// The automatic choke's housing on the -X side by the primary, its black bimetal cover held by three screws.
+		Cylinder(carburettor, AlongX({ -0.036f, 0.056f, -0.014f }), 0.013f, 0.008f, ZINC, 18);
+		Cylinder(carburettor, AlongX({ -0.042f, 0.056f, -0.014f }), 0.014f, 0.006f, BLACK, 18);
+		for (int screw = 0; screw < 3; screw++)
+		{
+			float angle = screw * glm::two_pi<float>() / 3.f + 0.4f;
+			Cylinder(carburettor, AlongX({ -0.0455f, 0.056f + std::sin(angle) * 0.011f, -0.014f + std::cos(angle) * 0.011f }), 0.0018f, 0.001f, STEEL_GREY, 6);
+		}
+		// The air horn on top: its plate with the two barrels open through it (dark down inside, the venturis showing),
+		// the choke's plate across the primary, the air cleaner's sealing ring round both and its stud between them, and
+		// the cover's screws.
+		constexpr float HORN_TOP = 0.072f;
+		Box(carburettor, { 0.f, 0.064f, 0.f }, { 0.07f, 0.004f, 0.064f }, ZINC);
+		for (float side : { -1.f, 1.f })
+		{
+			carburettor.ResetTransform().SetColor(ZINC).AddPlateWithHole({ 0.f, HORN_TOP, side * BARREL_Z }, { 0.07f, 0.032f }, BARREL, 20);
+			Tube(carburettor, At({ 0.f, (0.066f + HORN_TOP) * 0.5f, side * BARREL_Z }), BARREL + 0.0005f, BARREL, HORN_TOP - 0.066f, ZINC, 0.f, glm::two_pi<float>(), 20);
+			Box(carburettor, { 0.f, 0.069f, side * (0.032f - 0.0015f) }, { 0.07f, 0.006f, 0.003f }, ZINC);
+			Cylinder(carburettor, At({ 0.f, 0.0665f, side * BARREL_Z }), BARREL, 0.001f, BORE, 20);
+			Tube(carburettor, At({ 0.f, 0.067f, side * BARREL_Z }), BARREL, 0.007f, 0.002f, ZINC_DARK, 0.f, glm::two_pi<float>(), 20);
+		}
+		for (float x : { -0.035f, 0.035f })
+			Box(carburettor, { x - glm::sign(x) * 0.0015f, 0.069f, 0.f }, { 0.003f, 0.006f, 0.064f }, ZINC);
+		carburettor.SetTransform(glm::rotate(At({ 0.f, 0.0705f, -BARREL_Z }), 0.25f, glm::vec3(0.f, 0.f, 1.f))).SetColor(STEEL_GREY);
+		carburettor.AddCylinder({}, BARREL - 0.0008f, 0.0008f, 18);
+		carburettor.ResetTransform();
+		Tube(carburettor, At({ 0.f, HORN_TOP + 0.003f, 0.f }), 0.034f, 0.0315f, 0.006f, ZINC_DARK, 0.f, glm::two_pi<float>(), 32);
+		Cylinder(carburettor, At({ 0.f, HORN_TOP + 0.012f, 0.f }), 0.0022f, 0.024f, STEEL_GREY, 8);
+		for (float x : { -0.03f, 0.03f })
+			for (float z : { -0.027f, 0.027f })
+				Cylinder(carburettor, At({ x, HORN_TOP + 0.0006f, z }), 0.002f, 0.0012f, STEEL_GREY, 6);
 		add(PartType::CARBURETTOR, carburettor);
 	}
 	{
@@ -2327,19 +2746,39 @@ void ShopAssets::LoadAncillaries()
 		Box(pump, { 0.f, 0.002f, 0.f }, { 0.06f, 0.004f, 0.025f });
 		Cylinder(pump, At({ 0.f, 0.016f, 0.f }), 0.022f, 0.024f, WHITE, 20);
 		Cylinder(pump, AlongX({ 0.f, 0.022f, 0.f }), 0.004f, 0.064f, STEEL_GREY, 8);
-		// The rocker arm, reaching in through the head to ride on the cam's eccentric.
-		Box(pump, { 0.f, -(PORT_FACE_Z - 0.017f) * 0.5f, 0.f }, { 0.006f, PORT_FACE_Z - 0.017f, 0.008f }, STEEL_GREY);
+		// The rocker arm, reaching in through the head under the cam, then up (+Z here is up the engine) to ride on the
+		// underside of its eccentric.
+		constexpr float REACH = PORT_FACE_Z - 0.006f, RISE = FUEL_PUMP_DROP - 0.012f;
+		Box(pump, { 0.f, -REACH * 0.5f, 0.f }, { 0.006f, REACH, 0.008f }, STEEL_GREY);
+		Box(pump, { 0.f, -REACH + 0.003f, RISE * 0.5f }, { 0.006f, 0.006f, RISE + 0.008f }, STEEL_GREY);
 		add(PartType::FUEL_PUMP, pump);
 	}
 	{
 		// Origin at the middle of the head flange; the primaries run out along -Z into a collector.
+		// Cast iron, four into one: the primaries out from the ports, curving down and in round each other into the
+		// collector, which turns down to the outlet's flange (the downpipe's bolts up into it).
 		MeshBuilder manifold;
 		manifold.SetUVScale(3.f);
-		Box(manifold, { 0.f, 0.f, -0.006f }, { 0.40f, 0.06f, 0.012f }, RUST);
+		headFlange(manifold, -1.f, RUST);
 		for (int cylinder = 0; cylinder < 4; cylinder++)
-			Cylinder(manifold, AlongZ({ BoreX(cylinder), 0.f, -0.045f }), 0.017f, 0.066f, RUST, 16);
-		Box(manifold, { 0.f, -0.02f, -0.09f }, { 0.32f, 0.05f, 0.05f }, RUST);
-		Cylinder(manifold, At({ 0.06f, -0.08f, -0.09f }), 0.022f, 0.08f, RUST, 18);
+		{
+			float x = BoreX(cylinder);
+			// Where each comes into the top of the collector: a quarter of it each.
+			glm::vec2 into = glm::vec2(cylinder < 2 ? -1.f : 1.f, cylinder % 2 == 0 ? -1.f : 1.f) * 0.011f;
+			bend(manifold, { glm::vec3(x, 0.f, -MANIFOLD_FLANGE + 0.002f), glm::vec3(x, 0.f, -0.055f),
+				glm::vec3(glm::mix(x, EXHAUST_OUTLET.x, 0.5f), -0.02f, EXHAUST_OUTLET.z + 0.01f),
+				glm::vec3(EXHAUST_OUTLET.x + into.x, -0.04f, EXHAUST_OUTLET.z + into.y) }, 0.017f, 0.015f, RUST, 10);
+		}
+		// The collector, necking down to the outlet, and the outlet's flange with its three bolt bosses.
+		Cylinder(manifold, At({ EXHAUST_OUTLET.x, -0.058f, EXHAUST_OUTLET.z }), 0.029f, 0.04f, RUST, 20);
+		Cylinder(manifold, At({ EXHAUST_OUTLET.x, -0.097f, EXHAUST_OUTLET.z }), 0.023f, 0.034f, RUST, 20);
+		Cylinder(manifold, At({ EXHAUST_OUTLET.x, EXHAUST_OUTLET.y + 0.003f, EXHAUST_OUTLET.z }), 0.034f, 0.006f, RUST, 24);
+		for (int bolt = 0; bolt < 3; bolt++)
+		{
+			float angle = bolt * glm::two_pi<float>() / 3.f;
+			Cylinder(manifold, At({ EXHAUST_OUTLET.x + std::cos(angle) * EXHAUST_BOLT_RING, EXHAUST_OUTLET.y + 0.003f,
+				EXHAUST_OUTLET.z + std::sin(angle) * EXHAUST_BOLT_RING }), 0.009f, 0.006f, RUST, 14);
+		}
 		add(PartType::EXHAUST_MANIFOLD, manifold);
 	}
 	{
@@ -2347,36 +2786,158 @@ void ShopAssets::LoadAncillaries()
 		// pipe on down from it.
 		MeshBuilder pipe;
 		pipe.SetUVScale(3.f);
-		Cylinder(pipe, At({ 0.06f, -0.123f, -0.09f }), 0.035f, 0.006f, RUST, 20);
-		Cylinder(pipe, At({ 0.06f, -0.226f, -0.09f }), 0.022f, 0.2f, STEEL_GREY, 18);
+		Cylinder(pipe, At(EXHAUST_OUTLET - glm::vec3(0.f, 0.003f, 0.f)), 0.034f, 0.006f, RUST, 24);
+		for (int bolt = 0; bolt < 3; bolt++)
+		{
+			float angle = bolt * glm::two_pi<float>() / 3.f;
+			Cylinder(pipe, At(EXHAUST_OUTLET + glm::vec3(std::cos(angle) * EXHAUST_BOLT_RING, -0.003f, std::sin(angle) * EXHAUST_BOLT_RING)), 0.009f, 0.006f, RUST, 14);
+		}
+		Cylinder(pipe, At(EXHAUST_OUTLET - glm::vec3(0.f, 0.106f, 0.f)), 0.022f, 0.2f, STEEL_GREY, 18);
 		add(PartType::EXHAUST_PIPE, pipe);
 	}
 	{
 		MeshBuilder gasket;
-		Tube(gasket, At({ 0.f, 0.00075f, 0.f }), 0.044f, 0.022f, 0.0015f, GASKET, 0.f, glm::two_pi<float>(), 28);
+		// A ring the size of the pump's flange, round its nose.
+		Tube(gasket, At({ 0.f, 0.00075f, 0.f }), 0.0355f, WATER_PUMP_NOSE + 0.0015f, 0.0015f, GASKET, 0.f, glm::two_pi<float>(), 28);
 		add(PartType::WATER_PUMP_GASKET, gasket);
 	}
 	{
-		// Body against the timing cover, the pulley out along -X.
+		// Origin at the back of its flange (on its gasket on the timing cover's ear), the pulley out along -X. Cast aluminium.
 		MeshBuilder pump;
 		pump.SetUVScale(6.f);
-		Cylinder(pump, AlongX({ -0.015f, 0.f, 0.f }), 0.04f, 0.03f, WHITE, 24);
-		// The pulley in the accessory belt's plane.
-		constexpr float PULLEY_X = ACCESSORY_BELT_X - (TIMING_COVER_X - 0.014f);
-		Cylinder(pump, AlongX({ (PULLEY_X - 0.03f) * 0.5f, 0.f, 0.f }), 0.012f, -0.03f - PULLEY_X, STEEL_GREY, 14);
-		Tube(pump, AlongX({ PULLEY_X, 0.f, 0.f }), 0.05f, 0.012f, 0.012f, { 0.6f, 0.6f, 0.62f }, 0.f, glm::two_pi<float>(), 28);
-		Cylinder(pump, At({ -0.012f, 0.045f, 0.f }), 0.012f, 0.03f, WHITE, 14);
+		const glm::vec3 CAST = { 0.74f, 0.75f, 0.77f };
+		// The nose, back through the cover's ear to the block's coolant boss, an O-ring near its end, and the impeller on it.
+		constexpr float NOSE_LENGTH = FRONT_X - WATER_PUMP_X - 0.002f;
+		Cylinder(pump, AlongX({ NOSE_LENGTH * 0.5f, 0.f, 0.f }), WATER_PUMP_NOSE, NOSE_LENGTH, CAST, 24);
+		Tube(pump, AlongX({ NOSE_LENGTH - 0.006f, 0.f, 0.f }), WATER_PUMP_NOSE + 0.0012f, WATER_PUMP_NOSE - 0.001f, 0.0028f, RUBBER, 0.f, glm::two_pi<float>(), 24);
+		Cylinder(pump, AlongX({ NOSE_LENGTH + 0.003f, 0.f, 0.f }), 0.009f, 0.006f, STEEL_GREY, 14);
+		for (int vane = 0; vane < 6; vane++)
+		{
+			pump.SetTransform(glm::rotate(At({ NOSE_LENGTH + 0.003f, 0.f, 0.f }), vane * glm::pi<float>() / 3.f, { 1.f, 0.f, 0.f })).SetColor(STEEL_GREY);
+			pump.AddBox({ 0.f, 0.016f, 0.f }, { 0.006f, 0.016f, 0.0018f });
+		}
+		pump.ResetTransform();
+		// The flange, with a boss at each bolt hole on its front.
+		Cylinder(pump, AlongX({ -0.003f, 0.f, 0.f }), 0.0355f, 0.006f, CAST, 28);
+		for (int bolt = 0; bolt < 4; bolt++)
+		{
+			float angle = glm::quarter_pi<float>() + bolt * glm::half_pi<float>();
+			Cylinder(pump, AlongX({ -0.0075f, std::sin(angle) * WATER_PUMP_BOLT_RING, std::cos(angle) * WATER_PUMP_BOLT_RING }), 0.0065f, 0.003f, CAST, 14);
+		}
+		// The volute, its ribs, and the inlet neck out the left side for the bottom hose, a bead round its end.
+		Cylinder(pump, AlongX({ -0.016f, 0.f, 0.f }), 0.027f, 0.02f, CAST, 26);
+		for (int rib = 0; rib < 3; rib++)
+		{
+			pump.SetTransform(glm::rotate(At({ -0.016f, 0.f, 0.f }), glm::half_pi<float>() + rib * glm::two_pi<float>() / 3.f, { 1.f, 0.f, 0.f })).SetColor(CAST);
+			pump.AddBox({ 0.f, 0.027f, 0.f }, { 0.018f, 0.006f, 0.003f });
+		}
+		pump.ResetTransform();
+		Cylinder(pump, AlongZ({ -0.016f, -0.006f, -0.041f }), 0.0105f, 0.03f, CAST, 16);
+		Cylinder(pump, AlongZ({ -0.016f, -0.006f, -0.051f }), 0.012f, 0.003f, CAST, 16);
+		Cylinder(pump, AlongZ({ -0.016f, -0.006f, -0.0562f }), 0.0075f, 0.0008f, DARK, 14);
+		// The bearing's snout, its weep hole underneath, and the hub flange the pulley bolts to.
+		Cylinder(pump, AlongX({ -0.031f, 0.f, 0.f }), 0.015f, 0.01f, CAST, 20);
+		Cylinder(pump, At({ -0.031f, -0.015f, 0.f }), 0.0016f, 0.0008f, DARK, 8);
+		Cylinder(pump, AlongX({ -0.0375f, 0.f, 0.f }), 0.02f, 0.003f, STEEL_GREY, 20);
+		// The pulley in the fan belt's plane: a grooved rim, its web with lightening holes, and the nut on the hub.
+		constexpr float PULLEY_X = ACCESSORY_BELT_X - WATER_PUMP_X;
+		const glm::vec3 PULLEY = { 0.6f, 0.6f, 0.62f };
+		Tube(pump, AlongX({ PULLEY_X, 0.f, 0.f }), 0.05f, 0.043f, 0.012f, PULLEY, 0.f, glm::two_pi<float>(), 32);
+		for (float side : { -1.f, 1.f })
+			Tube(pump, AlongX({ PULLEY_X + side * 0.0068f, 0.f, 0.f }), 0.0555f, 0.046f, 0.0016f, PULLEY, 0.f, glm::two_pi<float>(), 32);
+		Cylinder(pump, AlongX({ PULLEY_X + 0.004f, 0.f, 0.f }), 0.043f, 0.003f, PULLEY, 28);
+		for (int hole = 0; hole < 4; hole++)
+		{
+			float angle = hole * glm::half_pi<float>();
+			Cylinder(pump, AlongX({ PULLEY_X + 0.004f, std::sin(angle) * 0.029f, std::cos(angle) * 0.029f }), 0.0075f, 0.0034f, DARK, 14);
+		}
+		Cylinder(pump, AlongX({ (PULLEY_X + 0.004f - 0.0375f) * 0.5f, 0.f, 0.f }), 0.011f, -0.0375f - PULLEY_X - 0.004f, STEEL_GREY, 16);
+		Cylinder(pump, AlongX({ PULLEY_X + 0.001f, 0.f, 0.f }), 0.0085f, 0.004f, DARK, 6);
 		add(PartType::WATER_PUMP, pump);
 	}
 	{
-		// Origin at its pulley, the body running back along +X towards the block, the mounting ear under it.
+		// Origin at its pulley, the body running back along +X towards the block: the grooved pulley and its nut, the fan
+		// behind it, the cast drive-end housing with its vents, the stator's band, the rear housing and its cover with the
+		// output stud and the plug; the pivot's two lugs underneath and the adjusting lug on top.
 		MeshBuilder alternator;
 		alternator.SetUVScale(6.f);
-		Tube(alternator, AlongX({}), 0.032f, 0.01f, 0.01f, DARK, 0.f, glm::two_pi<float>(), 24);
-		Cylinder(alternator, AlongX({ 0.011f, 0.f, 0.f }), 0.04f, 0.006f, STEEL_GREY, 20);
-		Cylinder(alternator, AlongX({ 0.05f, 0.f, 0.f }), 0.055f, 0.07f, WHITE, 28);
-		Box(alternator, { 0.05f, -0.06f, 0.f }, { 0.024f, 0.02f, 0.03f }, WHITE);
+		const glm::vec3 CAST = { 0.80f, 0.80f, 0.78f }, STATOR = { 0.36f, 0.36f, 0.38f }, PULLEY = { 0.42f, 0.42f, 0.45f };
+		// The pulley: its V between two lips, the belt riding in it; the nut and washer on the shaft.
+		Tube(alternator, AlongX({}), 0.032f, 0.008f, 0.01f, PULLEY, 0.f, glm::two_pi<float>(), 28);
+		for (float side : { -1.f, 1.f })
+			Tube(alternator, AlongX({ side * 0.006f, 0.f, 0.f }), 0.037f, 0.008f, 0.002f, PULLEY, 0.f, glm::two_pi<float>(), 28);
+		Cylinder(alternator, AlongX({ -0.008f, 0.f, 0.f }), 0.009f, 0.002f, STEEL_GREY, 16);
+		Cylinder(alternator, AlongX({ -0.0105f, 0.f, 0.f }), 0.0075f, 0.004f, DARK, 6);
+		// The fan: a hub and its blades, swept.
+		Cylinder(alternator, AlongX({ 0.0115f, 0.f, 0.f }), 0.018f, 0.004f, STEEL_GREY, 18);
+		for (int blade = 0; blade < 12; blade++)
+		{
+			float angle = blade * glm::two_pi<float>() / 12.f;
+			alternator.SetTransform(glm::rotate(glm::rotate(At({ 0.0115f, 0.f, 0.f }), angle, glm::vec3(1.f, 0.f, 0.f)), 0.35f, glm::vec3(0.f, 1.f, 0.f)))
+				.SetColor(STEEL_GREY).AddBox({ 0.f, 0.03f, 0.f }, { 0.008f, 0.024f, 0.0015f });
+		}
+		alternator.ResetTransform();
+		// The drive-end housing, its vents round it, and a through-bolt boss at each corner the length of the body.
+		Cylinder(alternator, AlongX({ 0.0305f, 0.f, 0.f }), 0.054f, 0.029f, CAST, 32);
+		for (int vent = 0; vent < 10; vent++)
+		{
+			float angle = (vent + 0.5f) * glm::two_pi<float>() / 10.f;
+			alternator.SetTransform(glm::rotate(At({ 0.026f, 0.f, 0.f }), angle, glm::vec3(1.f, 0.f, 0.f))).SetColor(DARK)
+				.AddBox({ 0.f, 0.0542f, 0.f }, { 0.012f, 0.001f, 0.014f });
+		}
+		alternator.ResetTransform();
+		Cylinder(alternator, AlongX({ 0.0505f, 0.f, 0.f }), 0.057f, 0.011f, STATOR, 32);
+		Cylinder(alternator, AlongX({ 0.071f, 0.f, 0.f }), 0.052f, 0.03f, CAST, 32);
+		for (int bolt = 0; bolt < 4; bolt++)
+		{
+			float angle = glm::quarter_pi<float>() + bolt * glm::half_pi<float>();
+			Cylinder(alternator, AlongX({ 0.055f, std::sin(angle) * 0.055f, std::cos(angle) * 0.055f }), 0.004f, 0.07f, CAST, 10);
+			Cylinder(alternator, AlongX({ 0.0905f, std::sin(angle) * 0.055f, std::cos(angle) * 0.055f }), 0.0035f, 0.001f, STEEL_GREY, 6);
+		}
+		Cylinder(alternator, AlongX({ 0.088f, 0.f, 0.f }), 0.044f, 0.006f, CAST, 28);
+		// The output (B+) stud on the rear cover, its nut, and the regulator's plug in its socket.
+		Cylinder(alternator, AlongX({ 0.095f, 0.022f, 0.02f }), 0.0025f, 0.01f, { 0.75f, 0.6f, 0.3f }, 8);
+		Cylinder(alternator, AlongX({ 0.0925f, 0.022f, 0.02f }), 0.005f, 0.003f, STEEL_GREY, 6);
+		Box(alternator, { 0.08f, 0.032f, -0.038f }, { 0.016f, 0.012f, 0.018f }, BLACK);
+		Box(alternator, { 0.08f, 0.042f, -0.042f }, { 0.012f, 0.01f, 0.012f }, BLACK);
+		// The pivot's lugs (front and back of the bracket's boss), and the adjusting lug on top, each on a web off the body.
+		for (float x : { ALTERNATOR_PIVOT_X - 0.028f, ALTERNATOR_PIVOT_X + 0.028f })
+		{
+			Box(alternator, { x, (ALTERNATOR_PIVOT_Y - 0.04f) * 0.5f, 0.f }, { 0.012f, -ALTERNATOR_PIVOT_Y - 0.04f, 0.016f }, CAST);
+			Cylinder(alternator, AlongX({ x, ALTERNATOR_PIVOT_Y, 0.f }), 0.009f, 0.012f, CAST, 16);
+		}
+		Box(alternator, { ALTERNATOR_ADJUST_X + 0.006f, (ALTERNATOR_ADJUST_Y + 0.04f) * 0.5f, 0.f }, { 0.012f, ALTERNATOR_ADJUST_Y - 0.04f, 0.014f }, CAST);
+		Cylinder(alternator, AlongX({ ALTERNATOR_ADJUST_X + 0.006f, ALTERNATOR_ADJUST_Y, 0.f }), 0.008f, 0.012f, CAST, 16);
 		add(PartType::ALTERNATOR, alternator);
+	}
+	{
+		// Cast iron, built round the alternator's pivot (its origin), in the engine's turn: the pivot's boss, an arm back
+		// under the alternator, a web across to the side of the block, the plate that bolts to it (three bolts), and a post
+		// up behind the alternator to the slotted strap its adjusting lug locks to.
+		MeshBuilder bracket;
+		bracket.SetUVScale(5.f);
+		const glm::vec3 IRON = { 0.30f, 0.30f, 0.32f };
+		const glm::vec3 origin = { ALTERNATOR_BRACKET_X, ALTERNATOR_BRACKET_Y, ALTERNATOR_Z };
+		auto block = [&](const glm::vec3& lo, const glm::vec3& hi, const glm::vec3& color) {
+			Box(bracket, (lo + hi) * 0.5f - origin, hi - lo, color);
+		};
+		constexpr float SIDE = BLOCK_WIDTH * 0.5f, PLATE = 0.007f;
+		// The pivot's boss, between the alternator's lugs.
+		Cylinder(bracket, AlongX({}), 0.011f, 0.042f, IRON, 18);
+		// The arm under it, back to the web behind the alternator.
+		block({ FRONT_X - 0.07f, -0.094f, ALTERNATOR_Z - 0.012f }, { FRONT_X + 0.025f, -0.073f, ALTERNATOR_Z + 0.012f }, IRON);
+		// The web across to the block, the plate on it, and a gusset between them.
+		block({ FRONT_X + 0.005f, -0.097f, SIDE + PLATE }, { FRONT_X + 0.025f, -0.055f, ALTERNATOR_Z + 0.012f }, IRON);
+		block({ FRONT_X + 0.004f, -0.107f, SIDE }, { FRONT_X + 0.068f, -0.033f, SIDE + PLATE }, IRON);
+		block({ FRONT_X + 0.025f, -0.08f, SIDE + PLATE }, { FRONT_X + 0.068f, -0.072f, SIDE + 0.03f }, IRON);
+		for (const auto& bolt : ALTERNATOR_BRACKET_BOLTS)
+			Cylinder(bracket, AlongZ(glm::vec3(FRONT_X + bolt.x, bolt.y, SIDE + PLATE + 0.0015f) - origin), 0.009f, 0.003f, IRON, 14);
+		// The post up behind the alternator, and the strap across its top, slotted for the adjusting bolt to slide in.
+		block({ FRONT_X + 0.001f, -0.066f, ALTERNATOR_Z - 0.01f }, { FRONT_X + 0.015f, 0.05f, ALTERNATOR_Z + 0.01f }, IRON);
+		constexpr float STRAP_X = ACCESSORY_BELT_X + ALTERNATOR_ADJUST_X + 0.012f;		// behind the adjusting lug
+		block({ STRAP_X, 0.048f, ALTERNATOR_Z - 0.026f }, { FRONT_X + 0.015f, 0.08f, ALTERNATOR_Z + 0.026f }, IRON);
+		block({ STRAP_X - 0.0005f, ALTERNATOR_ADJUST_Y - 0.0045f, ALTERNATOR_Z - 0.018f }, { STRAP_X, ALTERNATOR_ADJUST_Y + 0.0045f, ALTERNATOR_Z + 0.018f }, BLACK);
+		add(PartType::ALTERNATOR_BRACKET, bracket);
 	}
 	{
 		// The fan belt, an 11 mm V-belt, in its plane (X = 0) round its pulleys.
@@ -2415,9 +2976,33 @@ void ShopAssets::LoadAncillaries()
 		MeshBuilder housing;
 		housing.SetUVScale(6.f);
 		Box(housing, { 0.f, 0.003f, 0.f }, { 0.06f, 0.006f, 0.05f });
+		// A bolt ear on two opposite corners (clear of the body and of the outlet's neck), the bolts' heads on them.
+		for (float side : { -1.f, 1.f })
+			Cylinder(housing, At({ side * THERMOSTAT_BOLT.x, 0.003f, -side * THERMOSTAT_BOLT.y }), 0.009f, 0.006f, WHITE, 16);
 		Cylinder(housing, At({ 0.f, 0.016f, 0.f }), 0.022f, 0.022f, WHITE, 20);
 		Cylinder(housing, AlongX({ 0.035f, 0.022f, 0.f }), 0.015f, 0.05f, WHITE, 16);
 		add(PartType::THERMOSTAT_HOUSING, housing);
+	}
+	{
+		// The thermostat's: a rubber ring a little bigger than its flange (a lip of it shows round it), round its valve.
+		MeshBuilder gasket;
+		Tube(gasket, At({ 0.f, 0.0005f, 0.f }), 0.028f, 0.0185f, 0.001f, RUBBER, 0.f, glm::two_pi<float>(), 24);
+		add(PartType::THERMOSTAT_GASKET, gasket);
+	}
+	{
+		// The housing's: a fibre sheet the shape of the housing's base, the outlet's hole through it (front and back).
+		MeshBuilder gasket;
+		gasket.SetColor(GASKET).AddPlateWithHole({ 0.f, 0.001f, 0.f }, { 0.06f, 0.05f }, 0.019f, 24);
+		gasket.SetTransform(glm::rotate(glm::mat4(1.f), glm::pi<float>(), { 1.f, 0.f, 0.f })).AddPlateWithHole({ 0.f, 0.f, 0.f }, { 0.06f, 0.05f }, 0.019f, 24);
+		gasket.ResetTransform();
+		Tube(gasket, At({ 0.f, 0.0005f, 0.f }), 0.0192f, 0.019f, 0.001f, GASKET, 0.f, glm::two_pi<float>(), 24);
+		// Its ears under the housing's, the bolts' holes through them.
+		for (float side : { -1.f, 1.f })
+		{
+			Tube(gasket, At({ side * THERMOSTAT_BOLT.x, 0.0005f, -side * THERMOSTAT_BOLT.y }), 0.009f, 0.0045f, 0.001f, GASKET, 0.f, glm::two_pi<float>(), 16);
+			Cylinder(gasket, At({ side * THERMOSTAT_BOLT.x, 0.0005f, -side * THERMOSTAT_BOLT.y }), 0.0045f, 0.0009f, DARK, 12);
+		}
+		add(PartType::THERMOSTAT_HOUSING_GASKET, gasket);
 	}
 }
 

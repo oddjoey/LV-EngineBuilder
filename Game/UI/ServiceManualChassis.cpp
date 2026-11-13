@@ -9,6 +9,7 @@
 #include "../Simulation/MeasuringTool.h"
 #include "../Simulation/PartCatalog.h"
 #include "../Simulation/Units.h"
+#include "../Simulation/Workshop.h"
 #include "../World/ToolShapes.h"
 
 // The project car's book: the LE86 Chassis Service Manual. Like the engine's, every figure in it comes
@@ -134,13 +135,13 @@ void ServiceManual::BuildChassis(bool imperial)
 	text("The chassis is held together with M6 to M12 nuts and bolts and the wheels' lug nuts: the same sockets, wrenches and torque "
 		"wrenches as the engine. The rear link and knuckle bolts take well over 100 Nm, so a torque wrench that reaches that far is worth having.");
 	heading("Engine Hoist");
-	text("The engine goes into the bay, and comes out of it, on the engine hoist. It rolls out of the shop, down the drive and along the track into the salvage yard, and in at the gate to the car's nose.");
+	text("The engine goes into the bay, and comes out of it, on the engine hoist. It rolls out of the shop's door and down the drive to the car's nose.");
 
 	begin("3. Building the Car");
-	heading("The Project");
-	text(std::format("The car is bought from the parts computer's store (the Project Car page) as a bare shell on jack stands in the salvage yard beside the shop, "
-		"its parts strewn round it and its nuts and bolts in a box by the gate. Whatever's in the lot is used: measure and check it, and buy new where it's worn. Fluids are bought on the "
-		"same page. A finished car is road tested and sold from the Car tab."));
+	heading("The Car");
+	text("The shop's LE86 is out on the drive in front of the door: complete, and it runs, but it's done its miles. Its engine is tired (the dyno "
+		"and a road test say where), and the car has worn parts of its own. Put it right a job at a time: measure and check, and buy new where "
+		"it's worn. Parts and fluids are bought at the parts computer. The Car tab road tests it after each job.");
 	illustrate(Figure::CAR_BUILD_FLOW, "The build, from the bare shell to the road. Each stage's chapter has the detail.");
 	heading("Fitting a Part");
 	step(std::format("Pick the part up and walk to the car. The places it can go are marked: a filled marker is ready for it, a hollow one "
@@ -276,7 +277,8 @@ void ServiceManual::BuildChassis(bool imperial)
 	figure("Reverse", std::format("{:.3f} : 1", car.reverseRatio));
 	illustrate(Figure::GEAR_SPEEDS, std::format("Road speed in each gear with the {:.3f} final drive and {} tires.", car.finalDriveNominal, car.tireSize));
 	heading("Clutch and Gearbox");
-	text("The clutch goes on the engine's flywheel once the engine is in the car (chapter 9), and the gearbox bolts up behind it.");
+	text("The clutch goes on the engine's flywheel once the engine is in the car (chapter 9), and the gearbox bolts up behind it. The "
+		"flywheel has to be on first: fitted on the hoist, or in the car before the clutch goes on.");
 	step("Clutch disc against the flywheel, the long side of its hub toward the gearbox.", { PartType::CLUTCH_DISC });
 	step("Pressure plate over it, its bolts done up evenly.", { PartType::PRESSURE_PLATE });
 	step("Release bearing, then the gearbox, onto the bellhousing bolts.", { PartType::RELEASE_BEARING, PartType::TRANSMISSION });
@@ -293,7 +295,7 @@ void ServiceManual::BuildChassis(bool imperial)
 	text("Any finished engine from the shop's stands goes in. Build and check it with its own manual first: once it's in, only the top "
 		"of it can be got at.");
 	step("Engine mounts on the crossmember, left and right.", { PartType::ENGINE_MOUNT });
-	step("Lift the finished engine off its stand with the engine hoist.");
+	step("Lift the engine off its stand with the engine hoist. Its flywheel goes on there, on the hoist (or in the bay, before the clutch).");
 	step("Roll the hoist out to the car and over the bay, and lower the engine onto its mounts.");
 	step("Its two mount nuts, then the clutch and gearbox (chapter 8), the starter, the engine harness and the radiator hoses.");
 	figure("Engine mount bolts (mount to body)", holeTorque(CarSlot::ENGINE_MOUNT_BOLT));
@@ -304,6 +306,7 @@ void ServiceManual::BuildChassis(bool imperial)
 	bullet("Spark plugs and plug leads");
 	bullet("The carburettor and its bolts");
 	bullet("The oil filter");
+	bullet("The flywheel, with the clutch and gearbox off");
 	text("Anything else needs the engine out.");
 	heading("Taking It Out");
 	step("Take off what's behind and round it: the gearbox and clutch, the starter, the engine harness, the radiator hoses and the exhaust's "
@@ -364,6 +367,10 @@ void ServiceManual::BuildChassis(bool imperial)
 	figure("Primary main jet", std::format("#{:.0f} (#{:.0f} - #{:.0f})", tune.mainJetNominal, tune.mainJet.min, tune.mainJet.max));
 	figure("Valve lash, intake, hot", deviation(tune.intakeLash.min) + " - " + deviation(tune.intakeLash.max));
 	figure("Valve lash, exhaust, hot", deviation(tune.exhaustLash.min) + " - " + deviation(tune.exhaustLash.max));
+	figure("Valve lash, intake, cold", deviation(tune.intakeLash.min - Workshop::LASH_HOT_GROWTH) + " - " + deviation(tune.intakeLash.max - Workshop::LASH_HOT_GROWTH));
+	figure("Valve lash, exhaust, cold", deviation(tune.exhaustLash.min - Workshop::LASH_HOT_GROWTH) + " - " + deviation(tune.exhaustLash.max - Workshop::LASH_HOT_GROWTH));
+	text(std::format("The lash closes up {} as the engine cools: the valves are shorter in the head. Set it cold (the engine's sat a "
+		"good while) to the cold figure, or just after a drive to the hot one.", deviation(Workshop::LASH_HOT_GROWTH)));
 	heading("Ignition Timing");
 	step("Warm the engine up and leave it idling.");
 	step(std::format("Hold the timing light and aim at the crank pulley: it strobes the timing marks and reads the advance. {} advances "

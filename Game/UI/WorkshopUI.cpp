@@ -1,6 +1,7 @@
 #include "WorkshopUI.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
 #include <numbers>
@@ -81,7 +82,7 @@ namespace
 					"Aim at the empty spot in the set with a socket on the tool and press E to put it back." };
 			case HandToolKind::WRENCHES:
 				return { "Look at the wrench you need in the tray and press E to take it out: each wrench is a tool of its own, one size.",
-					"Use the wrench on its own (see each wrench). Hang it back up on the tool board with E." };
+					"Use the wrench on its own (see each wrench). Hang it back up on the tool board by setting it down where it goes." };
 			case HandToolKind::COMBINATION_WRENCH:
 				return { doUp, "It does a bolt up close to spec by feel; only a torque wrench gets it to spec." };
 			case HandToolKind::RATCHET:
@@ -118,6 +119,11 @@ namespace
 					"Hold the compressor, aim at that piston and hold the left button: the ring is squeezed into its groove and the piston goes "
 					"home, the rod onto the crank pin.",
 					"Until it's home, its rod cap, the oil pump and the head gasket can't go on." };
+		case HandToolKind::VALVE_SPRING_COMPRESSOR:
+			return { "With the head off the engine (on the bench, a shelf or the floor), right way up, a valve, its stem seal and its spring in.",
+				"Hold the compressor, aim at the valve and press E: it clamps over it and squeezes the spring down.",
+				"Now hold the retainer and press E on the valve: it goes on, its keepers in the stem's groove. (R takes one off the same way.)",
+				"E on the compressor takes it off again, the spring up against the retainer, for the next valve." };
 			case HandToolKind::MARKER:
 				return { "Aim at a wall or the floor and hold the left button to draw. The mouse wheel sets how thick the line is." };
 			case HandToolKind::SPRAY_CAN:
@@ -706,9 +712,7 @@ void WorkshopUI::Draw(Workshop& workshop)
 	else if (m_currentTab == WorkshopTab::DYNO)
 		title = "Dyno Cell";
 	else if (m_currentTab == WorkshopTab::CAR)
-		title = "LE86 Project Car";
-	else if (m_currentTab == WorkshopTab::QUARRY)
-		title = "Desert Quarry";
+		title = "LE86";
 
 	if (ImGui::Begin(std::format("{}###Workshop", title).c_str(), &m_open))
 	{
@@ -727,7 +731,6 @@ void WorkshopUI::Draw(Workshop& workshop)
 				case WorkshopTab::ENGINE_STAND:	DrawAssemblyTab(workshop);	break;
 				case WorkshopTab::DYNO:			DrawDynoTab(workshop);		break;
 				case WorkshopTab::CAR:			DrawCarTab(workshop);		break;
-				case WorkshopTab::QUARRY:		DrawQuarryTab(workshop);	break;
 				default:						DrawInventoryTab(workshop);	break;
 			}
 		}
@@ -848,7 +851,7 @@ void WorkshopUI::DrawInventoryTab(Workshop& workshop)
 			bool damaged = part->GetCondition() == PartCondition::DAMAGED;
 			if (damaged)
 				ImGui::PushStyleColor(ImGuiCol_Text, COLOR_BAD);
-			if (ImGui::Selectable(std::format("#{} {}", part->GetId(), part->GetName()).c_str(), part == selected))
+			if (ImGui::Selectable(std::format("{}###part{}", part->GetName(), part->GetId()).c_str(), part == selected))
 			{
 				m_selectedPartId = part->GetId();
 				m_selectedFeature.clear();
@@ -1017,10 +1020,10 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 		auto position = engine >= 0 ? workshop.GetAssembly(engine).Find(part.get()) : std::nullopt;
 		if (const auto* holes = position ? EngineAssembly::Holes(position->first) : nullptr)
 		{
-			ImGui::Text("In: %s, %.0f Nm", workshop.GetAssembly(engine).PositionName(position->first, position->second).c_str(), holes->torqueNm);
+			ImGui::Text("In: %s", workshop.GetAssembly(engine).PositionName(position->first, position->second).c_str());
 			switch (part->GetTightness())
 			{
-				case FastenerTightness::TORQUED:	ImGui::TextColored(COLOR_GOOD, "Torqued to spec with a torque wrench."); break;
+				case FastenerTightness::TORQUED:	ImGui::TextColored(COLOR_GOOD, "Done up with a torque wrench."); break;
 				case FastenerTightness::SNUG:		ImGui::TextColored(COLOR_WARN, "Snugged up by feel, not torqued: go over it with a torque wrench."); break;
 				case FastenerTightness::LOOSE:		ImGui::TextColored(COLOR_BAD, "Finger tight: do it up with a %d mm socket or wrench.", fastener.headMm); break;
 			}
@@ -1033,7 +1036,7 @@ void WorkshopUI::DrawPartInspector(Workshop& workshop, const pPart& part)
 		else
 			for (const auto& holes : PartCatalog::Holes())
 				if (holes.size == part->GetType())
-					ImGui::BulletText("Fits the %ss: %.0f Nm", holes.name, holes.torqueNm);
+					ImGui::BulletText("Fits the %ss", holes.name);
 	}
 
 	if (!IsUsable(*part))
@@ -1731,6 +1734,22 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 		else
 			ImGui::TextDisabled("Parts ship to the roll-up door. Budget parts scatter wider; measure everything.");
 		ImGui::Spacing();
+		// The search bar: what's typed narrows the cards to the ones whose name, or section, has it in (any case).
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::InputTextWithHint("##search", hardware ? "Search hardware (e.g. M8, nut)" : "Search parts (e.g. gasket, cooling)",
+			m_storeSearch, sizeof(m_storeSearch));
+		auto lower = [](std::string text) {
+			std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+			return text;
+		};
+		std::string search = lower(m_storeSearch);
+		search.erase(0, search.find_first_not_of(' '));
+		search.erase(search.find_last_not_of(' ') + 1);
+		auto matches = [&](PartType type, const std::string& sectionName) {
+			return search.empty() || lower(PartCatalog::StoreName(type)).find(search) != std::string::npos
+				|| lower(PartTypeName(type)).find(search) != std::string::npos || lower(sectionName).find(search) != std::string::npos;
+		};
+		ImGui::Spacing();
 
 		float available = ImGui::GetContentRegionAvail().x;
 		int columns = (std::max)(1, static_cast<int>(available / (CARD_WIDTH + ImGui::GetStyle().ItemSpacing.x)));
@@ -1747,6 +1766,9 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 					shown.push_back({ type, hardware ? (pass == 0 ? "Bolts" : "Nuts") : PartSystemName(PartCatalog::Get(type).system) });
 		// The wheels' lug nuts after the plain nuts, M8 to M12.
 		std::stable_partition(shown.begin(), shown.end(), [](const auto& entry) { return entry.first != PartType::LUG_NUT; });
+		std::erase_if(shown, [&](const auto& entry) { return !matches(entry.first, entry.second); });
+		if (shown.empty())
+			ImGui::TextDisabled("Nothing matches \"%s\".", m_storeSearch);
 		std::string section;
 		for (const auto& entry : shown)
 		{
@@ -1839,6 +1861,8 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 		ImGui::PushTextWrapPos(0.f);
 		if (m_order.type == PartType::PISTON || m_order.type == PartType::PISTON_RING)
 			ImGui::TextDisabled("Oversize parts suit cylinders bored to the matching size class.");
+		else if (m_order.type == PartType::HEAD_GASKET)
+			ImGui::TextDisabled("The fire rings are cut for cylinders bored to that size class. A gasket smaller than the bores won't go on.");
 		else if (m_order.type == PartType::INTAKE_VALVE || m_order.type == PartType::EXHAUST_VALVE)
 			ImGui::TextDisabled("Oversize stems suit guides reamed to the matching size class.");
 		else
@@ -1892,7 +1916,7 @@ namespace
 		{ StoreCategory::MACHINES, "Machine Shop", "machine-shop", "Machine Shop", "Machines to bring parts back into spec, the dyno and the hoist." },
 		{ StoreCategory::FURNITURE, "Shop Fittings", "shop-fittings", "Shop Fittings", "Benches, shelving, engine stands and the rest of a working shop." },
 		{ StoreCategory::PAINT, "Paint", "paint", "Paint", "Markers, spray cans and thinner, for the parts and the walls." },
-		{ StoreCategory::CAR, "Project Car", "project-car", "Project Car", "An LE86 shell to build up, every part for it, and the fluids to fill it." },
+		{ StoreCategory::CAR, "LE86 Parts", "le86", "LE86 Parts", "Every part for the LE86, and the fluids to fill it." },
 	};
 	constexpr const char* STORE_NAME = "MonkeyKobo";
 	constexpr const char* STORE_HOST = "monkeykobo.love/shop";	// the site, and its shop
@@ -2197,7 +2221,6 @@ std::string WorkshopUI::CartLineName(const CartLine& line) const
 		case CartLine::Kind::FURNITURE:		return FurnitureCatalog::All()[line.index].name;
 		case CartLine::Kind::DYNO:			return "Dyno";
 		case CartLine::Kind::HOIST:			return "Engine hoist";
-		case CartLine::Kind::PROJECT_CAR:	return "LE86 project car";
 		case CartLine::Kind::FLUID:			return line.index < static_cast<size_t>(FLUID_PRODUCTS) ? std::format("{} ({:g} l)",
 			FluidProductName(static_cast<FluidProduct>(line.index)), Workshop::FluidUnitLitres(static_cast<FluidProduct>(line.index))) : "";
 	}
@@ -2240,8 +2263,8 @@ void WorkshopUI::AddToCartButton(Workshop& workshop, const CartLine& line, const
 	// One of a kind (a machine, the dyno) can only be in the cart once; tools and stands only up to the
 	// room left.
 	std::optional<std::string> problem;
-	if ((line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::DYNO || line.kind == CartLine::Kind::HOIST
-		|| line.kind == CartLine::Kind::PROJECT_CAR) && InCart(line.kind, line.index) > 0)
+	if ((line.kind == CartLine::Kind::MACHINE || line.kind == CartLine::Kind::DYNO || line.kind == CartLine::Kind::HOIST)
+		&& InCart(line.kind, line.index) > 0)
 		problem = "In the cart.";
 	else
 	{
@@ -2312,14 +2335,23 @@ void WorkshopUI::DrawCart(Workshop& workshop)
 	if (remove)
 		m_cart.erase(m_cart.begin() + *remove);
 
-	double total = workshop.CartTotal(m_cart);
+	// The store's prices are before sales tax; it's added here, at the cart.
+	double subtotal = workshop.CartTotal(m_cart);
+	double tax = workshop.CartTax(m_cart);
+	double total = subtotal + tax;
 	ImGui::Spacing();
+	ImGui::Text("Subtotal");
+	ImGui::SameLine(110.f);
+	ImGui::Text("$%.2f", subtotal);
+	ImGui::Text("Sales tax");
+	ImGui::SameLine(110.f);
+	ImGui::TextDisabled("$%.2f  (%.0f%%)", tax, Workshop::SALES_TAX * 100.0);
 	ImGui::Text("Total");
 	ImGui::SameLine(110.f);
-	ImGui::TextColored(total > workshop.GetMoney() ? COLOR_BAD : COLOR_GOOD, "$%.0f", total);
+	ImGui::TextColored(total > workshop.GetMoney() ? COLOR_BAD : COLOR_GOOD, "$%.2f", total);
 	ImGui::Text("After");
 	ImGui::SameLine(110.f);
-	ImGui::TextDisabled("$%.0f", workshop.GetMoney() - total);
+	ImGui::TextDisabled("$%.2f", workshop.GetMoney() - total);
 
 	bool problems = std::any_of(m_cart.begin(), m_cart.end(), [&](const CartLine& line) { return workshop.CartLineProblem(line, m_cart).has_value(); });
 	ImGui::Spacing();
@@ -2328,7 +2360,7 @@ void WorkshopUI::DrawCart(Workshop& workshop)
 	{
 		if (workshop.Checkout(m_cart))
 		{
-			m_cartMessage = std::format("Ordered {} line{} for ${:.0f}. It's on its way to the roll-up door.", m_cart.size(), m_cart.size() == 1 ? "" : "s", total);
+			m_cartMessage = std::format("Ordered {} line{} for ${:.2f}, tax included. It's on its way to the roll-up door.", m_cart.size(), m_cart.size() == 1 ? "" : "s", total);
 			m_cart.clear();
 		}
 	}
@@ -2518,7 +2550,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 				return tool.handKind == HandToolKind::MARKER ? 11 : tool.handKind == HandToolKind::SPRAY_CAN ? 12 : 13;
 			if (tool.powered || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
 				return 9;
-			if (tool.handKind == HandToolKind::PIN_PRESS || tool.handKind == HandToolKind::RING_COMPRESSOR)
+			if (tool.handKind == HandToolKind::PIN_PRESS || tool.handKind == HandToolKind::RING_COMPRESSOR || tool.handKind == HandToolKind::VALVE_SPRING_COMPRESSOR)
 				return 8;
 			auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
 			switch (tool.handKind)
@@ -2645,7 +2677,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 			else if (tool.Paints())
 				ImGui::TextDisabled("For decorating: the walls and the floor take paint from as far off as you can see them, the ring round the crosshair showing how big (the mouse wheel changes it), and a spray can "
 					"or the thinner works on any part or tool too. It never wears off, but thinner takes it back off.");
-			else if (tool.handKind != HandToolKind::PIN_PRESS && tool.handKind != HandToolKind::RING_COMPRESSOR)
+			else if (tool.handKind != HandToolKind::PIN_PRESS && tool.handKind != HandToolKind::RING_COMPRESSOR && tool.handKind != HandToolKind::VALVE_SPRING_COMPRESSOR)
 				ImGui::TextDisabled("Every nut and bolt on the engine needs a socket (driven by a ratchet, impact or torque wrench) or a wrench of "
 					"its size, and a torque wrench to be done up to spec. How close the torque wrench gets "
 					"is how tight they really are, and the dyno finds out.");
@@ -2959,6 +2991,9 @@ void WorkshopUI::DrawAssemblyTab(Workshop& workshop)
 	for (size_t slotIndex = 0; slotIndex < static_cast<size_t>(AssemblySlot::COUNT); slotIndex++)
 	{
 		auto slot = static_cast<AssemblySlot>(slotIndex);
+		// The valvetrain goes in the head off the engine, not onto the engine.
+		if (EngineAssembly::InHead(slot))
+			continue;
 		int count = 0;
 		for (int index = 0; index < assembly.SlotCount(slot); index++)
 			if (!assembly.Get(slot, index) && !assembly.MissingPrerequisite(slot, index))
@@ -3185,7 +3220,7 @@ void WorkshopUI::DrawAssemblyChecks(Workshop& workshop)
 				double quench = *deck + *gasketThickness;
 				ColoredRangeText(quench, spec.quench, Deviation(quench));
 				if (bore && stroke && chamber && dish)
-					if (auto ratio = EngineAssembly::CompressionRatioFrom(*bore, *stroke, *chamber, *dish, spec.gasketBore, *gasketThickness, *deck))
+					if (auto ratio = EngineAssembly::CompressionRatioFrom(*bore, *stroke, *chamber, *dish, spec.gasketBore + gasket->GetSizeOffset(), *gasketThickness, *deck))
 					{
 						ImGui::SameLine();
 						ImGui::TextColored(spec.compressionRatio.Contains(*ratio) ? COLOR_GOOD : COLOR_BAD, " / %.2f:1", *ratio);
@@ -3450,7 +3485,7 @@ void WorkshopUI::DrawDynoTab(Workshop& workshop)
 	if (onDyno < 0)
 	{
 		ImGui::PushTextWrapPos(0.f);
-		ImGui::TextDisabled("The dyno is empty. A finished engine comes off its stand and is strapped down here to be run; afterwards it goes back onto a free stand, or is sold from here.");
+		ImGui::TextDisabled("The dyno is empty. A finished engine comes off its stand and is strapped down here to be run; afterwards the engine hoist takes it back onto a free stand, or it's sold from here.");
 		ImGui::PopTextWrapPos();
 		ImGui::SeparatorText("Engines");
 		for (int engine = 0; engine < workshop.GetEngineCount(); engine++)
@@ -3638,7 +3673,7 @@ void WorkshopUI::DrawDynoTab(Workshop& workshop)
 	if (m_pullActive)
 		return;
 
-	// Done with it: sell it from here, or put it back on a stand to work on.
+	// Done with it: sell it from here, or take it back to a stand on the hoist.
 	ImGui::SeparatorText("Off the dyno");
 	if (workshop.GetEngineOnDyno() < 0)
 	{
@@ -3646,17 +3681,10 @@ void WorkshopUI::DrawDynoTab(Workshop& workshop)
 		return;
 	}
 	DrawSellButton(workshop);
-	ImGui::TextUnformatted("Put it back on stand:");
-	for (int stand = 0; stand < workshop.GetEngineCount(); stand++)
-	{
-		if (!workshop.IsStandFree(stand))
-			continue;
-		ImGui::SameLine();
-		ImGui::PushID(stand);
-		if (ImGui::Button(std::format("Stand {}{}", stand + 1, stand == onDyno ? " (its own)" : "").c_str()))
-			workshop.ReturnEngineFromDyno(stand);
-		ImGui::PopID();
-	}
+	// Back to a stand it goes on the engine hoist, lifted off the dyno and lowered onto a free stand.
+	ImGui::PushTextWrapPos(0.f);
+	ImGui::TextDisabled("To work on it again, lift it off the dyno with the engine hoist and lower it onto a free engine stand.");
+	ImGui::PopTextWrapPos();
 }
 
 

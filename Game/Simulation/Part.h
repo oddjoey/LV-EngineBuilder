@@ -182,11 +182,21 @@ enum class PartType
 	NUT_M10,
 	NUT_M12,
 
+	// Added after the car's: the oil drain plug's crush washer, the fuel pump's gasket (between it and the side of the
+	// head), the thermostat's two (one between the head's water outlet and the thermostat's flange, one between that and
+	// the housing over it), and the alternator's bracket, bolted to the side of the block, the alternator on it.
+	DRAIN_PLUG_WASHER,
+	FUEL_PUMP_GASKET,
+	THERMOSTAT_GASKET,
+	THERMOSTAT_HOUSING_GASKET,
+	ALTERNATOR_BRACKET,
+
 	COUNT
 };
-// The first of the car's part types: everything from here to COUNT goes on the car, not an engine.
+// The first of the car's part types: everything from here to the drain plug washer goes on the car, not an engine.
 constexpr PartType FIRST_CAR_PART = PartType::BODY_SHELL;
-inline bool IsCarPart(PartType type) { return type >= FIRST_CAR_PART && type < PartType::COUNT; }
+constexpr PartType AFTER_CAR_PARTS = PartType::DRAIN_PLUG_WASHER;
+inline bool IsCarPart(PartType type) { return type >= FIRST_CAR_PART && type < AFTER_CAR_PARTS; }
 
 enum class PartQuality { BUDGET, OEM, PERFORMANCE };
 // A nut or bolt: in its hole finger tight, snugged by feel, or done up with a torque wrench.
@@ -303,6 +313,8 @@ public:
 	double GetValue() const;
 
 	void MarkDamaged(const std::string& reason);
+	// A new part that's been in service (the car's, at the start): used, named and valued as one, its geometry as it is.
+	void MarkUsed();
 	const std::string& GetDamageReason() const;
 
 	// Caps are machined in place with their rod or block and only ever fit that one (and a main

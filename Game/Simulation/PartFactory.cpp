@@ -22,7 +22,7 @@ pPart PartFactory::Create(PartType type, const EngineSpec& spec, PartQuality qua
 		case PartType::MAIN_BEARING_LOWER:
 		case PartType::ROD_BEARING_LOWER:	part = CreateBearing(type, spec, quality, condition, sizeOffset); break;
 		case PartType::CYLINDER_HEAD:	part = CreateCylinderHead(spec, quality, condition); break;
-		case PartType::HEAD_GASKET:		part = CreateHeadGasket(spec, quality, condition); break;
+		case PartType::HEAD_GASKET:		part = CreateHeadGasket(spec, quality, condition, sizeOffset); break;
 		case PartType::CAMSHAFT:		part = CreateCamshaft(spec, quality, condition); break;
 		case PartType::INTAKE_VALVE:
 		case PartType::EXHAUST_VALVE:	part = CreateValve(type == PartType::EXHAUST_VALVE, spec, quality, condition, sizeOffset); break;
@@ -56,7 +56,7 @@ std::vector<pPart> PartFactory::CreateCompanions(const pPart& part, const Engine
 			{
 				auto cap = make(PartType::MAIN_CAP);
 				cap->MatchTo(part->GetId(), journal);
-				cap->m_name = std::format("Main Cap {} (block #{})", journal + 1, part->GetId());
+				cap->m_name = std::format("Main Cap {}", journal + 1);
 			}
 			break;
 		case PartType::CYLINDER_HEAD:
@@ -65,7 +65,7 @@ std::vector<pPart> PartFactory::CreateCompanions(const pPart& part, const Engine
 				auto cap = make(PartType::CAM_CAP);
 				cap->MatchTo(part->GetId(), journal);
 				cap->m_material = part->GetMaterial();
-				cap->m_name = std::format("Cam Cap {} (head #{})", journal + 1, part->GetId());
+				cap->m_name = std::format("Cam Cap {}", journal + 1);
 			}
 			break;
 		case PartType::CONNECTING_ROD:
@@ -73,7 +73,7 @@ std::vector<pPart> PartFactory::CreateCompanions(const pPart& part, const Engine
 			auto cap = make(PartType::ROD_CAP);
 			cap->MatchTo(part->GetId());
 			cap->m_material = part->GetMaterial();
-			cap->m_name = std::format("Rod Cap (rod #{})", part->GetId());
+			cap->m_name = "Rod Cap";
 			break;
 		}
 		case PartType::MAIN_BEARING:	make(PartType::MAIN_BEARING_LOWER); break;
@@ -485,7 +485,7 @@ pPart PartFactory::CreateCamshaft(const EngineSpec& spec, PartQuality quality, P
 			part->m_features.push_back(lobe);
 		}
 
-	// The eccentric between the first cylinder's lobes and the second journal: it works the mechanical
+	// The eccentric between the last cylinder's lobes and the rear journal: it works the mechanical
 	// fuel pump's arm, and wears down like a lobe.
 	auto eccentric = MakeFeature(FeatureNames::FUEL_PUMP_ECCENTRIC, FeatureKind::LENGTH, spec.fuelPumpEccentric);
 	eccentric.value = Sample(spec.fuelPumpEccentric, quality) - (used ? (Random::Chance(0.08) ? Random::Uniform(0.3, 0.8) : Random::Uniform(0.01, 0.1)) : 0.0);
@@ -576,9 +576,9 @@ pPart PartFactory::CreateValveSpring(const EngineSpec& spec, PartQuality quality
 	return part;
 }
 
-pPart PartFactory::CreateHeadGasket(const EngineSpec& spec, PartQuality quality, PartCondition condition)
+pPart PartFactory::CreateHeadGasket(const EngineSpec& spec, PartQuality quality, PartCondition condition, double sizeOffset)
 {
-	auto part = std::make_shared<Part>(PartType::HEAD_GASKET, std::format("{} MLS Head Gasket", PartQualityName(quality)),
+	auto part = std::make_shared<Part>(PartType::HEAD_GASKET, std::format("{} MLS Head Gasket {}", PartQualityName(quality), SizeLabel(sizeOffset)),
 		MaterialType::MLS_STEEL, quality, condition);
 
 	auto thickness = MakeFeature(FeatureNames::COMPRESSED_THICKNESS, FeatureKind::THICKNESS, spec.gasketThickness);
@@ -612,6 +612,9 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::TIMING_COVER_GASKET:
 		case PartType::INTAKE_MANIFOLD_GASKET:
 		case PartType::WATER_PUMP_GASKET:		material = MaterialType::COMPOSITE_GASKET; break;
+		case PartType::THERMOSTAT_GASKET:		material = MaterialType::FKM_RUBBER; break;
+		case PartType::ALTERNATOR_BRACKET:		material = MaterialType::GREY_IRON; break;
+		case PartType::THERMOSTAT_HOUSING_GASKET:	material = MaterialType::COMPOSITE_GASKET; break;
 		case PartType::EXHAUST_MANIFOLD_GASKET:	material = MaterialType::MLS_STEEL; break;
 		case PartType::OIL_PUMP:
 		case PartType::TIMING_COVER:

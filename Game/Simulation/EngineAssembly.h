@@ -34,7 +34,7 @@ enum class AssemblySlot
 	OIL_PICKUP,
 	OIL_PAN_GASKET,
 	OIL_PAN,
-	OIL_DRAIN_PLUG,
+	DRAIN_PLUG_WASHER,	// was the drain plug's, before the plug was done up as a fastener (DRAIN_PLUG)
 	OIL_FILTER,
 	VALVE_STEM_SEAL,
 	VALVE_RETAINER,
@@ -50,7 +50,7 @@ enum class AssemblySlot
 	CRANK_PULLEY,
 	VALVE_COVER_GASKET,
 	VALVE_COVER,
-	SPARK_PLUG,
+	FUEL_PUMP_GASKET,	// was the spark plugs', before they were done up as fasteners (SPARK_PLUG, at the end)
 	PLUG_LEAD,
 	INTAKE_MANIFOLD_GASKET,
 	INTAKE_MANIFOLD,
@@ -75,6 +75,9 @@ enum class AssemblySlot
 	ALTERNATOR,
 	DRIVE_BELT,
 	DRIVE_BELT_TENSIONER,	// added later still, so the nuts and bolts after it moved up one
+	THERMOSTAT_GASKET,		// and these two later again (version 46): the nuts and bolts moved up two more
+	THERMOSTAT_HOUSING_GASKET,
+	ALTERNATOR_BRACKET,		// and this one later still (version 47): the nuts and bolts moved up one more
 	// Nuts and bolts: one slot per set of holes (PartCatalog::Holes), taking that set's size. A
 	// hole's index / perParent is the index of the part it holds on (or, for holes through all of them, it's just the hole).
 	HEAD_BOLT,
@@ -101,6 +104,9 @@ enum class AssemblySlot
 	EXHAUST_PIPE_BOLT,
 	ALTERNATOR_BOLT,
 	DRIVE_BELT_TENSIONER_BOLT,
+	DRAIN_PLUG,		// the oil drain plug, on its crush washer in the bottom of the pan
+	SPARK_PLUG,		// the spark plugs, down their wells in the head
+	ALTERNATOR_BRACKET_BOLT,	// the alternator bracket's, into the side of the block
 	COUNT
 };
 static_assert(static_cast<int>(AssemblySlot::CORE_PLUG) == static_cast<int>(PartType::CORE_PLUG)
@@ -131,6 +137,20 @@ public:
 	// or cap carries (none for anything else); CarriedBy what carries a part, if anything does.
 	static std::vector<AssemblySlot> GoesInWith(AssemblySlot host);
 	static std::optional<AssemblySlot> CarriedBy(AssemblySlot slot);
+	// The valvetrain (valves, stem seals, springs, retainers) goes into the cylinder head off the engine, and onto
+	// and off the engine in it: the head carries every one of them, whatever its position.
+	static bool InHead(AssemblySlot slot);
+	static constexpr AssemblySlot HEAD_VALVETRAIN[] = { AssemblySlot::INTAKE_VALVE, AssemblySlot::EXHAUST_VALVE,
+		AssemblySlot::VALVE_STEM_SEAL, AssemblySlot::VALVE_SPRING, AssemblySlot::VALVE_RETAINER };
+	// Which position of its carrier a carried part's position is in: the same for a rod's or cap's, the one head.
+	// (A rocker arm's is its shaft: the intakes' first, the exhausts' second.)
+	static int CarrierIndex(AssemblySlot slot, int index) { return InHead(slot) ? 0 : slot == AssemblySlot::ROCKER_ARM ? index % 2 : index; }
+	// Every position that goes on and comes off in the part at this one (and in what that carries).
+	std::vector<std::pair<AssemblySlot, int>> CarriedPositions(AssemblySlot slot, int index) const;
+	// Within a loose head: what has to be in it first at this valvetrain position (a valve before its stem seal, the
+	// seal before the spring, the spring before the retainer), and what goes on top of it.
+	static std::optional<std::pair<AssemblySlot, int>> HeadPrerequisite(AssemblySlot slot, int index);
+	static std::optional<std::pair<AssemblySlot, int>> HeadDependent(AssemblySlot slot, int index);
 	int SlotCount(AssemblySlot slot) const;
 
 	bool Install(AssemblySlot slot, int index, const pPart& part, std::string& error);
@@ -170,6 +190,12 @@ public:
 	std::optional<double> SweptVolume(int cylinder) const;		// cc
 	std::optional<double> CompressionRatio(int cylinder) const;
 	double Displacement() const;
+	// The size class the block's cylinders have been bored to (the biggest of them, to the nearest class),
+	// and the fire-ring bore of a gasket of a given class.
+	std::optional<double> BoreClass() const;
+	double GasketBore(double sizeClass) const;
+	// Why this gasket can't go on the block that's there: its fire rings would stand into bored-out cylinders.
+	std::optional<std::string> GasketProblem(const Part& gasket) const;
 
 	static int SpringIndex(int cylinder, bool exhaust) { return cylinder * 2 + (exhaust ? 1 : 0); }
 	std::optional<double> CamClearance(int journal) const;

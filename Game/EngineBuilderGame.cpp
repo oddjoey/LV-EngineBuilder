@@ -1,6 +1,7 @@
 #include "EngineBuilderGame.h"
 
 #include <cmath>
+#include <filesystem>
 #include <format>
 
 #include <glm/gtc/quaternion.hpp>
@@ -37,7 +38,6 @@ namespace
 		colors[ImGuiCol_Text] = shade(226, 224, 220);
 		colors[ImGuiCol_TextDisabled] = shade(128, 126, 122);
 		colors[ImGuiCol_WindowBg] = shade(17, 17, 19, 245);
-		colors[ImGuiCol_ChildBg] = shade(21, 21, 24, 0);
 		colors[ImGuiCol_PopupBg] = shade(22, 22, 25, 250);
 		colors[ImGuiCol_Border] = shade(52, 52, 58);
 		colors[ImGuiCol_FrameBg] = shade(34, 34, 38);
@@ -76,7 +76,6 @@ namespace
 		colors[ImGuiCol_TableBorderStrong] = shade(52, 52, 58);
 		colors[ImGuiCol_TableBorderLight] = shade(38, 38, 42);
 		colors[ImGuiCol_TableRowBgAlt] = shade(255, 255, 255, 8);
-		colors[ImGuiCol_TextSelectedBg] = shade(232, 176, 82, 90);
 		colors[ImGuiCol_NavCursor] = shade(232, 176, 82);
 	}
 }
@@ -435,9 +434,9 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_audio.PlayInterface(Sound::PAGE_TURN, 0.8f);
 	}
 
-	// The quarry's crusher keeps working, whatever you're doing.
+	// The car's engine cools after a drive.
 	if (m_workshop)
-		m_workshop->AdvanceQuarry((std::min)(deltaTime, 0.25f));
+		m_workshop->CoolCarEngine((std::min)(deltaTime, 0.25f));
 
 	// The sun keeps moving, even with the menus open.
 	// The dev menu can speed it up, or stop it. In a garage on a server it goes at the server's pace,
@@ -486,6 +485,13 @@ void EngineBuilderGame::PlayOffline()
 		m_workshop = std::move(workshop);
 	else
 	{
+		// One that couldn't be read (an older game's) is kept beside the new one rather than saved over.
+		if (SaveGame::Exists())
+		{
+			std::error_code copyError;
+			std::filesystem::copy_file(SaveGame::FILE_NAME, std::string(SaveGame::FILE_NAME) + ".old",
+				std::filesystem::copy_options::overwrite_existing, copyError);
+		}
 		m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 		SaveGame::StartNew(*m_workshop, m_world, m_player);
 		m_timeOfDay = 9.5f;

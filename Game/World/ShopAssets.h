@@ -32,6 +32,7 @@ namespace EngineLayout
 	constexpr float ROD_LENGTH = 0.14825f;
 	constexpr float PISTON_PIN_DEPTH = 0.03f;	// crown to pin centre
 	constexpr float GASKET_THICKNESS = 0.0015f;
+	constexpr float GASKET_LIP = 0.005f;			// how far the gasket stands out past the block deck all round
 
 	// Head, measured from its deck face.
 	constexpr float HEAD_DECK_Y = GASKET_THICKNESS + 0.001f;	// head deck above the block deck
@@ -61,6 +62,18 @@ namespace EngineLayout
 	// The rocker shafts' five bolts, through both shafts: one at each end and one between each pair of cylinders.
 	inline float RockerBoltX(int hole) { return glm::clamp(MainX(hole), -BLOCK_LENGTH * 0.5f + 0.035f, BLOCK_LENGTH * 0.5f - 0.035f); }
 	inline float ValveZ(bool exhaust) { return exhaust ? VALVE_Z : -VALVE_Z; }
+	// The spark plugs, as the 4A-C has them: the cam runs down the middle of the head, so each plug comes in from the side
+	// (PLUG_SIDE: +1 the exhaust side, -1 the intake), down a tube from just under the valve cover's rail, angled into the
+	// chamber beside the valves. In the head's own space (its deck at Y = 0): the firing tip, the line up the plug's
+	// axis, and how far along it its seat and terminal are.
+	constexpr float PLUG_SIDE = 1.f;
+	constexpr float PLUG_ALONG = 0.016f;		// along the crank from the bore's centre: in close, between the valves' heads
+	constexpr float PLUG_TILT = 0.873f;			// radians from upright (50 degrees), leaning out to the side
+	constexpr float PLUG_SEAT = 0.019f, PLUG_TERMINAL = 0.078f;
+	inline glm::vec3 PlugTip(int cylinder) { return { BoreX(cylinder) + PLUG_ALONG, 0.006f, PLUG_SIDE * 0.004f }; }
+	constexpr float PLUG_TUBE = 0.0125f;		// the tube's outer radius (its bore, 0.0095)
+	inline glm::vec3 PlugAxis() { return { 0.f, std::cos(PLUG_TILT), PLUG_SIDE * std::sin(PLUG_TILT) }; }
+	inline glm::quat PlugTurn() { return glm::angleAxis(PLUG_SIDE * PLUG_TILT, glm::vec3(1.f, 0.f, 0.f)); }
 	// Firing order 1-3-4-2 puts throws 1 and 4 up together, 2 and 3 down.
 	inline float ThrowSign(int cylinder) { return cylinder == 0 || cylinder == 3 ? 1.f : -1.f; }
 	inline float PinY(int cylinder) { return CRANK_Y + ThrowSign(cylinder) * CRANK_THROW; }
@@ -92,8 +105,22 @@ namespace EngineLayout
 	constexpr float PAN_RAIL_Y = CRANK_Y - SKIRT_DEPTH;				// the block's bottom face
 	constexpr float HEAD_TOP_Y = HEAD_DECK_Y + HEAD_RAIL_TOP;		// where the valve cover sits
 	constexpr float OIL_PAN_DEPTH = 0.095f;							// down to the pickup, under the skirts
+	constexpr float OIL_PAN_LIP = 0.022f;							// the pan's rail, out past its walls, for the bolts
 	constexpr float PORT_Y = 0.035f;								// intake and exhaust port centres
 	constexpr float PORT_FACE_Z = 0.1055f;							// the head's port faces, either side
+	// The manifolds' head flanges (in their own space, out along +Z for the intake, -Z for the exhaust): how thick, and
+	// the eight nuts on them, between the ports, alternately low and high, the first low (a high one at the front end would
+	// foul the thermostat housing on the intake side). X along the engine, Y up.
+	constexpr float MANIFOLD_FLANGE = 0.012f;
+	constexpr float MANIFOLD_NUT_Y = 0.019f;
+	inline glm::vec2 ManifoldNut(int nut)
+	{
+		float x = (static_cast<float>(nut / 2) - 1.5f) * BORE_SPACING + (nut % 2 == 0 ? -0.5f : 0.5f) * BORE_SPACING;
+		return { x, nut % 2 == 0 ? -MANIFOLD_NUT_Y : MANIFOLD_NUT_Y };
+	}
+	// The exhaust manifold's outlet, in its space (the downpipe's flange meets it here), and its three bolts round it.
+	constexpr glm::vec3 EXHAUST_OUTLET = { 0.06f, -0.12f, -0.09f };
+	constexpr float EXHAUST_BOLT_RING = 0.03f;
 	constexpr float TIMING_PLANE_X = FRONT_X - 0.023f;				// sprockets and belt
 	constexpr float TIMING_COVER_X = FRONT_X - 0.035f;
 	constexpr float TIMING_COVER_Y = -0.06f;						// the middle of the cover
@@ -101,9 +128,16 @@ namespace EngineLayout
 	// face up), where their bolt heads sit.
 	constexpr float VALVE_COVER_TOP = 0.055f;
 	constexpr float TIMING_COVER_FACE = 0.012f;
-	// Along the cam, between the first cylinder's lobes and the second journal: the fuel pump's eccentric,
+	constexpr float TIMING_COVER_HALF_WIDTH = 0.105f;				// its body, either side of the crank
+	// Along the cam, towards the back, between the last cylinder's lobes and the rear journal: the fuel pump's eccentric,
 	// and the pump on the side of the head beside it.
-	constexpr float FUEL_PUMP_X = -0.112f;
+	constexpr float FUEL_PUMP_X = 0.166f;
+	// How far below the cam's axis the pump sits. The axis is level with the head's top rail (where the valve cover meets
+	// it), so the pump, its gasket and its hole sit wholly on the head below that joint, its arm reaching up to the eccentric.
+	constexpr float FUEL_PUMP_DROP = 0.026f;
+	// The thermostat housing's two bolts, on opposite corners of its flange (in its own space, X and Z; the other one at
+	// minus both): clear of its round body and of the outlet's neck running off along +X.
+	constexpr glm::vec2 THERMOSTAT_BOLT = { -0.024f, -0.024f };
 	// The timing belt (as the 4A-C has it, seen from the front): round the cam pulley at the top and the
 	// crank pulley, half its size, below it; the spring-loaded idler pulley leans on the back of the slack
 	// side, on the left, nearer the crank.
@@ -113,13 +147,31 @@ namespace EngineLayout
 	constexpr float TIMING_IDLER_Z = -0.032f;
 	constexpr float TIMING_IDLER_RADIUS = 0.017f;
 	// The fan belt, a V-belt in one plane in front of the timing cover: round the crank pulley, up round
-	// the water pump (above the crank, a little to the left), across to the alternator (out to the right,
+	// the water pump (above the crank, out on the left), across to the alternator (out to the right,
 	// level with it) and back down. The alternator's pivot sets how tight it is.
 	constexpr float ACCESSORY_BELT_X = TIMING_COVER_X - 0.06f;
 	constexpr float ALTERNATOR_Y = 0.0f;
 	constexpr float ALTERNATOR_Z = 0.17f;
-	constexpr float WATER_PUMP_Y = -0.03f;
-	constexpr float WATER_PUMP_Z = -0.02f;
+	// In the alternator's own space (origin at its pulley, its body back along +X): the pivot, through the two lugs under
+	// it and the bracket's boss between them, and the adjusting lug on top, against the bracket's slotted strap.
+	constexpr float ALTERNATOR_PIVOT_X = 0.05f, ALTERNATOR_PIVOT_Y = -0.062f;
+	constexpr float ALTERNATOR_ADJUST_X = 0.078f, ALTERNATOR_ADJUST_Y = 0.064f;		// the adjusting lug's front face
+	// The bracket's origin, at the pivot (the bracket is built in the engine's turn, about it).
+	constexpr float ALTERNATOR_BRACKET_X = ACCESSORY_BELT_X + ALTERNATOR_PIVOT_X;
+	constexpr float ALTERNATOR_BRACKET_Y = ALTERNATOR_Y + ALTERNATOR_PIVOT_Y;
+	// Its three bolts into the side of the block (back from the front of the block, and up), heads out on its plate.
+	constexpr glm::vec2 ALTERNATOR_BRACKET_BOLTS[] = { { 0.038f, -0.045f }, { 0.06f, -0.058f }, { 0.05f, -0.097f } };
+	// The water pump sits out on the left, clear of the timing belt and its idler: its nose goes in through an ear on
+	// the side of the timing cover (sealed off from the belt) into a coolant boss cast on the block's front corner.
+	constexpr float WATER_PUMP_Y = -0.085f;
+	constexpr float WATER_PUMP_Z = -0.105f;
+	constexpr float WATER_PUMP_NOSE = 0.026f;						// the nose's radius
+	constexpr float WATER_PUMP_EAR = 0.142f;						// how far out the cover's ear (and the boss) reach
+	constexpr float WATER_PUMP_EAR_HALF = 0.037f;					// the ear's half-height, round the pump's middle
+	constexpr float WATER_PUMP_PAD = 0.0015f;						// the machined pad on the ear's face, round the hole
+	constexpr float WATER_PUMP_GASKET_X = TIMING_COVER_X - TIMING_COVER_FACE - WATER_PUMP_PAD;	// on the pad
+	constexpr float WATER_PUMP_X = WATER_PUMP_GASKET_X - 0.0015f;	// the back of the pump's flange, on its gasket
+	constexpr float WATER_PUMP_BOLT_RING = 0.029f;					// its four bolts, on the diagonals
 	// A retired part's (the serpentine belt tensioner): only its model uses them now.
 	constexpr float DRIVE_TENSIONER_Y = -0.06f;
 	constexpr float DRIVE_TENSIONER_Z = -0.07f;
@@ -234,25 +286,13 @@ namespace ShopModels
 	inline const std::string PAVING = "Paving";
 	inline const std::string ROAD = "Road";
 	inline const std::string ROAD_MARKINGS = "Road Markings";
-	// The desert: saguaros, boulders and scrub scattered over the sand, and the mountains round the horizon.
+	// The desert: saguaros and scrub scattered over the sand, and the mountains round the horizon.
 	inline const std::string CACTUS = "Cactus";
-	inline const std::string BOULDER = "Boulder";
 	inline const std::string SCRUB = "Scrub";
 	inline const std::string MOUNTAINS = "Mountains";
 	inline const std::string STREET_LIGHT = "Street Light";
 	inline const std::string LAMP_HEAD = "Lamp Head";
 	inline const std::string DUMPSTER = "Dumpster";
-	inline const std::string YARD_GROUND = "Salvage Yard Gravel";
-	inline const std::string YARD_FENCE = "Salvage Yard Fence";
-	inline const std::string YARD_JUNK = "Salvage Yard Junk";
-	inline const std::string YARD_GATE_LEAF = "Salvage Yard Gate Leaf";
-	inline const std::string QUARRY_PAD = "Quarry Pad";
-	inline const std::string QUARRY_SIGN = "Quarry Sign";
-	inline const std::string QUARRY_CRUSHER = "Quarry Crusher";
-	inline const std::string QUARRY_CONVEYOR = "Quarry Conveyor";
-	inline const std::string QUARRY_HOPPER = "Quarry Hopper";
-	inline const std::string QUARRY_GRAVEL = "Quarry Gravel";
-	inline const std::string QUARRY_SHED = "Quarry Shed";
 	inline const std::string OIL_DRUM = "Oil Drum";
 	inline const std::string WORKBENCH = "Workbench";
 	inline const std::string SHELF = "Parts Shelf";

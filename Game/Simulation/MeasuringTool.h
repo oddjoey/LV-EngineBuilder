@@ -45,7 +45,7 @@ enum class HandToolKind
 	TIRE_GAUGE,			// reads a tire's pressure, and its inflator pumps it up
 	ALIGNMENT_GAUGE,	// reads a front wheel's camber, caster and toe
 	SCREWDRIVER,		// the carburettor's idle speed and mixture screws, and the rockers' lash adjusters
-	PICKAXE		// breaks the desert's boulders for the quarry
+	VALVE_SPRING_COMPRESSOR	// a C-clamp over a valve in a loose head: squeezes its spring down for the retainer and keepers
 };
 
 struct MeasuringTool

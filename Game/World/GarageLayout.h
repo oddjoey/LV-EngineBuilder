@@ -120,38 +120,10 @@ namespace GarageLayout
 	inline constexpr Paved BAY_DRIVE = { { BAY_DOOR_MIN_X - 0.3f, BAY_HALF_DEPTH + WALL }, { BAY_DOOR_MAX_X + 0.3f, HALF_DEPTH + 6.f } };
 	inline constexpr Paved BAY_DRIVE_LINK = { { BAY_DOOR_MIN_X - 0.3f, HALF_DEPTH + 6.f }, { DRIVE_MIN_X, HALF_DEPTH + 9.f } };
 
-	// The salvage yard, right of the drive in front of the shack: a fenced gravel lot where the project car is
-	// bought where it stands, its parts strewn round it. A gravel track runs from the drive to the gate in its
-	// left-hand fence, wide enough for the engine hoist. Neither overlaps the paving.
-	constexpr float YARD_MIN_X = 7.f;
-	constexpr float YARD_MAX_X = 23.f;
-	constexpr float YARD_MIN_Z = 0.5f;
-	constexpr float YARD_MAX_Z = 18.f;
-	constexpr float YARD_GATE_MIN_Z = 6.f;		// the gap in the left fence
-	constexpr float YARD_GATE_MAX_Z = 11.f;
-	constexpr float YARD_FENCE_HEIGHT = 2.1f;
-	inline constexpr Paved YARD = { { YARD_MIN_X, YARD_MIN_Z }, { YARD_MAX_X, YARD_MAX_Z } };
-	inline constexpr Paved YARD_TRACK = { { DRIVE_MAX_X, YARD_GATE_MIN_Z }, { YARD_MIN_X, YARD_GATE_MAX_Z } };
-	// The shop's land: round the shack (and where the side bay goes), out to the salvage yard and down the drive
-	// toward the highway. Its equipment can be set out anywhere on it. Neighbouring plots on a server are 40 m apart.
+	// The shop's land: round the shack (and where the side bay goes), and down the drive toward the highway, a strip
+	// either side of it. Its equipment can be set out anywhere on it. Neighbouring plots on a server are 40 m apart.
 	inline constexpr glm::vec2 PLOT_MIN = { BAY_MIN_X - 4.f, -HALF_DEPTH - 8.f };
-	inline constexpr glm::vec2 PLOT_MAX = { YARD_MAX_X, 20.f };
-	// The desert quarry's pad, front left of the plot between the side bay's drive and the highway: the conveyor's foot
-	// at its back, the crusher the conveyor feeds, the crusher's hopper beside it, the hand's shed at the
-	// front, and a sign by the drive.
-	inline constexpr Paved QUARRY_PAD = { { -13.f, 13.5f }, { -3.f, 19.5f } };
-	inline constexpr glm::vec3 QUARRY_CONVEYOR_FOOT = { -10.6f, 0.f, 17.6f };
-	inline constexpr glm::vec3 QUARRY_CRUSHER = { -7.f, 0.f, 17.6f };
-	inline constexpr glm::vec3 QUARRY_HOPPER = { -4.5f, 0.f, 17.4f };
-	inline constexpr glm::vec3 QUARRY_SHED = { -11.6f, 0.f, 14.8f };
-	inline constexpr glm::vec3 QUARRY_SIGN = { -3.6f, 0.f, 13.9f };
-	// The yard's own junk, along the far fence and the back: stacks
-	// of old tires (x, how many, z), a heap of scrap panels, engine blocks on a pallet, a pile of pipe and some drums.
-	inline constexpr glm::vec3 YARD_TIRE_STACKS[] = { { 22.2f, 5.f, 17.2f }, { 21.5f, 4.f, 17.35f }, { 22.3f, 3.f, 16.5f } };
-	inline constexpr glm::vec3 YARD_SCRAP_HEAP = { 9.2f, 0.f, 16.9f };
-	inline constexpr glm::vec3 YARD_PALLET = { 19.6f, 0.f, 17.f };
-	inline constexpr glm::vec3 YARD_PIPE_PILE = { 16.8f, 0.f, 17.1f };
-	inline constexpr glm::vec3 YARD_DRUMS[] = { { 22.4f, 0.f, 7.6f }, { 22.4f, 0.f, 8.3f }, { 21.8f, 0.f, 7.95f } };
+	inline constexpr glm::vec2 PLOT_MAX = { HALF_WIDTH + 7.f, 20.f };
 
 	// Lights along the near shoulder of the highway, either side of where the drive comes out, arms out over it.
 	inline constexpr glm::vec3 STREET_LIGHTS[] = {

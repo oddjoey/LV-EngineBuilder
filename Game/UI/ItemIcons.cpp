@@ -267,10 +267,15 @@ namespace ItemIcons
 				drawList->AddLine(p(0.2f, 0.8f), p(0.45f, 0.55f), color, line * 3.f);
 				drawList->AddLine(p(0.45f, 0.55f), p(0.82f, 0.18f), color, line);
 				break;
-			case ToolShape::PICKAXE:
-				// A long handle and the curved head across its end: the point one way, the adze the other.
-				drawList->AddLine(p(0.22f, 0.88f), p(0.66f, 0.26f), color, line * 2.2f);
-				drawList->AddBezierQuadratic(p(0.32f, 0.3f), p(0.62f, 0.08f), p(0.94f, 0.36f), color, line * 3.f);
+			case ToolShape::VALVE_SPRING_COMPRESSOR:
+				// A C-frame: the screw down through its top arm onto a cup, a tommy bar across its head, and the foot under it.
+				drawList->AddLine(p(0.3f, 0.22f), p(0.8f, 0.22f), color, line * 1.8f);
+				drawList->AddLine(p(0.8f, 0.22f), p(0.8f, 0.86f), color, line * 1.8f);
+				drawList->AddLine(p(0.8f, 0.86f), p(0.3f, 0.86f), color, line * 1.8f);
+				drawList->AddLine(p(0.32f, 0.1f), p(0.32f, 0.5f), color, line * 1.2f);
+				drawList->AddLine(p(0.2f, 0.1f), p(0.44f, 0.1f), color, line);
+				drawList->AddRect(p(0.22f, 0.5f), p(0.42f, 0.6f), color, 0.f, 0, line);
+				drawList->AddRectFilled(p(0.24f, 0.78f), p(0.4f, 0.84f), color);
 				break;
 		}
 	}

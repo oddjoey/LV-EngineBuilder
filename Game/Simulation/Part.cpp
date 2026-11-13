@@ -86,6 +86,18 @@ void Part::MarkDamaged(const std::string& reason)
 	m_damageReason = reason;
 }
 
+void Part::MarkUsed()
+{
+	if (m_condition != PartCondition::NEW)
+		return;
+	m_condition = PartCondition::USED;
+	m_value *= 0.5;
+	// "OEM Water Pump" becomes "Used Water Pump".
+	std::string quality = std::string(PartQualityName(m_quality)) + " ";
+	if (m_name.starts_with(quality))
+		m_name = "Used " + m_name.substr(quality.size());
+}
+
 const std::string& Part::GetDamageReason() const
 {
 	return m_damageReason;

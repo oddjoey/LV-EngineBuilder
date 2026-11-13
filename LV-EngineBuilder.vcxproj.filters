@@ -131,15 +131,6 @@
     <ClCompile Include="Game\Simulation\WorkshopCar.cpp">
       <Filter>Game\Simulation</Filter>
     </ClCompile>
-    <ClCompile Include="Game\Simulation\WorkshopQuarry.cpp">
-      <Filter>Game\Simulation</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\World\ShopWorldQuarry.cpp">
-      <Filter>Game\World</Filter>
-    </ClCompile>
-    <ClCompile Include="Game\UI\WorkshopQuarryUI.cpp">
-      <Filter>Game\UI</Filter>
-    </ClCompile>
     <ClCompile Include="Game\Simulation\EngineAssembly.cpp">
       <Filter>Game\Simulation</Filter>
     </ClCompile>

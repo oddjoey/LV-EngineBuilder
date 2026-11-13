@@ -84,7 +84,7 @@ namespace
 		{ PartType::OIL_PAN,				"Oil Pan",					S::LUBRICATION,	90.0,	1,				true,	true,	false,	true,	4, 3,
 			"Stamped steel sump. Over-tightened bolts dimple the rail and it never seals again: check it with a straightedge." },
 		{ PartType::OIL_DRAIN_PLUG,			"Oil Drain Plug",			S::LUBRICATION,	6.0,	1,				true,	true,	false,	false,	1, 1,
-			"Magnetic drain plug with its crush washer." },
+			"Magnetic drain plug, M12 x 1.25 with a 14 mm head, done up on a new crush washer.", nullptr, true, { "M12x1.25", 14, false } },
 		{ PartType::OIL_FILTER,				"Oil Filter",				S::LUBRICATION,	9.0,	1,				false,	false,	true,	false,	1, 1,
 			"Spin-on full-flow filter. Always new on a fresh engine." },
 		{ PartType::VALVE_STEM_SEAL,		"Valve Stem Seal",			S::VALVETRAIN,	3.0,	PER_VALVE,		false,	false,	true,	false,	1, 1,
@@ -116,7 +116,8 @@ namespace
 		{ PartType::VALVE_COVER,			"Valve Cover",				S::VALVETRAIN,	110.0,	1,				true,	true,	false,	true,	5, 2,
 			"Keeps the oil in over the cam. A bent sealing rail leaks." },
 		{ PartType::SPARK_PLUG,				"Spark Plug",				S::IGNITION,	8.0,	PER_CYLINDER,	false,	true,	false,	false,	1, 1,
-			"Gap 0.8 to 0.9 mm. Electrodes wear the gap open until the coil can't jump it under load." },
+			"M14 x 1.25 with a 16 mm hex, done up with a spark plug socket. Gap 0.8 to 0.9 mm. Electrodes wear the gap open until the coil can't jump it under load.",
+			nullptr, true, { "M14x1.25", 16, false } },
 		{ PartType::PLUG_LEAD,				"Spark Plug Lead",			S::IGNITION,	12.0,	PER_CYLINDER,	true,	true,	false,	false,	1, 2,
 			"Carries the spark from the distributor cap to its plug, pushed down through the valve cover onto it." },
 		{ PartType::INTAKE_MANIFOLD_GASKET,	"Intake Manifold Gasket",	S::FUEL_AND_AIR, 18.0,	1,				false,	false,	true,	false,	4, 1,
@@ -155,22 +156,22 @@ namespace
 		// (and their torques) are in HOLES below; the per-engine count is worked out from them.
 		//  type							name						system			price	count	used	core	once	big		grid
 		{ PartType::BOLT_M6,				"M6 Bolt",					S::FASTENERS,	0.5,	0,		false,	true,	false,	false,	1, 1,
-			"M6 x 1.0 flange bolt, 10 mm head. Covers, the pan, the pickup, the carburettor and fuel pump at 8 to 10 Nm, the cam caps at 13 and the oil pump at 21: overdoing it bends a cover or strips the thread.",
+			"M6 x 1.0 flange bolt, 10 mm head. Covers, the pan, the pickup, the carburettor, the fuel pump, the cam caps and the oil pump: overdoing it bends a cover or strips the thread.",
 			nullptr, true, { "M6x1.0", 10 } },
 		{ PartType::BOLT_M8,				"M8 Bolt",					S::FASTENERS,	0.8,	0,		false,	true,	false,	false,	1, 1,
-			"M8 x 1.25 flange bolt, 12 mm head. Timing cover, water pump and thermostat housing at around 20 Nm; the rocker shafts at 25.",
+			"M8 x 1.25 flange bolt, 12 mm head. Timing cover, water pump, thermostat housing and the rocker shafts.",
 			nullptr, true, { "M8x1.25", 12 } },
 		{ PartType::NUT_M8,					"M8 Nut",					S::FASTENERS,	0.8,	0,		false,	true,	false,	false,	1, 1,
-			"M8 x 1.25 flange nut, 13 mm. Two clamp each rod cap at 40 Nm, where a loose one lets the rod go through the side of the block; it also goes on the manifold studs, 25 Nm on the intake and the exhaust.",
+			"M8 x 1.25 flange nut, 13 mm. Two clamp each rod cap, where a loose one lets the rod go through the side of the block; it also goes on the intake and exhaust manifold studs.",
 			nullptr, true, { "M8x1.25", 13, true } },
 		{ PartType::BOLT_M10,				"M10 Bolt",					S::FASTENERS,	4.0,	0,		false,	true,	false,	false,	1, 1,
-			"M10 x 1.25 bolt, 14 mm head. Two hold each main cap at 59 Nm: too loose and the cap walks and the bearing spins. Six hold the flywheel at 79 Nm, and they hold the belt idlers (42), the downpipe (40), the alternator (39) and the distributor gear (29).",
+			"M10 x 1.25 bolt, 14 mm head. Two hold each main cap: too loose and the cap walks and the bearing spins. Six hold the flywheel, and they hold the belt idlers, the downpipe, the alternator and the distributor gear.",
 			nullptr, true, { "M10x1.25", 14 } },
 		{ PartType::BOLT_M12,				"M12 Bolt",					S::FASTENERS,	5.0,	0,		false,	true,	false,	false,	1, 1,
-			"M12 x 1.25 bolt, 17 mm head. Ten clamp the head down at 59 Nm, done up evenly; one holds the cam sprocket on at 46 Nm.",
+			"M12 x 1.25 bolt, 17 mm head. Ten clamp the head down, done up evenly; one holds the cam sprocket on.",
 			nullptr, true, { "M12x1.25", 17 } },
 		{ PartType::BOLT_M14,				"M14 Bolt",					S::FASTENERS,	12.0,	0,		false,	true,	false,	false,	1, 1,
-			"M14 x 1.5 bolt, 22 mm head. Holds the crank pulley on at 118 Nm: it needs a big torque wrench, and a breaker bar to get it off.",
+			"M14 x 1.5 bolt, 22 mm head. Holds the crank pulley on, very tight: it needs a big torque wrench, and a breaker bar to get it off.",
 			nullptr, true, { "M14x1.5", 22 } },
 
 		// Added after the fasteners so saved part types keep their numbers.
@@ -347,14 +348,26 @@ namespace
 			"185/70 R13 radial. Check the tread depth and the date code: old rubber hardens and stops gripping." },
 
 		{ PartType::LUG_NUT,				"Lug Nut",					S::FASTENERS,		1.0,	0,		false,	false,	false,	false,	1, 1,
-			"M12 x 1.5 conical-seat wheel nut, 21 mm. Four on each wheel at 103 Nm, done up across in a star.",
+			"M12 x 1.5 conical-seat wheel nut, 21 mm. Four on each wheel, done up across in a star.",
 			nullptr, true, { "M12x1.5", 21, true } },
 		{ PartType::NUT_M10,				"M10 Nut",					S::FASTENERS,		1.0,	0,		false,	false,	false,	false,	1, 1,
 			"M10 x 1.25 flange nut, 14 mm. The engine mounts, the driveshaft flange, the master cylinder and the exhaust's joints.",
 			nullptr, true, { "M10x1.25", 14, true } },
 		{ PartType::NUT_M12,				"M12 Nut",					S::FASTENERS,		1.5,	0,		false,	false,	false,	false,	1, 1,
-			"M12 x 1.25 castle nut, 17 mm. The tie rod ends' taper studs, at 59 Nm: line its slot up with the cotter pin hole by going tighter, never looser.",
+			"M12 x 1.25 castle nut, 17 mm. The tie rod ends' taper studs: line its slot up with the cotter pin hole by going tighter, never looser.",
 			nullptr, true, { "M12x1.25", 17, true } },
+
+		{ PartType::DRAIN_PLUG_WASHER,		"Drain Plug Washer",		S::LUBRICATION,		1.0,	1,		false,	false,	true,	false,	1, 1,
+			"Copper crush washer under the drain plug's head. It crushes flat to seal as the plug's torqued: single use." },
+		{ PartType::FUEL_PUMP_GASKET,		"Fuel Pump Gasket",			S::FUEL_AND_AIR,	2.0,	1,		false,	false,	true,	false,	1, 1,
+			"Fibre gasket between the mechanical fuel pump's flange and the head. Single use." },
+		{ PartType::THERMOSTAT_GASKET,		"Thermostat Gasket",		S::COOLING,			3.0,	1,		false,	false,	true,	false,	1, 1,
+			"Rubber ring the thermostat's flange sits on, in the head's water outlet. Single use." },
+		{ PartType::THERMOSTAT_HOUSING_GASKET,	"Thermostat Housing Gasket",	S::COOLING,		2.0,	1,		false,	false,	true,	false,	1, 1,
+			"Fibre gasket between the thermostat's flange and its housing. Single use." },
+		{ PartType::ALTERNATOR_BRACKET,		"Alternator Bracket",		S::IGNITION,		35.0,	1,		true,	true,	false,	false,	2, 1,
+			"Cast-iron bracket bolted to the side of the block at the front: the alternator swings on its pivot underneath and "
+			"is locked by the slotted strap on top, which sets the fan belt's tension." },
 	};
 	static_assert(std::size(INFO) == static_cast<size_t>(PartType::COUNT), "Every part type needs a catalog row.");
 
@@ -366,7 +379,7 @@ namespace
 		{ "Rod Nut",					PartType::ROD_CAP,			2,	PartType::NUT_M8,		40.0 },
 		{ "Oil Pan Bolt",				PartType::OIL_PAN,			16,	PartType::BOLT_M6,		10.0 },
 		{ "Valve Cover Bolt",			PartType::VALVE_COVER,		10,	PartType::BOLT_M6,		8.0 },
-		{ "Timing Cover Bolt",			PartType::TIMING_COVER,		10,	PartType::BOLT_M8,		22.0 },
+		{ "Timing Cover Bolt",			PartType::TIMING_COVER,		8,	PartType::BOLT_M8,		22.0 },
 		{ "Intake Manifold Nut",		PartType::INTAKE_MANIFOLD,	8,	PartType::NUT_M8,		25.0 },
 		{ "Exhaust Manifold Nut",		PartType::EXHAUST_MANIFOLD,	8,	PartType::NUT_M8,		25.0 },
 		{ "Water Pump Bolt",			PartType::WATER_PUMP,		4,	PartType::BOLT_M8,		22.0 },
@@ -385,6 +398,12 @@ namespace
 		{ "Exhaust Pipe Bolt",			PartType::EXHAUST_PIPE,		3,	PartType::BOLT_M10,		40.0 },
 		{ "Alternator Bolt",			PartType::ALTERNATOR,		2,	PartType::BOLT_M10,		39.0 },
 		{ "Belt Tensioner Bolt",		PartType::DRIVE_BELT_TENSIONER, 1, PartType::BOLT_M10,	42.0 },
+		// The drain plug is its own size: it goes in the bottom of the pan on its crush washer.
+		{ "Oil Drain Plug",			PartType::OIL_PAN,			1,	PartType::OIL_DRAIN_PLUG,	25.0 },
+		// The spark plugs, screwed into the head down their wells.
+		{ "Spark Plug",				PartType::CYLINDER_HEAD,	4,	PartType::SPARK_PLUG,		18.0 },
+		// The alternator's bracket, into the side of the block.
+		{ "Alternator Bracket Bolt",	PartType::ALTERNATOR_BRACKET,	3,	PartType::BOLT_M10,	40.0 },
 	};
 }
 
@@ -470,6 +489,10 @@ const char* PartCatalog::Purpose(PartType type)
 		case PartType::OIL_PAN_GASKET:			return "Seals the oil pan to the bottom of the block.";
 		case PartType::OIL_PAN:					return "The sump under the engine: it holds the oil, and the oil drains back into it from everywhere it's pumped.";
 		case PartType::OIL_DRAIN_PLUG:			return "The plug in the bottom of the pan the old oil is let out through.";
+		case PartType::DRAIN_PLUG_WASHER:		return "A soft copper washer under the drain plug's head: done up, it crushes into the pan and the plug and seals them. Once crushed, it won't seal again.";
+		case PartType::FUEL_PUMP_GASKET:		return "Seals the fuel pump's flange to the head, where its arm goes in onto the cam's eccentric: it keeps the oil in.";
+		case PartType::THERMOSTAT_GASKET:		return "Seals the thermostat into the head's water outlet, so coolant can only get past through its valve.";
+		case PartType::THERMOSTAT_HOUSING_GASKET:	return "Seals the housing down on the thermostat's flange, so the outlet doesn't weep coolant.";
 		case PartType::OIL_FILTER:				return "Strains the dirt and metal out of the oil on its way from the pump to the bearings.";
 		case PartType::VALVE_STEM_SEAL:			return "A small seal over each valve guide that lets just enough oil down the stem to lubricate it, and keeps the rest from being sucked into the cylinder and burnt.";
 		case PartType::VALVE_RETAINER:			return "The cap on top of a valve spring, locked to the valve stem by its keepers: it holds the spring compressed on the valve.";
@@ -512,6 +535,7 @@ const char* PartCatalog::Purpose(PartType type)
 		case PartType::DISTRIBUTOR:				return "Driven off the camshaft, it sends the spark to each cylinder's plug lead in turn, at the right moment in its stroke.";
 		case PartType::FLYWHEEL:				return "The heavy disc on the back of the crank: it smooths out the power strokes, carries the starter ring, and is what the clutch grips.";
 		case PartType::ALTERNATOR:				return "Driven by the V-belt, it makes the electricity that runs the car and charges the battery.";
+		case PartType::ALTERNATOR_BRACKET:		return "Holds the alternator to the block: its pivot, and the strap that locks it swung out to tension the belt.";
 		case PartType::DRIVE_BELT:				return "The V-belt from the crank pulley that turns the water pump and the alternator.";
 		case PartType::DRIVE_BELT_TENSIONER:	return "A spring-loaded pulley that keeps the V-belt tight so it doesn't slip.";
 		case PartType::PISTON_PIN:				return "The hardened pin the piston pivots on in its rod's small end, pressed through both.";

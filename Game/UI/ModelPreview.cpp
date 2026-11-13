@@ -45,11 +45,14 @@ namespace ModelPreview
 			std::vector<Span> spans = {};
 			double renderedAt = -1.0;
 			ImVec4 renderedTint = {};
+			bool still = false;			// drawn at the still angle, not turning
 			double usedAt = 0.0;
 		};
 
 		// Turning it 30 times a second looks the same as every frame, at a fraction of the cost.
 		constexpr double TURN_INTERVAL = 1.0 / 30.0;
+		// Held still, a model is shown as it is this far into its turn: three-quarters on, its front and a side.
+		constexpr double STILL_TIME = 1.3;
 		// Samples per pixel along each axis: 2 x 2 smooths the edges.
 		constexpr int SUPERSAMPLE = 2;
 		// Shapes and pictures not drawn for this long are let go.
@@ -229,7 +232,7 @@ namespace ModelPreview
 		DrawAt(drawList, min, max, modelIndex, tint);
 	}
 
-	void DrawAt(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, uint32_t modelIndex, ImVec4 tint)
+	void DrawAt(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, uint32_t modelIndex, ImVec4 tint, bool turning)
 	{
 		auto model = ModelManager::Get()->GetModel(modelIndex);
 		if (!model || model->GetVertices().empty() || model->GetIndices().size() < 3)
@@ -243,11 +246,23 @@ namespace ModelPreview
 		auto& picture = pictures[{ modelIndex, pixelsWide, pixelsHigh }];
 		picture.usedAt = time;
 		bool retinted = picture.renderedTint.x != tint.x || picture.renderedTint.y != tint.y || picture.renderedTint.z != tint.z;
-		if (retinted || time - picture.renderedAt >= TURN_INTERVAL || time < picture.renderedAt)
+		if (!turning)
+		{
+			// Still: drawn once at its three-quarter angle, and again only if it's been turning or tinted since.
+			if (retinted || !picture.still || picture.renderedAt < 0.0)
+			{
+				Render(shape, picture, pixelsWide, pixelsHigh, tint, STILL_TIME);
+				picture.renderedAt = time;
+				picture.renderedTint = tint;
+				picture.still = true;
+			}
+		}
+		else if (retinted || picture.still || time - picture.renderedAt >= TURN_INTERVAL || time < picture.renderedAt)
 		{
 			Render(shape, picture, pixelsWide, pixelsHigh, tint, time);
 			picture.renderedAt = time;
 			picture.renderedTint = tint;
+			picture.still = false;
 		}
 
 		Blit(drawList, min, max, picture);

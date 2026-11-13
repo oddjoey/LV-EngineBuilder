@@ -14,7 +14,10 @@ namespace ModelPreview
 	void Draw(uint32_t modelIndex, float width, float height, ImVec4 tint = { 1.f, 1.f, 1.f, 1.f });
 	// Draws the model alone (no background) into min - max of any draw list, for pages that lay
 	// themselves out. Several can be on screen at once: each keeps its own picture.
-	void DrawAt(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, uint32_t modelIndex, ImVec4 tint = { 1.f, 1.f, 1.f, 1.f });
+	// turning false shows it still, at a three-quarter angle: drawn once and kept, which costs next to nothing (a catalogue
+	// full of cards, each turning only while it's pointed at).
+	void DrawAt(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, uint32_t modelIndex, ImVec4 tint = { 1.f, 1.f, 1.f, 1.f },
+		bool turning = true);
 
 	// Several models together, each placed and tinted, turning as one (a whole posed figure). Takes up a
 	// width x height spot in the current window like Draw.

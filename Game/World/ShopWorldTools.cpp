@@ -726,8 +726,11 @@ void ShopWorld::MarkEmptyHoles(const Workshop& workshop, const FirstPersonContro
 					continue;
 				// Only holes facing this way: one pointing away is on the far side of the part (or
 				// under it), out of sight.
+				// The downpipe's go up into the manifold from underneath its flange: they're reached from below, so they're
+				// marked looking down at them too.
 				glm::vec3 outward = StandToWorld(engine, pose.offset + pose.rotation * glm::vec3(0.f, 0.05f, 0.f)) - head;
-				if (glm::dot(outward, toHole) > 0.f)
+				bool fromBelow = slot == AssemblySlot::EXHAUST_PIPE_BOLT && outward.y < -0.7f * glm::length(outward);
+				if (glm::dot(outward, toHole) > 0.f && !fromBelow)
 					continue;
 				const auto& bounds = PartBounds(holes->size);
 				glm::vec3 position = StandToWorld(engine, pose.offset + pose.rotation * ((bounds.first + bounds.second) * 0.5f * pose.scale));
@@ -810,7 +813,6 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 	if (holes)
 	{
 		lines.push_back({ car ? car->PositionName(hole->carSlot, hole->index) : assembly->PositionName(hole->slot, hole->index), text });
-		lines.push_back({ std::format("Spec: {:.0f} Nm", holes->torqueNm), text });
 		if (part)
 		{
 			auto tightness = part->GetTightness();
@@ -819,9 +821,6 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 				: PartWayDoneUp(*part) ? std::pair{ std::format("{:.0f}% done up", m_fastenerTurns.at(part->GetId()) * 100.f), amber }
 				: std::pair{ std::string("Finger tight"), amber });
 		}
-		// The tools for the job.
-		lines.push_back({ std::format("Snug or loosen: {} mm socket on a ratchet or breaker bar, or the {} mm wrench", spec.headMm, spec.headMm), dim });
-		lines.push_back({ std::format("Torque: {} mm socket on a torque wrench", spec.headMm), dim });
 	}
 	else
 	{
@@ -829,11 +828,11 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 		std::vector<std::string> uses;
 		for (const auto& candidate : PartCatalog::Holes())
 			if (candidate.size == type)
-				uses.push_back(std::format("  {} ({:.0f} Nm)", candidate.name, candidate.torqueNm));
+				uses.push_back(std::format("  {}", candidate.name));
 		// And on the car.
 		for (const auto& candidate : CarAssembly::Holes())
 			if (candidate.size == type)
-				uses.push_back(std::format("  {}, on the car ({:.0f} Nm)", candidate.name, candidate.torqueNm));
+				uses.push_back(std::format("  {}, on the car", candidate.name));
 		lines.push_back({ uses.empty() ? "Not used on this engine or the car" : "Goes in:", text });
 		for (const auto& use : uses)
 			lines.push_back({ use, dim });
@@ -946,7 +945,7 @@ bool ShopWorld::StationFits(const Station& station, const glm::vec3& position, f
 	auto model = ModelOf(station.object);
 	ShopBox footprint = TransformBox({ model->GetBoundsMin(), model->GetBoundsMax() }, position, Yaw(yaw));
 
-	// The hoist can also be rolled out of the roll-up door onto the drive and along the track into the salvage yard, to the project car.
+	// The hoist can also be rolled out of the roll-up door and down the drive, to the car.
 	// Anything that stands on the floor can also go outside, anywhere on the shop's land (the tool board, hung on a
 	// wall, can't).
 	bool floorStanding = station.homePosition.y < 0.05f && station.type != StationType::DOOR && station.type != StationType::CAR;
@@ -1114,8 +1113,14 @@ void ShopWorld::DrawDebugBounds(const FirstPersonController& player) const
 
 	for (const auto& wall : SolidWalls())
 		box(wall, DEBUG_WALL_COLOR);
+	// As high as each one stands; one with no top (a wall, a tree) drawn a body's height; one turned off (scenery cleared off a neighbour's plot) not at all.
 	for (const auto& obstacle : m_obstacles)
-		box({ { obstacle.min.x, 0.f, obstacle.min.y }, { obstacle.max.x, 1.8f, obstacle.max.y } }, DEBUG_OBSTACLE_COLOR);
+	{
+		float bottom = obstacle.bottom < -1e5f ? 0.f : obstacle.bottom;
+		float top = obstacle.top > 1e5f ? bottom + 1.8f : obstacle.top;
+		if (top > bottom)
+			box({ { obstacle.min.x, bottom, obstacle.min.y }, { obstacle.max.x, top, obstacle.max.y } }, DEBUG_OBSTACLE_COLOR);
+	}
 	for (const auto& surface : m_surfaces)
 		box(surface, DEBUG_SURFACE_COLOR);
 	for (const auto& station : m_stations)
@@ -1421,18 +1426,9 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		ShadowText(drawList, { center.x, 40.f }, IM_COL32(255, 120, 90, 255), std::format("{:.0f} rpm", m_engineRpm), true);
 
 	ShadowText(drawList, { 16.f, 12.f }, IM_COL32(140, 230, 140, 255), std::format("${:.0f}", workshop.GetMoney()), false);
-	// Boxes by the door, and any in the salvage yard (the project car's nuts and bolts), counted apart.
-	size_t inYard = 0;
-	for (const auto& [id, package] : m_packages)
-	{
-		glm::vec3 at = package.object->GetPosition();
-		inYard += at.x >= GarageLayout::YARD_MIN_X - 0.5f && at.x <= GarageLayout::YARD_MAX_X && at.z >= GarageLayout::YARD_MIN_Z
-			&& at.z <= GarageLayout::YARD_MAX_Z;
-	}
-	size_t atDoor = m_packages.size() - inYard;
+	// Boxes waiting by the door.
+	size_t atDoor = m_packages.size();
 	std::string waiting = atDoor > 0 ? std::format("{} deliver{} waiting by the door", atDoor, atDoor == 1 ? "y" : "ies") : "";
-	if (inYard > 0)
-		waiting += std::format("{}{} box{} in the salvage yard", waiting.empty() ? "" : ", ", inYard, inYard == 1 ? "" : "es");
 	if (!waiting.empty())
 		ShadowText(drawList, { 16.f, 32.f }, IM_COL32(230, 190, 120, 255), waiting, false);
 
@@ -1454,9 +1450,9 @@ std::string ShopWorld::SpannerLabel(size_t toolIndex) const
 	}
 	switch (tool.handKind)
 	{
+		case HandToolKind::TORQUE_WRENCH:	return std::format("{}   Set to {:.0f} Nm   [Wheel] Set it ([Shift] by 10)", socket, TorqueSetting(toolIndex));
 		case HandToolKind::RATCHET:
 		case HandToolKind::BREAKER_BAR:
-		case HandToolKind::TORQUE_WRENCH:
 		case HandToolKind::IMPACT:			return socket + pack;
 		case HandToolKind::COMBINATION_WRENCH:	return std::format("{} mm", tool.sizes.front());
 		case HandToolKind::BATTERY:			return BatteryLabel(toolIndex) + " charged";
@@ -1465,8 +1461,16 @@ std::string ShopWorld::SpannerLabel(size_t toolIndex) const
 		case HandToolKind::THINNER:			return "[LMB] Wipe off paint";
 		case HandToolKind::PIN_PRESS:		return "[LMB] Press a pin in   [RMB] Press one out";
 		case HandToolKind::RING_COMPRESSOR:	return "[LMB] Squeeze a piston's ring and push it home";
+		case HandToolKind::VALVE_SPRING_COMPRESSOR:	return "[E]/[LMB] on a valve in a loose head: squeeze its spring down";
 		default:							return "";
 	}
+}
+
+float ShopWorld::TorqueSetting(size_t toolIndex) const
+{
+	auto it = m_torqueSettings.find(toolIndex);
+	float most = static_cast<float>(ToolCatalog::Of(toolIndex).maxTorque);
+	return std::clamp(it == m_torqueSettings.end() ? TORQUE_SETTING_MIN : it->second, TORQUE_SETTING_MIN, (std::max)(most, TORQUE_SETTING_MIN));
 }
 
 std::optional<ShopWorld::SocketTarget> ShopWorld::FindSocketTarget(const FirstPersonController& player, int heldSize)
@@ -1601,6 +1605,16 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 	int size = wrench ? tool.sizes.front() : m_toolSizes.contains(toolIndex) ? m_toolSizes[toolIndex] : 0;
 
 	PROFILE_SCOPE("tools: spanner");
+	// A torque wrench in hand: the wheel sets it (rather than stepping through the hotbar; see Update), a newton
+	// metre a notch, or ten with Shift held.
+	bool torqueWrench = tool.handKind == HandToolKind::TORQUE_WRENCH;
+	if (float scroll = input.GetScrollDelta(); torqueWrench && std::abs(scroll) >= 0.5f)
+	{
+		float step = Controls::Held(input, Control::RUN) ? 10.f : 1.f;
+		float set = std::round(TorqueSetting(toolIndex)) + (scroll > 0.f ? step : -step);
+		m_torqueSettings[toolIndex] = std::clamp(set, TORQUE_SETTING_MIN, static_cast<float>(tool.maxTorque));
+	}
+
 	// A ratchet, breaker bar or torque wrench takes the socket you look at in a socket set.
 	if (drive)
 		if (auto socket = FindSocketTarget(player, size))
@@ -1658,8 +1672,8 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 			: workshop.LoosenFastener(target->slot, target->index, toolIndex, size);
 	};
 	auto tighten = [&]() {
-		return onCar ? workshop.TightenCarFastener(target->carSlot, target->index, toolIndex, size)
-			: workshop.TightenFastener(target->slot, target->index, toolIndex, size);
+		return onCar ? workshop.TightenCarFastener(target->carSlot, target->index, toolIndex, size, TorqueSetting(toolIndex))
+			: workshop.TightenFastener(target->slot, target->index, toolIndex, size, TorqueSetting(toolIndex));
 	};
 
 	// Held to turn it: LMB does it up, RMB undoes it. Let go part way and it stays part way
@@ -1671,11 +1685,13 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 
 	// How far it's done up, 0 finger tight to 1 done up. Snugged by feel, a torque wrench still has the last
 	// of it to go.
-	bool torqueWrench = tool.handKind == HandToolKind::TORQUE_WRENCH;
 	constexpr float SNUG_SHARE = 0.7f;
 	auto turned = m_fastenerTurns.find(part->GetId());
+	float setting = TorqueSetting(toolIndex);
+	// Torqued already, a torque wrench set higher than it was done up to takes it on further.
+	bool tighterSetting = torqueWrench && tightness == FastenerTightness::TORQUED && setting > part->GetTorque() * 1.05;
 	float doneUp = turned != m_fastenerTurns.end() ? turned->second
-		: tightness == FastenerTightness::LOOSE ? 0.f : tightness == FastenerTightness::SNUG && torqueWrench ? SNUG_SHARE : 1.f;
+		: tightness == FastenerTightness::LOOSE ? 0.f : (tightness == FastenerTightness::SNUG || tighterSetting) && torqueWrench ? SNUG_SHARE : 1.f;
 	bool canTighten = torqueWrench ? tightness != FastenerTightness::TORQUED || doneUp < 1.f : tightness == FastenerTightness::LOOSE;
 	bool canLoosen = tightness != FastenerTightness::LOOSE || doneUp > 0.f;
 
@@ -1695,11 +1711,10 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 
 	std::string state = doneUp > 0.f && doneUp < 1.f && tightness == FastenerTightness::LOOSE ? std::format("{:.0f}% done up", doneUp * 100.f)
 		: tightness == FastenerTightness::TORQUED ? "torqued" : tightness == FastenerTightness::SNUG ? "snugged up by feel, not torqued" : "finger tight";
-	std::string spec = std::format("{:.0f} Nm", holes->torqueNm);
 	std::vector<std::string> actions;
 	if (canTighten && !tightenProblem)
-		actions.push_back(torqueWrench ? std::format("[LMB] Hold to torque to {}", spec)
-			: std::format("[LMB] Hold to snug up (spec {}: a torque wrench does it properly)", spec));
+		actions.push_back(torqueWrench ? std::format("[LMB] Hold to torque to {:.0f} Nm", setting)
+			: std::string("[LMB] Hold to snug up (a torque wrench does it properly)"));
 	if (canLoosen && !loosenProblem)
 		actions.push_back("[RMB] Hold to loosen");
 	m_prompt = std::format("{} ({})", position, state);
@@ -1720,7 +1735,7 @@ bool ShopWorld::UpdateSpanner(Workshop& workshop, const FirstPersonController& p
 	bool pressed = Controls::Pressed(input, direction > 0 ? Control::PRIMARY : Control::SET_DOWN);
 	if (direction != 0 && pressed)
 	{
-		std::optional<std::string> why = direction > 0 ? (!canTighten ? std::optional<std::string>(torqueWrench ? "It's torqued already." : "It's done up already: a torque wrench takes it to spec.") : tightenProblem)
+		std::optional<std::string> why = direction > 0 ? (!canTighten ? std::optional<std::string>(torqueWrench ? "It clicks straight away: it's already done up as tight as the wrench is set." : "It's done up already: a torque wrench takes it to spec.") : tightenProblem)
 			: (!canLoosen ? std::optional<std::string>("It's finger tight already: [E] takes it off.") : loosenProblem);
 		if (why)
 			Toast(*why);

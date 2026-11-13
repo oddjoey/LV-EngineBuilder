@@ -52,8 +52,7 @@ void WorkshopUI::DrawCarTab(Workshop& workshop)
 {
 	if (!workshop.OwnsCar())
 	{
-		ImGui::TextWrapped("There's no project car in the salvage yard. Buy one at the parts computer, under Project Car.");
-		DrawCarRoadTest(workshop);	// the last sale, if there's been one
+		ImGui::TextWrapped("There's no car.");
 		return;
 	}
 	if (ImGui::BeginTabBar("CarPages"))
@@ -166,7 +165,7 @@ void WorkshopUI::DrawCarBuild(Workshop& workshop)
 			ImGui::PushID(h * 1000 + index);
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
-			ImGui::TextDisabled("   %s x%d, %.0f Nm", holes->name, count, holes->torqueNm);
+			ImGui::TextDisabled("   %s x%d", holes->name, count);
 			ImGui::TableNextColumn();
 			ImGui::TextColored(in < count ? DIM : torqued == count ? GOOD : WARN, "%d in: %d finger tight, %d snug, %d torqued", in, loose, snug, torqued);
 			ImGui::TableNextColumn();
@@ -180,18 +179,7 @@ void WorkshopUI::DrawCarBuild(Workshop& workshop)
 						next++;
 			}
 			ImGui::EndDisabled();
-			ImGui::SameLine();
-			auto tool = workshop.BestTurningTool(holes->size, holes->torqueNm, true);
-			ImGui::BeginDisabled(in == 0 || !tool);
-			if (ImGui::SmallButton("Do up"))
-				for (int i = first; i < first + count; i++)
-					if (car.Get(holeSlot, i))
-						workshop.TightenCarFastener(holeSlot, i, tool->first, tool->second);
-			ImGui::EndDisabled();
-			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-				ImGui::SetTooltip("%s", tool ? std::format("With the {} ({} mm).", ToolCatalog::Of(tool->first).name, tool->second).c_str()
-					: std::format("The shop has nothing to turn a {} mm {}.", PartCatalog::Get(holes->size).fastener.headMm,
-						PartCatalog::Get(holes->size).fastener.nut ? "nut" : "bolt").c_str());
+			// Doing them up is done by hand, with the tool on each one (a torque wrench at what you've set it to).
 			ImGui::SameLine();
 			auto undo = workshop.BestTurningTool(holes->size, holes->torqueNm, false);
 			ImGui::BeginDisabled(snug + torqued == 0 || !undo);
@@ -868,24 +856,11 @@ void WorkshopUI::DrawCarRoadTest(Workshop& workshop)
 			"it as it is. Nothing about how it goes is known till it's been driven.");
 		if (ImGui::Button("Take it for a drive", { 220.f, 34.f }))
 			workshop.RoadTestCar();
-		ImGui::SameLine();
-		ImGui::BeginDisabled(workshop.GetEngineInCar() < 0);
-		if (ImGui::Button("Sell it", { 140.f, 34.f }))
-			workshop.SellCar();
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip("The buyer drives it, engine and all, and pays for what it does and how healthy it is.");
 		if (workshop.GetCar() && build->lastRoadTest.ran)
 		{
 			ImGui::SeparatorText(build->roadTestCurrent ? "The last drive" : "The last drive (it's been worked on since)");
 			showResult(build->lastRoadTest, &build->previousRoadTest, "last");
 		}
-	}
-	const auto& sale = workshop.GetLastCarSale();
-	if (sale.sold)
-	{
-		ImGui::SeparatorText(std::format("The last car sold: ${:.0f}, +{:.0f} reputation", sale.price, sale.reputation).c_str());
-		showResult(sale.test, nullptr, "sale");
 	}
 }
 
@@ -923,12 +898,12 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 	// Like the parts store: catalogue cards on the left, each with a turning view of what it is, and the order
 	// form for the one picked on the right, with a bigger view of it.
 	auto model = [&](const std::string& name) { return m_modelLookup ? m_modelLookup(name) : 0u; };
-	// A card's picture: the model turning in it (only drawn while the card's in view).
+	// A card's picture: the model, held still (drawn once) till the card is pointed at, when it turns; only drawn while in view.
 	auto turning = [&](const std::string& name, ImVec4 tint = { 1.f, 1.f, 1.f, 1.f }) {
 		return [&, name, tint](ImDrawList* drawList, ImVec2 min, float size) {
 			ImVec2 max = { min.x + size, min.y + size };
 			if (uint32_t index = model(name); index && ImGui::IsRectVisible(min, max))
-				ModelPreview::DrawAt(drawList, min, max, index, tint);
+				ModelPreview::DrawAt(drawList, min, max, index, tint, ImGui::IsMouseHoveringRect(min, max));
 		};
 	};
 	auto price = [](double dollars) { return dollars < 10.0 ? std::format("${:.2f}", dollars) : std::format("${:.0f}", dollars); };
@@ -942,14 +917,16 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 		m_carStoreOrder.sizeOffset = sizes.empty() ? 0.0 : sizes.front();
 	};
 
+	// The first car part picked when nothing has been yet.
+	if (m_carStoreKind == 0)
+		for (auto type : PartCatalog::All())
+			if (IsCarPart(type) && PartCatalog::Get(type).listed && type != PartType::BODY_SHELL && PartCatalog::Get(type).system != PartSystem::FASTENERS)
+			{
+				pickPart(type);
+				break;
+			}
 	if (ImGui::BeginChild("CarCatalogue", { ImGui::GetContentRegionAvail().x * 0.58f, 0.f }, ImGuiChildFlags_Borders))
 	{
-		ImGui::SeparatorText("The project");
-		if (StoreCard("project", "LE86 project shell", price(Workshop::PROJECT_CAR_PRICE), m_carStoreKind == 0, workshop.OwnsCar(),
-				turning(ShopModels::PROJECT_CAR)))
-			m_carStoreKind = 0;
-		ImGui::NewLine();
-
 		// A section per system of the car, and its hardware after them.
 		std::optional<PartSystem> section;
 		for (auto type : PartCatalog::All())
@@ -995,22 +972,7 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 		ImGui::EndChild();
 		return;
 	}
-	if (m_carStoreKind == 0)
-	{
-		ImGui::Text("LE86 project shell");
-		DrawPreview(ShopModels::PROJECT_CAR);
-		ImGui::PushTextWrapPos(0.f);
-		ImGui::TextDisabled("A 1985 MonkeyKobo Comet GT coupe, as it came out of a barn, sitting in the salvage yard beside the shop: the bare shell on "
-			"jack stands, with whatever came off it lying round it and its nuts and bolts in a box by the gate. No engine (build one on "
-			"a stand and hoist it in), none of the parts only sold new, and some of what's there past saving. Build it up, fill it, "
-			"tune it, drive it and sell it.");
-		ImGui::PopTextWrapPos();
-		ImGui::Separator();
-		CartLine project;
-		project.kind = CartLine::Kind::PROJECT_CAR;
-		AddToCartButton(workshop, project, std::format("Add to cart (${:.0f})", Workshop::PROJECT_CAR_PRICE).c_str());
-	}
-	else if (m_carStoreKind == 1)
+	if (m_carStoreKind == 1)
 	{
 		PartType type = m_carStoreOrder.type;
 		const auto& info = PartCatalog::Get(type);

@@ -264,8 +264,8 @@ std::string ShopWorld::CarFitPrompt(const Workshop& workshop, const ItemVisual& 
 		return std::format("{}: compress a spring onto the strut first", position);
 	if (m_carFitTarget->slot == CarSlot::WHEEL && !workshop.CarriedOn(*held.part))
 		return std::format("{}: mount a tire on the wheel first", position);
-	if (const auto* holes = CarAssembly::Holes(m_carFitTarget->slot))
-		return std::format("[E] Put the {} in finger tight: {} ({:.0f} Nm)", held.part->GetName(), position, holes->torqueNm);
+	if (CarAssembly::Holes(m_carFitTarget->slot))
+		return std::format("[E] Put the {} in finger tight: {}", held.part->GetName(), position);
 	return std::format("[E] Fit the {}: {}", held.part->GetName(), position);
 }
 
@@ -334,69 +334,3 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindCarFastenerTarget(const 
 	return best;
 }
 
-void ShopWorld::LayOutCarLot(std::vector<ItemRef> parts)
-{
-	using namespace GarageLayout;
-	// Where they lie: a loose grid over the yard, kept off the car itself and the lane in from the gate to its nose
-	// (where the hoist rolls in), nearest the car first.
-	glm::vec2 car = { CAR_HOME.x, CAR_HOME.z };
-	std::vector<glm::vec2> spots;
-	for (float x = YARD_MIN_X + 1.3f; x <= 18.6f; x += 1.7f)
-		for (float z = YARD_MIN_Z + 0.9f; z <= YARD_MAX_Z - 2.f; z += 1.45f)
-		{
-			bool byCar = std::abs(x - car.x) < 2.9f && std::abs(z - car.y) < 1.8f;
-			bool lane = x < car.x - 2.1f && std::abs(z - car.y) < 3.1f;
-			if (!byCar && !lane)
-				spots.push_back({ x, z });
-		}
-	std::sort(spots.begin(), spots.end(), [&](glm::vec2 a, glm::vec2 b) { return glm::distance(a, car) < glm::distance(b, car); });
-
-	// Like with like: a system's parts lie together, each kind side by side.
-	auto partOf = [&](const ItemRef& ref) { const auto* visual = Find(ref); return visual ? visual->part : nullptr; };
-	parts.erase(std::remove_if(parts.begin(), parts.end(), [&](const ItemRef& ref) { return !partOf(ref); }), parts.end());
-	std::stable_sort(parts.begin(), parts.end(), [&](const ItemRef& a, const ItemRef& b) {
-		auto systemA = PartCatalog::Get(partOf(a)->GetType()).system, systemB = PartCatalog::Get(partOf(b)->GetType()).system;
-		return systemA != systemB ? systemA < systemB : partOf(a)->GetType() < partOf(b)->GetType();
-	});
-
-	// A big part has a spot to itself; small ones share one, four to a spot. Each lies at a slant, as it was dropped.
-	const glm::vec2 corners[] = { { -0.35f, -0.3f }, { 0.35f, -0.3f }, { -0.35f, 0.3f }, { 0.35f, 0.3f } };
-	size_t next = 0;
-	int smallOnSpot = 4;
-	glm::vec2 smallSpot = {};
-	auto takeSpot = [&]() {
-		// More than the yard holds: they pile up on the first ones again.
-		return spots.empty() ? car + glm::vec2(0.f, 3.f) : spots[next++ % spots.size()];
-	};
-	for (const auto& ref : parts)
-	{
-		auto& visual = *Find(ref);
-		PartType type = visual.part->GetType();
-		const auto& bounds = PartBounds(type);
-		glm::vec3 size = bounds.second - bounds.first;
-		bool big = (std::max)(size.x, (std::max)(size.y, size.z)) > 0.45f;
-		glm::vec2 at;
-		if (big)
-			at = takeSpot();
-		else
-		{
-			if (smallOnSpot == 4)
-			{
-				smallSpot = takeSpot();
-				smallOnSpot = 0;
-			}
-			at = smallSpot + corners[smallOnSpot++];
-		}
-		// The same part always lies the same way: its id picks the jitter and the turn.
-		uint32_t h = visual.part->GetId() * 2654435761u;
-		auto random = [&](int salt) { return static_cast<float>(((h ^ (h >> (salt + 7))) * 2246822519u >> 8) & 0xFFFF) / 65535.f; };
-		at += glm::vec2(random(1) - 0.5f, random(2) - 0.5f) * 0.25f;
-		visual.yaw = random(3) * glm::two_pi<float>();
-		// The doors and fenders were laid down flat, the rest dropped as they stand.
-		visual.tilt = type == PartType::DOOR || type == PartType::FRONT_FENDER
-			? glm::angleAxis(-glm::half_pi<float>(), glm::vec3(1.f, 0.f, 0.f)) : glm::quat(1.f, 0.f, 0.f, 0.f);
-		PlaceInWorld(visual, { at.x, 0.35f, at.y }, {});
-	}
-	if (!parts.empty())
-		Toast(std::format("The LE86's parts are laid out round it in the salvage yard ({}).", parts.size()));
-}

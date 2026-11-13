@@ -14,6 +14,8 @@
 #include "../Simulation/MeasuringTool.h"
 #include "../Simulation/PartCatalog.h"
 #include "../Simulation/Units.h"
+#include "../Simulation/CarSpec.h"
+#include "../Simulation/Workshop.h"
 #include "../World/ShopAssets.h"
 #include "../World/ToolShapes.h"
 
@@ -255,13 +257,14 @@ void ServiceManual::Build(bool imperial)
 
 	begin("3. Getting Started");
 	heading("The Job, Start to Finish");
-	step("Lay the parts out. A new shop starts with a worn-out core already stripped onto the parts shelves.");
+	step("Find what's wrong. A new shop starts with the LE86 on the drive, its engine running at about three quarters of what it should: the dyno and a road test say where to start.");
 	step("Measure every part against this book (chapters 4 to 9). Note what is worn, what can be machined and what must be replaced.");
 	step("Buy what you need at the parts computer. Parts and tools are delivered in boxes and crates at the roll-up door: open them with F.");
 	step("Machine the parts that can be saved: hold the part, walk up to the machine and press E to set it up, then set the target in the "
 		"machine's screen.");
 	step("Check the clearances with the parts together: piston to wall, bearing oil clearance, ring gap, cam clearance.");
-	step("Assemble on the engine stand in the order in chapter 10, torquing every bolt to chapter 11.");
+	step("Assemble in the order in chapter 10, torquing every bolt to chapter 11: the block on the engine stand, the head built up "
+		"with its valves on the bench before it goes on, and the flywheel last, with the engine on the hoist.");
 	step("Final checks (chapter 12), then sell it from its stand: the buyer runs it and pays for what it makes. With a dyno of your own, "
 		"run it first and put right what the dyno finds.");
 	heading("At the Workbench");
@@ -292,7 +295,8 @@ void ServiceManual::Build(bool imperial)
 	text("Empty bolt holes are highlighted when you are close to the engine. Look at a nut or bolt to see its size, how tight it is "
 		"and its torque spec.");
 	heading("Taking an Engine Apart");
-	text("Work backwards through the assembly sequence: covers and manifolds first, then the timing belt, the head, the oil pan, the "
+	text("Work backwards through the assembly sequence: the flywheel first, with the engine on the hoist; then on the stand, covers and "
+		"manifolds, the timing belt, the cam and rockers, the head (its valvetrain comes off in it, and out of it on the bench), the oil pan, the "
 		"rods and pistons, and finally the main caps and the crank. Each part comes off once what holds it is undone.");
 	step(std::format("Hold the wrench set (or, with the Sockets & Ratchets perk, a socket set and a ratchet; the beam torque wrench and its sockets only do bolts up). E on a nut or bolt takes out the "
 		"right wrench, or puts the right socket on. Hold {} on it to undo it, {} to do it back up; let go part way and it stays part "
@@ -414,7 +418,9 @@ void ServiceManual::Build(bool imperial)
 	figure("Resurfacing limit (gasket face)", most(spec.maxResurface));
 	figure("Intake manifold flange flatness", most(spec.maxIntakeManifoldFlatness));
 	figure("Head gasket thickness (compressed)", tolerance(spec.gasketThickness));
-	figure("Head gasket bore", size(spec.gasketBore));
+	figure("Head gasket bore (STD)", size(spec.gasketBore));
+	text("Head gaskets come in the same size classes as the bores (STD, +0.25, +0.50, +0.75, +1.00): an oversize gasket's bore is "
+		"bigger by its class. Fit the one for the cylinders as bored; a smaller one's fire rings stand into the bores and won't go on.");
 	text(std::format("Check the gasket face and both manifold faces with the straightedge and feelers, and the intake manifold's flange "
 		"too. Surface what's warped. Surfacing the gasket face raises compression, and no more than {} may come off it in all: past "
 		"that, replace the head. The chambers are measured with the burette and cc plate.", deviation(spec.maxResurface)));
@@ -479,7 +485,7 @@ void ServiceManual::Build(bool imperial)
 	step("End play: with the cam in the head and its caps torqued, set a dial indicator on its nose and push it back and forth. Past the "
 		"limit, replace the cam and/or the head.", { PartType::CAMSHAFT });
 	step("Bend: lay the cam in the V-blocks, set the pointer on the centre journal and turn it once. Past the limit, replace it.");
-	step("Lobes: mic each lobe's height, and the fuel pump eccentric between the first lobes and the second journal. Below "
+	step("Lobes: mic each lobe's height, and the fuel pump eccentric between the last lobes and the rear journal. Below "
 		"either minimum, replace the cam: a worn eccentric short-strokes the fuel pump and starves the engine at high rpm.");
 	heading("Checking Cam Clearance");
 	step("Lay the camshaft in the head, the rocker shafts off.", { PartType::CAMSHAFT });
@@ -494,55 +500,91 @@ void ServiceManual::Build(bool imperial)
 	figure("Arm to shaft clearance, limit", most(spec.maxRockerClearance));
 	text("Measure each arm's bore with the small-bore gauge and the shaft under each arm with the micrometer: the shafts wear "
 		"where the arms ride. Past the limit, replace the arm, the shaft or both: the arm rocks on its shaft and ticks.");
+	{
+		// The valve lash: set at each arm's adjusting screw, with the engine running in the car.
+		const auto& lash = CarSpec::LE86Coupe().tune;
+		auto band = [&](const Range& range, double less) { return deviation(range.min - less) + " - " + deviation(range.max - less); };
+		figure("Valve lash, intake, cold", band(lash.intakeLash, Workshop::LASH_HOT_GROWTH));
+		figure("Valve lash, exhaust, cold", band(lash.exhaustLash, Workshop::LASH_HOT_GROWTH));
+		figure("Valve lash, intake, hot", band(lash.intakeLash, 0.0));
+		figure("Valve lash, exhaust, hot", band(lash.exhaustLash, 0.0));
+		text(std::format("Each arm's adjusting screw sets the gap between it and its valve's tip, read with the feeler gauge. Cold, the "
+			"valves are shorter in the head and the gap's {} tighter: set it to the cold figure with the engine sat a while, the hot one "
+			"just after a drive.", deviation(Workshop::LASH_HOT_GROWTH)));
+	}
 
 	begin("10. Assembly Sequence");
 	text("The engine goes together in this order. A part can only be fitted once everything it depends on is in place and done up; the "
-		"stand tells you what is missing.");
+		"stand tells you what is missing. Two jobs aren't done on the engine: the cylinder head is built up on the bench, valves and "
+		"all, before it goes on; and the flywheel goes on last, with the engine off the stand.");
 	illustrate(Figure::ASSEMBLY_FLOW, "The build at a glance.");
 	heading("Bottom End");
 	step("Block on the stand. Core plugs.", { PartType::BLOCK, PartType::CORE_PLUG });
 	step("Upper main shells in the block, oiled.", { PartType::MAIN_BEARING });
 	step("Crankshaft into the shells.", { PartType::CRANKSHAFT });
 	step("Lower main shells into the main caps, then each cap onto its own journal. Torque the main cap bolts.", { PartType::MAIN_BEARING_LOWER, PartType::MAIN_CAP, PartType::BOLT_M10 });
-	step("Rear main seal over the crank flange, then the flywheel on the flange, its bolts torqued.", { PartType::REAR_MAIN_SEAL, PartType::FLYWHEEL, PartType::BOLT_M10 });
-	step("Oil pump over the crank snout, then the pickup.", { PartType::OIL_PUMP, PartType::OIL_PICKUP });
+	step("Rear main seal over the crank flange. (The flywheel goes on the flange at the end of the build: see Flywheel, below.)", { PartType::REAR_MAIN_SEAL });
 	heading("Pistons and Rods, Each Cylinder");
 	step("Off the engine: the piston onto its connecting rod, its pin pressed through both with the Piston Pin Press, the ring "
 		"(gapped) onto the piston, and the upper rod shell into the rod.", { PartType::PISTON, PartType::PISTON_PIN, PartType::PISTON_RING, PartType::ROD_BEARING });
 	step("The rod, piston and all, into the top of the bore: the ring stops it. Squeeze the ring into its groove with the Piston "
 		"Ring Compressor and it goes home, the rod onto the crank pin. Every rod and piston goes in before the oil pump.", { PartType::CONNECTING_ROD });
 	step("Lower rod shell into the rod cap, then the cap onto the rod. Torque the rod nuts.", { PartType::ROD_BEARING_LOWER, PartType::ROD_CAP, PartType::NUT_M8 });
+	step("Once every rod and piston is in: the front crank seal pressed onto the crank snout, then the oil pump over it (the seal sits in the pump's housing), then the pickup.", { PartType::FRONT_CRANK_SEAL, PartType::OIL_PUMP, PartType::OIL_PICKUP });
 	note("Shells, pistons and rings go into and onto their rods, caps and pistons off the engine: hold one, aim at what it goes on (on "
 		"the bench, a shelf or the floor) and press E; R, aimed at it there, takes the last one off again. With the Piston Pin Press in hand and aimed at "
 		"the piston, hold the left button to press its pin in, the right to press it out. A rod goes on only with its shell in and its piston "
 		"pinned and ringed, and stops in the top of the bore: aim the Piston Ring Compressor at the piston and hold the left button to push it "
 		"home. A cap goes on only with its shell, and they come off with them. The press and the compressor are bought at the parts computer.");
-	heading("Top End");
-	step("Head gasket, once every piston and rod is in.", { PartType::HEAD_GASKET });
-	step("Cylinder head. Torque the head bolts.", { PartType::CYLINDER_HEAD, PartType::BOLT_M12 });
-	step("Each valve: valve, stem seal, spring, retainer and keepers.", { PartType::INTAKE_VALVE, PartType::EXHAUST_VALVE, PartType::VALVE_STEM_SEAL, PartType::VALVE_SPRING, PartType::VALVE_RETAINER });
-	step("Camshaft into the head, then the cam caps, torqued.", { PartType::CAMSHAFT, PartType::CAM_CAP });
-	step("Rocker shafts over the cam, intake side and exhaust side, bolts torqued. Then a rocker arm onto its shaft over each valve.", { PartType::ROCKER_SHAFT, PartType::ROCKER_ARM, PartType::BOLT_M8 });
+	heading("Cylinder Head, on the Bench");
+	text("The valvetrain goes into the head before the head goes on the engine: set the head down on the bench, a shelf or the floor. "
+		"Hold each part, aim at its place in the head (a green dot shows where it can go) and press E. R, aimed at a valve, takes the "
+		"top part of its stack back out. Work valve by valve, in this order:");
+	step("Head upside down, its deck up: each valve in from underneath, through its seat and up its guide. Intake valves on the "
+		"intake side, exhaust on the exhaust side.", { PartType::INTAKE_VALVE, PartType::EXHAUST_VALVE });
+	step("Head the right way up: a stem seal pushed down over each valve's guide.", { PartType::VALVE_STEM_SEAL });
+	step("A spring on each seat, over its seal.", { PartType::VALVE_SPRING });
+	step("Each retainer with the Valve Spring Compressor: hold the compressor, aim at the valve and press E. It clamps over the valve, its "
+		"cup on the spring and its foot under the valve, and squeezes the spring down off the top of the stem.");
+	step("With the spring squeezed, the retainer on top of it, its keepers into the groove on the stem.", { PartType::VALVE_RETAINER });
+	step("E on the compressor takes it off: the spring comes back up against the retainer and locks the keepers in. On to the next valve.");
+	note("A retainer only comes off the same way, the spring squeezed with the compressor; and nothing else at that valve goes in or "
+		"comes out while the compressor's on it, nor does the head go on the block. Take a head off and its valvetrain comes off in it. A "
+		"stem seal is single-use: once one is taken out of the head, it's done. The compressor is bought at the parts computer.");
+	heading("Head onto the Block");
+	step("Head gasket, once every piston and rod is in and pushed home: the size class the cylinders are bored to.", { PartType::HEAD_GASKET });
+	step("The cylinder head, every valve, seal, spring and retainer in it. Torque the head bolts in their sequence (chapter 11).", { PartType::CYLINDER_HEAD, PartType::BOLT_M12 });
+	step("Measure each valve's installed height with the installed height micrometer (chapter 8).");
+	step("Once the head is bolted down: the camshaft into the head, then the cam caps, torqued.", { PartType::CAMSHAFT, PartType::CAM_CAP });
+	step("Off the engine: a rocker arm onto each shaft over each cylinder (on the bench, a shelf or the floor: hold the arm, aim at its place and press E). Then the shafts over the cam, intake side and exhaust side, arms and all, and their bolts torqued.", { PartType::ROCKER_ARM, PartType::ROCKER_SHAFT, PartType::BOLT_M8 });
 	heading("Timing Belt");
 	step("Crank timing pulley (in front of the pump) and cam timing pulley.", { PartType::CRANK_SPROCKET, PartType::CAM_SPROCKET });
-	step("Timing belt round the two pulleys with the marks lined up, then the idler pulley onto the back of its slack side, its "
+	step("Timing belt round the two pulleys with the marks lined up, and the idler pulley on the back of its slack side (it can go on "
+		"before the belt or after), its "
 		"bolt torqued. Check the belt's deflection halfway down the tight side: 6 - 7 mm under 2 kg.", { PartType::TIMING_BELT, PartType::BELT_TENSIONER, PartType::BOLT_M10 });
 	illustrate(Figure::BELT_ROUTING, "Timing belt routing, from the front, with the timing marks at TDC. The arrow is where its deflection is checked.");
 	figure("Timing belt deflection (2 kg)", size(spec.timingBeltDeflection.min) + " - " + size(spec.timingBeltDeflection.max));
-	step("Timing cover gasket and cover, front crank seal, crank pulley (its bolt to full torque).", { PartType::TIMING_COVER_GASKET, PartType::TIMING_COVER, PartType::FRONT_CRANK_SEAL, PartType::CRANK_PULLEY, PartType::BOLT_M14 });
+	step("Timing cover gasket and cover (up to the top of the head, over the belt), crank pulley (its bolt to full torque).", { PartType::TIMING_COVER_GASKET, PartType::TIMING_COVER, PartType::CRANK_PULLEY, PartType::BOLT_M14 });
 	heading("Closing Up and Ancillaries");
-	step("Oil pan gasket and pan, once the pickup, rear seal, timing cover and rod caps are on. Drain plug and oil filter.", { PartType::OIL_PAN_GASKET, PartType::OIL_PAN, PartType::OIL_DRAIN_PLUG, PartType::OIL_FILTER });
-	step("Valve cover gasket and cover, once the rockers are in. Spark plugs; the distributor into the back of the head on the cam; then a lead from its cap down through the cover onto each plug.", { PartType::VALVE_COVER_GASKET, PartType::VALVE_COVER, PartType::SPARK_PLUG, PartType::DISTRIBUTOR, PartType::PLUG_LEAD });
-	step("Intake manifold and gasket, then the carburettor on top of the plenum. The mechanical fuel pump on the side of the head at the cam, its arm in on the cam's eccentric.", { PartType::INTAKE_MANIFOLD_GASKET, PartType::INTAKE_MANIFOLD, PartType::CARBURETTOR, PartType::FUEL_PUMP });
+	step("Oil pan gasket and pan, once the pickup, rear seal and rod caps are on (the timing cover can go on before or after). A new crush washer, then the drain plug through it, torqued with a 14 mm socket; and the oil filter.", { PartType::OIL_PAN_GASKET, PartType::OIL_PAN, PartType::DRAIN_PLUG_WASHER, PartType::OIL_DRAIN_PLUG, PartType::OIL_FILTER });
+	step("Spark plugs, gapped, screwed down their tubes in the exhaust side of the head (in from the side, the cam being down the middle) by hand, then torqued with a 16 mm spark plug socket. Valve cover gasket and cover, once the rockers are in. The distributor into the back of the head on the cam; then a lead from its cap along the side of the cover and down each plug's tube onto it.", { PartType::SPARK_PLUG, PartType::VALVE_COVER_GASKET, PartType::VALVE_COVER, PartType::DISTRIBUTOR, PartType::PLUG_LEAD });
+	step("Intake manifold and gasket, then the carburettor on top of the plenum. The mechanical fuel pump on the side of the head at the cam, on a new gasket, its arm in through the head onto the cam's eccentric.", { PartType::INTAKE_MANIFOLD_GASKET, PartType::INTAKE_MANIFOLD, PartType::CARBURETTOR, PartType::FUEL_PUMP_GASKET, PartType::FUEL_PUMP });
 	step("Exhaust manifold and gasket, then the downpipe on its collector.", { PartType::EXHAUST_MANIFOLD_GASKET, PartType::EXHAUST_MANIFOLD, PartType::EXHAUST_PIPE });
-	step("Water pump and gasket on the timing cover; thermostat and its housing.", { PartType::WATER_PUMP_GASKET, PartType::WATER_PUMP, PartType::THERMOSTAT, PartType::THERMOSTAT_HOUSING });
-	step("Alternator on its pivot at the front. The fan belt round the crank pulley, the water pump and the alternator; swing the "
+	step("Water pump and gasket on the timing cover. In the head's water outlet, a new gasket, the thermostat on it (its valve in, its jiggle pin up), another gasket on its flange, then the housing over it.", { PartType::WATER_PUMP_GASKET, PartType::WATER_PUMP, PartType::THERMOSTAT_GASKET, PartType::THERMOSTAT, PartType::THERMOSTAT_HOUSING_GASKET, PartType::THERMOSTAT_HOUSING });
+	step("The alternator bracket to the side of the block at the front (three bolts), then the alternator on it: the pivot bolt through its lower lugs and the bracket's boss, the adjusting bolt through its top lug and the bracket's slotted strap, both left loose. The fan belt round the crank pulley, the water pump and the alternator; swing the "
 		"alternator out until the belt deflects 8.5 - 10.5 mm under 10 kg between the water pump and the alternator (10 - 12 mm "
-		"for a used belt), then torque its bolts.", { PartType::ALTERNATOR, PartType::DRIVE_BELT, PartType::BOLT_M10 });
+		"for a used belt), then torque its bolts.", { PartType::ALTERNATOR_BRACKET, PartType::ALTERNATOR, PartType::DRIVE_BELT, PartType::BOLT_M10 });
 	illustrate(Figure::DRIVE_BELT_ROUTING, "Fan belt routing, from the front. The arrow is where its deflection is checked.");
 	figure("Fan belt deflection, new (10 kg)", size(spec.fanBeltDeflectionNew.min) + " - " + size(spec.fanBeltDeflectionNew.max));
 	figure("Fan belt deflection, used (10 kg)", size(spec.fanBeltDeflectionUsed.min) + " - " + size(spec.fanBeltDeflectionUsed.max));
 	figure("Fan belt size", "11 x 980 mm V-belt");
+	heading("Flywheel");
+	text("The stand's plate is bolted over the back of the block, so there's no getting at the crank flange with the engine on it. "
+		"The flywheel goes on last, with the engine off the stand.");
+	step("Lift the engine off its stand with the engine hoist.");
+	step("The flywheel onto the crank flange behind the rear main seal, its bolts torqued.", { PartType::FLYWHEEL, PartType::BOLT_M10 });
+	step("The engine is complete: lower it onto the dyno, or into the car (see the car's own manual). Or fit the flywheel in the car, with the engine "
+		"in the bay and before the clutch and gearbox go on.");
 
 	begin("11. Torque Specifications");
 	text("Torque with a torque wrench driving the right socket. The engine's real clamping force is only as good as the wrench: a "
@@ -583,7 +625,8 @@ void ServiceManual::Build(bool imperial)
 	heading("Dyno");
 	text("A new shop has no dyno: a finished engine is sold untested, and its figures come with the buyer's payment. A dyno is bought at "
 		"the parts computer.");
-	step("With the engine complete on its stand, open the dyno (E at the dyno cell) and move the engine onto it.");
+	step("With the engine complete (its flywheel fitted on the hoist), lower it from the hoist onto the dyno. An engine already complete "
+		"on its stand moves on from the dyno's screen (E at the dyno cell).");
 	step("Run a pull. The chart shows power and torque against rpm; the readout lists anything the engine is unhappy about.");
 	step("Sell it from the dyno, or put it back on a free stand to fix what it found.");
 	note("A sound, accurate build makes more power and sells for more. Every clearance out of spec costs something on the dyno.");

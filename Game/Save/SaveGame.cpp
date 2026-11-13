@@ -48,7 +48,11 @@ namespace
 	// the piston pins pressed into them (a part of their own). 33: rings fitted onto loose pistons. 34: the pistons
 	// in the top of their bores, not yet pushed home with the ring compressor.
 	// 38: the project car (a station after the hoist, its state on a line of its own, and the fluids in stock).
-	constexpr int VERSION = 39;
+	// 40: what each torque wrench is set to (a line after the tool sizes).
+	// 48: the game starts with the LE86 and its worn engine, and there's no quarry, yard or project car to buy: a save from
+	// before it isn't read (a new game starts instead), so the older versions' paths below no longer run.
+	constexpr int OLDEST_READ = 48;
+	constexpr int VERSION = 48;
 	constexpr const char* MAGIC = "LVSAVE";
 
 	constexpr int PART_TYPES = static_cast<int>(PartType::COUNT);
@@ -174,7 +178,9 @@ namespace
 		ItemRef equipped;
 		int selectedSlot = 0;
 		std::map<size_t, int> toolSizes;
+		std::map<size_t, float> torqueSettings;
 		std::map<size_t, BatteryPack> batteries;
+		std::map<size_t, glm::vec2> toolSpots;
 		std::vector<std::pair<std::string, std::string>> paint;	// WallPaint's records
 		std::vector<std::pair<ItemRef, PaintCoat>> coats;
 		std::array<float, Workshop::MAX_ENGINES> engineRolls = {};
@@ -354,10 +360,13 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	for (const auto& [ring, at] : workshop.m_boreRings)
 		out.Int(ring).Int(at.block).Int(at.cylinder).Int(at.squared ? 1 : 0);
 	out.Line();
+	// Valves, seals, springs and retainers in heads off the engine: the part, the head, and its position in it.
+	out.Word("headfittings").Int(workshop.m_headFittings.size());
+	for (const auto& [part, at] : workshop.m_headFittings)
+		out.Int(part).Int(at.head).Int(static_cast<int>(at.slot)).Int(at.index);
+	out.Line();
 	// The project car, what's on its loose struts and wheels, and the fluids on the shelf.
 	out.Word("car").Str(workshop.CarState()).Line();
-	// The desert quarry: its upgrades, the crusher's hopper and what it's made.
-	out.Word("quarry").Str(workshop.QuarryText()).Line();
 
 	// The 3D shop
 	out.Word("stations").Int(world.m_stations.size()).Line();
@@ -416,10 +425,20 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 	for (const auto& [tool, size] : world.m_toolSizes)
 		out.Int(tool).Int(size);
 	out.Line();
+	// What each torque wrench is set to.
+	out.Word("torque_settings").Int(world.m_torqueSettings.size());
+	for (const auto& [tool, setting] : world.m_torqueSettings)
+		out.Int(tool).Num(setting);
+	out.Line();
 	// Each battery pack: how full, and the cordless tool or charger it's on (or -1).
 	out.Word("batteries").Int(world.m_batteries.size());
 	for (const auto& [tool, battery] : world.m_batteries)
 		out.Int(tool).Num(battery.charge).Int(battery.on);
+	out.Line();
+	// Where each tool hung on the tool board by hand went (across and up the board).
+	out.Word("tool_spots").Int(world.m_toolSpots.size());
+	for (const auto& [tool, spot] : world.m_toolSpots)
+		out.Int(tool).Num(spot.x).Num(spot.y);
 	out.Line();
 	// Paint on the walls and floor, a tile to a line, and the coats sprayed on parts and tools.
 	auto paint = world.m_paint.Records();
@@ -481,7 +500,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	// Version 1 saves predate multiple engines: they hold one engine and one stand.
 	in.Expect(MAGIC);
 	long long version = in.Int();
-	if ((version < 1 || version > VERSION) && !in.Failed())
+	if ((version < OLDEST_READ || version > VERSION) && !in.Failed())
 		in.Fail("it was saved by a different version of the game");
 
 	in.Expect("time");
@@ -658,6 +677,10 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		// Old nuts and bolts were named for their job; they take their size's name now.
 		if ((version >= 9 && !resized) || !PartCatalog::Get(type).fastener.IsFastener())
 			part->m_name = name;
+		// Matched caps were named for their partner's number ("Main Cap 1 (block #12)"); part numbers aren't shown now.
+		for (const char* partner : { " (block #", " (head #", " (rod #" })
+			if (auto at = part->m_name.find(partner); at != std::string::npos)
+				part->m_name.erase(at);
 		part->m_damageReason = damage;
 		part->m_matchedTo = matchedTo;
 		part->m_matchedPosition = matchedPosition;
@@ -862,6 +885,12 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			// And the serpentine belt's tensioner the one before them in version 23.
 			if (version < 23 && slot >= static_cast<long long>(AssemblySlot::DRIVE_BELT_TENSIONER))
 				slot++;
+			// And the thermostat's two gaskets the two before them in version 46.
+			if (version < 46 && slot >= static_cast<long long>(AssemblySlot::THERMOSTAT_GASKET))
+				slot += 2;
+			// And the alternator's bracket the one before them in version 47.
+			if (version < 47 && slot >= static_cast<long long>(AssemblySlot::ALTERNATOR_BRACKET))
+				slot++;
 			if (slot < 0 || slot >= static_cast<long long>(AssemblySlot::COUNT) || !partsById.contains(static_cast<uint32_t>(id)))
 				in.Fail("an engine on a stand refers to a missing part");
 			// Version 28: four cam caps (two bolts each), and five rocker shaft bolts through both shafts at the ends and
@@ -875,8 +904,19 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			}
 			else if (version < 28 && slot == static_cast<long long>(AssemblySlot::ROCKER_SHAFT_BOLT))
 				index = index / 3 == 0 ? index % 3 + 1 : -1;
+			// Version 44: the timing cover lost two of its ten bolts (the 2nd, by the water pump's hole, and the 10th, by
+			// the crank's); the rest kept their places, numbered on past the gap.
+			if (version < 44 && slot == static_cast<long long>(AssemblySlot::TIMING_COVER_BOLT))
+				index = index == 0 ? 0 : index >= 2 && index <= 8 ? index - 1 : -1;
 			if (index < 0)
 				continue;
+			// Version 42: the drain plug is done up as a fastener in a slot of its own at the end; its old slot is its
+			// crush washer's now (one's added under it on loading, see below).
+			if (version < 42 && slot == static_cast<long long>(AssemblySlot::DRAIN_PLUG_WASHER))
+				slot = static_cast<long long>(AssemblySlot::DRAIN_PLUG);
+			// Version 43: the spark plugs likewise, their old slot the fuel pump's gasket's now.
+			else if (version < 43 && slot == static_cast<long long>(AssemblySlot::FUEL_PUMP_GASKET))
+				slot = static_cast<long long>(AssemblySlot::SPARK_PLUG);
 			engine.installed.push_back({ slot, index, id });
 			// Version 21 took the torques from the 4A-C: what was done up keeps its share of the spec.
 			if (version < 21 && !in.Failed())
@@ -1026,17 +1066,26 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			boreRings[ring] = at;
 		}
 	}
+	std::map<uint32_t, HeadFitting> headFittings;
+	if (version >= 41)
+	{
+		in.Expect("headfittings");
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			auto part = static_cast<uint32_t>(in.Int());
+			HeadFitting at;
+			at.head = static_cast<uint32_t>(in.Int());
+			at.slot = static_cast<AssemblySlot>(in.Int());
+			at.index = static_cast<int>(in.Int());
+			headFittings[part] = at;
+		}
+	}
 	std::string carText;
 	if (version >= 38)
 	{
 		in.Expect("car");
 		carText = in.Next();
-	}
-	std::string quarryText;
-	if (version >= 39)
-	{
-		in.Expect("quarry");
-		quarryText = in.Next();
 	}
 
 	SavedWorld saved;
@@ -1185,6 +1234,16 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			saved.toolSizes[tool] = static_cast<int>(in.Int());
 		}
 	}
+	if (version >= 40)
+	{
+		in.Expect("torque_settings");
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			auto tool = static_cast<size_t>(in.Int());
+			saved.torqueSettings[tool] = static_cast<float>(in.Num());
+		}
+	}
 	if (version >= 22)
 	{
 		in.Expect("batteries");
@@ -1195,6 +1254,17 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			auto& battery = saved.batteries[tool];
 			battery.charge = std::clamp(static_cast<float>(in.Num()), 0.f, 1.f);
 			battery.on = static_cast<int>(in.Int());
+		}
+	}
+	if (version >= 45)
+	{
+		in.Expect("tool_spots");
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			auto tool = static_cast<size_t>(in.Int());
+			float x = static_cast<float>(in.Num());
+			saved.toolSpots[tool] = { x, static_cast<float>(in.Num()) };
 		}
 	}
 	if (version >= 24)
@@ -1263,6 +1333,64 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			std::string installError;
 			engine->assembly.Install(static_cast<AssemblySlot>(slot), static_cast<int>(index), partsById.at(static_cast<uint32_t>(id)), installError);
 		}
+		// Before version 42 the drain plug had no washer and no torque: a plug that was in goes on a new washer, done up to spec.
+		if (version < 42)
+			if (auto plug = engine->assembly.Get(AssemblySlot::DRAIN_PLUG, 0); plug && !engine->assembly.Get(AssemblySlot::DRAIN_PLUG_WASHER, 0))
+			{
+				auto washer = PartFactory::Create(PartType::DRAIN_PLUG_WASHER, spec, PartQuality::OEM, PartCondition::NEW);
+				workshop.m_inventory.push_back(washer);
+				std::string installError;
+				engine->assembly.Install(AssemblySlot::DRAIN_PLUG_WASHER, 0, washer, installError);
+				plug->SetTightness(FastenerTightness::TORQUED);
+				plug->SetTorque(EngineAssembly::Holes(AssemblySlot::DRAIN_PLUG)->torqueNm);
+			}
+		// Before 43 the spark plugs weren't done up, and the fuel pump had no gasket: plugs that were in are done up to
+		// spec, and a pump that was on gets a new gasket under it.
+		if (version < 43)
+		{
+			for (int cylinder = 0; cylinder < engine->assembly.SlotCount(AssemblySlot::SPARK_PLUG); cylinder++)
+				if (auto plug = engine->assembly.Get(AssemblySlot::SPARK_PLUG, cylinder))
+				{
+					plug->SetTightness(FastenerTightness::TORQUED);
+					plug->SetTorque(EngineAssembly::Holes(AssemblySlot::SPARK_PLUG)->torqueNm);
+				}
+			if (engine->assembly.Get(AssemblySlot::FUEL_PUMP, 0) && !engine->assembly.Get(AssemblySlot::FUEL_PUMP_GASKET, 0))
+			{
+				auto gasket = PartFactory::Create(PartType::FUEL_PUMP_GASKET, spec, PartQuality::OEM, PartCondition::NEW);
+				workshop.m_inventory.push_back(gasket);
+				std::string installError;
+				engine->assembly.Install(AssemblySlot::FUEL_PUMP_GASKET, 0, gasket, installError);
+			}
+		}
+		// Before 46 the thermostat had no gaskets: one that was in gets a new one under it, and a housing that was on one
+		// under that.
+		if (version < 46)
+			for (auto [over, gasketSlot, gasketType] : { std::tuple{ AssemblySlot::THERMOSTAT, AssemblySlot::THERMOSTAT_GASKET, PartType::THERMOSTAT_GASKET },
+				std::tuple{ AssemblySlot::THERMOSTAT_HOUSING, AssemblySlot::THERMOSTAT_HOUSING_GASKET, PartType::THERMOSTAT_HOUSING_GASKET } })
+				if (engine->assembly.Get(over, 0) && !engine->assembly.Get(gasketSlot, 0))
+				{
+					auto gasket = PartFactory::Create(gasketType, spec, PartQuality::OEM, PartCondition::NEW);
+					workshop.m_inventory.push_back(gasket);
+					std::string installError;
+					engine->assembly.Install(gasketSlot, 0, gasket, installError);
+				}
+		// Before 47 the alternator hung on the engine by itself: one that was on gets a bracket under it, bolted up to spec.
+		if (version < 47 && engine->assembly.Get(AssemblySlot::ALTERNATOR, 0) && !engine->assembly.Get(AssemblySlot::ALTERNATOR_BRACKET, 0))
+		{
+			std::string installError;
+			auto bracket = PartFactory::Create(PartType::ALTERNATOR_BRACKET, spec, PartQuality::OEM, PartCondition::USED);
+			workshop.m_inventory.push_back(bracket);
+			engine->assembly.Install(AssemblySlot::ALTERNATOR_BRACKET, 0, bracket, installError);
+			const auto* holes = EngineAssembly::Holes(AssemblySlot::ALTERNATOR_BRACKET_BOLT);
+			for (int hole = 0; hole < engine->assembly.SlotCount(AssemblySlot::ALTERNATOR_BRACKET_BOLT); hole++)
+			{
+				auto bolt = PartFactory::Create(holes->size, spec, PartQuality::OEM, PartCondition::USED);
+				bolt->SetTightness(FastenerTightness::TORQUED);
+				bolt->SetTorque(holes->torqueNm);
+				workshop.m_inventory.push_back(bolt);
+				engine->assembly.Install(AssemblySlot::ALTERNATOR_BRACKET_BOLT, hole, bolt, installError);
+			}
+		}
 		engine->readings = saved_engine.readings;
 		engine->lastDyno = saved_engine.dyno;
 		engine->dynoCurrent = saved_engine.dynoCurrent;
@@ -1310,15 +1438,19 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		if (partsById.contains(ring) && partsById.contains(at.block) && partsById.at(ring)->GetType() == PartType::PISTON_RING
 			&& partsById.at(at.block)->GetType() == PartType::BLOCK && workshop.EngineOf(*partsById.at(ring)) < 0 && workshop.EngineOf(*partsById.at(at.block)) < 0)
 			workshop.m_boreRings[ring] = at;
+	// The valvetrain in loose heads, as long as both are still off the engine and it's the right part for its place.
+	workshop.m_headFittings.clear();
+	for (const auto& [part, at] : headFittings)
+		if (partsById.contains(part) && partsById.contains(at.head) && ((partsById.at(at.head)->GetType() == PartType::CYLINDER_HEAD && EngineAssembly::InHead(at.slot))
+			|| (partsById.at(at.head)->GetType() == PartType::ROCKER_SHAFT && at.slot == AssemblySlot::ROCKER_ARM)) && partsById.at(part)->GetType() == EngineAssembly::SlotPartType(at.slot)
+			&& workshop.EngineOf(*partsById.at(part)) < 0 && workshop.EngineOf(*partsById.at(at.head)) < 0)
+			workshop.m_headFittings[part] = at;
 	// The project car, once its parts and the engines are in place.
 	workshop.m_car.reset();
 	workshop.m_carCarried.clear();
 	workshop.m_fluidStock = {};
 	if (!carText.empty() && !workshop.RestoreCarState(carText))
-		workshop.Log("The project car in the save couldn't be read: it's gone from the salvage yard.");
-	workshop.m_quarry = {};
-	if (!quarryText.empty() && !workshop.RestoreQuarry(quarryText))
-		workshop.Log("The quarry in the save couldn't be read: it starts again from nothing.");
+		workshop.Log("The car in the save couldn't be read.");
 	// Before version 32 the pins were part of the pistons: each piston gets one, pressed in if it's on an engine.
 	if (version < 32)
 	{
@@ -1464,7 +1596,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	world.SyncHand();
 
 	world.m_toolSizes = saved.toolSizes;
+	world.m_torqueSettings = saved.torqueSettings;
 	world.m_batteries = saved.batteries;
+	world.m_toolSpots = saved.toolSpots;
 	// Paint on the old garage's walls and floor doesn't fit the shack: it's left behind.
 	if (!saved.moveIn)
 		for (const auto& [key, text] : saved.paint)
@@ -1474,6 +1608,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		world.m_coats[ref] = coat;
 	world.m_engineRolls = saved.engineRolls;
 	world.m_crankAngles = saved.crankAngles;
+	world.m_camCranks = saved.crankAngles;
 	world.SetDoorOpen(saved.doorOpen, true);
 	world.RebuildCollision();
 
@@ -1528,6 +1663,7 @@ void SaveGame::StartNew(Workshop& workshop, ShopWorld& world, FirstPersonControl
 	sendHome();
 	world.m_engineRolls = {};
 	world.m_crankAngles = {};
+	world.m_camCranks = {};
 	world.m_deliveries = 0;
 	world.SetDoorOpen(true, true);
 	world.RebuildCollision();
@@ -1558,7 +1694,9 @@ void SaveGame::ResetWorld(Workshop& workshop, ShopWorld& world)
 	world.m_engineOnHoist = -1;
 	world.m_swing = {};
 	world.m_toolSizes.clear();
+	world.m_torqueSettings.clear();
 	world.m_batteries.clear();
+	world.m_toolSpots.clear();
 	world.m_move.reset();
 	world.m_paint.Clear();
 	world.m_coats.clear();

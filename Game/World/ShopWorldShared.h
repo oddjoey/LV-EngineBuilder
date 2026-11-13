@@ -76,13 +76,11 @@ namespace ShopLayout
 	// The engine hoist: home by the door. In its own space its boom reaches out along +Z; the hook hangs
 	// over the ends of its legs, and an engine on it hangs from the hook with its crank along the boom.
 	inline const glm::vec3 HOIST_HOME = { 2.6f, 0.f, 2.3f };
-	// The project car, in the salvage yard where it was bought, its nose toward the gate so the hoist can roll in
-	// to its engine bay (its model's +X is its front, so a half turn points it at -X), and where the hoist's hook
-	// goes to reach into its engine bay, in its own space.
-	inline const glm::vec3 CAR_HOME = { 14.5f, 0.f, (GarageLayout::YARD_GATE_MIN_Z + GarageLayout::YARD_GATE_MAX_Z) * 0.5f };
-	constexpr float CAR_YAW = glm::pi<float>();
-	// The box of the car's nuts and bolts, just inside the yard's gate.
-	inline const glm::vec3 YARD_HARDWARE_CRATE = { 7.9f, 0.3f, 12.4f };
+	// The LE86, parked on the drive in front of the roll-up door, its nose toward the shop with room in between for the
+	// hoist to roll out to its engine bay (its model's +X is its front, so a quarter turn points it at -Z); and where the
+	// hoist's hook goes to reach into its engine bay, in its own space.
+	inline const glm::vec3 CAR_HOME = { (GarageLayout::DOOR_MIN_X + GarageLayout::DOOR_MAX_X) * 0.5f, 0.f, GarageLayout::HALF_DEPTH + GarageLayout::WALL + 5.4f };
+	constexpr float CAR_YAW = glm::half_pi<float>();
 	inline const glm::vec3 CAR_ENGINE_BAY = { 1.35f, 0.75f, 0.f };
 	// Where the engine's deck sits, its middle, in the car's space: the block between the strut towers, the crank
 	// about 0.35 m off the ground and the flywheel end at the firewall.
@@ -125,7 +123,7 @@ namespace ShopLayout
 
 	inline std::string PartLabel(const Part& part)
 	{
-		return std::format("#{} {}", part.GetId(), part.GetName());
+		return part.GetName();
 	}
 
 	inline bool MachineCanWork(const Machine& machine, const Part& part)

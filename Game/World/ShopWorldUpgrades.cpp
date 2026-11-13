@@ -223,12 +223,9 @@ bool ShopWorld::OnDrive(const ShopBox& footprint) const
 		return true;
 	if (m_doorOpen && within({ DOOR_MIN_X, -HALF_DEPTH }, { DOOR_MAX_X, HALF_DEPTH + WALL + DRIVE_DEPTH }))
 		return true;
-	// Along the track and into the salvage yard, to the car. Rolling from one onto the next it's partly on each,
-	// so it's enough that every corner of it is on the drive, the track or the yard.
+	// Further down the drive, to the car. Rolling along it, it's enough that every corner of it is on the drive.
 	auto onGround = [&](float x, float z) {
-		auto in = [&](const Paved& area) { return x >= area.min.x && x <= area.max.x && z >= area.min.y && z <= area.max.y; };
-		// Past the gate only while it's open.
-		return in(PAVED[0]) || (m_yardGateOpen && (in(YARD_TRACK) || in(YARD)));
+		return x >= PAVED[0].min.x && x <= PAVED[0].max.x && z >= PAVED[0].min.y && z <= PAVED[0].max.y;
 	};
 	return onGround(footprint.min.x, footprint.min.z) && onGround(footprint.max.x, footprint.min.z) && onGround(footprint.min.x, footprint.max.z)
 		&& onGround(footprint.max.x, footprint.max.z);
@@ -254,7 +251,7 @@ bool ShopWorld::OnPlot(const ShopBox& footprint) const
 {
 	using namespace GarageLayout;
 	// On the shop's own land outside: within the plot's bounds, not in or through the building (the floor inside is
-	// OnShopFloor's), and clear of everything that stands there (walls, stairs, the yard's fence and junk, the drums,
+	// OnShopFloor's), and clear of everything that stands there (walls, stairs, the drums,
 	// the neighbours' shacks).
 	if (footprint.min.x < PLOT_MIN.x || footprint.max.x > PLOT_MAX.x || footprint.min.z < PLOT_MIN.y || footprint.max.z > PLOT_MAX.y)
 		return false;
@@ -274,12 +271,5 @@ bool ShopWorld::OnPlot(const ShopBox& footprint) const
 		for (const auto& obstacle : *list)
 			if (blocks(obstacle))
 				return false;
-	// Not on the quarry's pad: it's the quarry's.
-	if (footprint.min.x < QUARRY_PAD.max.x && QUARRY_PAD.min.x < footprint.max.x && footprint.min.z < QUARRY_PAD.max.y && QUARRY_PAD.min.y < footprint.max.z)
-		return false;
-	// Not across the yard's gateway while the gate's shut.
-	if (!m_yardGateOpen && footprint.max.x > YARD_MIN_X - 0.1f && footprint.min.x < YARD_MIN_X + 0.1f
-			&& footprint.max.z > YARD_GATE_MIN_Z && footprint.min.z < YARD_GATE_MAX_Z)
-		return false;
 	return true;
 }

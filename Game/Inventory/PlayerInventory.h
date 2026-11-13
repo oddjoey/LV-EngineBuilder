@@ -81,7 +81,7 @@ public:
 	void SwapHotbar(int a, int b);
 	ItemRef GetHotbar(int slot) const;
 	std::optional<int> HotbarSlotOf(const ItemRef& item) const;
-	// The selected slot if it's empty, else the next empty one after it (wrapping round).
+	// The leftmost empty slot.
 	std::optional<int> FreeHotbarSlot() const;
 	int GetSelected() const;
 	void SetSelected(int slot);

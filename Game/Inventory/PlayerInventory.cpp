@@ -225,9 +225,9 @@ std::optional<int> PlayerInventory::HotbarSlotOf(const ItemRef& item) const
 
 std::optional<int> PlayerInventory::FreeHotbarSlot() const
 {
-	// The selected slot first (into the hand), then the ones after it, wrapping round.
-	for (int step = 0; step < HOTBAR_SLOTS; step++)
-		if (int slot = (m_selected + step) % HOTBAR_SLOTS; m_hotbar[slot].IsNone())
+	// The leftmost empty slot.
+	for (int slot = 0; slot < HOTBAR_SLOTS; slot++)
+		if (m_hotbar[slot].IsNone())
 			return slot;
 	return std::nullopt;
 }

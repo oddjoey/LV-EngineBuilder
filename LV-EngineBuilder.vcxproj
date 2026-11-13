@@ -129,9 +129,6 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="Game\Simulation\Dyno.cpp" />
     <ClCompile Include="Game\Simulation\RoadTest.cpp" />
     <ClCompile Include="Game\Simulation\WorkshopCar.cpp" />
-    <ClCompile Include="Game\Simulation\WorkshopQuarry.cpp" />
-    <ClCompile Include="Game\World\ShopWorldQuarry.cpp" />
-    <ClCompile Include="Game\UI\WorkshopQuarryUI.cpp" />
     <ClCompile Include="Game\Simulation\EngineAssembly.cpp" />
     <ClCompile Include="Game\Simulation\EngineSpec.cpp" />
     <ClCompile Include="Game\Simulation\Feature.cpp" />

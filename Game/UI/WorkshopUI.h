@@ -12,7 +12,7 @@
 // Which screen the workshop window shows; only one at a time. BACKPACK is the inventory (Tab), the
 // rest open from their station. STORE isn't one: it opens the parts computer's own window (see
 // OpenStore).
-enum class WorkshopTab { BACKPACK, BENCH, MACHINE, ENGINE_STAND, DYNO, STORE, CAR, QUARRY };
+enum class WorkshopTab { BACKPACK, BENCH, MACHINE, ENGINE_STAND, DYNO, STORE, CAR };
 
 // A part the Bench tab can work on, and where it's sitting.
 struct BenchItem
@@ -133,8 +133,6 @@ private:
 	void DrawCarTune(Workshop& workshop);
 	void DrawCarRoadTest(Workshop& workshop);
 	void DrawCarStore(Workshop& workshop);
-	// The desert quarry: what it makes, the hopper to empty, and its upgrades (WorkshopQuarryUI.cpp).
-	void DrawQuarryTab(Workshop& workshop);
 	void DrawLog(Workshop& workshop);
 
 	std::string Size(double mm) const;
@@ -168,6 +166,8 @@ private:
 	double				m_machineParameter = 0.0;	// in display units
 	std::string			m_lastMachiningMessage = "";
 	PartOrder			m_order = {};
+	// What's typed in the parts store's search bar: only the parts whose names (or sections) have it in them are shown.
+	char				m_storeSearch[64] = {};
 	std::vector<CartLine>	m_cart = {};
 	int				m_carSystem = 0;			// the car system the build page shows (from FIRST_CAR_SYSTEM)
 	std::optional<CarTune>	m_tuneDraft = std::nullopt;	// the tune being set, till it's applied

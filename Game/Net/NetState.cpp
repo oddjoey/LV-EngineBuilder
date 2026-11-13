@@ -425,6 +425,14 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 			out.Int(ring).Int(at.block).Int(at.cylinder).Int(at.squared ? 1 : 0);
 		records["g:borerings"] = out.Text();
 	}
+	{
+		// The valvetrain in heads off the engine: the part, the head, and its position in it.
+		Writer out;
+		out.Int(workshop.m_headFittings.size());
+		for (const auto& [part, at] : workshop.m_headFittings)
+			out.Int(part).Int(at.head).Int(static_cast<int>(at.slot)).Int(at.index);
+		records["g:headfittings"] = out.Text();
+	}
 	// What's fitted to what off the engines: shells in rods and caps, pistons on rods, pins in pistons.
 	for (auto [key, fittings] : { std::pair{ "g:shells", &workshop.m_shells }, std::pair{ "g:pistons", &workshop.m_pistons }, std::pair{ "g:pins", &workshop.m_pins }, std::pair{ "g:rings", &workshop.m_rings } })
 	{
@@ -513,6 +521,14 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		for (const auto& [tool, battery] : world.m_batteries)
 			out.Int(tool).Int(static_cast<int>(std::round(battery.charge * 100.f))).Int(battery.on);
 		records["w:batteries"] = out.Text();
+	}
+	{
+		// Tools hung on the tool board by hand, to the millimetre.
+		Writer out;
+		out.Int(world.m_toolSpots.size());
+		for (const auto& [tool, spot] : world.m_toolSpots)
+			out.Int(tool).Int(std::lround(spot.x * 1000.f)).Int(std::lround(spot.y * 1000.f));
+		records["w:toolspots"] = out.Text();
 	}
 	{
 		Writer out;
@@ -689,6 +705,22 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 				at.squared = in.Int() != 0;
 				if (!in.Failed())
 					workshop.m_boreRings[ring] = at;
+			}
+		}
+		else if (key == "g:headfittings")
+		{
+			workshop.m_headFittings.clear();
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+			{
+				auto part = static_cast<uint32_t>(in.Int());
+				HeadFitting at;
+				at.head = static_cast<uint32_t>(in.Int());
+				int slot = static_cast<int>(in.Int());
+				at.index = static_cast<int>(in.Int());
+				at.slot = static_cast<AssemblySlot>(slot);
+				if (!in.Failed() && slot >= 0 && slot < static_cast<int>(AssemblySlot::COUNT) && (EngineAssembly::InHead(at.slot) || at.slot == AssemblySlot::ROCKER_ARM))
+					workshop.m_headFittings[part] = at;
 			}
 		}
 		else if (key == "g:shells" || key == "g:pistons" || key == "g:pins" || key == "g:rings")
@@ -1108,6 +1140,19 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			if (!in.Failed())
 				world.m_batteries = batteries;
 		}
+		else if (key == "w:toolspots")
+		{
+			std::map<size_t, glm::vec2> spots;
+			size_t count = in.Count();
+			for (size_t i = 0; i < count && !in.Failed(); i++)
+			{
+				auto tool = static_cast<size_t>(in.Int());
+				float x = static_cast<float>(in.Int()) / 1000.f;
+				spots[tool] = { x, static_cast<float>(in.Int()) / 1000.f };
+			}
+			if (!in.Failed())
+				world.m_toolSpots = spots;
+		}
 		else if (key == "w:engines")
 		{
 			for (size_t engine = 0; engine < world.m_engineRolls.size() && !in.Failed(); engine++)
@@ -1117,6 +1162,9 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 				if (in.Failed())
 					break;
 				world.m_engineRolls[engine] = roll;
+				// The cam follows however far the crank's been turned, with the timing belt on.
+				float turned = std::remainder(crank - world.m_crankAngles[engine], 4.f * glm::pi<float>());
+				world.TurnCrank(workshop, static_cast<int>(engine), turned);
 				world.m_crankAngles[engine] = crank;
 			}
 		}

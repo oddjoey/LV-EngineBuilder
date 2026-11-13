@@ -396,9 +396,16 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 			for (size_t i = 0; i < tools.size(); i++)
 				if (tools[i].name.find("Feeler") != std::string::npos && workshop.OwnsTool(i))
 					feelers = true;
-			std::string reading = feelers ? std::format("the feelers say {:.2f} mm", std::round(lash * 100.0) / 100.0) : "no feeler gauge to read the gap";
-			m_prompt = std::format("{} rocker {}: {} (spec {:.2f} to {:.2f}, hot)   [LMB] In (tighter)   [RMB] Out (looser)", exhaust ? "Exhaust" : "Intake",
-				aimed->index / 2 + 1, reading, range.min, range.max);
+			// The lash is set by what it is hot (the tune's figure); cold, the valve's shorter in the head and it reads tighter.
+			// The spec's given both ways: hot just after a drive, cold once it's sat, and in between, for how warm it is.
+			double heat = workshop.CarEngineHeat();
+			double tighter = Workshop::LASH_HOT_GROWTH * (1.0 - heat);
+			double now = (std::max)(0.0, lash - tighter);
+			std::string reading = feelers ? std::format("the feelers say {:.2f} mm", std::round(now * 100.0) / 100.0) : "no feeler gauge to read the gap";
+			std::string warmth = heat > 0.95 ? "hot" : heat < 0.05 ? "cold" : std::format("warm, {:.0f}% of the way to hot", heat * 100.0);
+			m_prompt = std::format("{} rocker {}, engine {}: {} (spec {:.2f} to {:.2f} cold, {:.2f} to {:.2f} hot)   [LMB] In (tighter)   [RMB] Out (looser)",
+				exhaust ? "Exhaust" : "Intake", aimed->index / 2 + 1, warmth, reading, range.min - Workshop::LASH_HOT_GROWTH,
+				range.max - Workshop::LASH_HOT_GROWTH, range.min, range.max);
 			m_secondaryPrompt = "The rockers on one side are set alike: set one, and do the rest to match";
 			if (click)
 			{

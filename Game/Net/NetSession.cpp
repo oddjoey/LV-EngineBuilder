@@ -704,3 +704,4 @@ void NetSession::PlaceNeighbours(ShopWorld& world) const
 			offsets.push_back(PlotOffset(plot).x);
 	world.SetNeighbours(offsets);
 }
+

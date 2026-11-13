@@ -458,10 +458,11 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 		}
 		case Figure::ASSEMBLY_FLOW:
 		{
-			// The build in eight stages, snaking down the page.
-			const char* stages[] = { "Block, core plugs,\nupper main shells", "Crank, lower shells,\nmain caps torqued", "Pistons, rings,\nrods and rod caps",
-				"Head gasket,\nhead, head bolts", "Valves, springs,\ncamshaft, rockers", "Sprockets, belt,\ntensioner",
-				"Covers, pan, intake,\nexhaust, cooling", "Dyno pull" };
+			// The build in eight stages, snaking down the page: the head built up with its valves on the bench before it goes on,
+			// and the flywheel last, on the hoist.
+			const char* stages[] = { "Block, main shells,\ncrank, main caps", "Pistons, rods,\nrod caps, oil pump", "On the bench:\nvalves into head",
+				"Gasket, head,\nhead bolts", "Camshaft, caps,\nrockers", "Timing belt,\ntiming cover",
+				"Pan, valve cover,\nmanifolds, cooling", "On the hoist:\nflywheel, then dyno" };
 			int columns = 4;
 			float boxWidth = width / columns - fontSize * 0.9f, boxHeight = height / 2.f - fontSize * 2.f;
 			ImVec2 centres[8];

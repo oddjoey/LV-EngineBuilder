@@ -1,9 +1,10 @@
-// The project car's side of the workshop: buying it, building it up, its fluids, the road test and selling it.
+// The LE86's side of the workshop: the car the shop starts with, working on it, its fluids and the road test.
 #include "Workshop.h"
 
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <functional>
 
 #include "PartFactory.h"
 #include "Random.h"
@@ -11,27 +12,6 @@
 
 namespace
 {
-	// What's wrong with a part off the old car that's past saving, by what it is.
-	const char* WornOutBecause(PartType type)
-	{
-		switch (PartCatalog::Get(type).system)
-		{
-			case PartSystem::BODY:				return "Rusted through on the old car";
-			case PartSystem::INTERIOR:			return "Cracked and torn on the old car";
-			case PartSystem::FRONT_SUSPENSION:
-			case PartSystem::REAR_SUSPENSION:	return "Worn out: blown, sagging or its bushes perished";
-			case PartSystem::STEERING:			return "Worn out: it knocks and has play";
-			case PartSystem::BRAKES:			return "Seized, scored or worn under its limit";
-			case PartSystem::DRIVETRAIN:		return "Worn out: it slips, whines or clunks";
-			case PartSystem::FUEL_SYSTEM:		return "Rusted inside";
-			case PartSystem::ELECTRICAL:		return "Dead, or its wires chafed through";
-			case PartSystem::RADIATOR_AND_FAN:	return "Leaks at the seams, or its motor's seized";
-			case PartSystem::CAR_EXHAUST:		return "Blown, rusted through";
-			case PartSystem::WHEELS:			return type == PartType::TIRE ? "Hardened and cracked with age" : "Bent";
-			default:							return "Worn out on the old car";
-		}
-	}
-
 	constexpr double ROAD_TEST_HOURS = 0.4;
 	constexpr double ROAD_TEST_FUEL = 3.0;
 	constexpr double BURP_MINUTES = 12.0;
@@ -54,80 +34,98 @@ void Workshop::CarChanged()
 		m_car->roadTestCurrent = false;
 }
 
-bool Workshop::BuyProjectCar()
+void Workshop::SetUpStartingCar()
 {
-	if (m_car)
-	{
-		Log("There's room in the salvage yard for one project car: sell this one first.");
-		return false;
-	}
-	if (!Spend(PROJECT_CAR_PRICE, "the project car"))
-		return false;
-
-	// The shell stands in the salvage yard; whatever came off the old car lies round it there. The parts the store only
-	// sells new (pads, hoses, filters, the battery, the glass, the clutch disc) were thrown away or are gone; of
-	// the rest some never turned up and some are past saving.
+	// The LE86, complete and running, its LV-16 in it under the first stand's number. Everything on both was fitted new
+	// once and has done its miles since: used, and here and there worn past its limit.
 	m_car = std::make_unique<CarBuild>(CarSpec::LE86Coupe());
-	m_carLot.clear();
-	m_carLotHardware.clear();
-	auto& car = m_car->assembly;
-	auto shell = PartFactory::Create(PartType::BODY_SHELL, *m_spec, PartQuality::OEM, PartCondition::USED);
-	m_inventory.push_back(shell);
-	std::string error;
-	car.Install(CarSlot::BODY_SHELL, 0, shell, error);
+	m_activeEngine = 0;
+	FitNewEngineParts();
+	WearStartingEngine(0, 75.0);
+	FitNewCarParts();
+	FillAndBleedCar();
+	WearStartingCar();
+	for (const auto& part : m_inventory)
+		part->MarkUsed();
+	CarChanged();
+}
 
-	int parts = 0, scrap = 0;
-	std::map<CarSlot, std::vector<pPart>> came;
-	for (int s = static_cast<int>(CarSlot::FRONT_FENDER); s < CAR_PART_SLOTS; s++)
+namespace
+{
+	// A worn part's feature: set to this value (its samples moved with it, so it measures what it is).
+	void WearTo(Part& part, const std::string& name, double value)
 	{
-		auto slot = static_cast<CarSlot>(s);
-		auto type = CarAssembly::SlotPartType(slot);
-		const auto& info = PartCatalog::Get(type);
-		for (int index = 0; index < car.SlotCount(slot); index++)
-		{
-			if (!info.soldUsed || Random::Chance(0.12))
-				continue;
-			// The diff is the factory's ratio.
-			double size = slot == CarSlot::DIFFERENTIAL ? CarSpec::LE86Coupe().finalDriveNominal : 0.0;
-			auto part = PartFactory::Create(type, *m_spec, PartQuality::OEM, PartCondition::USED, size);
-			// Old tires are nearly always hard; anything else is past it now and then.
-			if (Random::Chance(type == PartType::TIRE ? 0.6 : 0.15))
-			{
-				part->MarkDamaged(WornOutBecause(type));
-				scrap++;
-			}
-			m_inventory.push_back(part);
-			came[slot].push_back(part);
-			m_carLot.insert(part->GetId());
-			parts++;
-		}
+		Feature* feature = part.FindFeature(name);
+		if (!feature)
+			return;
+		double shift = value - feature->value;
+		feature->value = value;
+		for (auto& station : feature->samples)
+			for (double& sample : station)
+				sample += shift;
 	}
-	// The springs came off still on their struts, the tires on their wheels.
-	for (auto [host, carried] : { std::pair{ CarSlot::FRONT_STRUT, CarSlot::FRONT_COIL_SPRING }, std::pair{ CarSlot::WHEEL, CarSlot::TIRE } })
+
+	// Worn past its limit by this much more than its whole tolerance allows (factor 1.5: half again past it).
+	void WearPast(Part& part, const std::string& name, double factor)
 	{
-		auto& hosts = came[host];
-		auto& riders = came[carried];
-		for (size_t i = 0; i < hosts.size() && i < riders.size(); i++)
-			m_carCarried[hosts[i]->GetId()] = riders[i]->GetId();
+		if (const Feature* feature = part.FindFeature(name))
+			WearTo(part, name, feature->spec.Max() * factor);
 	}
-	// A coffee tin of the nuts and bolts, enough for every hole, though some have seen better days.
-	int fasteners = 0;
-	for (int s = static_cast<int>(CarSlot::STRUT_MOUNT_NUT); s < static_cast<int>(CarSlot::COUNT); s++)
+}
+
+void Workshop::WearStartingEngine(int engine, double health)
+{
+	// The faults it can have, the likeliest first, each one a thing to find (on the dyno, or with the right tool) and put
+	// right on its own: they go on one at a time till the dyno makes it about as healthy as asked. None of them
+	// stops it running or wrecks anything.
+	auto& assembly = m_engines[engine]->assembly;
+	auto at = [&](AssemblySlot slot, int index = 0) { return assembly.Get(slot, index); };
+	const std::vector<std::function<void()>> faults = {
+		// Two plugs worn wide: those cylinders misfire under load.
+		[&] { if (auto plug = at(AssemblySlot::SPARK_PLUG, 1)) WearTo(*plug, FeatureNames::ELECTRODE_GAP, 1.32); },
+		// The timing belt's teeth worn: the cam's a few degrees late.
+		[&] { if (auto belt = at(AssemblySlot::TIMING_BELT)) WearTo(*belt, FeatureNames::BELT_TOOTH_HEIGHT, 1.66); },
+		// The water pump's bearing shot: it weeps at the weep hole.
+		[&] { if (auto pump = at(AssemblySlot::WATER_PUMP)) WearPast(*pump, FeatureNames::SHAFT_PLAY, 1.8); },
+		[&] { if (auto plug = at(AssemblySlot::SPARK_PLUG, 2)) WearTo(*plug, FeatureNames::ELECTRODE_GAP, 1.28); },
+		// The distributor shaft worn: the timing wanders.
+		[&] { if (auto distributor = at(AssemblySlot::DISTRIBUTOR)) WearPast(*distributor, FeatureNames::SHAFT_PLAY, 1.6); },
+		// The valve cover's rail bent: it weeps oil down the head.
+		[&] { if (auto cover = at(AssemblySlot::VALVE_COVER)) WearPast(*cover, FeatureNames::RAIL_FLATNESS, 1.7); },
+		// The alternator's bearing whining.
+		[&] { if (auto alternator = at(AssemblySlot::ALTERNATOR)) WearPast(*alternator, FeatureNames::SHAFT_PLAY, 1.5); },
+		// The exhaust manifold warped: it ticks.
+		[&] { if (auto manifold = at(AssemblySlot::EXHAUST_MANIFOLD)) WearPast(*manifold, FeatureNames::FLANGE_FLATNESS, 1.6); },
+	};
+	for (const auto& fault : faults)
 	{
-		auto slot = static_cast<CarSlot>(s);
-		for (int index = 0; index < car.SlotCount(slot); index++, fasteners++)
-		{
-			auto bolt = PartFactory::Create(CarAssembly::SlotPartType(slot), *m_spec, PartQuality::OEM, PartCondition::USED);
-			if (Random::Chance(0.05))
-				bolt->MarkDamaged("Stretched or its thread is rusted");
-			m_inventory.push_back(bolt);
-			m_carLotHardware.insert(bolt->GetId());
-		}
+		if (!assembly.IsComplete() || Dyno::Run(assembly).healthScore <= health + 1.5)
+			break;
+		fault();
 	}
-	m_stats.partsBought += parts + fasteners;
-	Log(std::format("Bought the project car where it stands in the salvage yard: an LE86 shell, {} parts off the old car strewn round it ({} of them past saving) and "
-		"a box of {} nuts and bolts. No engine, and none of the parts the store only sells new.", parts, scrap, fasteners));
-	return true;
+	m_engines[engine]->dynoCurrent = false;
+}
+
+void Workshop::WearStartingCar()
+{
+	if (!m_car)
+		return;
+	auto& car = m_car->assembly;
+	// Tires hard and cracked with age, the driver's side engine mount split, and the front pads worn to their backing.
+	for (int index = 0; index < car.SlotCount(CarSlot::TIRE); index++)
+		if (auto tire = car.Get(CarSlot::TIRE, index))
+			tire->MarkDamaged("Hardened and cracked with age");
+	if (auto mount = car.Get(CarSlot::ENGINE_MOUNT, 0))
+		mount->MarkDamaged("Its rubber is split");
+	if (auto pads = car.Get(CarSlot::BRAKE_PAD_SET, 0))
+		pads->MarkDamaged("Worn through to the backing plates");
+	// And the oil's well past its change.
+	auto fluids = std::array<FluidLevel, FLUID_CIRCUITS>{};
+	for (int c = 0; c < FLUID_CIRCUITS; c++)
+		fluids[c] = car.GetFluid(static_cast<FluidCircuit>(c));
+	auto& oil = fluids[static_cast<size_t>(FluidCircuit::ENGINE_OIL)];
+	oil.hours = (std::max)(oil.hours, car.GetSpec().Fluid(FluidCircuit::ENGINE_OIL).changeHours * 1.4);
+	car.RestoreFluids(fluids);
 }
 
 bool Workshop::IsOnCar(const Part& part) const
@@ -209,7 +207,7 @@ bool Workshop::InstallCarPart(CarSlot slot, int index, const pPart& part)
 {
 	if (!m_car)
 	{
-		Log("The shop hasn't a car to fit it to: buy a project car at the parts computer.");
+		Log("The shop hasn't a car to fit it to.");
 		return false;
 	}
 	auto& car = m_car->assembly;
@@ -238,6 +236,12 @@ bool Workshop::InstallCarPart(CarSlot slot, int index, const pPart& part)
 	if (part->GetType() != CarAssembly::SlotPartType(slot))
 	{
 		Log(std::format("Only a {} goes there.", PartTypeName(CarAssembly::SlotPartType(slot))));
+		return false;
+	}
+	// The clutch bolts to the flywheel on the back of the engine in the bay.
+	if (slot == CarSlot::CLUTCH_DISC && car.GetEngine() >= 0 && !GetAssembly(car.GetEngine()).Get(AssemblySlot::FLYWHEEL, 0))
+	{
+		Log("The flywheel has to be on the engine first: the clutch bolts to it (with the gearbox out, there's room to fit it in the car).");
 		return false;
 	}
 	// A strut goes in with its spring on it, a wheel with its tire.
@@ -300,7 +304,7 @@ bool Workshop::RemoveCarPart(CarSlot slot, int index)
 		return false;
 	if (slot == CarSlot::BODY_SHELL)
 	{
-		Log("The shell is the car: it stays in the salvage yard.");
+		Log("The shell is the car: it stays where it is.");
 		return false;
 	}
 	if (auto host = CarAssembly::CarriedBy(slot))
@@ -340,14 +344,14 @@ std::optional<std::string> Workshop::CarTurningProblem(CarSlot slot, int index, 
 	return TurningProblemFor(CarAssembly::Holes(slot), m_car->assembly.Get(slot, index), toolIndex, sizeMm, tightening);
 }
 
-bool Workshop::TightenCarFastener(CarSlot slot, int index, size_t toolIndex, int sizeMm)
+bool Workshop::TightenCarFastener(CarSlot slot, int index, size_t toolIndex, int sizeMm, double setNm)
 {
 	if (auto problem = CarTurningProblem(slot, index, toolIndex, sizeMm, true))
 	{
 		Log(*problem);
 		return false;
 	}
-	DoUp(*CarAssembly::Holes(slot), *m_car->assembly.Get(slot, index), toolIndex);
+	DoUp(*CarAssembly::Holes(slot), *m_car->assembly.Get(slot, index), toolIndex, setNm);
 	CarChanged();
 	return true;
 }
@@ -423,6 +427,34 @@ bool Workshop::ServiceableInCar(AssemblySlot slot)
 		default:
 			return false;
 	}
+}
+
+std::optional<std::string> Workshop::EngineWorkProblem(int engine, AssemblySlot slot) const
+{
+	bool flywheel = AtFlywheel(slot);
+	if (engine == m_engineOnDyno)
+		return "That engine is on the dyno: lift it back onto a stand with the engine hoist to work on it.";
+	if (engine == m_engineOnHoist)
+		return flywheel ? std::nullopt
+			: std::optional<std::string>("That engine is hanging from the hoist: lower it onto a stand to work on it (only the flywheel goes on or off there).");
+	if (engine >= 0 && engine == GetEngineInCar())
+	{
+		if (flywheel)
+		{
+			const auto& car = m_car->assembly;
+			if (car.IsFilled(CarSlot::CLUTCH_DISC, 0) || car.IsFilled(CarSlot::TRANSMISSION, 0))
+				return "The clutch and gearbox are in the way: take them off the car to get at the flywheel.";
+			return std::nullopt;
+		}
+		if (!ServiceableInCar(slot))
+			return "That engine is in the car: only the top-end service parts (valve cover, plugs and leads, carburettor, oil filter) can be got at, "
+				"and the flywheel with the gearbox out. Lift it out with the hoist for the rest.";
+		return std::nullopt;
+	}
+	if (flywheel)
+		return "There's no room at the flywheel on the stand: its plate is bolted over the back of the block. Hang the engine from the "
+			"hoist to fit or take off the flywheel (or do it in the car, before the clutch and gearbox go on).";
+	return std::nullopt;
 }
 
 bool Workshop::LowerEngineIntoCar()
@@ -660,6 +692,12 @@ void Workshop::SetCarTune(const CarTune& tune)
 	CarChanged();
 }
 
+void Workshop::CoolCarEngine(double seconds)
+{
+	if (m_car && m_car->engineHeat > 0.0)
+		m_car->engineHeat = (std::max)(0.0, m_car->engineHeat - seconds / CAR_ENGINE_COOL_SECONDS);
+}
+
 const RoadTestResult& Workshop::RoadTestCar()
 {
 	static const RoadTestResult NONE = {};
@@ -681,7 +719,11 @@ const RoadTestResult& Workshop::RoadTestCar()
 	build.roadTestCurrent = true;
 	const auto& result = build.lastRoadTest;
 	if (result.starts)
+	{
 		build.assembly.Run(result.drives ? ROAD_TEST_HOURS : 0.05, result.drives ? ROAD_TEST_FUEL : 0.2);
+		// Run, it's hot (just started, warm).
+		build.engineHeat = (std::max)(build.engineHeat, result.drives ? 1.0 : 0.4);
+	}
 	if (result.drives && result.stops && result.steers)
 		Log(std::format("Road test: 0-100 km/h in {:.1f} s, the quarter mile in {:.1f} s, {:.0f} km/h flat out, {:.1f} m to stop from 100.",
 			result.zeroToHundred, result.quarterMile, result.topSpeed, result.brakingDistance));
@@ -690,81 +732,18 @@ const RoadTestResult& Workshop::RoadTestCar()
 	return result;
 }
 
-bool Workshop::SellCar()
-{
-	if (!m_car)
-		return false;
-	auto& car = m_car->assembly;
-	int engine = car.GetEngine();
-	if (engine < 0)
-	{
-		Log("Nobody's buying it without an engine.");
-		return false;
-	}
-	// The buyer drives it first.
-	DynoResult pull;
-	bool complete = GetAssembly(engine).IsComplete();
-	if (complete)
-		pull = Dyno::Run(m_engines[engine]->assembly);
-	auto test = RoadTest::Run(car, pull, complete);
-
-	double partsValue = 0.0;
-	for (const auto& part : car.GetAllParts())
-		partsValue += part->GetValue();
-	double engineValue = 0.0;
-	for (const auto& part : GetAssembly(engine).GetAllParts())
-		engineValue += part->GetValue();
-	bool roadworthy = test.drives && test.stops && test.steers && !test.failed;
-	double horsepower = pull.failed ? 0.0 : pull.peakPowerKw * 1.341;
-	double value = roadworthy ? (partsValue * 0.5 + engineValue * 0.6 + (3000.0 + horsepower * 30.0) * test.healthScore / 100.0)
-		: (partsValue + engineValue) * 0.3;
-	value = std::round(value * SaleFactor());
-	double earned = roadworthy ? ShopRank::ForSale(test.healthScore, horsepower) * 1.5 * ReputationFactor() : 0.0;
-	m_lastCarSale = { true, test, value, earned };
-
-	// Everything on it goes, the engine's pins with their pistons.
-	auto sold = car.GetAllParts();
-	auto engineParts = GetAssembly(engine).GetAllParts();
-	sold.insert(sold.end(), engineParts.begin(), engineParts.end());
-	for (const auto& part : engineParts)
-		if (auto pin = PinIn(*part))
-		{
-			sold.push_back(pin);
-			m_pins.erase(part->GetId());
-		}
-	for (const auto& part : sold)
-		m_inventory.erase(std::remove(m_inventory.begin(), m_inventory.end(), part), m_inventory.end());
-	auto& build = *m_engines[engine];
-	build.assembly.Clear();
-	build.unseated.clear();
-	build.squaredRings.clear();
-	build.readings.clear();
-	build.dynoCurrent = false;
-	m_car.reset();
-
-	m_money += value;
-	m_stats.moneyEarned += value;
-	if (roadworthy)
-		Log(std::format("Sold the LE86 for ${:.0f} after the buyer's drive: {:.1f} s to 100 km/h, {:.0f}% healthy (+{:.0f} reputation). There's room in the "
-			"salvage yard for another.", value, test.zeroToHundred, test.healthScore, earned));
-	else
-		Log(std::format("Sold the LE86 as a non-runner for ${:.0f}: it never made it round the block.", value));
-	EarnReputation(earned);
-	return true;
-}
-
-const CarSale& Workshop::GetLastCarSale() const
-{
-	return m_lastCarSale;
-}
-
 void Workshop::DevAssembleCar()
 {
 	if (!m_car)
-	{
 		m_car = std::make_unique<CarBuild>(CarSpec::LE86Coupe());
-		Log("Dev: a project car in the salvage yard.");
-	}
+	int fitted = FitNewCarParts();
+	FillAndBleedCar();
+	CarChanged();
+	Log(std::format("Dev: fitted {} new OEM parts to the car, and filled and bled it.", fitted));
+}
+
+int Workshop::FitNewCarParts()
+{
 	auto& car = m_car->assembly;
 	// The active engine goes in if it's finished and free.
 	if (car.GetEngine() < 0 && !car.MissingPrerequisite(CarSlot::ENGINE, 0))
@@ -812,7 +791,13 @@ void Workshop::DevAssembleCar()
 			}
 		}
 	}
+	return fitted;
+}
+
+void Workshop::FillAndBleedCar()
+{
 	// Full of the right stuff, bled and burped.
+	auto& car = m_car->assembly;
 	const auto& spec = car.GetSpec();
 	for (int c = 0; c < FLUID_CIRCUITS; c++)
 	{
@@ -829,8 +814,6 @@ void Workshop::DevAssembleCar()
 	}
 	car.BurpCoolant(BURP_MINUTES);
 	car.Fill(FluidCircuit::COOLANT, FluidProduct::COOLANT_50_50, 1.0);
-	CarChanged();
-	Log(std::format("Dev: fitted {} new OEM parts to the car, and filled and bled it.", fitted));
 }
 
 int Workshop::DevStripCar(PartType type)
@@ -946,7 +929,7 @@ namespace
 		return r;
 	}
 
-	constexpr long long CAR_TEXT_VERSION = 1;
+	constexpr long long CAR_TEXT_VERSION = 2;		// 2: no car sale (cars aren't sold)
 }
 
 std::string Workshop::CarState() const
@@ -989,8 +972,6 @@ std::string Workshop::CarState() const
 		out.Int(host).Int(carried);
 	for (double litres : m_fluidStock)
 		out.Num(litres);
-	out.Int(m_lastCarSale.sold).Num(m_lastCarSale.price).Num(m_lastCarSale.reputation);
-	WriteRoadTest(out, m_lastCarSale.test);
 	return out.Text();
 }
 
@@ -998,7 +979,7 @@ bool Workshop::RestoreCarState(const std::string& text)
 {
 	Reader in(text);
 	long long version = in.Int();
-	if (version < 1 || version > CAR_TEXT_VERSION)
+	if (version != CAR_TEXT_VERSION)
 		return false;
 	std::unique_ptr<CarBuild> build;
 	if (in.Int() != 0)
@@ -1067,11 +1048,6 @@ bool Workshop::RestoreCarState(const std::string& text)
 	std::array<double, FLUID_PRODUCTS> stock = {};
 	for (double& litres : stock)
 		litres = in.Num();
-	CarSale sale;
-	sale.sold = in.Int() != 0;
-	sale.price = in.Num();
-	sale.reputation = in.Num();
-	sale.test = ReadRoadTest(in);
 	if (in.Failed())
 		return false;
 
@@ -1082,16 +1058,6 @@ bool Workshop::RestoreCarState(const std::string& text)
 		m_car = std::move(build);
 	m_carCarried = carried;
 	m_fluidStock = stock;
-	m_lastCarSale = sale;
 	return true;
 }
 
-bool Workshop::CameWithCar(const Part& part) const
-{
-	return m_carLot.contains(part.GetId());
-}
-
-bool Workshop::CameWithCarHardware(const Part& part) const
-{
-	return m_carLotHardware.contains(part.GetId());
-}

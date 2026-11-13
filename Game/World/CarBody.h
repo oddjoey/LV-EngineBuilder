@@ -58,4 +58,5 @@ namespace CarBody
 	constexpr float HOOD_OPEN = 0.9f;
 	constexpr float TRUNK_OPEN = 1.05f;
 	constexpr float FLAP_OPEN = 1.45f;
+	constexpr float FULL_LOCK = 0.6f;		// the front wheels turned as far as they go, radians
 }

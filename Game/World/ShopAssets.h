@@ -308,6 +308,10 @@ namespace ShopModels
 	inline const std::string FENDER_RIGHT = "Front Fender (Right)";
 	inline const std::string DOOR_RIGHT = "Door (Right)";
 	inline const std::string FUEL_FLAP = "Fuel Flap";
+	inline const std::string KNUCKLE_RIGHT = "Steering Knuckle Right";
+	inline const std::string DOOR_GLASS = "Door Glass";
+	inline const std::string DOOR_GLASS_RIGHT = "Door Glass Right";
+	inline const std::string CAR_QUARTER_GLASS = "Car Quarter Glass";
 	inline const std::string COMPUTER_DESK = "Computer Desk";
 	inline const std::string PACKAGE_BOX = "Package: Box";
 	inline const std::string PACKAGE_CRATE = "Package: Crate";

@@ -21,7 +21,7 @@ namespace
 		switch (circuit)
 		{
 			case FluidCircuit::ENGINE_OIL:		return { CAR_ENGINE_MOUNT.x, CAR_ENGINE_MOUNT.y + 0.19f, 0.05f };
-			case FluidCircuit::COOLANT:			return { 1.98f, 0.66f, 0.2f };
+			case FluidCircuit::COOLANT:			return { 1.98f, 0.73f, 0.2f };
 			case FluidCircuit::BRAKES:			return { 1.15f, 0.73f, -0.42f };
 			case FluidCircuit::CLUTCH:			return { 0.98f, 0.78f, -0.6f };
 			case FluidCircuit::TRANSMISSION:	return { 0.55f, 0.22f, 0.17f };

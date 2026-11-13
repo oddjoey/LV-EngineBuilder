@@ -560,8 +560,9 @@ void GameAudio::Loops(float deltaTime, ShopWorld& world, float timeOfDay)
 	};
 
 	// The dyno engine, its note following the rpm; the door rolling; the lift's motor.
-	float rpm = world.GetEngineRpm();
-	glm::vec3 dyno = world.GetDynoPosition(), door = world.GetDoorPosition(), lift = world.GetLiftPosition();
+	// (Or the car's, while it's being driven.)
+	float rpm = world.IsDriving() ? world.GetDriveRpm() : world.GetEngineRpm();
+	glm::vec3 dyno = world.IsDriving() ? world.GetCarPosition() : world.GetDynoPosition(), door = world.GetDoorPosition(), lift = world.GetLiftPosition();
 	keep(m_engineLoop, m_engineClip, Bus::EFFECTS, rpm > 0.f, &dyno, 0.5f + 0.5f * (std::min)(rpm / 5500.f, 1.f), rpm / 2400.f);
 	keep(m_doorLoop, m_doorClip, Bus::EFFECTS, world.IsDoorMoving(), &door, 0.6f, 1.f);
 	keep(m_liftLoop, m_liftClip, Bus::EFFECTS, world.IsLiftMoving(), &lift, 0.5f, 1.f);

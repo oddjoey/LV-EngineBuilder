@@ -376,7 +376,7 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Looking at {:.0f}, {:.0f} degrees.", *yaw, pitch.value_or(0.0)));
 	});
 
-	m_console.AddCommand("car", "car build|test|open|shut|strip <part>",
+	m_console.AddCommand("car", "car build|test|drive [seconds] [steer]|steer [amount]|open|shut|strip <part>",
 		"The LE86: build (new OEM parts wherever one's missing, the active engine in if it's finished, filled and bled), "
 		"test (a road test), or strip a kind of part off it, bolts and all (car strip hood).", [this, partNames](const Console::Arguments& args) {
 		std::string what = args.empty() ? "" : args[0];
@@ -394,6 +394,24 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		{
 			m_world.DevOpenCar(what == "open");
 			m_console.Print(what == "open" ? "The car's doors, hood, trunk and fuel flap are open." : "The car's shut.");
+		}
+		else if (what == "steer")
+		{
+			// car steer [amount]: turns the front wheels where it stands (-1 full right lock to 1 full left).
+			auto steer = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			m_world.DevSteer(static_cast<float>(steer.value_or(0.0)));
+			m_console.Print("Wheels turned.");
+		}
+		else if (what == "drive")
+		{
+			// car drive [seconds] [steer]: gets in, and holds the throttle down that long with the wheel turned (-1 right to 1 left).
+			auto seconds = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			auto steer = args.size() > 2 ? Number(args[2]) : std::nullopt;
+			m_world.DevDrive(static_cast<float>(seconds.value_or(0.0)), static_cast<float>(steer.value_or(0.0)));
+			if (m_world.IsDriving() || m_world.DevStartDrive(*m_workshop))
+				m_console.Print("At the wheel.");
+			else
+				m_console.Error("It won't go.");
 		}
 		else if (what == "build")
 		{

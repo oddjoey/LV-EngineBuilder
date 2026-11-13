@@ -369,6 +369,15 @@ void ShopWorld::Build(const ShopAssets& assets)
 	m_carStands->SetVisible(false);
 	m_fuelFlap = Spawn(ShopModels::FUEL_FLAP, ShopTextures::PAINT, CAR_HOME, CAR_YAW);
 	m_fuelFlap->SetVisible(false);
+	const glm::vec4 CAR_GLASS = { 0.75f, 0.88f, 0.95f, 0.3f };
+	m_quarterGlass = Spawn(ShopModels::CAR_QUARTER_GLASS, "", CAR_HOME, CAR_YAW);
+	m_doorGlass = { Spawn(ShopModels::DOOR_GLASS, "", CAR_HOME, CAR_YAW), Spawn(ShopModels::DOOR_GLASS_RIGHT, "", CAR_HOME, CAR_YAW) };
+	for (const auto& glass : { m_quarterGlass, m_doorGlass[0], m_doorGlass[1] })
+	{
+		glass->SetTint(CAR_GLASS)->SetCastsShadows(false);
+		glass->SetVisible(false);
+		glass->SetPickable(false);
+	}
 	m_carStands->SetPickable(false);
 	m_fixedStations = m_stations.size();
 
@@ -383,7 +392,8 @@ void ShopWorld::RebuildCollision()
 	{
 		const auto& station = m_stations[i];
 		// A machine being carried around doesn't block anything until it's set down.
-		if (!station.present || (m_move && m_move->stationIndex == i))
+		// Nor does the car get in its own way while it's being driven.
+		if (!station.present || (m_move && m_move->stationIndex == i) || (m_drive.active && i == m_carStation))
 			continue;
 
 		for (const auto& surface : station.localSurfaces)
@@ -480,7 +490,7 @@ int ShopWorld::ArmsOut() const
 
 void ShopWorld::UpdateSelfAvatar(float deltaTime, const FirstPersonController& player)
 {
-	bool show = m_viewModelVisible && m_thirdPerson;
+	bool show = m_viewModelVisible && m_thirdPerson && !m_drive.active;	// at the wheel they're in the car, out of sight
 	if (show && !m_selfAvatar.IsSpawned())
 		m_selfAvatar.Spawn(*this, player.GetFeetPosition(), player.GetYaw(), m_look);
 	m_selfAvatar.SetVisible(show);
@@ -535,7 +545,7 @@ ShopWorld::CameraView ShopWorld::UpdateThirdPersonCamera(const FirstPersonContro
 
 void ShopWorld::UpdateViewModel(const FirstPersonController& player)
 {
-	bool firstPerson = m_viewModelVisible && !m_thirdPerson;
+	bool firstPerson = m_viewModelVisible && !m_thirdPerson && !m_drive.active;
 	bool showBody = firstPerson && m_viewSettings.showBody;
 	bool showArm = firstPerson && m_viewSettings.showArm;
 	m_viewBody->SetVisible(showBody);
@@ -859,6 +869,14 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	if (!playerHasControl)
 		return std::nullopt;
 
+	// At the wheel there's nothing else to do but drive (ShopWorld::Drive) and get out again.
+	if (m_drive.active)
+	{
+		m_prompt = std::abs(m_drive.speed) <= 0.6f ? "[W]/[S] Drive   [A]/[D] Steer   [Space] Handbrake   [F] Get out" : "[Space] Handbrake";
+		m_secondaryPrompt = DriveReadout(workshop);
+		return std::nullopt;
+	}
+
 	if (m_move)
 	{
 		UpdateMove(player, input);
@@ -907,6 +925,23 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	{
 		StartMove(m_hover->stationIndex);
 		return std::nullopt;
+	}
+	// [F] at the car (any of it) gets in and drives it.
+	if (m_hover && m_carStation < m_stations.size() && m_stations[m_carStation].present)
+	{
+		bool atCar = m_hover->kind == TargetKind::STATION && m_hover->stationIndex == m_carStation;
+		if (m_hover->kind == TargetKind::ITEM)
+			if (const auto* visual = Find(m_hover->item))
+				atCar = visual->place == ItemPlace::CAR;
+		if (atCar)
+		{
+			m_prompt += (m_prompt.empty() ? "" : "   ") + std::string("[F] Drive");
+			if (Controls::Pressed(input, Control::MOVE))
+			{
+				StartDrive(workshop);
+				return std::nullopt;
+			}
+		}
 	}
 	if (Controls::Pressed(input, Control::MOVE) && m_hover && m_hover->kind == TargetKind::PACKAGE)
 	{
@@ -1233,15 +1268,6 @@ void ShopWorld::SyncMachines(const Workshop& workshop)
 				m_carStands->SetVisible(workshop.OwnsCar() && !onWheels);
 				m_carStands->SetPosition(station.position);
 				m_carStands->SetRotation(station.Rotation());
-			}
-			// The car never moves from its spot on the drive.
-			if (station.position != station.homePosition || station.yaw != station.homeYaw)
-			{
-				station.position = station.homePosition;
-				station.yaw = station.homeYaw;
-				station.object->SetPosition(station.position);
-				station.object->SetRotation(station.Rotation());
-				RebuildCollision();
 			}
 			if (station.present != workshop.OwnsCar())
 			{
@@ -2757,13 +2783,14 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 				visual.standSlot = { AssemblySlot::COUNT, -1 };
 			}
 		}
-		// A fender or door on the car's right side is the mirror of the left-hand one (it keeps that hand once it's off).
-		if (visual.part && visual.place == ItemPlace::CAR
-			&& (visual.part->GetType() == PartType::FRONT_FENDER || visual.part->GetType() == PartType::DOOR) && workshop.GetCar())
+		// A fender, door or steering knuckle on the car's right side is the mirror of the left-hand one (it keeps that hand once it's off).
+		if (visual.part && visual.place == ItemPlace::CAR && workshop.GetCar()
+			&& (visual.part->GetType() == PartType::FRONT_FENDER || visual.part->GetType() == PartType::DOOR || visual.part->GetType() == PartType::STEERING_KNUCKLE))
 			if (auto at = workshop.GetCar()->assembly.Find(visual.part.get()))
 			{
-				bool fender = visual.part->GetType() == PartType::FRONT_FENDER;
-				uint32_t wanted = at->second == 1 ? m_assets->Model(fender ? ShopModels::FENDER_RIGHT : ShopModels::DOOR_RIGHT)
+				PartType handed = visual.part->GetType();
+				uint32_t wanted = at->second == 1 ? m_assets->Model(handed == PartType::FRONT_FENDER ? ShopModels::FENDER_RIGHT
+						: handed == PartType::DOOR ? ShopModels::DOOR_RIGHT : ShopModels::KNUCKLE_RIGHT)
 					: m_assets->PartModel(visual.part->GetType());
 				if (visual.object->GetModelIndex() != wanted)
 				{
@@ -2789,6 +2816,9 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 		if (spannerInHand && visual.part && (visual.place == ItemPlace::STAND || visual.place == ItemPlace::CAR)
 			&& PartCatalog::Get(visual.part->GetType()).fastener.IsFastener())
 			tint = TightnessTint(*visual.part);
+		// The windshield and the rear window are glass: seen through.
+		if (visual.part && (visual.part->GetType() == PartType::WINDSHIELD || visual.part->GetType() == PartType::REAR_WINDOW))
+			tint.a = 0.3f;
 		visual.object->SetTint(tint);
 		visual.object->SetEmissive(0.f);
 		// What another player carries shows only in their hand.
@@ -2885,7 +2915,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 					{
 						bool raised = CarAssembly::IsFastenerSlot(at->first) && visual.part->GetTightness() == FastenerTightness::LOOSE
 							&& !PartWayDoneUp(*visual.part);
-						if (carMoved || m_carPanelsMoving || visual.carSlot != static_cast<int>(at->first) || visual.carIndex != at->second || visual.carRaised != raised)
+						if (carMoved || m_carPanelsMoving || m_drive.active || visual.carSlot != static_cast<int>(at->first) || visual.carIndex != at->second || visual.carRaised != raised)
 						{
 							PlaceOnCar(visual, at->first, at->second);
 							visual.carSlot = static_cast<int>(at->first);

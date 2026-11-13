@@ -244,8 +244,11 @@ void ShopAssets::LoadCarParts()
 			const glm::vec3 lean = { 0.f, GLASS_Z - ROOF_Z, side * (ROOF_Y - BELT_Y) };
 			const float glass = 0.34f, glassTop = height + glass;
 			const float rake = (WINDSHIELD_TOP_X - WINDSHIELD_BASE_X) / (ROOF_Y - BELT_Y);			// how far back it leans per metre up
-			Slab(door, { on(-length + 0.022f, height), on(-0.05f, height), on(-0.05f + rake * glass, glassTop), on(-length + 0.022f, glassTop) },
+			// The glass is a model of its own, so it can be seen through (ShopWorld keeps it on the door).
+			MeshBuilder pane;
+			Slab(pane, { on(-length + 0.022f, height), on(-0.05f, height), on(-0.05f + rake * glass, glassTop), on(-length + 0.022f, glassTop) },
 				lean, 0.008f, GLASS);
+			AddModel(side < 0.f ? ShopModels::DOOR_GLASS : ShopModels::DOOR_GLASS_RIGHT, pane);
 			glm::vec3 corner = on(-0.035f + rake * (glass + 0.01f), glassTop + 0.01f);
 			Beam(door, on(-0.035f, height), corner, { 0.f, 0.f, 1.f }, 0.03f, 0.03f, TRIM_BLACK);
 			Beam(door, corner, on(-length + 0.008f, glassTop + 0.01f), { 0.f, 0.f, 1.f }, 0.025f, 0.03f, TRIM_BLACK);
@@ -341,8 +344,8 @@ void ShopAssets::LoadCarParts()
 				Slab(pane, { { -halfFront - grow, y, length * 0.5f + grow }, { halfFront + grow, y, length * 0.5f + grow },
 					{ halfBack + grow, y, -length * 0.5f - grow }, { -halfBack - grow, y, -length * 0.5f - grow } }, { 0.f, 1.f, 0.f }, thick, color);
 			};
-			sheet(0.f, 0.004f, 0.008f, TRIM_BLACK);
-			sheet(-0.02f, 0.011f, 0.006f, GLASS);
+			// All glass: the whole part is drawn see-through, and the opening's own edges frame it.
+			sheet(0.f, 0.008f, 0.008f, GLASS);
 			add(type, pane);
 		};
 		const float rise = ROOF_Y - BELT_Y;
@@ -410,26 +413,32 @@ void ShopAssets::LoadCarParts()
 		MeshBuilder strut;
 		Cylinder(strut, At({ 0.f, 0.22f, 0.f }), 0.026f, 0.44f, IRON, 16);
 		Cylinder(strut, At({ 0.f, 0.5f, 0.f }), 0.011f, 0.14f, ALLOY, 12);
-		Cylinder(strut, At({ 0.f, 0.14f, 0.f }), 0.075f, 0.008f, IRON, 20);
-		Cylinder(strut, At({ 0.f, 0.56f, 0.f }), 0.07f, 0.02f, IRON, 20);
+		Cylinder(strut, At({ 0.f, 0.14f, 0.f }), 0.065f, 0.008f, IRON, 20);
+		Cylinder(strut, At({ 0.f, 0.56f, 0.f }), 0.065f, 0.02f, IRON, 20);
 		add(PartType::FRONT_STRUT, strut);
 	}
 	{
 		MeshBuilder spring;
 		for (int coil = 0; coil < 6; coil++)
-			Tube(spring, At({ 0.f, 0.16f + coil * 0.065f, 0.f }), 0.068f, 0.055f, 0.012f, SPRING_RED, 20);
+			Tube(spring, At({ 0.f, 0.16f + coil * 0.065f, 0.f }), 0.045f, 0.034f, 0.012f, SPRING_RED, 20);	// clear of the tire's inner wall
 		add(PartType::FRONT_COIL_SPRING, spring);
 	}
 	{
-		MeshBuilder knuckle;
-		Box(knuckle, { 0.f, 0.15f, 0.f }, { 0.08f, 0.3f, 0.1f }, IRON);
-		Cylinder(knuckle, AlongX({ 0.05f, 0.12f, 0.f }), 0.045f, 0.06f, ALLOY, 16);
-		Box(knuckle, { 0.f, 0.04f, 0.1f }, { 0.05f, 0.04f, 0.16f }, IRON);
-		add(PartType::STEERING_KNUCKLE, knuckle);
+		// The knuckle as it goes on the car (+x forward), one for each side: the housing that clamps round the strut's
+		// foot, the spindle out to the wheel a tenth of a metre up, and the steering arm low down, forward to the tie rod.
+		for (float side : { -1.f, 1.f })
+		{
+			MeshBuilder knuckle;
+			Box(knuckle, { 0.f, 0.13f, 0.f }, { 0.1f, 0.26f, 0.08f }, IRON);
+			Cylinder(knuckle, AlongZ({ 0.f, 0.1f, side * 0.05f }), 0.045f, 0.06f, ALLOY, 16);
+			Box(knuckle, { 0.1f, 0.02f, 0.f }, { 0.2f, 0.04f, 0.05f }, IRON);
+			Cylinder(knuckle, At({ 0.18f, 0.02f, 0.f }), 0.02f, 0.05f, IRON, 12);
+			AddModel(side < 0.f ? std::string(PartTypeName(PartType::STEERING_KNUCKLE)) : ShopModels::KNUCKLE_RIGHT, knuckle);
+		}
 	}
 	box(PartType::LOWER_CONTROL_ARM, { 0.42f, 0.05f, 0.12f }, ARM_GREY);
 	lying(PartType::STRUT_ROD, 0.012f, 0.5f, ARM_GREY);
-	lying(PartType::FRONT_SWAY_BAR, 0.011f, 1.1f, TRIM_BLACK);
+	lying(PartType::FRONT_SWAY_BAR, 0.011f, 0.96f, TRIM_BLACK);	// short of the tires on full lock
 
 	// Rear suspension: the axle across, the diff in its nose.
 	{
@@ -522,8 +531,21 @@ void ShopAssets::LoadCarParts()
 		Cylinder(battery, At({ 0.08f, 0.19f, 0.f }), 0.01f, 0.02f, ALLOY, 10);
 		add(PartType::BATTERY, battery);
 	}
-	box(PartType::MAIN_HARNESS, { 0.6f, 0.1f, 0.4f }, TRIM_BLACK);
-	box(PartType::ENGINE_HARNESS, { 0.45f, 0.08f, 0.3f }, TRIM_BLACK);
+	// The looms: a taped trunk with a plug at each end and branches off it.
+	auto loom = [&](PartType type, float length, int branches) {
+		MeshBuilder harness;
+		Cylinder(harness, AlongX({ 0.f, 0.018f, 0.f }), 0.018f, length, TRIM_BLACK, 10);
+		for (float side : { -1.f, 1.f })
+			Box(harness, { side * (length * 0.5f + 0.015f), 0.018f, 0.f }, { 0.03f, 0.03f, 0.045f }, OFF_WHITE);
+		for (int branch = 0; branch < branches; branch++)
+		{
+			float x = length * ((branch + 1.f) / (branches + 1.f) - 0.5f);
+			Cylinder(harness, AlongZ({ x, 0.014f, (branch % 2 == 0 ? 1.f : -1.f) * 0.05f }), 0.009f, 0.1f, TRIM_BLACK, 8);
+		}
+		add(type, harness);
+	};
+	loom(PartType::MAIN_HARNESS, 1.2f, 5);
+	loom(PartType::ENGINE_HARNESS, 0.5f, 3);
 	box(PartType::FUSE_BOX, { 0.2f, 0.05f, 0.12f }, OFF_WHITE);
 	upright(PartType::IGNITION_COIL, 0.03f, 0.13f, TRIM_BLACK);
 	{
@@ -577,11 +599,12 @@ void ShopAssets::LoadCarParts()
 	}
 
 	// Exhaust
-	box(PartType::CATALYTIC_CONVERTER, { 0.4f, 0.12f, 0.2f }, ALLOY);
+	box(PartType::CATALYTIC_CONVERTER, { 0.4f, 0.1f, 0.2f }, ALLOY);
 	{
+		// Slim enough to hang under the floor.
 		MeshBuilder muffler;
-		Cylinder(muffler, AlongX({ 0.f, 0.1f, 0.f }), 0.1f, 0.5f, IRON, 18);
-		Cylinder(muffler, AlongX({ 0.45f, 0.1f, 0.f }), 0.024f, 0.45f, IRON, 12);
+		Cylinder(muffler, AlongX({ 0.f, 0.075f, 0.f }), 0.075f, 0.5f, IRON, 18);
+		Cylinder(muffler, AlongX({ 0.45f, 0.075f, 0.f }), 0.024f, 0.45f, IRON, 12);
 		add(PartType::MUFFLER, muffler);
 	}
 
@@ -628,8 +651,19 @@ void ShopAssets::BuildProjectCarShell()
 	const glm::vec3 PRIMER = { 0.62f, 0.62f, 0.6f };		// the engine bay's bare metal
 	const glm::vec3 UNDERSEAL = { 0.16f, 0.16f, 0.17f };
 
-	Box(car, { -0.15f, 0.2f, 0.f }, { 3.6f, 0.04f, 1.5f }, UNDERSEAL);				// the floor pan, front to boot
+	// The floor pan, front to boot: the cabin's and the tail's the body's width, but only between the chassis rails
+	// under the engine bay and between the wheel housings over the back axle, leaving the wheels their room.
+	constexpr float FOOTWELL_X = 0.79f;				// the front wheel housings come back into the footwells to here
+	constexpr float REAR_TUB = 0.335f;				// the rear wheel housings' radius, about the axle
+	constexpr float REAR_TUB_WALL_Z = 0.5885f;		// and their inner walls, just inside the tires
+	const float tubFront = REAR_AXLE_X + REAR_TUB + 0.02f, tubBack = REAR_AXLE_X - REAR_TUB - 0.02f;
+	Box(car, { (tubFront + FOOTWELL_X) * 0.5f, 0.2f, 0.f }, { FOOTWELL_X - tubFront, 0.04f, 1.5f }, UNDERSEAL);
+	Box(car, { (FOOTWELL_X + 1.65f) * 0.5f, 0.2f, 0.f }, { 1.65f - FOOTWELL_X, 0.04f, 0.82f }, UNDERSEAL);
+	Box(car, { REAR_AXLE_X, 0.2f, 0.f }, { tubFront - tubBack, 0.04f, 2.f * REAR_TUB_WALL_Z }, UNDERSEAL);
+	Box(car, { (tubBack - 1.95f) * 0.5f, 0.2f, 0.f }, { tubBack + 1.95f, 0.04f, 1.5f }, UNDERSEAL);
 	const float roofMiddle = (WINDSHIELD_TOP_X + REAR_WINDOW_TOP_X) * 0.5f, roofLength = WINDSHIELD_TOP_X - REAR_WINDOW_TOP_X;
+	// The fixed quarter windows are a model of their own, so they can be seen through.
+	MeshBuilder quarterGlass;
 	for (float side : { -1.f, 1.f })
 	{
 		const float skinZ = side * (SIDE - SKIN * 0.5f);
@@ -661,6 +695,16 @@ void ShopAssets::BuildProjectCarShell()
 		else
 			SidePanel(car, TAIL_X, DOOR_REAR_X, quarterBottom, Level(BELT_Y), skinZ, SKIN, BODY_WHITE, 48);
 		ArchLip(car, REAR_AXLE_X, AXLE_Y, ARCH_RADIUS, side * (SIDE - 0.016f), 0.048f, BODY_WHITE);
+		// The rear wheel's housing: a tub over the tire from the quarter's skin in to a wall beside the boot, the wall
+		// open round the axle's end for the brake.
+		{
+			const float outerZ = SIDE - SKIN, width = outerZ - REAR_TUB_WALL_Z;
+			ArchLip(car, REAR_AXLE_X, AXLE_Y, REAR_TUB, side * (REAR_TUB_WALL_Z + width * 0.5f), width, UNDERSEAL);
+			const float reach = REAR_TUB + 0.02f;
+			SidePanel(car, tubBack, tubFront, Arched(SILL_Y, REAR_AXLE_X, AXLE_Y, 0.17f),
+				[reach](float x) { float dx = x - REAR_AXLE_X; return AXLE_Y + std::sqrt((std::max)(reach * reach - dx * dx, 0.f)); },
+				side * REAR_TUB_WALL_Z, 0.012f, UNDERSEAL, 36);
+		}
 		// The rubbing strip along the quarter, in line with the door's, either side of the arch.
 		Box(car, { -0.655f, RUB_STRIP_Y, side * (SIDE + 0.004f) }, { 0.4f, 0.035f, 0.008f }, TRIM_BLACK);
 		Box(car, { -1.8f, RUB_STRIP_Y, side * (SIDE + 0.004f) }, { 0.5f, 0.035f, 0.008f }, TRIM_BLACK);
@@ -680,7 +724,7 @@ void ShopAssets::BuildProjectCarShell()
 		// window, the C-pillar down to the deck beside the rear window, and the roof's rail over them with its gutter.
 		Beam(car, on(WINDSHIELD_BASE_X, BELT_Y), on(WINDSHIELD_TOP_X, ROOF_Y), { 0.f, 0.f, 1.f }, 0.055f, 0.05f, BODY_WHITE);
 		Slab(car, { on(-0.54f, BELT_Y), on(DOOR_REAR_X, BELT_Y), on(DOOR_REAR_X, ROOF_Y), on(-0.54f, ROOF_Y) }, lean, 0.03f, BODY_WHITE);
-		Slab(car, { on(-0.54f, BELT_Y), on(-1.12f, BELT_Y), on(-0.99f, 1.22f), on(-0.54f, 1.22f) }, lean, 0.008f, GLASS);
+		Slab(quarterGlass, { on(-0.54f, BELT_Y), on(-1.12f, BELT_Y), on(-0.99f, 1.22f), on(-0.54f, 1.22f) }, lean, 0.008f, GLASS);
 		Slab(car, { on(-1.12f, BELT_Y), on(REAR_WINDOW_BASE_X - 0.02f, BELT_Y), on(REAR_WINDOW_TOP_X - 0.02f, ROOF_Y), on(-0.95f, ROOF_Y) },
 			lean, 0.03f, BODY_WHITE);
 		Box(car, { roofMiddle, ROOF_Y - 0.005f, side * (ROOF_Z - 0.003f) }, { roofLength, 0.04f, 0.04f }, BODY_WHITE);
@@ -692,17 +736,27 @@ void ShopAssets::BuildProjectCarShell()
 		// in from the bay), the inner wing up to the fender's bolt lip, and the chassis rail. And the rear spring tower.
 		Box(car, { 1.2f, 0.745f, side * 0.55f }, { 0.24f, 0.02f, 0.2f }, PRIMER);
 		Box(car, { 1.2f, 0.6f, side * 0.44f }, { 0.24f, 0.29f, 0.02f }, PRIMER);
-		SidePanel(car, 0.92f, 2.03f, Level(0.27f), [](float x) { return HoodY(x) - 0.045f; }, side * 0.655f, 0.03f, PRIMER, 6);
-		Box(car, { 1.55f, 0.25f, side * 0.45f }, { 1.3f, 0.08f, 0.08f }, PRIMER);
-		Box(car, { -1.15f, 0.55f, side * 0.6f }, { 0.25f, 0.3f, 0.2f }, UNDERSEAL);
+		// (The inner wing is cut away round the wheel, so the strut and the brake are there to see and get at in the arch.)
+		SidePanel(car, 0.92f, 2.03f, Arched(0.27f, FRONT_AXLE_X, AXLE_Y, ARCH_RADIUS + 0.03f), [](float x) { return HoodY(x) - 0.045f; }, side * 0.655f, 0.03f, PRIMER, 44);
+		// The chassis rail, inboard of where the tire's front swings in on full lock.
+		Box(car, { 1.55f, 0.25f, side * 0.36f }, { 1.3f, 0.08f, 0.08f }, PRIMER);
+		// The front wheel's housing where it comes back into the footwell: the tire's back swings in here on full lock.
+		Box(car, { FOOTWELL_X, 0.36f, side * 0.595f }, { 0.02f, 0.32f, 0.31f }, UNDERSEAL);
+		Box(car, { (FOOTWELL_X + 0.88f) * 0.5f, 0.36f, side * 0.44f }, { 0.88f - FOOTWELL_X + 0.02f, 0.32f, 0.02f }, UNDERSEAL);
+		Box(car, { (FOOTWELL_X + 0.88f) * 0.5f, 0.52f, side * 0.595f }, { 0.88f - FOOTWELL_X + 0.02f, 0.02f, 0.33f }, UNDERSEAL);
+		Box(car, { -1.2f, 0.66f, side * 0.52f }, { 0.3f, 0.08f, 0.2f }, UNDERSEAL);
 	}
+	// The battery's tray, on a bracket off the left inner wing.
+	Box(car, { 1.62f, 0.5f, -0.5f }, { 0.27f, 0.02f, 0.21f }, PRIMER);
+	Box(car, { 1.62f, 0.43f, -0.62f }, { 0.2f, 0.14f, 0.04f }, PRIMER);
 	// The roof, a little crowned, and the headers over the windshield and the rear window.
 	Box(car, { roofMiddle, ROOF_Y + 0.008f, 0.f }, { roofLength, 0.035f, 2.f * ROOF_Z - 0.02f }, BODY_WHITE);
 	Box(car, { roofMiddle, ROOF_Y + 0.03f, 0.f }, { roofLength - 0.16f, 0.012f, 2.f * ROOF_Z - 0.22f }, BODY_WHITE);
 	Box(car, { WINDSHIELD_TOP_X + 0.01f, ROOF_Y - 0.008f, 0.f }, { 0.07f, 0.035f, 2.f * ROOF_Z }, BODY_WHITE);
 	Box(car, { REAR_WINDOW_TOP_X - 0.01f, ROOF_Y - 0.008f, 0.f }, { 0.07f, 0.035f, 2.f * ROOF_Z }, BODY_WHITE);
 	// The firewall, and the cowl over it between the fenders, with its air intake and the wipers parked on it.
-	Box(car, { 0.88f, 0.54f, 0.f }, { 0.03f, 0.64f, 1.5f }, PRIMER);
+	Box(car, { 0.88f, 0.69f, 0.f }, { 0.03f, 0.34f, 1.5f }, PRIMER);
+	Box(car, { 0.88f, 0.37f, 0.f }, { 0.03f, 0.3f, 0.88f }, PRIMER);		// narrower low down, between the wheel housings
 	Box(car, { (DOOR_FRONT_X + HOOD_REAR_X) * 0.5f, BELT_Y - 0.01f, 0.f }, { HOOD_REAR_X - DOOR_FRONT_X, 0.02f, 2.f * HOOD_HALF }, BODY_WHITE);
 	Box(car, { 0.935f, BELT_Y + 0.001f, 0.f }, { 0.04f, 0.002f, 1.1f }, TRIM_BLACK);
 	Box(car, { 0.925f, BELT_Y + 0.012f, -0.3f }, { 0.012f, 0.012f, 0.5f }, TRIM_BLACK);
@@ -726,9 +780,10 @@ void ShopAssets::BuildProjectCarShell()
 	Box(car, { -1.27f, 0.84f, 0.f }, { 0.46f, 0.02f, 1.44f }, VINYL);
 	// Inside: the transmission tunnel, and the back seat (it's part of the shell: only the front seats come out).
 	Box(car, { 0.1f, 0.3f, 0.f }, { 1.5f, 0.16f, 0.3f }, UNDERSEAL);
-	Box(car, { -0.92f, 0.3f, 0.f }, { 0.46f, 0.16f, 1.2f }, VINYL);
-	TurnedBox(car, glm::rotate(At({ -1.12f, 0.38f, 0.f }), 0.2f, glm::vec3(0.f, 0.f, 1.f)), { 0.f, 0.22f, 0.f }, { 0.1f, 0.46f, 1.2f }, VINYL);
+	Box(car, { -0.92f, 0.3f, 0.f }, { 0.46f, 0.16f, 1.14f }, VINYL);
+	TurnedBox(car, glm::rotate(At({ -1.12f, 0.38f, 0.f }), 0.2f, glm::vec3(0.f, 0.f, 1.f)), { 0.f, 0.22f, 0.f }, { 0.1f, 0.46f, 1.14f }, VINYL);
 	AddModel(ShopModels::PROJECT_CAR, car);
+	AddModel(ShopModels::CAR_QUARTER_GLASS, quarterGlass);
 
 	// The stands it's up on at its jacking points, till it's on its own wheels (a model of their own, taken away then).
 	MeshBuilder stands;

@@ -44,6 +44,8 @@ public:
 
 	void Update(float deltaTime, const InputManager& input, const std::vector<FloorObstacle>& obstacles, const FloorObstacle& roomBounds,
 		const std::vector<WalkSurface>& surfaces);
+	// Only the looking about (the mouse), for when something else carries the player: sat in the car.
+	void UpdateLook(const InputManager& input);
 	void ApplyToCamera(Camera& camera) const;
 
 	glm::vec3 GetEyePosition() const;

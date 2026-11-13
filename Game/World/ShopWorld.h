@@ -260,6 +260,8 @@ public:
 	// Developer shortcuts: gets in (true if it started), and holds the throttle down for a while with the wheel turned.
 	bool DevStartDrive(Workshop& workshop) { return StartDrive(workshop); }
 	void DevDrive(float seconds, float steer) { m_drive.devSeconds = seconds; m_drive.devSteer = steer; }
+	// Turns the parked car's front wheels (-1 full right lock to 1 full left), to look at them from outside.
+	void DevSteer(float steer);
 
 	std::optional<UIRequest> Update(float deltaTime, Workshop& workshop, const FirstPersonController& player,
 		const InputManager& input, bool playerHasControl);
@@ -883,6 +885,9 @@ private:
 	size_t									m_carStation = SIZE_MAX;
 	pObject									m_carStands = nullptr;	// under the car till it's on its wheels
 	pObject									m_fuelFlap = nullptr;	// the fuel filler's flap, in the right rear quarter
+	// The car's side glass, see-through: the fixed quarter windows, and each door's (kept on the door while it's on the car).
+	pObject									m_quarterGlass = nullptr;
+	std::array<pObject, 2>					m_doorGlass = {};
 	std::array<CarPanelState, static_cast<size_t>(CarPanel::COUNT)>	m_carPanels = {};
 	bool									m_carPanelsMoving = false;	// one swung this frame: what's on the car is posed again
 	struct DriveState
@@ -910,6 +915,8 @@ private:
 	void StopDrive(FirstPersonController* player);
 	// Whether the car, standing there turned that way, would be in something solid.
 	bool CarBlocked(const glm::vec3& position, float yaw) const;
+	// The speed, gear, revs and fuel, for the driver.
+	std::string DriveReadout(const Workshop& workshop) const;
 	bool											m_bayDoorOpen = false;
 	float											m_bayDoorAmount = 0.f;
 	std::unordered_map<ItemRef, ItemVisual, ItemRefHash>	m_items = {};

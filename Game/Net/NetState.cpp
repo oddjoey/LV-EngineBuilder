@@ -871,6 +871,9 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		// Not the one being carried about here.
 		if (world.m_move && world.m_move->stationIndex == *index)
 			continue;
+		// Nor the car while it's being driven here.
+		if (world.m_drive.active && *index == world.m_carStation)
+			continue;
 		Reader in(*text);
 		glm::vec3 position = ReadVec3(in);
 		float yaw = static_cast<float>(in.Num());

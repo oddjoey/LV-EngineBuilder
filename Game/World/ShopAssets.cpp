@@ -850,7 +850,7 @@ void ShopAssets::LoadOverrides()
 	}
 }
 
-void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder)
+void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder, bool asBuilt)
 {
 	auto modelManager = ModelManager::Get();
 
@@ -895,7 +895,8 @@ void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder)
 	}
 
 	auto vertices = builder.GetVertices();
-	SeparateCoplanarFaces(vertices, builder.GetIndices());
+	if (!asBuilt)
+		SeparateCoplanarFaces(vertices, builder.GetIndices());
 	m_models[name] = modelManager->CreateModel(::Model(name, vertices, builder.GetIndices()))->GetIndex();
 }
 

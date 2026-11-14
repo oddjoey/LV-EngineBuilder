@@ -286,10 +286,15 @@ namespace ProceduralTextures
 
 	Image Asphalt()
 	{
-		return Generate([](float u, float v, int x, int y) {
-			float wear = Fbm(u, v, 4, 5, 211);
-			float aggregate = Hash(x, y, 212);
-			float tone = 0.20f + (wear - 0.5f) * 0.08f + (aggregate > 0.92f ? 0.10f : (aggregate - 0.5f) * 0.05f);
+		// It looks the same turned half way round: a road is laid in triangles, every other one the other way up
+		// (see ShopOutdoors), and so they meet without a seam.
+		return Generate([](float, float, int x, int y) {
+			auto at = [](int px, int py) {
+				float wear = Fbm(static_cast<float>(px) / SIZE, static_cast<float>(py) / SIZE, 4, 5, 211);
+				float aggregate = Hash(px, py, 212);
+				return 0.20f + (wear - 0.5f) * 0.1f + (aggregate > 0.92f ? 0.12f : (aggregate - 0.5f) * 0.06f);
+			};
+			float tone = (at(x, y) + at((SIZE - x) % SIZE, (SIZE - y) % SIZE)) * 0.5f;
 			return glm::vec3(tone, tone, tone * 1.04f);
 		});
 	}

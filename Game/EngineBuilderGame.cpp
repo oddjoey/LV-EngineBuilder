@@ -360,8 +360,8 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 
 	bool walking = !splash && !InMenu() && !m_ui.IsOpen() && !m_manual.IsOpen() && !m_pauseMenu.IsOpen() && !m_devMenu.IsOpen() && !m_console.IsOpen();
 	m_input->SetCursorLocked(walking);
-	// At the wheel of the car, the keys drive it and the player goes where it does.
-	if (m_world.IsDriving())
+	// In the car, the player goes where it does (and at its wheel, the keys drive it).
+	if (m_world.IsSeated())
 		m_world.Drive(deltaTime, *m_workshop, m_player, *m_input, walking);
 	else if (walking)
 	{
@@ -383,9 +383,9 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_camera->SetPosition(eye);
 		m_camera->SetRotation(glm::quatLookAt(glm::normalize(MENU_ORBIT_CENTER - eye), glm::vec3(0.f, 1.f, 0.f)));
 	}
-	else if (m_world.IsDriving() || m_world.IsThirdPerson())
+	else if (m_world.IsSeated() || m_world.IsThirdPerson())
 	{
-		auto view = m_world.IsDriving() ? m_world.DriveCamera(m_player) : m_world.UpdateThirdPersonCamera(m_player);
+		auto view = m_world.IsSeated() ? m_world.DriveCamera(m_player) : m_world.UpdateThirdPersonCamera(m_player);
 		m_camera->SetPosition(view.position);
 		m_camera->SetRotation(view.rotation);
 	}
@@ -457,7 +457,7 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_timeOfDay = std::fmod(m_timeOfDay + hours, 24.f);
 	}
 	m_lighting.Update(m_camera->GetPosition(), m_settings.renderDistance, m_timeOfDay, m_world.GetDoorOpenAmount(),
-		m_settings.brightness, m_world.GetLampHeads(), m_world.GetInterior());
+		m_settings.brightness, m_world.GetLampHeads(), m_world.GetInterior(), m_world.GetCarLights());
 	{
 		PROFILE_SCOPE("audio");
 		m_audio.Update(deltaTime, m_player, m_world, *m_workshop, m_settings, m_timeOfDay);

@@ -7,6 +7,7 @@
 
 #include "LV/Engine/Objects/ObjectManager.h"
 #include "GarageLayout.h"
+#include "Roads.h"
 #include "ShopWorldShared.h"
 
 using namespace ShopLayout;
@@ -57,15 +58,23 @@ void ShopWorld::BuildOutdoors()
 		h = (h ^ (h >> 15)) * 2246822519u;
 		return static_cast<float>((h ^ (h >> 13)) & 0xFFFF) / 65535.f;
 	};
-	for (int i = 0; i < 320; i++)
+	constexpr int NEAR_PIECES = 320, FAR_PIECES = 440;
+	for (int i = 0; i < NEAR_PIECES + FAR_PIECES; i++)
 	{
+		// Round the shack as it always was, and beyond that all over the land the roads run through.
 		float angle = hash(i, 1) * glm::two_pi<float>();
 		float distance = 14.f + 150.f * std::sqrt(hash(i, 2));
 		glm::vec2 at = { std::sin(angle) * distance, std::cos(angle) * distance };
-		bool onHighway = at.y > HIGHWAY_NEAR_Z - 5.f && at.y < HIGHWAY_FAR_Z + 5.f;
+		if (i >= NEAR_PIECES)
+		{
+			at = { glm::mix(-WORLD_HALF_WIDTH + 6.f, WORLD_HALF_WIDTH - 6.f, hash(i, 1)), glm::mix(WORLD_BACK_Z + 6.f, WORLD_FAR_Z - 6.f, hash(i, 2)) };
+			if (glm::length(at) < 164.f)
+				continue;
+		}
+		bool onRoad = Roads::On(at, 4.f);
 		bool onDrive = at.x > BAY_DOOR_MIN_X - 4.f && at.x < DRIVE_MAX_X + 4.f && at.y > 0.f && at.y < HIGHWAY_NEAR_Z;
 		bool byShack = at.x > BAY_MIN_X - 6.f && at.x < HALF_WIDTH + 8.f && at.y > -HALF_DEPTH - 8.f && at.y < HALF_DEPTH + 8.f;
-		if (onHighway || onDrive || byShack)
+		if (onRoad || onDrive || byShack)
 			continue;
 		glm::vec3 position = { at.x, 0.f, at.y };
 		float scale = 0.7f + 0.6f * hash(i, 4);
@@ -171,9 +180,7 @@ Sound ShopWorld::FootstepAt(const glm::vec3& feet) const
 			return Sound::FOOTSTEP_CONCRETE;
 	if (m_bayBuilt && (on(BAY_DRIVE) || on(BAY_DRIVE_LINK)))
 		return Sound::FOOTSTEP_CONCRETE;
-	bool highway = (feet.z >= HIGHWAY_NEAR_Z && feet.z <= HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY)
-		|| (feet.z >= HIGHWAY_FAR_Z - HIGHWAY_CARRIAGEWAY && feet.z <= HIGHWAY_FAR_Z);
-	return highway ? Sound::FOOTSTEP_CONCRETE : Sound::FOOTSTEP_GRASS;
+	return Roads::On({ feet.x, feet.z }) ? Sound::FOOTSTEP_CONCRETE : Sound::FOOTSTEP_GRASS;
 }
 
 void ShopWorld::UpdateDoor(float deltaTime)

@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "LV/Engine/Graphics/Lighting.h"
 #include "LV/Engine/Objects/Object.h"
 #include "../Audio/Sounds.h"
 #include "../Inventory/PlayerInventory.h"
@@ -246,20 +247,29 @@ public:
 		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
 	};
 	CameraView UpdateThirdPersonCamera(const FirstPersonController& player);
-	// Driving the car (ShopWorldCar.cpp). [F] at the car gets in and turns the key; it then goes where it's driven, about
-	// the yard, down the drive and along the highway, and stays where it's left.
+	// Sitting in the car, and driving it (ShopWorldCar.cpp). [F] at the car gets into the seat nearest what's aimed at:
+	// the driver's turns the key, and it then goes where it's driven, about the lot, down the drive and round the roads,
+	// and stays where it's left. The other seats are for the ride.
+	bool IsSeated() const { return m_seat >= 0; }
 	bool IsDriving() const { return m_drive.active; }
-	// Each frame at the wheel, in place of walking: the pedals and the wheel, the car moved, the player kept in the seat
-	// (turned with the car, free to look about), and put out beside the door when they get out.
+	// Each frame in a seat, in place of walking: at the wheel the pedals and the wheel and the car moved; in any seat the
+	// player kept in it (turned with the car, free to look about), and put out beside its door when they get out.
 	void Drive(float deltaTime, Workshop& workshop, FirstPersonController& player, const InputManager& input, bool playerHasControl);
+	// The headlights' beams on the road, when they're up and on, for the lighting.
+	std::vector<PointLight> GetCarLights() const;
 	// From the driver's seat, or (third person) from behind and above the car, swung round it with the mouse.
 	CameraView DriveCamera(const FirstPersonController& player);
 	// The engine's note at the wheel, and where the car is, for the sound of it.
 	float GetDriveRpm() const { return m_drive.active ? m_drive.rpm : 0.f; }
 	glm::vec3 GetCarPosition() const { return CarToWorld({ 1.2f, 0.6f, 0.f }); }
 	// Developer shortcuts: gets in (true if it started), and holds the throttle down for a while with the wheel turned.
-	bool DevStartDrive(Workshop& workshop) { return StartDrive(workshop); }
+	bool DevStartDrive(Workshop& workshop);
 	void DevDrive(float seconds, float steer) { m_drive.devSeconds = seconds; m_drive.devSteer = steer; }
+	// Into a seat (0 the driver's, 1 the passenger's, 2 and 3 the back), out of it, and the headlights up or down.
+	void DevSit(int seat, Workshop& workshop, FirstPersonController& player) { LeaveSeat(&player); Sit(seat, workshop); }
+	void DevHeadlights() { m_headlights.on = !m_headlights.on; }
+	// Puts the car down somewhere else, pointing along a heading (degrees: 0 toward +x, 90 toward -z).
+	void DevPlaceCar(float x, float z, float degrees);
 	// Turns the parked car's front wheels (-1 full right lock to 1 full left), to look at them from outside.
 	void DevSteer(float steer);
 
@@ -890,10 +900,35 @@ private:
 	std::array<pObject, 2>					m_doorGlass = {};
 	std::array<CarPanelState, static_cast<size_t>(CarPanel::COUNT)>	m_carPanels = {};
 	bool									m_carPanelsMoving = false;	// one swung this frame: what's on the car is posed again
+	// The pop-up headlights: on (up and lit) or off, and how far up they've swung.
+	struct Headlights
+	{
+		bool on = false;
+		float amount = 0.f;
+	};
+	Headlights								m_headlights = {};
+	std::array<pObject, 2>					m_headlightLenses = {};	// the lamps in their pods, lit when they're on
+	static constexpr int GAUGES = 4;		// the speedo, the tach, the fuel gauge and the temperature gauge
+	std::array<pObject, GAUGES>				m_gaugeNeedles = {};
+	std::array<float, GAUGES>				m_gaugeReads = {};		// where each needle is, 0 to 1 of its sweep
+	// Swings the headlights and turns the gauges' needles, each frame.
+	void PoseCarInstruments(const Workshop& workshop, float deltaTime);
+	void ToggleHeadlights(const Workshop& workshop);
+	// Which of the car's seats the player is in (0 the driver's, 1 the front passenger's, 2 and 3 the back seat's two
+	// places), or -1.
+	static constexpr int SEATS = 4;
+	int										m_seat = -1;
+	bool									m_seatJustIn = false;	// got in this frame: the player is turned to face forward
+	float									m_seatLastYaw = 0.f;	// the car's, last frame: whoever's in it is turned by what it's turned since
+	float									m_bestLap = 0.f;		// seconds round the highway, the best yet (0: none)
+	// The seat [F] would put the player in, aimed at the car from where they stand.
+	std::optional<int> AimedSeat(const Workshop& workshop, const FirstPersonController& player) const;
+	void Sit(int seat, Workshop& workshop);
+	void LeaveSeat(FirstPersonController* player);
+	std::string SeatPrompt() const;
 	struct DriveState
 	{
-		bool active = false;
-		bool justIn = false;			// got in this frame: the player is turned to face forward
+		bool active = false;			// the engine's running, the driver at the wheel
 		float speed = 0.f;				// m/s along the car's nose (backward when negative)
 		float steer = 0.f;				// the front wheels' angle, radians, left positive
 		float spin = 0.f;				// how far the wheels have turned, radians
@@ -905,18 +940,27 @@ private:
 		float braking = 8.f;			// m/s2
 		float grip = 7.f;				// m/s2 sideways
 		float idleRpm = 850.f;
-		float lastYaw = 0.f;			// the car's, last frame: the driver is turned by what it's turned since
 		float bumped = 0.f;				// seconds since it last hit something, so it doesn't clatter
+		bool offRoad = false;			// in the sand
+		// The lap being timed: which way the line was last crossed (0: not yet), how long ago, and the lap before.
+		int lapWay = 0;
+		float lap = 0.f;
+		float lastLap = 0.f;
 		float devSeconds = 0.f;
 		float devSteer = 0.f;
 	};
 	DriveState								m_drive = {};
+	// The key turned (from the driver's seat), and the engine stopped.
 	bool StartDrive(Workshop& workshop);
-	void StopDrive(FirstPersonController* player);
+	void EndDrive();
+	// A frame of driving: the pedals and the wheel, and the car moved.
+	void MoveCar(float deltaTime, Workshop& workshop, const InputManager& input, bool playerHasControl);
 	// Whether the car, standing there turned that way, would be in something solid.
 	bool CarBlocked(const glm::vec3& position, float yaw) const;
-	// The speed, gear, revs and fuel, for the driver.
-	std::string DriveReadout(const Workshop& workshop) const;
+	// Whether there's something hard to drive on there (the lot's concrete or a road), not sand.
+	bool OnPaving(glm::vec2 point) const;
+	// The map and the lap, and from outside the car its gauges.
+	void DrawDriveHud(const Workshop& workshop) const;
 	bool											m_bayDoorOpen = false;
 	float											m_bayDoorAmount = 0.f;
 	std::unordered_map<ItemRef, ItemVisual, ItemRefHash>	m_items = {};

@@ -308,6 +308,8 @@ namespace ShopModels
 	inline const std::string FENDER_RIGHT = "Front Fender (Right)";
 	inline const std::string DOOR_RIGHT = "Door (Right)";
 	inline const std::string FUEL_FLAP = "Fuel Flap";
+	inline const std::string HEADLIGHT_LENS = "Headlight Lens";		// the lamp in a headlight's pod, lit when they're on
+	inline const std::string GAUGE_NEEDLE = "Gauge Needle";
 	inline const std::string KNUCKLE_RIGHT = "Steering Knuckle Right";
 	inline const std::string DOOR_GLASS = "Door Glass";
 	inline const std::string DOOR_GLASS_RIGHT = "Door Glass Right";
@@ -425,7 +427,9 @@ private:
 	};
 
 	void LoadOverrides();
-	void AddModel(const std::string& name, const MeshBuilder& builder);
+	// asBuilt: without lifting apart faces that lie in one plane (which takes an age on a model of thousands of
+	// triangles all in one plane, like a road's, and it has none one over another).
+	void AddModel(const std::string& name, const MeshBuilder& builder, bool asBuilt = false);
 	void LoadTextures();
 	void LoadEnvironment();
 	void LoadOutdoors();

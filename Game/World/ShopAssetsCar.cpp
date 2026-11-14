@@ -163,6 +163,7 @@ namespace
 	const glm::vec3 COPPER = { 0.72f, 0.45f, 0.22f };
 	const glm::vec3 OFF_WHITE = { 0.85f, 0.85f, 0.80f };
 	const glm::vec3 LINING = { 0.28f, 0.26f, 0.24f };
+	const glm::vec3 CREASE = { 0.74f, 0.74f, 0.72f };	// a pressed line along the body's side, in shadow
 
 	// The tire's radius, standing: a wheel and its tire are both centred this high, so one sits on the other.
 	constexpr float TIRE_RADIUS = 0.29f;
@@ -224,8 +225,8 @@ void ShopAssets::LoadCarParts()
 			TurnedBox(fender, slope, { fall * 0.5f, -0.025f, in * (shelf - 0.003f) }, { fall, 0.03f, 0.006f }, BODY_WHITE);
 			TurnedBox(fender, slope, { fall * 0.5f, -0.04f, in * (shelf + 0.025f) }, { fall, 0.01f, 0.05f }, BODY_WHITE);
 			// The rubbing strip ahead of the arch, in line with the door's, and the side marker lamp.
-			Box(fender, { 0.95f, RUB_STRIP_Y - SILL_Y, side * 0.004f }, { 0.48f, 0.035f, 0.008f }, TRIM_BLACK);
-			Box(fender, { 1.13f, 0.42f, side * 0.004f }, { 0.09f, 0.035f, 0.008f }, AMBER);
+			Box(fender, { 0.795f, RUB_STRIP_Y - SILL_Y, side * 0.002f }, { 0.17f, 0.012f, 0.004f }, CREASE);
+			Box(fender, { 1.14f, HoodY(NOSE_X - 0.08f) - SILL_Y - 0.06f, side * 0.004f }, { 0.15f, 0.045f, 0.008f }, { 0.7f, 0.33f, 0.08f });
 			AddModel(side < 0.f ? std::string(PartTypeName(PartType::FRONT_FENDER)) : ShopModels::FENDER_RIGHT, fender);
 		}
 		{
@@ -255,7 +256,7 @@ void ShopAssets::LoadCarParts()
 			Beam(door, on(-length + 0.012f, height), on(-length + 0.012f, glassTop + 0.01f), { 1.f, 0.f, 0.f }, 0.03f, 0.03f, TRIM_BLACK);
 			// Outside: the beltline trim, the rubbing strip, the handle in its recess with the lock under it, and the mirror.
 			Box(door, { -length * 0.5f, height - 0.008f, side * 0.004f }, { length, 0.016f, 0.008f }, TRIM_BLACK);
-			Box(door, { -length * 0.5f, RUB_STRIP_Y - bottomY, side * 0.004f }, { length, 0.035f, 0.008f }, TRIM_BLACK);
+			Box(door, { -length * 0.5f, RUB_STRIP_Y - bottomY, side * 0.002f }, { length, 0.012f, 0.004f }, CREASE);
 			Box(door, { -length + 0.16f, 0.4f, side * 0.002f }, { 0.13f, 0.04f, 0.004f }, TRIM_BLACK);
 			Box(door, { -length + 0.16f, 0.405f, side * 0.007f }, { 0.11f, 0.022f, 0.006f }, ALLOY);
 			Cylinder(door, AlongZ({ -length + 0.16f, 0.345f, side * 0.002f }), 0.009f, 0.006f, ALLOY, 10);
@@ -271,14 +272,25 @@ void ShopAssets::LoadCarParts()
 		// middle, its nose turned down over the grille, the washer jets, and underneath its bracing and hinge arms.
 		MeshBuilder hood;
 		const float length = (NOSE_X - HOOD_REAR_X - 2.f * GAP) / std::cos(HoodPitch()), width = 2.f * (HOOD_HALF - GAP);
-		Box(hood, { length * 0.5f, -0.011f, 0.f }, { length, 0.022f, width }, BODY_WHITE);
-		Box(hood, { length - 0.008f, -0.03f, 0.f }, { 0.016f, 0.04f, width }, BODY_WHITE);
-		Box(hood, { length * 0.5f + 0.06f, 0.003f, 0.f }, { length - 0.3f, 0.006f, 0.5f }, BODY_WHITE);
-		Box(hood, { length * 0.5f, -0.026f, 0.f }, { length - 0.2f, 0.008f, 0.9f }, { 0.55f, 0.55f, 0.53f });
+		// (Its front corners are cut out for the pop-up headlights' lids, which lie in its surface.)
+		const float back = length - LAMP_LID_LENGTH / std::cos(HoodPitch()) - GAP, tongue = 2.f * (LAMP_LID_INNER - GAP);
+		// Its middle stands a little proud between two creases, over the engine, and runs down into the tongue between
+		// the lids; the strips either side lie on the hood line.
+		constexpr float RAISED = 0.022f, RAISED_FROM = 0.06f;
+		const float half = LAMP_LID_INNER - 0.03f, flat = back - 0.18f, strip = width * 0.5f - half;
+		for (float z : { -1.f, 1.f })
+			Box(hood, { back * 0.5f, -0.011f, z * (half + strip * 0.5f) }, { back, 0.022f, strip }, BODY_WHITE);
+		Box(hood, { RAISED_FROM * 0.5f, -0.011f, 0.f }, { RAISED_FROM, 0.022f, 2.f * half }, BODY_WHITE);
+		Box(hood, { (RAISED_FROM + flat) * 0.5f, RAISED - 0.011f, 0.f }, { flat - RAISED_FROM, 0.022f, 2.f * half }, BODY_WHITE);
+		Prism(hood, { { flat, RAISED - 0.022f }, { back, -0.022f }, { back, 0.f }, { flat, RAISED } }, -half, half, BODY_WHITE);
+		Box(hood, { (back + length) * 0.5f, -0.011f, 0.f }, { length - back, 0.022f, tongue }, BODY_WHITE);
+		Box(hood, { length - 0.008f, -0.03f, 0.f }, { 0.016f, 0.04f, tongue }, BODY_WHITE);
+		for (float z : { -1.f, 1.f })
+			Box(hood, { back * 0.5f, -0.026f, z * (half + strip * 0.5f) }, { back - 0.2f, 0.008f, strip - 0.12f }, { 0.55f, 0.55f, 0.53f });
 		for (float z : { -0.6f, 0.6f })
 			Box(hood, { 0.09f, -0.03f, z }, { 0.14f, 0.016f, 0.04f }, IRON);
 		for (float z : { -0.25f, 0.25f })
-			Box(hood, { 0.1f, 0.004f, z }, { 0.02f, 0.008f, 0.03f }, TRIM_BLACK);
+			Box(hood, { 0.1f, RAISED + 0.004f, z }, { 0.02f, 0.008f, 0.03f }, TRIM_BLACK);
 		add(PartType::HOOD, hood);
 	}
 	{
@@ -299,6 +311,33 @@ void ShopAssets::LoadCarParts()
 	// (the rear, turned the same way on the car), their origin where the beam's back meets the body, 0.04 behind it.
 	auto bumper = [&](PartType type, float face) {
 		MeshBuilder bumper;
+		if (face > 0.f)
+		{
+			// The front one is deep: a body-coloured band on top under the lamps, the black face under it with the
+			// grille's slot between the indicators and the corner lamps, and a chin spoiler jutting out at the bottom.
+			const glm::vec3 SLOT = { 0.03f, 0.03f, 0.035f };
+			Box(bumper, { 0.f, 0.315f, 0.03f }, { 1.636f, 0.13f, 0.14f }, BODY_WHITE);
+			Box(bumper, { 0.f, 0.125f, 0.025f }, { 1.636f, 0.25f, 0.13f }, TRIM_BLACK);
+			for (float end : { -1.f, 1.f })
+			{
+				Box(bumper, { end * 0.808f, 0.315f, -0.19f }, { 0.02f, 0.13f, 0.3f }, BODY_WHITE);
+				Box(bumper, { end * 0.808f, 0.125f, -0.19f }, { 0.02f, 0.25f, 0.3f }, TRIM_BLACK);
+				Box(bumper, { end * 0.47f, 0.185f, 0.091f }, { 0.17f, 0.075f, 0.004f }, AMBER);
+				Box(bumper, { end * 0.65f, 0.185f, 0.091f }, { 0.17f, 0.075f, 0.004f }, { 0.9f, 0.91f, 0.88f });
+				Box(bumper, { end * 0.56f, 0.185f, 0.094f }, { 0.006f, 0.075f, 0.002f }, TRIM_BLACK);
+			}
+			Box(bumper, { 0.f, 0.185f, 0.0905f }, { 0.74f, 0.085f, 0.004f }, SLOT);
+			for (int slat = 0; slat < 3; slat++)
+				Box(bumper, { 0.f, 0.16f + slat * 0.025f, 0.093f }, { 0.72f, 0.006f, 0.004f }, { 0.2f, 0.2f, 0.21f });
+			Box(bumper, { -0.07f, 0.185f, 0.096f }, { 0.17f, 0.04f, 0.004f }, { 0.75f, 0.76f, 0.77f });		// the badge
+			Box(bumper, { 0.f, 0.075f, 0.092f }, { 0.22f, 0.045f, 0.004f }, { 0.75f, 0.76f, 0.77f });		// the plate's bracket
+			Box(bumper, { 0.f, -0.03f, 0.02f }, { 1.62f, 0.06f, 0.1f }, TRIM_BLACK);
+			Box(bumper, { 0.f, -0.07f, 0.07f }, { 1.636f, 0.03f, 0.22f }, TRIM_BLACK);
+			for (float end : { -1.f, 1.f })
+				Box(bumper, { end * 0.808f, -0.045f, -0.14f }, { 0.02f, 0.09f, 0.2f }, TRIM_BLACK);
+			add(type, bumper);
+			return;
+		}
 		Box(bumper, { 0.f, 0.095f, face * 0.03f }, { 1.67f, 0.19f, 0.14f }, TRIM_BLACK);
 		for (float end : { -1.f, 1.f })
 			Box(bumper, { end * 0.8125f, 0.095f, face * -0.19f }, { 0.045f, 0.19f, 0.3f }, TRIM_BLACK);
@@ -313,16 +352,32 @@ void ShopAssets::LoadCarParts()
 	bumper(PartType::FRONT_BUMPER, 1.f);
 	bumper(PartType::REAR_BUMPER, -1.f);
 	{
-		// Two rectangular lamps side by side behind a bright bezel, in a black bucket.
-		MeshBuilder pod;
-		Box(pod, { 0.f, 0.06f, 0.f }, { 0.42f, 0.12f, 0.3f }, TRIM_BLACK);
-		Box(pod, { 0.f, 0.06f, 0.151f }, { 0.41f, 0.11f, 0.004f }, ALLOY);
-		for (float x : { -0.1f, 0.1f })
-		{
-			Box(pod, { x, 0.06f, 0.155f }, { 0.18f, 0.085f, 0.006f }, { 0.93f, 0.94f, 0.9f });
-			Box(pod, { x, 0.06f, 0.159f }, { 0.004f, 0.085f, 0.002f }, ALLOY);
-		}
+		// A pop-up. Built about the hinge it swings up on: the back edge of its lid, on the lid's top face, the lid
+		// lying forward from there along +z (on the car it lies in the hood's surface at the nose's corner, and
+		// swings up by LAMP_POP). Under the lid's front the lamp's housing hangs, canted so that its face stands
+		// square to the road once it's up, with cheeks down either side from the lid to the housing. The lamp's lens
+		// is a model of its own, so it can be lit.
+		MeshBuilder pod, lens;
+		const float wide = HOOD_HALF - LAMP_LID_INNER - 2.f * GAP, deep = LAMP_LID_LENGTH / std::cos(HoodPitch()) - 2.f * GAP;
+		const float up = HoodPitch() + LAMP_POP, sine = std::sin(up), cosine = std::cos(up);
+		constexpr float FACE = 0.125f, HOUSING = 0.13f, UNDER = -0.022f;
+		Box(pod, { 0.f, -0.011f, deep * 0.5f }, { wide, 0.022f, deep }, BODY_WHITE);
+		Box(pod, { 0.f, -0.03f, deep - 0.006f }, { wide, 0.016f, 0.012f }, BODY_WHITE);
+		// Side on (z forward, y up): the housing's top under the lid, its face down from there, and its bottom back.
+		const glm::vec2 topFront = { deep - 0.03f, UNDER }, topBack = { deep - 0.17f, UNDER };
+		const glm::vec2 faceBottom = topFront + glm::vec2(-sine, -cosine) * FACE;
+		const glm::vec2 bottomBack = faceBottom + glm::vec2(-cosine, sine) * HOUSING;
+		const glm::mat4 sideOn = glm::rotate(glm::mat4(1.f), -glm::half_pi<float>(), glm::vec3(0.f, 1.f, 0.f));
+		Prism(pod, { topBack, topFront, faceBottom, bottomBack }, -(wide * 0.5f - 0.012f), wide * 0.5f - 0.012f, TRIM_BLACK, sideOn);
+		for (float side : { -1.f, 1.f })
+			Prism(pod, { { 0.012f, UNDER }, topFront, faceBottom }, side * (wide * 0.5f - 0.004f) - 0.004f, side * (wide * 0.5f - 0.004f) + 0.004f, BODY_WHITE, sideOn);
+		// The lamp in the housing's face: a bright bezel, and the lens in it.
+		const glm::vec2 faceMiddle = (topFront + faceBottom) * 0.5f;
+		const glm::mat4 face = glm::rotate(At({ 0.f, faceMiddle.y, faceMiddle.x }), up, glm::vec3(1.f, 0.f, 0.f));
+		TurnedBox(pod, face, { 0.f, 0.f, 0.002f }, { wide - 0.05f, FACE - 0.02f, 0.004f }, ALLOY);
+		TurnedBox(lens, face, { 0.f, 0.f, 0.006f }, { wide - 0.075f, FACE - 0.045f, 0.006f }, { 0.96f, 0.96f, 0.9f });
 		add(PartType::HEADLIGHT, pod);
+		AddModel(ShopModels::HEADLIGHT_LENS, lens);
 	}
 	{
 		// The tail light: red stop and tail lamp, amber indicator and the white reverse lamp, in a black frame.
@@ -374,16 +429,34 @@ void ShopAssets::LoadCarParts()
 		add(PartType::DASHBOARD, dash);
 	}
 	{
-		// Two big dials, the tach and the speedo, facing the driver (-z on the dash).
+		// Facing the driver (-z on the dash; +x is their left): two big dials, the speedo on the left and the tach on
+		// the right, and between them the fuel gauge over the temperature gauge. Each has its marks round its face
+		// (a turn about z is clockwise to the driver, from straight up); the needles are models of their own, which
+		// ShopWorld turns (see GaugeTurn there, which these marks are laid out by).
 		MeshBuilder cluster;
-		Box(cluster, { 0.f, 0.07f, 0.f }, { 0.35f, 0.14f, 0.1f }, TRIM_BLACK);
-		for (float x : { -0.085f, 0.085f })
-		{
-			Tube(cluster, AlongZ({ x, 0.07f, -0.05f }), 0.058f, 0.05f, 0.008f, ALLOY, 24);
-			Cylinder(cluster, AlongZ({ x, 0.07f, -0.051f }), 0.05f, 0.004f, { 0.05f, 0.05f, 0.06f }, 24);
-			TurnedBox(cluster, glm::rotate(At({ x, 0.07f, -0.054f }), 0.7f, glm::vec3(0.f, 0.f, 1.f)), { 0.f, 0.02f, 0.f }, { 0.004f, 0.04f, 0.002f }, AMBER);
-		}
+		Box(cluster, { 0.f, GAUGE_Y, 0.f }, { 0.38f, 0.15f, 0.1f }, TRIM_BLACK);
+		const glm::vec3 FACE = { 0.04f, 0.04f, 0.05f }, MARK = { 0.9f, 0.9f, 0.86f }, RED = { 0.85f, 0.1f, 0.08f };
+		auto dial = [&](float x, float y, float radius, float sweep, int marks, int redFrom) {
+			Tube(cluster, AlongZ({ x, y, -0.05f }), radius + 0.006f, radius, 0.008f, ALLOY, 28);
+			Cylinder(cluster, AlongZ({ x, y, -0.051f }), radius, 0.004f, FACE, 28);
+			for (int mark = 0; mark <= marks; mark++)
+			{
+				float turn = sweep * (static_cast<float>(mark) / marks - 0.5f);
+				TurnedBox(cluster, glm::rotate(At({ x, y, -0.0535f }), turn, glm::vec3(0.f, 0.f, 1.f)), { 0.f, radius * 0.84f, 0.f },
+					{ radius * 0.07f, radius * 0.2f, 0.001f }, mark >= redFrom ? RED : MARK);
+			}
+			Cylinder(cluster, AlongZ({ x, y, -0.0545f }), radius * 0.13f, 0.004f, TRIM_BLACK, 12);
+		};
+		dial(GAUGE_BIG_X, GAUGE_Y, GAUGE_BIG, GAUGE_SWEEP, 10, 99);		// 0 to 200 km/h, a mark every 20
+		dial(-GAUGE_BIG_X, GAUGE_Y, GAUGE_BIG, GAUGE_SWEEP, 8, 6);		// 0 to 8,000 rpm, a mark every thousand
+		dial(0.f, GAUGE_Y + GAUGE_SMALL_Y, GAUGE_SMALL, GAUGE_SMALL_SWEEP, 2, 99);	// empty, half, full
+		dial(0.f, GAUGE_Y - GAUGE_SMALL_Y, GAUGE_SMALL, GAUGE_SMALL_SWEEP, 2, 2);	// cold, normal, hot
 		add(PartType::INSTRUMENT_CLUSTER, cluster);
+
+		// A needle: from its pivot up along +y, as long as a big dial wants (the little ones' are scaled down).
+		MeshBuilder needle;
+		Box(needle, { 0.f, GAUGE_BIG * 0.36f, 0.f }, { 0.004f, GAUGE_BIG * 0.92f, 0.0015f }, { 1.f, 0.42f, 0.1f });
+		AddModel(ShopModels::GAUGE_NEEDLE, needle);
 	}
 	{
 		// A bucket seat facing +x: the cushion between its bolsters on a black frame, the back reclined with its own
@@ -402,9 +475,12 @@ void ShopAssets::LoadCarParts()
 	}
 	{
 		MeshBuilder wheel;
+		// Three spokes (on the car +x is the top of the wheel): one out to each side, a little under the hub, and one
+		// down, so the gauges show through the top half.
 		Tube(wheel, At({ 0.f, 0.015f, 0.f }), 0.19f, 0.17f, 0.03f, TRIM_BLACK, 28);
-		Box(wheel, { 0.f, 0.015f, 0.f }, { 0.34f, 0.02f, 0.03f }, ALLOY);
-		Cylinder(wheel, At({ 0.f, 0.02f, 0.f }), 0.04f, 0.04f, TRIM_BLACK, 16);
+		Box(wheel, { -0.025f, 0.015f, 0.f }, { 0.035f, 0.02f, 0.345f }, ALLOY);
+		Box(wheel, { -0.1f, 0.015f, 0.f }, { 0.16f, 0.02f, 0.035f }, ALLOY);
+		Cylinder(wheel, At({ -0.01f, 0.02f, 0.f }), 0.035f, 0.04f, TRIM_BLACK, 16);
 		add(PartType::STEERING_WHEEL, wheel);
 	}
 
@@ -431,8 +507,10 @@ void ShopAssets::LoadCarParts()
 			MeshBuilder knuckle;
 			Box(knuckle, { 0.f, 0.13f, 0.f }, { 0.1f, 0.26f, 0.08f }, IRON);
 			Cylinder(knuckle, AlongZ({ 0.f, 0.1f, side * 0.05f }), 0.045f, 0.06f, ALLOY, 16);
-			Box(knuckle, { 0.1f, 0.02f, 0.f }, { 0.2f, 0.04f, 0.05f }, IRON);
-			Cylinder(knuckle, At({ 0.18f, 0.02f, 0.f }), 0.02f, 0.05f, IRON, 12);
+			// (The arm drops to the tie rod's height, under the engine's sump: the knuckle sits a tenth under the axle.)
+			const float arm = TIE_ROD_Y - (AXLE_Y - 0.1f);
+			Box(knuckle, { 0.1f, arm, 0.f }, { 0.2f, 0.04f, 0.05f }, IRON);
+			Cylinder(knuckle, At({ 0.18f, arm, 0.f }), 0.02f, 0.05f, IRON, 12);
 			AddModel(side < 0.f ? std::string(PartTypeName(PartType::STEERING_KNUCKLE)) : ShopModels::KNUCKLE_RIGHT, knuckle);
 		}
 	}
@@ -469,9 +547,11 @@ void ShopAssets::LoadCarParts()
 	// Steering
 	{
 		MeshBuilder rack;
-		Cylinder(rack, AlongX({ 0.f, 0.03f, 0.f }), 0.03f, 0.62f, ALLOY, 14);
+		// Slim, to pass under the engine's sump: its tube, the boots on its ends, and the pinion's housing standing up
+		// off it on the driver's side.
+		Cylinder(rack, AlongX({ 0.f, 0.026f, 0.f }), 0.026f, 0.62f, ALLOY, 14);
 		for (float side : { -1.f, 1.f })
-			Cylinder(rack, AlongX({ side * 0.37f, 0.03f, 0.f }), 0.024f, 0.12f, RUBBER, 12);
+			Cylinder(rack, AlongX({ side * 0.37f, 0.026f, 0.f }), 0.022f, 0.12f, RUBBER, 12);
 		Cylinder(rack, At({ -0.18f, 0.1f, 0.f }), 0.02f, 0.1f, ALLOY, 12);
 		add(PartType::STEERING_RACK, rack);
 	}
@@ -497,7 +577,21 @@ void ShopAssets::LoadCarParts()
 	lying(PartType::PARKING_BRAKE_CABLE, 0.004f, 1.4f, TRIM_BLACK);
 
 	// Drivetrain
-	box(PartType::ENGINE_MOUNT, { 0.12f, 0.08f, 0.08f }, RUBBER);
+	{
+		// The rubber block on its perch, a steel plate on top, and the bracket off that in to the side of the crankcase
+		// (built for the car's right: -z is in toward the engine).
+		MeshBuilder mount;
+		Box(mount, { 0.f, 0.005f, 0.f }, { 0.12f, 0.01f, 0.09f }, IRON);
+		Box(mount, { 0.f, 0.035f, 0.f }, { 0.1f, 0.05f, 0.075f }, RUBBER);
+		Box(mount, { 0.f, 0.066f, 0.f }, { 0.12f, 0.012f, 0.09f }, IRON);
+		const float reach = ENGINE_MOUNT_Z - 0.1f;		// to the crankcase's side
+		Box(mount, { 0.f, 0.084f, -reach * 0.5f - 0.01f }, { 0.07f, 0.024f, reach + 0.02f }, IRON);
+		Box(mount, { 0.f, 0.1f, -reach + 0.006f }, { 0.11f, 0.08f, 0.012f }, IRON);
+		for (float x : { -0.03f, 0.03f })
+			Prism(mount, { { -reach + 0.01f, 0.096f }, { -0.05f, 0.096f }, { -reach + 0.01f, 0.135f } }, x - 0.004f, x + 0.004f, IRON,
+				glm::rotate(glm::mat4(1.f), -glm::half_pi<float>(), glm::vec3(0.f, 1.f, 0.f)));
+		add(PartType::ENGINE_MOUNT, mount);
+	}
 	upright(PartType::CLUTCH_DISC, 0.1f, 0.009f, LINING);
 	upright(PartType::PRESSURE_PLATE, 0.11f, 0.04f, ALLOY);
 	{
@@ -507,15 +601,27 @@ void ShopAssets::LoadCarParts()
 	}
 	{
 		MeshBuilder gearbox;
-		Cylinder(gearbox, AlongX({ -0.12f, 0.15f, 0.f }), 0.15f, 0.2f, ALLOY, 24);
-		Box(gearbox, { 0.15f, 0.12f, 0.f }, { 0.38f, 0.2f, 0.18f }, ALLOY);
-		Cylinder(gearbox, At({ 0.12f, 0.3f, 0.f }), 0.008f, 0.16f, TRIM_BLACK, 10);
+		// Front to back along +x, its shafts 0.15 up: the bellhousing (hollow, over the clutch) with its flange against
+		// the engine, the gear case, the long tail housing out to the driveshaft, and the lever up off the tail's end
+		// with its boot and knob.
+		Tube(gearbox, AlongX({ -0.2f, 0.15f, 0.f }), 0.16f, 0.15f, 0.2f, ALLOY, 28);
+		Tube(gearbox, AlongX({ -0.294f, 0.15f, 0.f }), 0.176f, 0.15f, 0.012f, ALLOY, 28);
+		Cylinder(gearbox, AlongX({ -0.105f, 0.15f, 0.f }), 0.16f, 0.01f, ALLOY, 28);
+		Box(gearbox, { 0.07f, 0.15f, 0.f }, { 0.34f, 0.2f, 0.18f }, ALLOY);
+		for (float x : { -0.03f, 0.07f, 0.17f })
+			Box(gearbox, { x, 0.15f, 0.f }, { 0.012f, 0.22f, 0.2f }, ALLOY);			// the case's ribs
+		Cylinder(gearbox, AlongX({ 0.44f, 0.15f, 0.f }), 0.055f, 0.4f, ALLOY, 18);
+		Cylinder(gearbox, AlongX({ 0.632f, 0.15f, 0.f }), 0.045f, 0.016f, IRON, 18);	// the output flange
+		Box(gearbox, { 0.59f, 0.215f, 0.f }, { 0.07f, 0.03f, 0.07f }, ALLOY);
+		Cylinder(gearbox, At({ 0.59f, 0.255f, 0.f }), 0.035f, 0.05f, RUBBER, 12);
+		Cylinder(gearbox, At({ 0.59f, 0.35f, 0.f }), 0.008f, 0.2f, ALLOY, 10);
+		gearbox.SetColor(TRIM_BLACK).AddSphere({ 0.59f, 0.46f, 0.f }, 0.022f, 6, 10);
 		add(PartType::TRANSMISSION, gearbox);
 	}
 	box(PartType::TRANSMISSION_MOUNT, { 0.22f, 0.06f, 0.08f }, RUBBER);
 	upright(PartType::CLUTCH_MASTER_CYLINDER, 0.018f, 0.15f, ALLOY);
 	upright(PartType::CLUTCH_RELEASE_CYLINDER, 0.015f, 0.1f, ALLOY);
-	lying(PartType::DRIVESHAFT, 0.035f, 1.3f, TRIM_BLACK);
+	lying(PartType::DRIVESHAFT, 0.035f, 1.07f, TRIM_BLACK);		// from the gearbox's tail to the diff's nose
 
 	// Fuel
 	box(PartType::FUEL_TANK, { 0.8f, 0.25f, 0.6f }, TRIM_BLACK);
@@ -616,11 +722,13 @@ void ShopAssets::LoadCarParts()
 		Tube(wheel, AlongX({ 0.f, TIRE_RADIUS, 0.f }), 0.166f, 0.156f, 0.14f, ALLOY, 32);
 		for (float side : { -1.f, 1.f })
 			Tube(wheel, AlongX({ side * 0.066f, TIRE_RADIUS, 0.f }), 0.174f, 0.156f, 0.01f, ALLOY, 32);
-		Cylinder(wheel, AlongX({ 0.f, TIRE_RADIUS, 0.f }), 0.157f, 0.012f, { 0.62f, 0.63f, 0.65f }, 32);
-		for (int vent = 0; vent < 6; vent++)
+		// The centre: a ring of fins from the hub out to the rim, dark between them.
+		Cylinder(wheel, AlongX({ 0.f, TIRE_RADIUS, 0.f }), 0.157f, 0.012f, { 0.2f, 0.2f, 0.22f }, 32);
+		for (int fin = 0; fin < 20; fin++)
 		{
-			float angle = vent * glm::two_pi<float>() / 6.f;
-			Cylinder(wheel, AlongX({ 0.f, TIRE_RADIUS + std::sin(angle) * 0.105f, std::cos(angle) * 0.105f }), 0.026f, 0.014f, TRIM_BLACK, 12);
+			wheel.SetTransform(glm::rotate(At({ 0.f, TIRE_RADIUS, 0.f }), fin * glm::two_pi<float>() / 20.f, glm::vec3(1.f, 0.f, 0.f))).SetColor(ALLOY);
+			wheel.AddBox({ 0.f, 0.105f, 0.f }, { 0.02f, 0.1f, 0.014f });
+			wheel.ResetTransform();
 		}
 		Cylinder(wheel, AlongX({ 0.f, TIRE_RADIUS, 0.f }), 0.06f, 0.06f, ALLOY, 20);
 		Cylinder(wheel, AlongX({ 0.f, TIRE_RADIUS, 0.f }), 0.035f, 0.15f, { 0.8f, 0.81f, 0.83f }, 16);
@@ -658,7 +766,8 @@ void ShopAssets::BuildProjectCarShell()
 	constexpr float REAR_TUB_WALL_Z = 0.5885f;		// and their inner walls, just inside the tires
 	const float tubFront = REAR_AXLE_X + REAR_TUB + 0.02f, tubBack = REAR_AXLE_X - REAR_TUB - 0.02f;
 	Box(car, { (tubFront + FOOTWELL_X) * 0.5f, 0.2f, 0.f }, { FOOTWELL_X - tubFront, 0.04f, 1.5f }, UNDERSEAL);
-	Box(car, { (FOOTWELL_X + 1.65f) * 0.5f, 0.2f, 0.f }, { 1.65f - FOOTWELL_X, 0.04f, 0.82f }, UNDERSEAL);
+	// (Under the engine there's no floor: the pan stops at the firewall.)
+	Box(car, { (FOOTWELL_X + FIREWALL_X + 0.015f) * 0.5f, 0.2f, 0.f }, { FIREWALL_X + 0.015f - FOOTWELL_X, 0.04f, 0.82f }, UNDERSEAL);
 	Box(car, { REAR_AXLE_X, 0.2f, 0.f }, { tubFront - tubBack, 0.04f, 2.f * REAR_TUB_WALL_Z }, UNDERSEAL);
 	Box(car, { (tubBack - 1.95f) * 0.5f, 0.2f, 0.f }, { tubBack + 1.95f, 0.04f, 1.5f }, UNDERSEAL);
 	const float roofMiddle = (WINDSHIELD_TOP_X + REAR_WINDOW_TOP_X) * 0.5f, roofLength = WINDSHIELD_TOP_X - REAR_WINDOW_TOP_X;
@@ -706,8 +815,11 @@ void ShopAssets::BuildProjectCarShell()
 				side * REAR_TUB_WALL_Z, 0.012f, UNDERSEAL, 36);
 		}
 		// The rubbing strip along the quarter, in line with the door's, either side of the arch.
-		Box(car, { -0.655f, RUB_STRIP_Y, side * (SIDE + 0.004f) }, { 0.4f, 0.035f, 0.008f }, TRIM_BLACK);
-		Box(car, { -1.8f, RUB_STRIP_Y, side * (SIDE + 0.004f) }, { 0.5f, 0.035f, 0.008f }, TRIM_BLACK);
+		Box(car, { -0.655f, RUB_STRIP_Y, side * (SIDE + 0.002f) }, { 0.4f, 0.012f, 0.004f }, CREASE);
+		Box(car, { -1.8f, RUB_STRIP_Y, side * (SIDE + 0.002f) }, { 0.5f, 0.012f, 0.004f }, CREASE);
+		// The side skirt under the door, between the arches.
+		Box(car, { 0.f, 0.195f, side * (SIDE + 0.004f) }, { 1.7f, 0.09f, 0.03f }, BODY_WHITE);
+		Box(car, { 0.f, 0.243f, side * (SIDE + 0.012f) }, { 1.7f, 0.008f, 0.02f }, CREASE);
 		// The quarter's top: in to the trunk lid's edge along the deck, and in to the glass under the window.
 		Box(car, { (TAIL_X + REAR_WINDOW_BASE_X) * 0.5f, BELT_Y - 0.01f, side * (SIDE + TRUNK_HALF) * 0.5f },
 			{ REAR_WINDOW_BASE_X - TAIL_X, 0.02f, SIDE - TRUNK_HALF }, BODY_WHITE);
@@ -723,21 +835,36 @@ void ShopAssets::BuildProjectCarShell()
 		// Above the belt: the A-pillar raked back to the roof, the B-pillar behind the door's glass, the fixed quarter
 		// window, the C-pillar down to the deck beside the rear window, and the roof's rail over them with its gutter.
 		Beam(car, on(WINDSHIELD_BASE_X, BELT_Y), on(WINDSHIELD_TOP_X, ROOF_Y), { 0.f, 0.f, 1.f }, 0.055f, 0.05f, BODY_WHITE);
-		Slab(car, { on(-0.54f, BELT_Y), on(DOOR_REAR_X, BELT_Y), on(DOOR_REAR_X, ROOF_Y), on(-0.54f, ROOF_Y) }, lean, 0.03f, BODY_WHITE);
+		Slab(car, { on(-0.54f, BELT_Y), on(DOOR_REAR_X, BELT_Y), on(DOOR_REAR_X, ROOF_Y), on(-0.54f, ROOF_Y) }, lean, 0.03f, TRIM_BLACK);
 		Slab(quarterGlass, { on(-0.54f, BELT_Y), on(-1.12f, BELT_Y), on(-0.99f, 1.22f), on(-0.54f, 1.22f) }, lean, 0.008f, GLASS);
 		Slab(car, { on(-1.12f, BELT_Y), on(REAR_WINDOW_BASE_X - 0.02f, BELT_Y), on(REAR_WINDOW_TOP_X - 0.02f, ROOF_Y), on(-0.95f, ROOF_Y) },
 			lean, 0.03f, BODY_WHITE);
 		Box(car, { roofMiddle, ROOF_Y - 0.005f, side * (ROOF_Z - 0.003f) }, { roofLength, 0.04f, 0.04f }, BODY_WHITE);
 		Box(car, { roofMiddle, ROOF_Y + 0.012f, side * (ROOF_Z + 0.014f) }, { roofLength - 0.04f, 0.008f, 0.012f }, TRIM_BLACK);
 		// The nose's corner beside the headlight, behind the fender's skin.
-		Box(car, { NOSE_X - 0.02f, 0.685f, side * 0.7475f }, { 0.04f, 0.14f, 0.035f }, BODY_WHITE);
+		Box(car, { NOSE_X - 0.02f, 0.65f, side * 0.7475f }, { 0.04f, 0.08f, 0.035f }, BODY_WHITE);
 
 		// The engine bay's sides: the strut tower (a top plate the strut's mount bolts up under, its nuts on top, walled
 		// in from the bay), the inner wing up to the fender's bolt lip, and the chassis rail. And the rear spring tower.
-		Box(car, { 1.2f, 0.745f, side * 0.55f }, { 0.24f, 0.02f, 0.2f }, PRIMER);
-		Box(car, { 1.2f, 0.6f, side * 0.44f }, { 0.24f, 0.29f, 0.02f }, PRIMER);
-		// (The inner wing is cut away round the wheel, so the strut and the brake are there to see and get at in the arch.)
-		SidePanel(car, 0.92f, 2.03f, Arched(0.27f, FRONT_AXLE_X, AXLE_Y, ARCH_RADIUS + 0.03f), [](float x) { return HoodY(x) - 0.045f; }, side * 0.655f, 0.03f, PRIMER, 44);
+		// The front wheel's housing closes the wheel off from the bay: a tub over the tire from the fender's skin in to
+		// a wall beside the engine (open below the chassis rail, where the arm, the tie rod and the strut rod come
+		// through), and on top of it the strut's tower up to its plate.
+		{
+			const float outerZ = SIDE - SKIN, width = outerZ - FRONT_TUB_WALL_Z;
+			ArchLip(car, FRONT_AXLE_X, AXLE_Y, FRONT_TUB, side * (FRONT_TUB_WALL_Z + width * 0.5f), width, PRIMER);
+			const float reach = FRONT_TUB + 0.022f;
+			SidePanel(car, FRONT_AXLE_X - reach, FRONT_AXLE_X + reach, Level(0.27f),
+				[reach](float x) { float dx = x - FRONT_AXLE_X; return (std::max)(0.27f, AXLE_Y + std::sqrt((std::max)(reach * reach - dx * dx, 0.f))); },
+				side * FRONT_TUB_WALL_Z, 0.015f, PRIMER, 44);
+			Tube(car, At({ FRONT_AXLE_X, 0.71f, side * 0.55f }), 0.095f, 0.083f, 0.07f, PRIMER, 20);
+			Box(car, { FRONT_AXLE_X, 0.745f, side * 0.55f }, { 0.21f, 0.02f, 0.21f }, PRIMER);
+		}
+		// The inner wing, from the tub up to the fender's bolt lip.
+		SidePanel(car, 0.92f, 2.03f, Arched(0.27f, FRONT_AXLE_X, AXLE_Y, FRONT_TUB + 0.01f), [](float x) { return HoodY(x) - 0.045f; }, side * 0.655f, 0.03f, PRIMER, 44);
+		// The engine's mount sits on a perch off the chassis rail, braced under it.
+		Box(car, { ENGINE_X, ENGINE_MOUNT_Y - 0.015f, side * (ENGINE_MOUNT_Z + 0.025f) }, { 0.15f, 0.03f, 0.17f }, PRIMER);
+		Prism(car, { { ENGINE_MOUNT_Z - 0.05f, ENGINE_MOUNT_Y - 0.03f }, { 0.32f, ENGINE_MOUNT_Y - 0.03f }, { 0.32f, 0.215f } }, -0.006f, 0.006f, PRIMER,
+			glm::rotate(At({ ENGINE_X, 0.f, 0.f }), side * -glm::half_pi<float>(), glm::vec3(0.f, 1.f, 0.f)));
 		// The chassis rail, inboard of where the tire's front swings in on full lock.
 		Box(car, { 1.55f, 0.25f, side * 0.36f }, { 1.3f, 0.08f, 0.08f }, PRIMER);
 		// The front wheel's housing where it comes back into the footwell: the tire's back swings in here on full lock.
@@ -747,30 +874,38 @@ void ShopAssets::BuildProjectCarShell()
 		Box(car, { -1.2f, 0.66f, side * 0.52f }, { 0.3f, 0.08f, 0.2f }, UNDERSEAL);
 	}
 	// The battery's tray, on a bracket off the left inner wing.
-	Box(car, { 1.62f, 0.5f, -0.5f }, { 0.27f, 0.02f, 0.21f }, PRIMER);
-	Box(car, { 1.62f, 0.43f, -0.62f }, { 0.2f, 0.14f, 0.04f }, PRIMER);
+	Box(car, { 1.66f, 0.51f, -0.5f }, { 0.27f, 0.02f, 0.21f }, PRIMER);
+	Box(car, { 1.7f, 0.46f, -0.62f }, { 0.14f, 0.1f, 0.04f }, PRIMER);
+	// The front crossmember under the back of the engine, between the chassis rails, the lower arms pivoting on its ears.
+	Box(car, { 1.1f, 0.16f, 0.f }, { 0.07f, 0.05f, 0.8f }, UNDERSEAL);
+	for (float side : { -1.f, 1.f })
+	{
+		Box(car, { 1.1f, 0.2f, side * 0.36f }, { 0.07f, 0.04f, 0.08f }, UNDERSEAL);
+		Box(car, { 1.17f, 0.165f, side * 0.145f }, { 0.14f, 0.05f, 0.03f }, UNDERSEAL);
+	}
 	// The roof, a little crowned, and the headers over the windshield and the rear window.
 	Box(car, { roofMiddle, ROOF_Y + 0.008f, 0.f }, { roofLength, 0.035f, 2.f * ROOF_Z - 0.02f }, BODY_WHITE);
 	Box(car, { roofMiddle, ROOF_Y + 0.03f, 0.f }, { roofLength - 0.16f, 0.012f, 2.f * ROOF_Z - 0.22f }, BODY_WHITE);
 	Box(car, { WINDSHIELD_TOP_X + 0.01f, ROOF_Y - 0.008f, 0.f }, { 0.07f, 0.035f, 2.f * ROOF_Z }, BODY_WHITE);
 	Box(car, { REAR_WINDOW_TOP_X - 0.01f, ROOF_Y - 0.008f, 0.f }, { 0.07f, 0.035f, 2.f * ROOF_Z }, BODY_WHITE);
 	// The firewall, and the cowl over it between the fenders, with its air intake and the wipers parked on it.
-	Box(car, { 0.88f, 0.69f, 0.f }, { 0.03f, 0.34f, 1.5f }, PRIMER);
-	Box(car, { 0.88f, 0.37f, 0.f }, { 0.03f, 0.3f, 0.88f }, PRIMER);		// narrower low down, between the wheel housings
+	constexpr float TUNNEL_MOUTH = 0.19f, TUNNEL_MOUTH_TOP = 0.52f, TUNNEL = 0.1f, TUNNEL_TOP = 0.42f, TUNNEL_STEP_X = 0.47f;
+	Box(car, { FIREWALL_X, 0.69f, 0.f }, { 0.03f, 0.34f, 1.5f }, PRIMER);
+	// Lower down it's narrower, between the wheel housings, and open in the middle where the gearbox's bellhousing
+	// goes back into the tunnel.
+	for (float side : { -1.f, 1.f })
+		Box(car, { FIREWALL_X, 0.37f, side * (TUNNEL_MOUTH + 0.44f) * 0.5f }, { 0.03f, 0.3f, 0.44f - TUNNEL_MOUTH }, PRIMER);
 	Box(car, { (DOOR_FRONT_X + HOOD_REAR_X) * 0.5f, BELT_Y - 0.01f, 0.f }, { HOOD_REAR_X - DOOR_FRONT_X, 0.02f, 2.f * HOOD_HALF }, BODY_WHITE);
 	Box(car, { 0.935f, BELT_Y + 0.001f, 0.f }, { 0.04f, 0.002f, 1.1f }, TRIM_BLACK);
 	Box(car, { 0.925f, BELT_Y + 0.012f, -0.3f }, { 0.012f, 0.012f, 0.5f }, TRIM_BLACK);
 	Box(car, { 0.925f, BELT_Y + 0.012f, 0.3f }, { 0.012f, 0.012f, 0.42f }, TRIM_BLACK);
 	// The nose: the radiator support, the valance down behind the bumper, the black band the headlights and grille
 	// sit in with the strip over it the hood shuts onto, and the slatted grille with its badge.
-	Box(car, { 2.03f, 0.5f, 0.f }, { 0.04f, 0.46f, 1.3f }, PRIMER);
-	Box(car, { NOSE_X - 0.02f, 0.4075f, 0.f }, { 0.04f, 0.415f, 1.53f }, BODY_WHITE);
-	Box(car, { NOSE_X - 0.035f, 0.685f, 0.f }, { 0.03f, 0.14f, 1.53f }, TRIM_BLACK);
-	Box(car, { NOSE_X - 0.03f, 0.75f, 0.f }, { 0.04f, 0.01f, 1.53f }, BODY_WHITE);
-	Box(car, { NOSE_X - 0.012f, 0.685f, 0.f }, { 0.02f, 0.12f, 0.6f }, TRIM_BLACK);
-	for (int slat = 0; slat < 5; slat++)
-		Box(car, { NOSE_X, 0.635f + slat * 0.025f, 0.f }, { 0.006f, 0.008f, 0.58f }, { 0.25f, 0.25f, 0.26f });
-	Box(car, { NOSE_X + 0.004f, 0.685f, 0.f }, { 0.004f, 0.04f, 0.06f }, ALLOY);
+	// (A low wedge: the panel behind the bumper, and over it the dark slot between the headlights' lids that the hood
+	// shuts down to.)
+	Box(car, { 2.03f, 0.46f, 0.f }, { 0.04f, 0.38f, 1.3f }, PRIMER);
+	Box(car, { NOSE_X - 0.02f, 0.43f, 0.f }, { 0.04f, 0.46f, 1.53f }, TRIM_BLACK);
+	Box(car, { NOSE_X - 0.02f, 0.66f, 0.f }, { 0.04f, 0.05f, 2.f * LAMP_LID_INNER }, TRIM_BLACK);
 	// The tail panel, the black garnish between the tail lights with the number plate on it, the deck under the
 	// rear window, and the shelf behind the back seat.
 	Box(car, { TAIL_X + 0.015f, 0.53f, 0.f }, { 0.03f, 0.66f, 1.53f }, BODY_WHITE);
@@ -779,7 +914,23 @@ void ShopAssets::BuildProjectCarShell()
 	Box(car, { (REAR_WINDOW_BASE_X + TRUNK_FRONT_X) * 0.5f, BELT_Y - 0.01f, 0.f }, { REAR_WINDOW_BASE_X - TRUNK_FRONT_X, 0.02f, 2.f * TRUNK_HALF }, BODY_WHITE);
 	Box(car, { -1.27f, 0.84f, 0.f }, { 0.46f, 0.02f, 1.44f }, VINYL);
 	// Inside: the transmission tunnel, and the back seat (it's part of the shell: only the front seats come out).
-	Box(car, { 0.1f, 0.3f, 0.f }, { 1.5f, 0.16f, 0.3f }, UNDERSEAL);
+	// (The tunnel is hollow, over the gearbox: wide and high behind the firewall for the bellhousing and the gear case,
+	// then low and narrow over the tail housing, back between the seats.)
+	{
+		const float mouthLength = FIREWALL_X - 0.015f - TUNNEL_STEP_X, mouthMiddle = TUNNEL_STEP_X + mouthLength * 0.5f;
+		const float tailLength = TUNNEL_STEP_X + 0.65f, tailMiddle = TUNNEL_STEP_X - tailLength * 0.5f;
+		for (float side : { -1.f, 1.f })
+		{
+			Box(car, { mouthMiddle, (0.22f + TUNNEL_MOUTH_TOP) * 0.5f, side * TUNNEL_MOUTH }, { mouthLength, TUNNEL_MOUTH_TOP - 0.22f, 0.015f }, UNDERSEAL);
+			Box(car, { tailMiddle, (0.22f + TUNNEL_TOP) * 0.5f, side * TUNNEL }, { tailLength, TUNNEL_TOP - 0.22f, 0.015f }, UNDERSEAL);
+			Box(car, { TUNNEL_STEP_X, (0.22f + TUNNEL_MOUTH_TOP) * 0.5f, side * (TUNNEL + TUNNEL_MOUTH) * 0.5f },
+				{ 0.015f, TUNNEL_MOUTH_TOP - 0.22f, TUNNEL_MOUTH - TUNNEL }, UNDERSEAL);
+		}
+		Box(car, { mouthMiddle, TUNNEL_MOUTH_TOP, 0.f }, { mouthLength, 0.015f, 2.f * TUNNEL_MOUTH + 0.015f }, UNDERSEAL);
+		Box(car, { tailMiddle, TUNNEL_TOP, 0.f }, { tailLength, 0.015f, 2.f * TUNNEL + 0.015f }, UNDERSEAL);
+		Box(car, { TUNNEL_STEP_X, (TUNNEL_TOP + TUNNEL_MOUTH_TOP) * 0.5f, 0.f }, { 0.015f, TUNNEL_MOUTH_TOP - TUNNEL_TOP, 2.f * TUNNEL }, UNDERSEAL);
+		Box(car, { -0.65f, (0.22f + TUNNEL_TOP) * 0.5f, 0.f }, { 0.015f, TUNNEL_TOP - 0.22f, 2.f * TUNNEL }, UNDERSEAL);
+	}
 	Box(car, { -0.92f, 0.3f, 0.f }, { 0.46f, 0.16f, 1.14f }, VINYL);
 	TurnedBox(car, glm::rotate(At({ -1.12f, 0.38f, 0.f }), 0.2f, glm::vec3(0.f, 0.f, 1.f)), { 0.f, 0.22f, 0.f }, { 0.1f, 0.46f, 1.14f }, VINYL);
 	AddModel(ShopModels::PROJECT_CAR, car);

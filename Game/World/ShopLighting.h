@@ -5,6 +5,7 @@
 
 #include <glm/glm.hpp>
 
+#include "LV/Engine/Graphics/Lighting.h"
 #include "LV/Engine/Objects/Object.h"
 #include "GarageLayout.h"
 
@@ -21,8 +22,9 @@ public:
 	// hours: 0 to 24. doorOpen: 0 shut to 1 rolled up, which lets more daylight into the shop.
 	// brightness multiplies the exposure.
 	// interior: the shop as it stands (upgrades and all), lit by its own lamps.
+	// carLights: the car's headlights on the road, when they're on.
 	void Update(const glm::vec3& cameraPosition, float farPlane, float hours, float doorOpen, float brightness,
-		const std::vector<pObject>& lampHeads, const ShopInterior& interior);
+		const std::vector<pObject>& lampHeads, const ShopInterior& interior, const std::vector<PointLight>& carLights);
 
 	// "14:05"
 	static std::string ClockText(float hours);

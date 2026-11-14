@@ -1290,8 +1290,10 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 	const ImU32 white = IM_COL32(240, 240, 235, 230);
 	const ImU32 grey = IM_COL32(200, 200, 200, 200);
 
-	// No crosshair while the camera looks back at you: it would be on your face, not what you'd use.
-	if (!IsLookingBack())
+	// In the car: the map, and its gauges from outside it.
+	DrawDriveHud(workshop);
+	// No crosshair while the camera looks back at you: it would be on your face, not what you'd use. Nor in the car.
+	if (!IsLookingBack() && !IsSeated())
 	{
 		drawList->AddCircleFilled(center, 3.5f, IM_COL32(0, 0, 0, 160));
 		drawList->AddCircleFilled(center, 2.f, m_hover || m_measureTarget ? IM_COL32(255, 210, 90, 255) : white);

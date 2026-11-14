@@ -11,6 +11,7 @@
 
 #include "LV/Engine/Graphics/Models/MeshBuilder.h"
 #include "GarageLayout.h"
+#include "Roads.h"
 
 // The garage building (walls with window openings, roof, roll-up door) and the lot and street
 // around it.
@@ -349,7 +350,7 @@ namespace
 			}
 	}
 
-	void LoadLot(const std::function<void(const std::string&, const MeshBuilder&)>& add)
+	void LoadLot(const std::function<void(const std::string&, const MeshBuilder&)>& add, const std::function<void(const std::string&, const MeshBuilder&)>& addAsBuilt)
 	{
 		{
 			MeshBuilder sky;
@@ -357,14 +358,12 @@ namespace
 			add(ShopModels::SKY_DOME, sky);
 		}
 		{
-			// Sand as far as the eye can see, but not under the shack's floor, the paving or the highway: only 5 mm
-			// below them, it would show through them from any distance. Where the side bay's floor and drive go,
-			// sand of its own, there until the bay is built.
+			// Sand as far as the eye can see, but not under the shack's floor or the paving: only 5 mm below them, it
+			// would show through them from any distance. (The roads lie a little higher, over it.) Where the side
+			// bay's floor and drive go, sand of its own, there until the bay is built.
 			const float outerX = HALF_WIDTH + WALL, outerZ = HALF_DEPTH + WALL;
 			std::vector<Paved> covered(std::begin(PAVED), std::end(PAVED));
 			covered.push_back({ { -outerX, -outerZ }, { outerX, outerZ } });
-			for (float start : { HIGHWAY_NEAR_Z, HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN })
-				covered.push_back({ { -HIGHWAY_HALF_LENGTH, start }, { HIGHWAY_HALF_LENGTH, start + HIGHWAY_CARRIAGEWAY } });
 			const std::vector<Paved> bay = { { { BAY_MIN_X, -BAY_HALF_DEPTH }, { -outerX, BAY_HALF_DEPTH } }, BAY_DRIVE, BAY_DRIVE_LINK };
 			std::vector<Paved> notOpen = covered;
 			notOpen.insert(notOpen.end(), bay.begin(), bay.end());
@@ -391,32 +390,101 @@ namespace
 			add(ShopModels::PAVING, paving);
 		}
 		{
-			// The highway's two carriageways, shoulders and all, with sand between them.
+			// The roads (Roads.h): each strip of asphalt laid along its line a tile at a time, two triangles to the
+			// tile. (A flat triangle's texture runs from its first corner along its first edge, so the second of each
+			// pair has the asphalt turned half way round, which the asphalt is made to look the same as; and a strip is
+			// a whole number of tiles across, so they meet.) A strip's marking is left off where a higher strip
+			// crosses over it.
+			const auto& strips = Roads::Strips();
+			auto beside = [](const Roads::Strip& strip, size_t i, float left, float lift = 0.f) {
+				const size_t count = strip.line.size();
+				glm::vec2 before = strip.line[i > 0 ? i - 1 : strip.loop ? count - 1 : 0];
+				glm::vec2 after = strip.line[i + 1 < count ? i + 1 : strip.loop ? 0 : count - 1];
+				glm::vec2 heading = glm::normalize(after - before);
+				glm::vec2 point = strip.line[i] + glm::vec2(-heading.y, heading.x) * left;
+				return glm::vec3(point.x, strip.top + lift, point.y);
+			};
+			auto pieces = [](const Roads::Strip& strip) { return strip.loop ? strip.line.size() : strip.line.size() - 1; };
 			MeshBuilder road;
+			road.SetColor(WHITE);
+			for (const auto& strip : strips)
+			{
+				const float width = strip.halfWidth * 2.f;
+				road.SetUVScale(std::round(width / 3.45f) / width);
+				for (size_t i = 0; i < pieces(strip); i++)
+				{
+					size_t next = (i + 1) % strip.line.size();
+					glm::vec3 left = beside(strip, i, strip.halfWidth), right = beside(strip, i, -strip.halfWidth);
+					glm::vec3 nextLeft = beside(strip, next, strip.halfWidth), nextRight = beside(strip, next, -strip.halfWidth);
+					road.AddFlatTriangle(left, nextLeft, nextRight);
+					road.AddFlatTriangle(nextRight, right, left);
+				}
+			}
+			// The skid pan.
+			const auto& pan = Roads::SkidPan();
 			road.SetUVScale(0.25f);
-			for (float start : { HIGHWAY_NEAR_Z, HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN })
-				Box(road, { 0.f, -0.04f, start + HIGHWAY_CARRIAGEWAY * 0.5f }, { HIGHWAY_HALF_LENGTH * 2.f, 0.1f, HIGHWAY_CARRIAGEWAY });
-			add(ShopModels::ROAD, road);
-		}
-		{
-			// Each carriageway: solid white along its outside edge, solid yellow along the median, and dashes
-			// between its two lanes.
+			Box(road, { (pan.min.x + pan.max.x) * 0.5f, pan.top - 0.05f, (pan.min.y + pan.max.y) * 0.5f }, { pan.max.x - pan.min.x, 0.1f, pan.max.y - pan.min.y });
+			// (As built: thousands of triangles in a few planes, none of them one over another.)
+			addAsBuilt(ShopModels::ROAD, road);
+
+			// A carriageway: solid white along its outside edge, solid yellow along the median, and dashes between
+			// its two lanes. A back road: white along both edges, yellow dashes down its middle.
 			MeshBuilder markings;
 			const glm::vec3 yellow = { 0.85f, 0.68f, 0.18f };
 			const glm::vec3 white = { 0.85f, 0.85f, 0.82f };
-			float length = HIGHWAY_HALF_LENGTH * 2.f;
-			for (bool farSide : { false, true })
-			{
-				float start = farSide ? HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN : HIGHWAY_NEAR_Z;
-				float outside = farSide ? start + HIGHWAY_CARRIAGEWAY - HIGHWAY_SHOULDER : start + HIGHWAY_SHOULDER;
-				float median = farSide ? start + HIGHWAY_SHOULDER : start + HIGHWAY_CARRIAGEWAY - HIGHWAY_SHOULDER;
-				Box(markings, { 0.f, 0.012f, outside }, { length, 0.004f, 0.15f }, white);
-				Box(markings, { 0.f, 0.012f, median }, { length, 0.004f, 0.15f }, yellow);
-				float between = (outside + median) * 0.5f;
-				for (float x = -HIGHWAY_HALF_LENGTH; x < HIGHWAY_HALF_LENGTH; x += 12.f)
-					Box(markings, { x + 1.5f, 0.012f, between }, { 3.f, 0.004f, 0.15f }, white);
-			}
-			add(ShopModels::ROAD_MARKINGS, markings);
+			constexpr float PAINT = 0.005f;
+			auto crossedOver = [&](const Roads::Strip& strip, size_t i) {
+				glm::vec2 point = strip.line[i];
+				for (const auto& other : strips)
+				{
+					if (other.top <= strip.top || point.x < other.min.x - 2.f || point.x > other.max.x + 2.f || point.y < other.min.y - 2.f || point.y > other.max.y + 2.f)
+						continue;
+					for (size_t j = 0; j < pieces(other); j++)
+					{
+						glm::vec2 a = other.line[j], along = other.line[(j + 1) % other.line.size()] - a;
+						float t = std::clamp(glm::dot(point - a, along) / (std::max)(glm::dot(along, along), 1e-6f), 0.f, 1.f);
+						if (glm::distance(point, a + along * t) < other.halfWidth + strip.halfWidth)
+							return true;
+					}
+				}
+				return false;
+			};
+			auto stripe = [&](const Roads::Strip& strip, size_t i, float left, float width, const glm::vec3& color) {
+				size_t next = (i + 1) % strip.line.size();
+				glm::vec3 a = beside(strip, i, left + width * 0.5f, PAINT), b = beside(strip, next, left + width * 0.5f, PAINT);
+				glm::vec3 c = beside(strip, next, left - width * 0.5f, PAINT), d = beside(strip, i, left - width * 0.5f, PAINT);
+				markings.SetColor(color);
+				markings.AddFlatTriangle(a, b, c);
+				markings.AddFlatTriangle(c, d, a);
+			};
+			for (const auto& strip : strips)
+				for (size_t i = 0; i < pieces(strip); i++)
+				{
+					if (crossedOver(strip, i) || crossedOver(strip, (i + 1) % strip.line.size()))
+						continue;
+					if (strip.medianSide != 0.f)
+					{
+						const float inset = strip.halfWidth - HIGHWAY_SHOULDER;
+						stripe(strip, i, strip.medianSide * inset, 0.15f, yellow);
+						stripe(strip, i, -strip.medianSide * inset, 0.15f, white);
+						if (i % 4 == 0)
+							stripe(strip, i, 0.f, 0.15f, white);
+					}
+					else
+					{
+						stripe(strip, i, strip.halfWidth - 0.25f, 0.12f, white);
+						stripe(strip, i, -strip.halfWidth + 0.25f, 0.12f, white);
+						if (i % 3 == 0)
+							stripe(strip, i, 0.f, 0.12f, yellow);
+					}
+				}
+			// The lap's line across both carriageways, chequered.
+			for (float start : { HIGHWAY_NEAR_Z, HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY + HIGHWAY_MEDIAN })
+				for (int square = 0; square < 34; square++)
+					for (int row = 0; row < 2; row++)
+						Box(markings, { Roads::START_LINE_X + (row - 0.5f) * 0.3f, 0.016f + PAINT + 0.002f, start + (square + 0.5f) * 0.3f }, { 0.3f, 0.002f, 0.3f },
+							(square + row) % 2 == 0 ? white : glm::vec3(0.06f, 0.06f, 0.06f));
+			addAsBuilt(ShopModels::ROAD_MARKINGS, markings);
 		}
 		{
 			// A saguaro: a ribbed trunk and two arms bent up, one higher than the other.
@@ -828,6 +896,6 @@ void ShopAssets::LoadOutdoors()
 {
 	auto add = [&](const std::string& name, const MeshBuilder& builder) { AddModel(name, builder); };
 	LoadGarage(add);
-	LoadLot(add);
+	LoadLot(add, [&](const std::string& name, const MeshBuilder& builder) { AddModel(name, builder, true); });
 	LoadUpgrades(add);
 }

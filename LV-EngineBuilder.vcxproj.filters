@@ -236,6 +236,9 @@
     <ClCompile Include="Game\World\ShopWorldCar.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
+    <ClCompile Include="Game\World\Roads.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
     <ClCompile Include="Game\World\ShopWorldCarTools.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
@@ -514,6 +517,9 @@
       <Filter>Game\World</Filter>
     </ClInclude>
     <ClInclude Include="Game\World\GarageLayout.h">
+      <Filter>Game\World</Filter>
+    </ClInclude>
+    <ClInclude Include="Game\World\Roads.h">
       <Filter>Game\World</Filter>
     </ClInclude>
     <ClInclude Include="Game\World\ProceduralTextures.h">

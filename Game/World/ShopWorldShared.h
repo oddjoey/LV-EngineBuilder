@@ -17,6 +17,7 @@
 #include "../Simulation/EngineAssembly.h"
 #include "../Simulation/Machine.h"
 #include "../Simulation/PartCatalog.h"
+#include "CarBody.h"
 #include "FirstPersonController.h"
 
 namespace ShopLayout
@@ -84,7 +85,7 @@ namespace ShopLayout
 	inline const glm::vec3 CAR_ENGINE_BAY = { 1.35f, 0.75f, 0.f };
 	// Where the engine's deck sits, its middle, in the car's space: the block between the strut towers, the crank
 	// about 0.35 m off the ground and the flywheel end at the firewall.
-	inline const glm::vec3 CAR_ENGINE_MOUNT = { 1.15f, 0.6f, 0.f };
+	inline const glm::vec3 CAR_ENGINE_MOUNT = { CarBody::ENGINE_X, CarBody::ENGINE_DECK_Y, 0.f };
 	inline const glm::vec3 HOIST_HOOK = { 0.f, 1.62f, 1.0f };
 	inline const glm::vec3 HOIST_HANG = { 0.f, 1.27f, 1.0f };	// the engine's deck, under the hook
 	constexpr float HOIST_REACH = 1.2f;			// how far from the hook a stand or the dyno can be, across the floor

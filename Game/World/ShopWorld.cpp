@@ -369,6 +369,19 @@ void ShopWorld::Build(const ShopAssets& assets)
 	m_carStands->SetVisible(false);
 	m_fuelFlap = Spawn(ShopModels::FUEL_FLAP, ShopTextures::PAINT, CAR_HOME, CAR_YAW);
 	m_fuelFlap->SetVisible(false);
+	for (auto& lens : m_headlightLenses)
+		lens = Spawn(ShopModels::HEADLIGHT_LENS, "", CAR_HOME, CAR_YAW);
+	for (auto& needle : m_gaugeNeedles)
+	{
+		needle = Spawn(ShopModels::GAUGE_NEEDLE, "", CAR_HOME, CAR_YAW);
+		needle->SetEmissive(0.8f);
+	}
+	for (const auto* list : { &m_headlightLenses[0], &m_headlightLenses[1], &m_gaugeNeedles[0], &m_gaugeNeedles[1], &m_gaugeNeedles[2], &m_gaugeNeedles[3] })
+	{
+		(*list)->SetVisible(false);
+		(*list)->SetPickable(false);
+		(*list)->SetCastsShadows(false);
+	}
 	const glm::vec4 CAR_GLASS = { 0.75f, 0.88f, 0.95f, 0.3f };
 	m_quarterGlass = Spawn(ShopModels::CAR_QUARTER_GLASS, "", CAR_HOME, CAR_YAW);
 	m_doorGlass = { Spawn(ShopModels::DOOR_GLASS, "", CAR_HOME, CAR_YAW), Spawn(ShopModels::DOOR_GLASS_RIGHT, "", CAR_HOME, CAR_YAW) };
@@ -490,7 +503,7 @@ int ShopWorld::ArmsOut() const
 
 void ShopWorld::UpdateSelfAvatar(float deltaTime, const FirstPersonController& player)
 {
-	bool show = m_viewModelVisible && m_thirdPerson && !m_drive.active;	// at the wheel they're in the car, out of sight
+	bool show = m_viewModelVisible && m_thirdPerson && !IsSeated();	// in the car they're out of sight
 	if (show && !m_selfAvatar.IsSpawned())
 		m_selfAvatar.Spawn(*this, player.GetFeetPosition(), player.GetYaw(), m_look);
 	m_selfAvatar.SetVisible(show);
@@ -545,7 +558,7 @@ ShopWorld::CameraView ShopWorld::UpdateThirdPersonCamera(const FirstPersonContro
 
 void ShopWorld::UpdateViewModel(const FirstPersonController& player)
 {
-	bool firstPerson = m_viewModelVisible && !m_thirdPerson && !m_drive.active;
+	bool firstPerson = m_viewModelVisible && !m_thirdPerson && !IsSeated();
 	bool showBody = firstPerson && m_viewSettings.showBody;
 	bool showArm = firstPerson && m_viewSettings.showArm;
 	m_viewBody->SetVisible(showBody);
@@ -869,11 +882,10 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	if (!playerHasControl)
 		return std::nullopt;
 
-	// At the wheel there's nothing else to do but drive (ShopWorld::Drive) and get out again.
-	if (m_drive.active)
+	// In the car there's nothing else to do but ride, drive (ShopWorld::Drive) and get out again.
+	if (IsSeated())
 	{
-		m_prompt = std::abs(m_drive.speed) <= 0.6f ? "[W]/[S] Drive   [A]/[D] Steer   [Space] Handbrake   [F] Get out" : "[Space] Handbrake";
-		m_secondaryPrompt = DriveReadout(workshop);
+		m_prompt = SeatPrompt();
 		return std::nullopt;
 	}
 
@@ -926,21 +938,15 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		StartMove(m_hover->stationIndex);
 		return std::nullopt;
 	}
-	// [F] at the car (any of it) gets in and drives it.
-	if (m_hover && m_carStation < m_stations.size() && m_stations[m_carStation].present)
+	// [F] at the car (any of it) gets into the seat nearest what's aimed at: the driver's, to drive it.
+	if (auto seat = AimedSeat(workshop, player))
 	{
-		bool atCar = m_hover->kind == TargetKind::STATION && m_hover->stationIndex == m_carStation;
-		if (m_hover->kind == TargetKind::ITEM)
-			if (const auto* visual = Find(m_hover->item))
-				atCar = visual->place == ItemPlace::CAR;
-		if (atCar)
+		static const char* HINTS[] = { "[F] Get in and drive", "[F] Sit in the passenger seat", "[F] Sit in the back", "[F] Sit in the back" };
+		m_prompt += (m_prompt.empty() ? "" : "   ") + std::string(HINTS[*seat]);
+		if (Controls::Pressed(input, Control::MOVE))
 		{
-			m_prompt += (m_prompt.empty() ? "" : "   ") + std::string("[F] Drive");
-			if (Controls::Pressed(input, Control::MOVE))
-			{
-				StartDrive(workshop);
-				return std::nullopt;
-			}
+			Sit(*seat, workshop);
+			return std::nullopt;
 		}
 	}
 	if (Controls::Pressed(input, Control::MOVE) && m_hover && m_hover->kind == TargetKind::PACKAGE)

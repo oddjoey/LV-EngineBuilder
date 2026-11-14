@@ -87,8 +87,8 @@ namespace GarageLayout
 	};
 
 	// Outside: open desert in every direction, ringed by mountains on the horizon (see ShopLighting, which
-	// keeps them there). A divided highway runs along X in front of the shack, out of sight both ways,
-	// and a paved drive runs down to it from the roll-up door.
+	// keeps them there). A divided highway runs along X in front of the shack (and on round behind it: see
+	// Roads.h), and a paved drive runs down to it from the roll-up door.
 	// The highway: two lanes each way, with shoulders, and a strip of sand between the carriageways.
 	constexpr float HIGHWAY_NEAR_Z = 40.f;			// the near edge of the near shoulder
 	constexpr float HIGHWAY_SHOULDER = 1.5f;
@@ -97,10 +97,11 @@ namespace GarageLayout
 	constexpr float HIGHWAY_CARRIAGEWAY = HIGHWAY_SHOULDER * 2.f + HIGHWAY_LANE * 2.f;
 	constexpr float HIGHWAY_FAR_Z = HIGHWAY_NEAR_Z + HIGHWAY_CARRIAGEWAY * 2.f + HIGHWAY_MEDIAN;
 	constexpr float HIGHWAY_HALF_LENGTH = 1000.f;
-	// How far you can walk: well out into the desert either side and behind, and a little way past the highway.
-	constexpr float WORLD_HALF_WIDTH = 150.f;
-	constexpr float WORLD_BACK_Z = -150.f;
-	constexpr float WORLD_FAR_Z = HIGHWAY_FAR_Z + 40.f;
+	// How far you can go: out past the highway where it comes back round behind the lot, and the back roads off it
+	// (see Roads.h).
+	constexpr float WORLD_HALF_WIDTH = 560.f;
+	constexpr float WORLD_BACK_Z = -450.f;
+	constexpr float WORLD_FAR_Z = 230.f;
 
 	// Pavement: the drive down to the highway, and an apron round the back and left of the shack. Nothing
 	// overlaps, so nothing flickers; footsteps on them sound like concrete.

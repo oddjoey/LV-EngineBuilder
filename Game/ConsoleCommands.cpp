@@ -402,6 +402,28 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_world.DevSteer(static_cast<float>(steer.value_or(0.0)));
 			m_console.Print("Wheels turned.");
 		}
+		else if (what == "to")
+		{
+			// car to <x> <z> [heading]: puts it down there, pointing that way (degrees: 0 toward +x, 90 toward -z).
+			auto x = args.size() > 2 ? Number(args[1]) : std::nullopt, z = args.size() > 2 ? Number(args[2]) : std::nullopt;
+			auto heading = args.size() > 3 ? Number(args[3]) : std::nullopt;
+			if (!x || !z)
+				return m_console.Error("Usage: car to <x> <z> [heading]");
+			m_world.DevPlaceCar(static_cast<float>(*x), static_cast<float>(*z), static_cast<float>(heading.value_or(0.0)));
+			m_console.Print("The car's there.");
+		}
+		else if (what == "lights")
+		{
+			m_world.DevHeadlights();
+			m_console.Print("The headlights, switched.");
+		}
+		else if (what == "sit")
+		{
+			// car sit [seat]: 0 the driver's (which turns the key), 1 the passenger's, 2 and 3 the back.
+			auto seat = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			m_world.DevSit(static_cast<int>(seat.value_or(1.0)), *m_workshop, m_player);
+			m_console.Print("Sat in the car.");
+		}
 		else if (what == "drive")
 		{
 			// car drive [seconds] [steer]: gets in, and holds the throttle down that long with the wheel turned (-1 right to 1 left).
@@ -427,7 +449,7 @@ void EngineBuilderGame::RegisterConsoleCommands()
 				result.starts, result.drives, result.steers, result.stops, result.zeroToHundred, result.healthScore));
 		}
 		else
-			m_console.Error("Usage: car build|test|open|shut|strip <part>");
+			m_console.Error("Usage: car build|test|open|shut|steer|drive|sit|lights|strip <part>");
 	});
 
 	m_console.AddCommand("screen", "screen car [build|fluids|tune|test] | screen store", "Opens the parts computer's Car tab on one of its pages, or the store's LE86 Parts page.",

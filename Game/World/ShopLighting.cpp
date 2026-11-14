@@ -49,7 +49,7 @@ void ShopLighting::Build(const ShopAssets& assets)
 }
 
 void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float hours, float doorOpen, float brightness,
-	const std::vector<pObject>& lampHeads, const ShopInterior& interior)
+	const std::vector<pObject>& lampHeads, const ShopInterior& interior, const std::vector<PointLight>& carLights)
 {
 	using namespace GarageLayout;
 
@@ -113,6 +113,13 @@ void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float
 	}
 	for (const auto& head : lampHeads)
 		head->SetEmissive(2.5f * lampsOn);
+	// The car's headlights: lost in the daylight, bright on the road at night.
+	for (auto light : carLights)
+		if (lighting.pointLights.size() < static_cast<size_t>(MAX_POINT_LIGHTS))
+		{
+			light.color *= glm::mix(1.f, 0.12f, daylight);
+			lighting.pointLights.push_back(light);
+		}
 
 	// Let the eye adjust a little at night so it stays playable.
 	lighting.exposure = brightness * glm::mix(1.35f, 1.f, daylight);

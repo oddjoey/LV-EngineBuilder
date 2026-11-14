@@ -16,7 +16,11 @@ namespace CarBody
 	constexpr float ROOF_Y = 1.25f;				// the roof's edge
 	constexpr float NOSE_X = 2.07f;
 	constexpr float TAIL_X = -2.07f;
-	constexpr float NOSE_Y = 0.79f;				// the hood line at the nose: it falls from the cowl
+	constexpr float NOSE_Y = 0.70f;				// the hood line at the nose: it falls from the cowl to a low wedge
+	// The pop-up headlights' lids, let into the hood's front corners: how far back from the nose, and from where across.
+	constexpr float LAMP_LID_LENGTH = 0.31f;
+	constexpr float LAMP_LID_INNER = 0.37f;
+	constexpr float LAMP_BASE_Y = 0.56f;		// the bottom of a headlight's bucket
 	constexpr float DOOR_FRONT_X = 0.85f;		// the door's shut lines: against the fender, and against the quarter
 	constexpr float DOOR_REAR_X = -0.45f;
 	constexpr float HOOD_REAR_X = 0.97f;		// the cowl is between the door's line and this
@@ -59,4 +63,28 @@ namespace CarBody
 	constexpr float TRUNK_OPEN = 1.05f;
 	constexpr float FLAP_OPEN = 1.45f;
 	constexpr float FULL_LOCK = 0.6f;		// the front wheels turned as far as they go, radians
+	// The pop-up headlights: each pod swings up about the back edge of its lid by this much, radians.
+	constexpr float LAMP_POP = 0.5f;
+
+	// The engine in its bay: the middle of its block's deck (its crank a quarter of a metre under that, along the car),
+	// forward of the firewall far enough for the distributor on the back of its head; and the rubber mounts it sits on,
+	// either side of its crankcase on perches off the chassis rails.
+	constexpr float ENGINE_X = 1.26f;
+	constexpr float ENGINE_DECK_Y = 0.59f;
+	constexpr float CRANK_AXIS_Y = ENGINE_DECK_Y - 0.25f;
+	constexpr float BLOCK_REAR_X = ENGINE_X - 0.205f;	// the block's back face, the gearbox's bellhousing against it
+	constexpr float ENGINE_MOUNT_Y = 0.30f;				// the perches' tops
+	constexpr float ENGINE_MOUNT_Z = 0.24f;
+	constexpr float FIREWALL_X = 0.88f;
+	// The front wheels' housings in the engine bay: a tub this radius about the axle, walled off from the bay this far out.
+	constexpr float FRONT_TUB = 0.40f;
+	constexpr float FRONT_TUB_WALL_Z = 0.40f;
+	// The instrument cluster's dials, in its own space (it faces -z, the driver's left +x): the two big ones either
+	// side of its middle, the two little ones between them, one over the other; how big each is, and how far its
+	// needle swings from its lowest mark to its highest (about straight up).
+	constexpr float GAUGE_Y = 0.075f;
+	constexpr float GAUGE_BIG_X = 0.105f, GAUGE_BIG = 0.062f, GAUGE_SWEEP = 4.71f;
+	constexpr float GAUGE_SMALL_Y = 0.036f, GAUGE_SMALL = 0.027f, GAUGE_SMALL_SWEEP = 2.1f;
+	// Where the steering's tie rods run, under the engine's sump.
+	constexpr float TIE_ROD_Y = 0.165f;
 }

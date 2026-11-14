@@ -21,10 +21,10 @@ namespace
 		switch (circuit)
 		{
 			case FluidCircuit::ENGINE_OIL:		return { CAR_ENGINE_MOUNT.x, CAR_ENGINE_MOUNT.y + 0.19f, 0.05f };
-			case FluidCircuit::COOLANT:			return { 1.98f, 0.73f, 0.2f };
-			case FluidCircuit::BRAKES:			return { 1.15f, 0.73f, -0.42f };
-			case FluidCircuit::CLUTCH:			return { 0.98f, 0.78f, -0.6f };
-			case FluidCircuit::TRANSMISSION:	return { 0.55f, 0.22f, 0.17f };
+			case FluidCircuit::COOLANT:			return { 1.98f, 0.67f, 0.2f };
+			case FluidCircuit::BRAKES:			return { 1.15f, 0.78f, -0.33f };
+			case FluidCircuit::CLUTCH:			return { 0.93f, 0.82f, -0.56f };
+			case FluidCircuit::TRANSMISSION:	return { 0.68f, 0.3f, 0.1f };
 			case FluidCircuit::DIFFERENTIAL:	return { -1.05f, 0.15f, 0.1f };
 			case FluidCircuit::FUEL:			return { CarBody::FLAP_X, CarBody::FLAP_Y, CarBody::SIDE - 0.01f };	// the cap behind the flap
 			case FluidCircuit::COUNT:			break;

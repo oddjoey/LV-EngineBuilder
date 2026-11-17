@@ -16,6 +16,7 @@ namespace
 		{ "run", "Run (hold); snaps an item turned in hand to steps", "Moving", "Shift", GLFW_KEY_LEFT_SHIFT },
 		{ "jump", "Jump", "Moving", "", GLFW_KEY_SPACE },
 		{ "crouch", "Crouch (hold)", "Moving", "", GLFW_KEY_LEFT_CONTROL },
+		{ "lie_down", "Lie down on your back (or get up again), to get under a car", "Moving", "V", GLFW_KEY_V },
 		{ "use", "Use: pick up, open, work at stations, fit parts, the door", "Working", "E", GLFW_KEY_E },
 		{ "primary", "Measure or read with the tool in hand, or hold to turn a nut or bolt (otherwise, use)", "Working", "LMB", Controls::MOUSE + GLFW_MOUSE_BUTTON_LEFT },
 		{ "set_down", "Set what you're holding down where you aim", "Working", "RMB", Controls::MOUSE + GLFW_MOUSE_BUTTON_RIGHT },
@@ -27,7 +28,6 @@ namespace
 		{ "wrench_size", "Take the battery off a cordless tool", "Working", "C", GLFW_KEY_C },
 		{ "turn_held", "Hold and move the mouse to turn what you're holding, to set it down that way", "Working", "Q", GLFW_KEY_Q },
 
-		{ "ignition", "At the car's wheel: turn the key, to start it or switch it off", "Working", "I", GLFW_KEY_I },
 		{ "shift_up", "At the car's wheel: up a gear", "Working", "Up", GLFW_KEY_E },
 		{ "shift_down", "At the car's wheel: down a gear", "Working", "Down", GLFW_KEY_Q },
 		{ "clutch", "At the car's wheel: the clutch pedal (hold it down to change gear)", "Working", "Clutch", GLFW_KEY_C },

@@ -367,6 +367,39 @@ namespace
 			const std::vector<Paved> bay = { { { BAY_MIN_X, -BAY_HALF_DEPTH }, { -outerX, BAY_HALF_DEPTH } }, BAY_DRIVE, BAY_DRIVE_LINK };
 			std::vector<Paved> notOpen = covered;
 			notOpen.insert(notOpen.end(), bay.begin(), bay.end());
+			// And where the parking lot goes, the same: sand of its own till the lot is laid.
+			notOpen.push_back(PARKING_LOT);
+			{
+				MeshBuilder lotSand;
+				lotSand.SetUVScale(0.06f);
+				SandBoxes(lotSand, { PARKING_LOT }, covered);
+				add(ShopModels::PARKING_LOT_SAND, lotSand);
+				// The lot itself: asphalt level with the drive, a kerb of concrete along its outer edges, and the bays'
+				// lines painted on it (a model of their own: they aren't asphalt). The bays are along its far side, nose
+				// in from the lane beside the drive.
+				const glm::vec2 middle = (PARKING_LOT.min + PARKING_LOT.max) * 0.5f, size = PARKING_LOT.max - PARKING_LOT.min;
+				MeshBuilder lot;
+				lot.SetUVScale(0.25f);
+				Box(lot, { middle.x, -0.05f, middle.y }, { size.x, 0.1f, size.y });
+				add(ShopModels::PARKING_LOT, lot);
+				MeshBuilder lines;
+				const glm::vec3 paint = { 0.92f, 0.92f, 0.88f }, yellow = { 0.9f, 0.72f, 0.12f };
+				constexpr float LINE = 0.1f, TOP = 0.004f;
+				const float bayFront = PARKING_LOT.max.x - PARKING_BAY_DEPTH, firstZ = middle.y - PARKING_BAYS * PARKING_BAY_WIDTH * 0.5f;
+				for (int line = 0; line <= PARKING_BAYS; line++)
+					Box(lines, { (bayFront + PARKING_LOT.max.x - 0.3f) * 0.5f, TOP * 0.5f, firstZ + line * PARKING_BAY_WIDTH }, { PARKING_LOT.max.x - 0.3f - bayFront, TOP, LINE }, paint);
+				// (Each bay's stop at its far end, and its number's place: a short bar across the front of it.)
+				for (int bay = 0; bay < PARKING_BAYS; bay++)
+				{
+					const float z = firstZ + (bay + 0.5f) * PARKING_BAY_WIDTH;
+					Box(lines, { PARKING_LOT.max.x - 0.45f, 0.05f, z }, { 0.16f, 0.1f, 1.8f }, { 0.62f, 0.62f, 0.6f });
+					Box(lines, { bayFront + 0.05f, TOP * 0.5f, z }, { LINE, TOP, 0.5f }, paint);
+				}
+				// (A yellow edge along the two sides that face the sand.)
+				Box(lines, { middle.x, TOP * 0.5f, PARKING_LOT.max.y - 0.12f }, { size.x - 0.24f, TOP, LINE }, yellow);
+				Box(lines, { middle.x, TOP * 0.5f, PARKING_LOT.min.y + 0.12f }, { size.x - 0.24f, TOP, LINE }, yellow);
+				add(ShopModels::PARKING_LOT_LINES, lines);
+			}
 
 			// One tile of sand covers about 17 m (see ProceduralTextures::Sand).
 			MeshBuilder ground;
@@ -855,10 +888,11 @@ namespace
 			for (float side : { -1.f, 1.f })
 			{
 				Box(posts, { side * 1.5f, 0.01f, 0.f }, { 0.5f, 0.02f, 0.6f }, dark);
-				Box(posts, { side * 1.5f, 1.45f, 0.f }, { 0.28f, 2.9f, 0.3f }, blue);
-				Box(posts, { side * 1.36f, 1.45f, 0.f }, { 0.02f, 2.7f, 0.1f }, dark);
+				Box(posts, { side * 1.5f, 1.55f, 0.f }, { 0.28f, 3.1f, 0.3f }, blue);
+				Box(posts, { side * 1.36f, 1.55f, 0.f }, { 0.02f, 2.9f, 0.1f }, dark);
 			}
-			Box(posts, { 0.f, 2.95f, 0.f }, { 3.3f, 0.12f, 0.2f }, blue);
+			// (High enough for the car, lifted right up, to clear it with its underside over a standing head.)
+			Box(posts, { 0.f, 3.12f, 0.f }, { 3.3f, 0.12f, 0.2f }, blue);
 			add(ShopModels::POST_LIFT, posts);
 
 			MeshBuilder arms;
@@ -866,9 +900,10 @@ namespace
 			for (float side : { -1.f, 1.f })
 			{
 				Box(arms, { side * 1.3f, 0.2f, 0.f }, { 0.14f, 0.4f, 0.22f }, dark);
-				for (float swing : { -0.55f, 0.55f })
+				// (Swung in under a car parked between the posts, their pads under its jacking points.)
+				for (float swing : { -0.66f, 0.66f })
 				{
-					glm::vec3 tip = { side * 0.55f, 0.f, swing };
+					glm::vec3 tip = { side * 0.72f, 0.f, swing };
 					glm::vec3 root = { side * 1.25f, 0.f, swing * 0.15f };
 					glm::vec3 middle = (tip + root) * 0.5f;
 					float length = glm::length(tip - root);

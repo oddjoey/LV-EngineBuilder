@@ -311,6 +311,7 @@ Tools are rated for **precision**, and spanners and wrenches for **speed** too (
 - **Deliveries** arrive as boxes and crates by the door, stacked up to three high in piles. Each one has a tag with an icon for every kind of thing inside it and how many. Open one with F: parts and tools are laid out on the floor around it (never through a wall), and a machine or engine stand is set up where its crate was. Before opening, E picks a delivery up to carry it somewhere else: set it on the floor, a bench or another delivery (anything stacked on it drops into its place).
 - **Day and night**: the sun crosses the sky (sunrise 06:00, sunset 20:00), the sky and fog change colour, street and porch lights come on at dusk, and there's moonlight at night. A full day takes 30 real minutes by default. The clock is in the top right.
 - **Custom models**: any built-in model can be replaced with your own `.obj` or `.fbx` through `Resources/Models/models.cfg` (see `Resources/Models/README.md` for the names and options).
+- **Custom sounds**: any built-in sound can be replaced with your own `.wav` through `Resources/Sounds/sounds.cfg` (the names and options are listed in it).
 
 ---
 

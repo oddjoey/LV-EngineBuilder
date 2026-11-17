@@ -28,7 +28,10 @@ public:
 	// Stood at feet, facing yaw, looking pitch (up is positive), crouched or not, arms as NetProtocol's
 	// presence has them (0 down, 1 the right one out, 2 both). How fast it walks is worked out from
 	// how far the feet have come since the last pose.
-	void Pose(float deltaTime, const glm::vec3& feet, float yaw, float pitch, bool crouching, int arms);
+	// Lying (the lie-down key): flat on its back on the floor instead (see PoseLying).
+	void Pose(float deltaTime, const glm::vec3& feet, float yaw, float pitch, bool crouching, int arms, bool lying = false);
+	// Flat on its back on the floor, its head the way it faces over feet, its legs out behind; an arm held out reaches up.
+	void PoseLying(float deltaTime, const glm::vec3& feet, float yaw, float pitch, int arms);
 	// Sat in a seat: its hips there, facing yaw (looking lookYaw and pitch), its legs out in front, its hands up to the
 	// wheel or in its lap.
 	void PoseSeated(const glm::vec3& hips, float yaw, float lookYaw, float pitch, bool atWheel);

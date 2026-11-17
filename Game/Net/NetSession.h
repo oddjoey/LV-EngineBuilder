@@ -126,6 +126,7 @@ private:
 		int arms = 0;
 		int seat = -1;		// which of the car's seats they're in, or -1
 		bool crouching = false;
+		bool lying = false;		// flat on the floor (the lie-down key)
 		MonkeyLook look = {};
 		// Where they're drawn: eased towards where they are, between the updates.
 		glm::vec3 shownFeet = {};

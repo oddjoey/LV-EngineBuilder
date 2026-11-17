@@ -59,12 +59,15 @@ public:
 	bool IsGrounded() const { return m_grounded; }
 	float GetVerticalVelocity() const { return m_verticalVelocity; }
 	bool IsCrouching() const { return m_crouching; }
+	// Lying flat on the floor (the lie-down key), to get under a car on its jacks.
+	bool IsProne() const { return m_prone; }
+	void SetProne(bool prone) { m_prone = prone; if (prone) m_crouching = false; }
 private:
 	void ResolveCollisions(const std::vector<FloorObstacle>& obstacles, const FloorObstacle& roomBounds);
 	// How tall the player is right now, crouched or standing, for what they bump into.
 	float HeadHeight() const;
-	// Nothing low overhead stops the player standing up where they are.
-	bool HasHeadroom(const std::vector<FloorObstacle>& obstacles) const;
+	// Nothing low overhead stops the player's head going from one height to another, where they are.
+	bool HasHeadroom(const std::vector<FloorObstacle>& obstacles, float from, float to) const;
 
 	glm::vec3		m_position = {};
 	float			m_yaw = 0.f;
@@ -76,6 +79,8 @@ private:
 	float			m_runSpeed = 4.8f;
 	float			m_crouchSpeed = 1.3f;
 	bool			m_crouching = false;
+	bool			m_prone = false;
+	float			m_proneSpeed = 0.7f;
 	float			m_mouseSensitivity = BASE_SENSITIVITY;
 	bool			m_invertY = false;
 	bool			m_lookLocked = false;
@@ -94,5 +99,8 @@ private:
 	static constexpr float STAND_EYE_HEIGHT = 1.25f;
 	static constexpr float CROUCH_EYE_HEIGHT = 0.92f;
 	static constexpr float CROUCH_HEAD_HEIGHT = 1.15f;
+	// Lying on the floor: the eyes just off it, and the body as high as a creeper and a chest.
+	static constexpr float PRONE_EYE_HEIGHT = 0.24f;
+	static constexpr float PRONE_HEAD_HEIGHT = 0.4f;
 	static constexpr float CROUCH_EASE = 12.f;	// how quickly the eye settles at its new height, per second
 };

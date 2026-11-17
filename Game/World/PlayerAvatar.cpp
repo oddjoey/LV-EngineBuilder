@@ -121,11 +121,13 @@ void PlayerAvatar::SetScale(float scale)
 			(*object)->SetScale(glm::vec3(scale));
 }
 
-void PlayerAvatar::Pose(float deltaTime, const glm::vec3& feet, float yaw, float pitch, bool crouching, int arms)
+void PlayerAvatar::Pose(float deltaTime, const glm::vec3& feet, float yaw, float pitch, bool crouching, int arms, bool lying)
 {
 	if (!m_torso)
 		return;
 	SetScale(1.f);
+	if (lying)
+		return PoseLying(deltaTime, feet, yaw, pitch, arms);
 	if (!m_posed)
 	{
 		m_lastFeet = feet;
@@ -239,6 +241,68 @@ std::vector<PlayerAvatar::StandingPiece> PlayerAvatar::Standing(const MonkeyLook
 		pieces.push_back({ ShopModels::PLAYER_FOOT, at(knee), skin });
 	}
 	return pieces;
+}
+
+void PlayerAvatar::PoseLying(float deltaTime, const glm::vec3& feet, float yaw, float pitch, int arms)
+{
+	// Flat on its back on the floor (on a creeper, as if to slide under a car), its head the way the player faces, where
+	// their eyes are (FirstPersonController puts them just off the floor over the feet), its legs out straight behind.
+	m_posed = true;
+	m_lastFeet = feet;
+	m_speed = 0.f;
+	m_crouch = 0.f;
+	constexpr float BACK = 0.12f;		// how far its back is off the floor
+	const glm::quat facing = ShopLayout::Yaw(yaw);
+	// (Turned so its head, up the torso, points forward, and its front faces the ceiling.)
+	const glm::quat torso = facing * glm::angleAxis(glm::pi<float>(), glm::vec3(0.f, 1.f, 0.f)) * glm::angleAxis(glm::half_pi<float>(), X_AXIS);
+	// The neck over the feet (the player's position), the pelvis back from it along the body.
+	const glm::vec3 forward = facing * glm::vec3(0.f, 0.f, -1.f);
+	const glm::vec3 pelvis = feet - forward * (NECK.y - PELVIS.y) + glm::vec3(0.f, BACK, 0.f);
+	auto on = [&](const glm::vec3& joint) { return pelvis + torso * (joint - PELVIS); };
+	m_torso->SetPosition(on({ 0.f, 0.f, 0.f }));
+	m_torso->SetRotation(torso);
+
+	// The head lies back with it, tipped up and down a little as they look.
+	const glm::vec3 neck = on(NECK);
+	m_head->SetPosition(neck);
+	m_head->SetRotation(torso * glm::angleAxis(std::clamp(-pitch, -0.5f, 0.5f), X_AXIS));
+	m_eye = neck + glm::vec3(0.f, 0.12f, 0.f);
+
+	// The legs straight out along the floor behind.
+	for (int side = 0; side < 2; side++)
+	{
+		const glm::vec3 hip = pelvis + torso * glm::vec3(HIP_X[side], 0.f, 0.f);
+		m_thigh[side]->SetPosition(hip);
+		m_thigh[side]->SetRotation(torso);
+		m_shin[side]->SetPosition(hip + torso * glm::vec3(0.f, -THIGH_LENGTH, 0.f));
+		m_shin[side]->SetRotation(torso);
+	}
+	// The arms down along its sides; one held out reaches straight up, at the underside of whatever's over it.
+	for (int side = 0; side < 2; side++)
+	{
+		bool out = side == 1 ? arms >= 1 : arms == 2;
+		m_armOut[side] += ((out ? 1.f : 0.f) - m_armOut[side]) * Ease(10.f, deltaTime);
+		const glm::quat pose = torso * glm::angleAxis(glm::pi<float>() * 0.5f * m_armOut[side], X_AXIS);
+		const glm::vec3 shoulder = on(SHOULDER[side]);
+		m_arm[side]->SetPosition(shoulder);
+		m_arm[side]->SetRotation(pose);
+		if (side == 1)
+			m_hand = shoulder + pose * glm::vec3(0.f, -HAND_REACH, 0.f);
+	}
+	auto ride = [](const pObject& rider, const pObject& on) {
+		rider->SetPosition(on->GetPosition());
+		rider->SetRotation(on->GetRotation());
+	};
+	ride(m_belly, m_torso);
+	ride(m_tail, m_torso);
+	ride(m_face, m_head);
+	ride(m_eyes, m_head);
+	ride(m_cap, m_head);
+	for (int side = 0; side < 2; side++)
+	{
+		ride(m_paw[side], m_arm[side]);
+		ride(m_foot[side], m_shin[side]);
+	}
 }
 
 void PlayerAvatar::PoseSeated(const glm::vec3& hips, float yaw, float lookYaw, float pitch, bool atWheel)

@@ -543,7 +543,7 @@ std::string NetSession::PresenceMessage(const FirstPersonController& player, con
 	glm::vec3 feet = player.GetFeetPosition();
 	Writer out;
 	out.Word("presence").Int(m_localId).Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch())
-		.Int(world.IsSeated() ? 10 + world.GetSeat() : world.ArmsOut()).Int(player.IsCrouching() ? 1 : 0);
+		.Int(world.IsSeated() ? 10 + world.GetSeat() : world.ArmsOut()).Int(player.IsProne() ? 2 : player.IsCrouching() ? 1 : 0);
 	const auto& look = world.GetPlayerLook();
 	out.Int(look.fur).Int(look.skin).Int(look.cap).Int(look.tail ? 1 : 0);
 	return out.Text();
@@ -560,7 +560,8 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	float yaw = static_cast<float>(in.Num());
 	float pitch = static_cast<float>(in.Num());
 	int arms = static_cast<int>(in.Int());
-	bool crouching = in.Int() != 0;
+	int posture = static_cast<int>(in.Int());
+	bool crouching = posture == 1, lying = posture == 2;
 	MonkeyLook look;
 	look.fur = static_cast<uint32_t>(in.Int()) & 0xFFFFFF;
 	look.skin = static_cast<uint32_t>(in.Int()) & 0xFFFFFF;
@@ -577,6 +578,7 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	remote.arms = arms >= 10 ? 0 : std::clamp(arms, 0, 2);
 	remote.seat = arms >= 10 ? std::clamp(arms - 10, 0, 3) : -1;
 	remote.crouching = crouching;
+	remote.lying = lying;
 	if (!remote.avatar.IsSpawned())
 		remote.avatar.Spawn(world, remote.feet + PlotOffset(remote.plot), yaw, look);
 	else if (!(remote.look == look))
@@ -626,7 +628,7 @@ void NetSession::MoveAvatars(float deltaTime, ShopWorld& world)
 		else if (remote.seat >= 0)
 			remote.avatar.PoseSeated(remote.shownFeet + PlotOffset(remote.plot) + glm::vec3(0.f, 0.6f, 0.f), remote.shownYaw, remote.shownYaw, remote.shownPitch, remote.seat == 0);
 		else
-			remote.avatar.Pose(deltaTime, remote.shownFeet + PlotOffset(remote.plot), remote.shownYaw, remote.shownPitch, remote.crouching, remote.arms);
+			remote.avatar.Pose(deltaTime, remote.shownFeet + PlotOffset(remote.plot), remote.shownYaw, remote.shownPitch, remote.crouching, remote.arms, remote.lying);
 		// What they hold is in their right hand (in this garage: the others' things are in theirs).
 		if (remote.plot == m_plot)
 			world.m_remoteHands[id] = { remote.avatar.GetHand(), remote.shownYaw };

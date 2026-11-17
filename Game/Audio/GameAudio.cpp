@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <iostream>
+#include <map>
+#include <sstream>
 
 #include "../GameSettings.h"
 #include "../Simulation/Workshop.h"
@@ -399,6 +403,15 @@ namespace
 				}
 				return s.ToClip();
 			}
+			case Sound::EXHAUST_BANG:
+			{
+				// A sharp crack and a low thud out of the tailpipe.
+				Synth s(0.25f);
+				s.Burst(noise, 0.f, 0.05f, 2200.f, 0.9f, 0.0004f);
+				s.Thump(0.f, 55.f, 0.8f, 0.04f);
+				s.Burst(noise, 0.012f, 0.08f, 500.f, 0.4f);
+				return s.ToClip();
+			}
 			default:
 				return {};
 		}
@@ -479,6 +492,161 @@ namespace
 	}
 }
 
+namespace
+{
+	// The names sounds.cfg knows each sound by: every one-shot (by Sound), then the loops.
+	const char* const SOUND_NAMES[] = { "Footstep Concrete", "Footstep Grass", "Footstep Wood", "Land", "Pick Up", "Set Down", "Drop",
+		"Fit Part", "Ratchet", "Wrench", "Breaker Bar", "Torque Click", "Socket Clink", "Impact", "Cordless Ratchet", "Measure",
+		"Crate Open", "Cash", "Machine", "Click", "Page Turn", "Starter", "Bird", "Exhaust Bang" };
+	static_assert(std::size(SOUND_NAMES) == static_cast<size_t>(Sound::COUNT), "Every sound wants a name for sounds.cfg.");
+	const std::string SOUND_FOLDER = "Resources/Sounds/";
+
+	uint32_t ReadU32(const std::vector<char>& data, size_t at)
+	{
+		if (at + 4 > data.size())
+			return 0u;
+		return static_cast<uint32_t>(static_cast<uint8_t>(data[at])) | static_cast<uint32_t>(static_cast<uint8_t>(data[at + 1])) << 8
+			| static_cast<uint32_t>(static_cast<uint8_t>(data[at + 2])) << 16 | static_cast<uint32_t>(static_cast<uint8_t>(data[at + 3])) << 24;
+	}
+	uint16_t ReadU16(const std::vector<char>& data, size_t at)
+	{
+		return at + 2 <= data.size() ? static_cast<uint16_t>(static_cast<uint8_t>(data[at]) | static_cast<uint8_t>(data[at + 1]) << 8) : 0;
+	}
+
+	// A .wav file (PCM, 8, 16, 24 or 32 bit, or 32-bit float; mono or stereo, any rate) as the game's own clips are:
+	// mono, 16-bit, at the mixer's rate, scaled by volume. Empty (with why) if it can't be read.
+	std::vector<int16_t> LoadWav(const std::string& path, float volume, std::string& error)
+	{
+		std::ifstream file(path, std::ios::binary);
+		if (!file)
+		{
+			error = "file not found";
+			return {};
+		}
+		std::vector<char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+		if (data.size() < 12 || std::string(data.data(), 4) != "RIFF" || std::string(data.data() + 8, 4) != "WAVE")
+		{
+			error = "not a .wav file";
+			return {};
+		}
+		uint16_t format = 0, channels = 0, bits = 0;
+		uint32_t rate = 0;
+		size_t samplesAt = 0, samplesSize = 0;
+		for (size_t at = 12; at + 8 <= data.size();)
+		{
+			std::string id(data.data() + at, 4);
+			uint32_t size = ReadU32(data, at + 4);
+			if (id == "fmt ")
+			{
+				format = ReadU16(data, at + 8);
+				channels = ReadU16(data, at + 10);
+				rate = ReadU32(data, at + 12);
+				bits = ReadU16(data, at + 22);
+				if (format == 0xFFFE && size >= 26)		// WAVE_FORMAT_EXTENSIBLE: the real format is its sub-format's
+					format = ReadU16(data, at + 32);
+			}
+			else if (id == "data")
+			{
+				samplesAt = at + 8;
+				samplesSize = (std::min)(static_cast<size_t>(size), data.size() - samplesAt);
+			}
+			at += 8 + static_cast<size_t>(size) + (size & 1u);
+		}
+		bool pcm = format == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32), floats = format == 3 && bits == 32;
+		if ((!pcm && !floats) || channels == 0 || rate == 0 || samplesAt == 0)
+		{
+			error = "only uncompressed PCM or float .wav files are read";
+			return {};
+		}
+		size_t width = bits / 8, frames = samplesSize / (width * channels);
+		if (frames == 0)
+		{
+			error = "it has no samples";
+			return {};
+		}
+		auto sample = [&](size_t frame, size_t channel) -> float {
+			size_t at = samplesAt + (frame * channels + channel) * width;
+			if (floats)
+			{
+				uint32_t raw = ReadU32(data, at);
+				float value = 0.f;
+				std::memcpy(&value, &raw, 4);
+				return value;
+			}
+			switch (bits)
+			{
+				case 8:		return (static_cast<uint8_t>(data[at]) - 128.f) / 128.f;
+				case 16:	return static_cast<int16_t>(ReadU16(data, at)) / 32768.f;
+				case 24:
+				{
+					uint32_t raw = static_cast<uint32_t>(static_cast<uint8_t>(data[at])) << 8 | static_cast<uint32_t>(static_cast<uint8_t>(data[at + 1])) << 16
+						| static_cast<uint32_t>(static_cast<uint8_t>(data[at + 2])) << 24;
+					return static_cast<float>(static_cast<int32_t>(raw)) / 2147483648.f;
+				}
+				default:	return static_cast<float>(static_cast<int32_t>(ReadU32(data, at))) / 2147483648.f;
+			}
+		};
+		// Mixed down to one channel and resampled (linearly) to the mixer's rate.
+		size_t count = static_cast<size_t>(static_cast<double>(frames) * RATE / rate);
+		std::vector<int16_t> clip(count);
+		for (size_t i = 0; i < count; i++)
+		{
+			double source = static_cast<double>(i) * rate / RATE;
+			size_t a = (std::min)(static_cast<size_t>(source), frames - 1), b = (std::min)(a + 1, frames - 1);
+			float t = static_cast<float>(source - static_cast<double>(a)), mixed = 0.f;
+			for (size_t c = 0; c < channels; c++)
+				mixed += sample(a, c) * (1.f - t) + sample(b, c) * t;
+			clip[i] = static_cast<int16_t>(std::clamp(mixed / channels * volume, -1.f, 1.f) * 32000.f);
+		}
+		return clip;
+	}
+
+	// Resources/Sounds/sounds.cfg, if there is one: each line `<Sound Name> = <file.wav> [volume=1.0]`, the names as
+	// SOUND_NAMES (and Engine, Door, Lift, Wind, Hum for the loops). Several lines for one name give it several takes.
+	std::map<std::string, std::vector<std::vector<int16_t>>> LoadSoundOverrides()
+	{
+		std::map<std::string, std::vector<std::vector<int16_t>>> overrides;
+		std::ifstream config(SOUND_FOLDER + "sounds.cfg");
+		std::string line;
+		while (std::getline(config, line))
+		{
+			if (auto comment = line.find('#'); comment != std::string::npos)
+				line = line.substr(0, comment);
+			auto equals = line.find('=');
+			if (equals == std::string::npos)
+				continue;
+			auto trim = [](std::string text) {
+				text.erase(0, text.find_first_not_of(" \t\r"));
+				text.erase(text.find_last_not_of(" \t\r") + 1);
+				return text;
+			};
+			std::string name = trim(line.substr(0, equals));
+			std::stringstream rest(line.substr(equals + 1));
+			std::string fileName, token;
+			rest >> fileName;
+			float volume = 1.f;
+			while (rest >> token)
+				if (token.rfind("volume=", 0) == 0)
+				{
+					try { volume = std::stof(token.substr(7)); }
+					catch (...) {}
+				}
+			if (name.empty() || fileName.empty())
+				continue;
+			std::string error;
+			auto clip = LoadWav(SOUND_FOLDER + fileName, volume, error);
+			if (clip.empty())
+				std::cout << "[WARNING] sounds.cfg: couldn't load " << fileName << " for " << name << " (" << error << "); using the built-in sound.\n";
+			else
+			{
+				std::cout << "[INFO] Loaded custom sound for " << name << " from " << fileName << "\n";
+				overrides[name].push_back(std::move(clip));
+			}
+		}
+		return overrides;
+	}
+}
+
 void GameAudio::Init()
 {
 	m_audio = AudioManager::Get().get();
@@ -487,20 +655,33 @@ void GameAudio::Init()
 		std::cout << "[WARNING] No audio device: the game will be silent\n";
 		return;
 	}
+	// Any the player has replaced with their own (sounds.cfg), and the rest made here.
+	auto overrides = LoadSoundOverrides();
 	// A few takes of each, so a run of footsteps or ratchet clicks never sounds like a loop.
 	for (int sound = 0; sound < static_cast<int>(Sound::COUNT); sound++)
 	{
 		auto kind = static_cast<Sound>(sound);
+		if (auto custom = overrides.find(SOUND_NAMES[sound]); custom != overrides.end())
+		{
+			for (auto& take : custom->second)
+				m_clips[sound].push_back(m_audio->AddClip(std::move(take)));
+			continue;
+		}
 		bool step = kind == Sound::FOOTSTEP_CONCRETE || kind == Sound::FOOTSTEP_GRASS || kind == Sound::FOOTSTEP_WOOD;
 		int takes = step ? 6 : kind == Sound::BIRD ? 5 : 2;
 		for (int take = 0; take < takes; take++)
 			m_clips[sound].push_back(m_audio->AddClip(step ? Footstep(kind, take + sound * 31) : Make(kind, take + sound * 17)));
 	}
-	m_engineClip = m_audio->AddClip(EngineLoop());
-	m_doorClip = m_audio->AddClip(DoorLoop());
-	m_liftClip = m_audio->AddClip(LiftLoop());
-	m_windClip = m_audio->AddClip(WindLoop());
-	m_humClip = m_audio->AddClip(HumLoop());
+	auto loop = [&](const char* name, std::vector<int16_t> made) {
+		auto custom = overrides.find(name);
+		return m_audio->AddClip(custom != overrides.end() ? std::move(custom->second.front()) : std::move(made));
+	};
+	// (The engine's loop is pitched from 2400 rpm: one replacing it should be recorded there.)
+	m_engineClip = loop("Engine", EngineLoop());
+	m_doorClip = loop("Door", DoorLoop());
+	m_liftClip = loop("Lift", LiftLoop());
+	m_windClip = loop("Wind", WindLoop());
+	m_humClip = loop("Hum", HumLoop());
 	std::cout << "[INFO] Audio ready: " << m_humClip << " sounds made\n";
 }
 
@@ -593,7 +774,9 @@ void GameAudio::Loops(float deltaTime, ShopWorld& world, float timeOfDay)
 	// (Or the car's, while it's being driven.)
 	float rpm = world.IsDriving() ? world.GetDriveRpm() : world.GetEngineRpm();
 	glm::vec3 dyno = world.IsDriving() ? world.GetCarPosition() : world.GetDynoPosition(), door = world.GetDoorPosition(), lift = world.GetLiftPosition();
-	keep(m_engineLoop, m_engineClip, Bus::EFFECTS, rpm > 0.f, &dyno, 0.5f + 0.5f * (std::min)(rpm / 5500.f, 1.f), rpm / 2400.f);
+	// (Dropping away for the moment the rev limiter cuts the ignition.)
+	float firing = world.IsDriving() && !world.IsDriveFiring() ? 0.35f : 1.f;
+	keep(m_engineLoop, m_engineClip, Bus::EFFECTS, rpm > 0.f, &dyno, (0.5f + 0.5f * (std::min)(rpm / 5500.f, 1.f)) * firing, rpm / 2400.f);
 	keep(m_doorLoop, m_doorClip, Bus::EFFECTS, world.IsDoorMoving(), &door, 0.6f, 1.f);
 	keep(m_liftLoop, m_liftClip, Bus::EFFECTS, world.IsLiftMoving(), &lift, 0.5f, 1.f);
 

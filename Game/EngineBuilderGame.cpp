@@ -385,6 +385,8 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	}
 	else
 		m_player.ApplyToCamera(*m_camera);
+	if (m_devEyeDrop != 0.f && !InMenu())
+		m_camera->SetPosition(m_camera->GetPosition() - glm::vec3(0.f, m_devEyeDrop, 0.f));
 	m_world.SetViewModelVisible(!InMenu());
 
 	if (m_devMenu.TakeAssembleRequest())
@@ -431,8 +433,8 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_audio.PlayInterface(Sound::PAGE_TURN, 0.8f);
 	}
 
-	// The car's engine cools after a drive.
-	if (m_workshop)
+	// The car's engine cools once it's switched off.
+	if (m_workshop && !m_world.IsDriving())
 		m_workshop->CoolCarEngine((std::min)(deltaTime, 0.25f));
 
 	// The sun keeps moving, even with the menus open.

@@ -166,6 +166,7 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="Game\World\ShopAssets.cpp" />
     <ClCompile Include="Game\World\ShopAssetsCar.cpp" />
     <ClCompile Include="Game\World\ShopWorldCar.cpp" />
+    <ClCompile Include="Game\World\ShopWorldCarLift.cpp" />
     <ClCompile Include="Game\World\ShopWorldCarTools.cpp" />
     <ClCompile Include="Game\World\ShopWorldCarWiring.cpp" />
     <ClCompile Include="Game\Audio\GameAudio.cpp" />
@@ -362,6 +363,7 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
   </ItemGroup>
   <ItemGroup>
     <None Include="Resources\Models\models.cfg" />
+    <None Include="Resources\Sounds\sounds.cfg" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

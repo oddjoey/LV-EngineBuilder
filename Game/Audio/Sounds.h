@@ -29,6 +29,7 @@ enum class Sound
 	PAGE_TURN,		// a page of the service manual
 	STARTER,		// a car's starter motor turning its engine over till it catches
 	BIRD,
+	EXHAUST_BANG,	// the rev limiter cutting the ignition: unburnt fuel popping in the exhaust
 	COUNT
 };
 

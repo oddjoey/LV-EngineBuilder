@@ -54,8 +54,15 @@ enum class ToolShape
 	TIRE_GAUGE,
 	ALIGNMENT_GAUGE,
 	SCREWDRIVER,
-	VALVE_SPRING_COMPRESSOR	// a C-clamp: a cup over the spring, a foot under the valve
+	VALVE_SPRING_COMPRESSOR,	// a C-clamp: a cup over the spring, a foot under the valve
+	FLOOR_JACK,
+	JACK_STAND
 };
+
+// A floor jack and a jack stand as they stand on the floor: how high the jack's saddle is let right down and the
+// stand's top is with its post right in. (What reaches from there up to the car is a post of its own: see ShopWorld.)
+constexpr float FLOOR_JACK_LOW = 0.13f;
+constexpr float JACK_STAND_LOW = 0.26f;
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 {
@@ -82,6 +89,8 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 		case HandToolKind::ALIGNMENT_GAUGE:	return ToolShape::ALIGNMENT_GAUGE;
 		case HandToolKind::SCREWDRIVER:		return ToolShape::SCREWDRIVER;
 		case HandToolKind::VALVE_SPRING_COMPRESSOR:	return ToolShape::VALVE_SPRING_COMPRESSOR;
+		case HandToolKind::FLOOR_JACK:		return ToolShape::FLOOR_JACK;
+		case HandToolKind::JACK_STAND:		return ToolShape::JACK_STAND;
 		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
 		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
 		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
@@ -156,6 +165,8 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::ALIGNMENT_GAUGE:	return { 2, 2 };
 		case ToolShape::SCREWDRIVER:		return { 1, 2 };
 		case ToolShape::VALVE_SPRING_COMPRESSOR:	return { 2, 2 };
+		case ToolShape::FLOOR_JACK:		return { 3, 2 };
+		case ToolShape::JACK_STAND:		return { 2, 2 };
 	}
 	return { 1, 1 };
 }

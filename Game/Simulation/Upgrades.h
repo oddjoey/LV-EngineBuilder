@@ -9,7 +9,8 @@ enum class UpgradeKind
 {
 	SIDE_BAY,		// a bay built onto the left wall, with an opening knocked through
 	SECOND_STORY,	// a room on top of the garage, up stairs outside the back wall
-	POST_LIFT		// a two-post lift
+	POST_LIFT,		// a two-post lift
+	PARKING_LOT		// the sand beside the drive laid to asphalt, with marked bays
 };
 
 struct UpgradeInfo

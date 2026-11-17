@@ -13,6 +13,9 @@ namespace UpgradeCatalog
 				"parts and tools out of the way.", 15000.0 },
 			{ UpgradeKind::POST_LIFT, "Two-Post Lift",
 				"A 4-tonne two-post lift, delivered crated. Raise and lower it with E; it goes in the side bay if you have one.", 3500.0 },
+			{ UpgradeKind::PARKING_LOT, "Parking Lot",
+				"The sand to the right of the drive laid to asphalt: a lot with five marked bays, somewhere hard and level to park the "
+				"car, jack it up and work on it outside.", 6000.0 },
 		};
 		return upgrades;
 	}

@@ -121,6 +121,12 @@ namespace GarageLayout
 	inline constexpr Paved BAY_DRIVE = { { BAY_DOOR_MIN_X - 0.3f, BAY_HALF_DEPTH + WALL }, { BAY_DOOR_MAX_X + 0.3f, HALF_DEPTH + 6.f } };
 	inline constexpr Paved BAY_DRIVE_LINK = { { BAY_DOOR_MIN_X - 0.3f, HALF_DEPTH + 6.f }, { DRIVE_MIN_X, HALF_DEPTH + 9.f } };
 
+	// The parking lot, an upgrade: asphalt to the right of the drive, from a little way out from the shack's front wall,
+	// with a row of bays along its far side, nose in, each this wide.
+	inline constexpr Paved PARKING_LOT = { { DRIVE_MAX_X, HALF_DEPTH + 2.5f }, { DRIVE_MAX_X + 9.5f, HALF_DEPTH + 16.5f } };
+	constexpr int PARKING_BAYS = 5;
+	constexpr float PARKING_BAY_WIDTH = 2.7f, PARKING_BAY_DEPTH = 5.f;
+
 	// The shop's land: round the shack (and where the side bay goes), and down the drive toward the highway, a strip
 	// either side of it. Its equipment can be set out anywhere on it. Neighbouring plots on a server are 40 m apart.
 	inline constexpr glm::vec2 PLOT_MIN = { BAY_MIN_X - 4.f, -HALF_DEPTH - 8.f };

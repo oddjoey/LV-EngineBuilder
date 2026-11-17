@@ -365,8 +365,6 @@ void ShopWorld::Build(const ShopAssets& assets)
 	m_stations[m_carStation].present = false;
 	m_stations[m_carStation].object->SetVisible(false);
 	m_stations[m_carStation].object->SetPickable(false);
-	m_carStands = Spawn(ShopModels::CAR_JACK_STANDS, ShopTextures::PAINT, CAR_HOME, CAR_YAW);
-	m_carStands->SetVisible(false);
 	m_fuelFlap = Spawn(ShopModels::FUEL_FLAP, ShopTextures::PAINT, CAR_HOME, CAR_YAW);
 	m_fuelFlap->SetVisible(false);
 	for (auto& lens : m_headlightLenses)
@@ -391,7 +389,7 @@ void ShopWorld::Build(const ShopAssets& assets)
 		glass->SetVisible(false);
 		glass->SetPickable(false);
 	}
-	m_carStands->SetPickable(false);
+
 	// The front seats' backs, the exhaust's smoke, and the looms' plugs with their sockets and wires.
 	auto extra = [&](const std::string& model) {
 		auto object = Spawn(model, "", CAR_HOME, CAR_YAW);
@@ -402,6 +400,20 @@ void ShopWorld::Build(const ShopAssets& assets)
 	};
 	for (auto& back : m_seatBacks)
 		back = extra(ShopModels::SEAT_BACK);
+	// The handbrake's lever, the headlights' beams and the tail lights' stop lamps, and the rams and posts of the jacks
+	// and stands under the car.
+	m_handbrakeLever = extra(ShopModels::HANDBRAKE_LEVER);
+	m_gearLever = extra(ShopModels::GEAR_LEVER);
+	m_clusterMarks = extra(ShopModels::CLUSTER_MARKINGS);
+	for (auto& beam : m_headlightBeams)
+	{
+		beam = extra(ShopModels::HEADLIGHT_BEAM);
+		beam->SetEmissive(1.5f);
+	}
+	for (auto& lamp : m_stopLamps)
+		lamp = extra(ShopModels::STOP_LAMP);
+	for (auto& support : m_carSupports)
+		support.post = extra(ShopModels::SUPPORT_POST);
 	for (auto& puff : m_smoke)
 		puff.object = extra(ShopModels::SMOKE_PUFF);
 	for (auto& plug : m_plugVisuals)
@@ -459,12 +471,26 @@ void ShopWorld::RebuildCollision()
 					glm::vec3 post = station.position + station.Rotation() * glm::vec3(side * 1.5f, 0.f, 0.f);
 					m_obstacles.push_back({ { post.x - 0.25f, post.z - 0.25f }, { post.x + 0.25f, post.z + 0.25f }, bounds.min.y, bounds.max.y });
 				}
-			// The car by its three boxes, each only as high as that part of it stands.
+			// The car by its three boxes, each only as high as that part of it stands, from its floor up (what hangs under
+			// it is walked under, or into, with it). Each is cut into slices along it and across it, so a car up at one end
+			// or one side is only as low as it is there: there's room under the end or side that's up.
 			else if (i == m_carStation)
-				for (const auto& box : CarBoxes())
+				for (auto box : CarBoxes())
 				{
-					auto part = TransformBox(box, station.position, CarRotation());
-					m_obstacles.push_back({ { part.min.x, part.min.z }, { part.max.x, part.max.z }, part.min.y, part.max.y });
+					box.min.y = (std::max)(box.min.y, CAR_FLOOR_Y);
+					constexpr int ACROSS = 2;
+					const int along = (std::max)(1, static_cast<int>(std::ceil((box.max.x - box.min.x) / 0.5f)));
+					for (int a = 0; a < along; a++)
+						for (int c = 0; c < ACROSS; c++)
+						{
+							ShopBox slice = box;
+							slice.min.x = glm::mix(box.min.x, box.max.x, static_cast<float>(a) / along);
+							slice.max.x = glm::mix(box.min.x, box.max.x, static_cast<float>(a + 1) / along);
+							slice.min.z = glm::mix(box.min.z, box.max.z, static_cast<float>(c) / ACROSS);
+							slice.max.z = glm::mix(box.min.z, box.max.z, static_cast<float>(c + 1) / ACROSS);
+							auto part = TransformBox(slice, CarOrigin(), CarRotation());
+							m_obstacles.push_back({ { part.min.x, part.min.z }, { part.max.x, part.max.z }, part.min.y, part.max.y });
+						}
 				}
 			else
 				m_obstacles.push_back({ { bounds.min.x, bounds.min.z }, { bounds.max.x, bounds.max.z }, bounds.min.y, bounds.max.y });
@@ -553,7 +579,7 @@ void ShopWorld::UpdateSelfAvatar(float deltaTime, const FirstPersonController& p
 	if (show && IsSeated())
 		m_selfAvatar.PoseSeated(SeatHips(m_seat), SeatYaw(), player.GetYaw(), player.GetPitch(), m_seat == 0);
 	else if (show)
-		m_selfAvatar.Pose(deltaTime, player.GetFeetPosition(), player.GetYaw(), player.GetPitch(), player.IsCrouching(), ArmsOut());
+		m_selfAvatar.Pose(deltaTime, player.GetFeetPosition(), player.GetYaw(), player.GetPitch(), player.IsCrouching(), ArmsOut(), player.IsProne());
 }
 
 void ShopWorld::CycleView()
@@ -806,6 +832,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 
 	UpdateDoor(deltaTime);
 	UpdateLift(deltaTime);
+	UpdateCarLift(workshop, deltaTime);
 	AnimateCarPanels(workshop, deltaTime);
 	// The car left running with no one at its wheel ticks over.
 	if (m_drive.active && m_seat != 0)
@@ -1058,6 +1085,11 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		return std::nullopt;
 	if (held && held->ref.IsTool() && UpdateCarTool(workshop, player, input, held->ref.id, deltaTime))
 		return std::nullopt;
+	// A floor jack or a jack stand in hand, at the car's lifting points; or a jack already under it, worked by hand.
+	if (held && held->ref.IsTool() && UpdateSupportTool(workshop, player, input, held->ref.id))
+		return std::nullopt;
+	if (!m_move && UpdatePlacedJack(workshop, player, input, deltaTime))
+		return std::nullopt;
 	if (!held || !held->ref.IsTool())
 		m_pressAimed = false;
 
@@ -1196,7 +1228,7 @@ void ShopWorld::SyncItems(Workshop& workshop)
 		if (m_items.contains(ref))
 			continue;
 
-		auto& visual = CreateItem(ref, part, m_assets->PartModel(part->GetType()), m_assets->PartTexture(*part));
+		auto& visual = CreateItem(ref, part, m_assets->WorldPartModel(part->GetType()), m_assets->PartTexture(*part));
 		// The core you start with is already on the parts shelf; everything after that gets
 		// delivered. (A loaded game puts each part back where it was afterwards.)
 		// (Parts that come already fitted to an engine, from the dev menu, go straight onto it.)
@@ -1329,15 +1361,7 @@ void ShopWorld::SyncMachines(const Workshop& workshop)
 		// The LE86 is the shop's from the start, parked on the drive.
 		if (station.type == StationType::CAR)
 		{
-			// Up on stands till all four wheels are on.
-			bool onWheels = workshop.GetCar() && workshop.GetCar()->assembly.IsSlotComplete(CarSlot::WHEEL)
-				&& workshop.GetCar()->assembly.IsSlotComplete(CarSlot::TIRE);
-			if (m_carStands)
-			{
-				m_carStands->SetVisible(workshop.OwnsCar() && !onWheels);
-				m_carStands->SetPosition(station.position);
-				m_carStands->SetRotation(station.Rotation());
-			}
+			// (What holds it up, or doesn't, is UpdateCarLift's.)
 			if (station.present != workshop.OwnsCar())
 			{
 				station.present = workshop.OwnsCar();
@@ -1843,7 +1867,7 @@ void ShopWorld::UpdateStations(const Workshop& workshop)
 	for (size_t i = 0; i < m_stations.size(); i++)
 	{
 		auto& station = m_stations[i];
-		station.object->SetPosition(station.position);
+		station.object->SetPosition(i == m_carStation ? CarOrigin() : station.position);
 		station.object->SetRotation(i == m_carStation ? CarRotation() : station.Rotation());
 		if (m_move && m_move->stationIndex == i)
 			continue;
@@ -1920,6 +1944,8 @@ void ShopWorld::UpdateEngineMotion(float deltaTime, const Workshop& workshop, co
 	}
 	if (m_devSpin.second != 0.f)
 		m_engineRolls[m_devSpin.first] = std::remainder(m_engineRolls[m_devSpin.first] + m_devSpin.second * deltaTime, glm::two_pi<float>());
+	// The engine in the car turns with it running: its crank, and the pulleys and belts off it.
+	const float carRpm = m_drive.active && m_engineInCar >= 0 ? m_drive.rpm : 0.f;
 
 	m_handTurnRpm = 0.f;
 	if (playerHasControl && !m_move && looked >= 0 && Controls::Held(input, Control::ROTATE))
@@ -1934,7 +1960,8 @@ void ShopWorld::UpdateEngineMotion(float deltaTime, const Workshop& workshop, co
 	// The engine on the dyno spins with the pull; the one being turned by hand turns slowly.
 	for (int engine = 0; engine < Workshop::MAX_ENGINES; engine++)
 	{
-		float rpm = engine == m_dynoEngine && m_engineRpm > 0.f ? m_engineRpm * VISUAL_RPM_SCALE : engine == looked ? m_handTurnRpm : 0.f;
+		float rpm = engine == m_dynoEngine && m_engineRpm > 0.f ? m_engineRpm * VISUAL_RPM_SCALE : engine == m_engineInCar && carRpm > 0.f ? carRpm * VISUAL_RPM_SCALE
+			: engine == looked ? m_handTurnRpm : 0.f;
 		TurnCrank(workshop, engine, rpm / 60.f * glm::two_pi<float>() * deltaTime);
 	}
 }
@@ -1951,17 +1978,19 @@ void ShopWorld::TurnCrank(const Workshop& workshop, int engine, float by)
 
 int ShopWorld::LookedAtEngine() const
 {
-	// Not the one on the dyno or the hoist: it can't be rolled or turned by hand there.
+	// Not the one on the dyno, the hoist or in the car: it can't be rolled or turned by hand there.
 	int engine = LookedAtStandEngine();
-	return engine == m_engineOnDyno || engine == m_engineOnHoist ? -1 : engine;
+	return engine == m_engineOnDyno || engine == m_engineOnHoist || engine == m_engineInCar ? -1 : engine;
 }
 
 int ShopWorld::LookedAtStandEngine() const
 {
 	if (m_hover && m_hover->kind == TargetKind::STATION)
 	{
+		// (A stand whose engine is away, in the car or on the hoist or dyno, is only an empty stand.)
 		const auto& station = m_stations[m_hover->stationIndex];
-		return station.type == StationType::ENGINE_STAND ? station.engineIndex : -1;
+		bool away = station.engineIndex == m_engineInCar || station.engineIndex == m_engineOnHoist || station.engineIndex == m_engineOnDyno;
+		return station.type == StationType::ENGINE_STAND && !away ? station.engineIndex : -1;
 	}
 	if (m_hover && m_hover->kind == TargetKind::ITEM)
 		if (auto visual = Find(m_hover->item); visual && visual->place == ItemPlace::STAND)
@@ -2515,7 +2544,13 @@ ShopWorld::EnginePose ShopWorld::RestingPose(int engine) const
 	}
 	// In the car it sits on its mounts in the bay, its timing end to the car's nose.
 	if (engine == m_engineInCar && m_carStation < m_stations.size() && m_stations[m_carStation].present)
-		return { CarToWorld(CAR_ENGINE_MOUNT), CarRotation() * ENGINE_IN_CAR };
+	{
+		// Running, it shakes on its mounts (see ShakeEngine): rocked about its crank, and lifted and dropped a little.
+		const glm::quat base = CarRotation() * ENGINE_IN_CAR;
+		const glm::vec3 crank = { 0.f, EngineLayout::CRANK_Y, 0.f };
+		const glm::quat rock = AboutX(m_engineShake.roll);
+		return { CarToWorld(CAR_ENGINE_MOUNT) + base * (crank - rock * crank) + CarRotation() * glm::vec3(0.f, m_engineShake.lift, 0.f), base * rock };
+	}
 	// On the dyno it's held level, the right way round.
 	if (engine == m_engineOnDyno)
 		if (const Station* dyno = FindStation(StationType::DYNO))
@@ -2736,6 +2771,25 @@ void ShopWorld::UpdateOverlays(ItemVisual& visual) const
 
 	for (auto& [overlay, object] : visual.overlays)
 	{
+		if (overlay.spin != 0.f)
+		{
+			// A pulley, turned by the belt as its engine's crank turns (still, off an engine), in the part's colours. (Not
+			// over a model of the player's own, which has its pulley in it.)
+			bool own = visual.object->GetModelIndex() != m_assets->PartModel(visual.part->GetType());
+			object->SetVisible(visible && own);
+			if (!visible || !own)
+				continue;
+			const bool onEngine = visual.place == ItemPlace::STAND && visual.engineIndex >= 0 && visual.engineIndex < Workshop::MAX_ENGINES;
+			const float turned = onEngine ? std::fmod(m_crankAngles[visual.engineIndex] * overlay.spin, glm::two_pi<float>()) : 0.f;
+			object->SetTexture(visual.object->GetTextureIndex());
+			object->SetPosition(position + rotation * overlay.offset);
+			object->SetRotation(rotation * AboutX(turned));
+			object->SetScale(visual.object->GetScale());
+			object->SetTint(visual.object->GetTint());
+			object->SetEmissive(visual.object->GetEmissive());
+			object->SetCastsShadows(visual.object->CastsShadows());
+			continue;
+		}
 		const Feature* feature = visual.part->FindFeature(overlay.featureName);
 		uint32_t texture = feature ? m_assets->SurfaceTexture(*feature) : 0;
 		object->SetVisible(visible && texture != 0);
@@ -2869,6 +2923,16 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 					visual.carSlot = -1;
 				}
 			}
+		// The gearbox on the car is its case alone: its lever is a model of its own there, moving through the gate.
+		if (visual.part && visual.part->GetType() == PartType::TRANSMISSION)
+		{
+			uint32_t wanted = visual.place == ItemPlace::CAR ? m_assets->Model(ShopModels::TRANSMISSION_BODY) : m_assets->PartModel(PartType::TRANSMISSION);
+			if (visual.object->GetModelIndex() != wanted)
+			{
+				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				visual.carSlot = -1;
+			}
+		}
 		// A front seat on the car is its base alone: its back is a model of its own there (PoseSeatBacks), to recline and tip.
 		if (visual.part && visual.part->GetType() == PartType::SEAT)
 		{
@@ -3504,7 +3568,8 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 			m_prompt = blocked ? std::format("{}: {}", removalName, *blocked)
 				: &removal == &visual ? std::format("[E] Take {} off the engine", name)
 				: std::format("[E] Take {} off the engine, with the {}", removalName, visual.part->GetName());
-			m_secondaryPrompt = "[R] Turn it over   [Z]/[X] Roll it on the stand";
+			if (visual.engineIndex != m_engineInCar && visual.engineIndex != m_engineOnHoist && visual.engineIndex != m_engineOnDyno)
+				m_secondaryPrompt = "[R] Turn it over   [Z]/[X] Roll it on the stand";
 			// A ring on its own in a bore, to be gapped: pushed down square with a piston, then read with the feelers.
 			if (slot && slot->first == AssemblySlot::PISTON_RING)
 				if (auto rings = workshop.RingsInBore(visual.engineIndex); rings.contains(slot->second))
@@ -3605,7 +3670,13 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 			break;
 		}
 		case StationType::ENGINE_STAND:
-			if (!holdingPart)
+			if (station.engineIndex == m_engineInCar || station.engineIndex == m_engineOnHoist || station.engineIndex == m_engineOnDyno)
+			{
+				// Its engine is away: it's an empty stand till one's lowered onto it.
+				m_prompt = std::format("{}: empty{}", station.name, moveHint);
+				m_secondaryPrompt = "Lower an engine onto it with the engine hoist";
+			}
+			else if (!holdingPart)
 			{
 				m_prompt = std::format("[E] {} (engine {}){}", station.name, station.engineIndex + 1, moveHint);
 				m_secondaryPrompt = "[R] Turn it over   [Z]/[X] Roll it on the stand";
@@ -3779,8 +3850,14 @@ std::optional<UIRequest> ShopWorld::UseStation(Workshop& workshop, const Station
 		}
 		case StationType::ENGINE_STAND:
 		{
-			// Working at a stand makes its engine the one the workshop screens and dyno act on.
+			// Working at a stand makes its engine the one the workshop screens and dyno act on. (A stand whose engine is
+			// away, in the car or on the hoist or dyno, is empty: there's nothing on it to work on.)
 			int engine = station.engineIndex;
+			if (engine == m_engineInCar || engine == m_engineOnHoist || engine == m_engineOnDyno)
+			{
+				Toast(std::format("The {} is empty: lower an engine onto it with the hoist.", station.name));
+				return std::nullopt;
+			}
 			workshop.SetActiveEngine(engine);
 			if (!heldPart)
 				return UIRequest{ WorkshopTab::ENGINE_STAND };

@@ -897,7 +897,7 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		owned.insert(part->GetId());
 		auto ref = ItemRef::Part(part->GetId());
 		if (!world.m_items.contains(ref))
-			world.CreateItem(ref, part, world.m_assets->PartModel(part->GetType()), world.m_assets->PartTexture(*part));
+			world.CreateItem(ref, part, world.m_assets->WorldPartModel(part->GetType()), world.m_assets->PartTexture(*part));
 	}
 	const auto& tools = ToolCatalog::All();
 	for (size_t i = 0; i < tools.size(); i++)

@@ -87,6 +87,7 @@ private:
 	bool							m_offline = false;
 	// How far round the garage the menu's camera has come.
 	float							m_menuAngle = 0.f;
+	float							m_devEyeDrop = 0.f;	// developer: the first person camera this far below the eyes (eye <metres>)
 // Debug builds only: playing offline, and the developer menu (F3).
 #ifdef _DEBUG
 	static constexpr bool			DEV_OFFLINE = true;

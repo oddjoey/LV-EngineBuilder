@@ -411,6 +411,13 @@ namespace ToolCatalog
 			hand("Valve Spring Compressor", "A C-clamp for the head off the engine: its cup over a valve's spring, its foot under the valve. Aim it "
 				"at a valve with its spring in and press E: it squeezes the spring down so the retainer and keepers go on (or come off). Then E "
 				"on the compressor takes it off, for the next valve.", HandToolKind::VALVE_SPRING_COMPRESSOR, 35.0);
+			// What gets the car off the ground. (Last again.)
+			hand("Floor Jack", "A two-tonne trolley jack. Carry it to the car and click on a lifting point (there are two at each corner, marked "
+				"while it's in hand) to slide it under. Aim at it there and hold the left button to pump that corner up, the right to let it "
+				"down. It only lifts the corner it's under.", HandToolKind::FLOOR_JACK, 85.0);
+			hand("Jack Stand", "A ratcheting stand. With a corner jacked up, click on the other lifting point at that corner to put the stand "
+				"under: it holds the corner at that height once the jack's let down or taken away. Sold singly; a corner with nothing "
+				"under it comes down.", HandToolKind::JACK_STAND, 22.0);
 
 			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
 			// and the service manual (hung on the tool board with the rest). Everything else is bought, the pin press and

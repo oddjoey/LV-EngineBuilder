@@ -134,6 +134,7 @@ namespace
 		{ "Holds size to", "How close to the target size the machine cuts, every time." },
 		{ "Finish", "How rough the surface the machine leaves is, in micrometres Ra." },
 		{ "Most per setup", "The most metal the machine can take off in one setup." },
+		{ "Price", "What it costs at the parts computer." },
 	};
 }
 

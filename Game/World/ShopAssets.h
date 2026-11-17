@@ -303,7 +303,27 @@ namespace ShopModels
 	inline const std::string DYNO = "Dyno";
 	inline const std::string ENGINE_HOIST = "Engine Hoist";
 	inline const std::string PROJECT_CAR = "LE86 Project Car";
-	inline const std::string CAR_JACK_STANDS = "Car Jack Stands";
+	// The car's own moving and lit bits: the handbrake's lever, a headlight's beam (a cone of light a metre long and a
+	// metre across at its far end, which ShopWorld stretches), a tail light's stop lamp, and the ram or post a jack or
+	// stand holds the car up with (a metre of it, stretched to fit).
+	// The water pump and alternator without their pulleys (in the shop), and the pulleys on their own, which turn.
+	inline const std::string WATER_PUMP_BODY = "Water Pump (Body)";
+	inline const std::string WATER_PUMP_PULLEY = "Pulley: Water Pump";
+	inline const std::string ALTERNATOR_BODY = "Alternator (Body)";
+	inline const std::string ALTERNATOR_PULLEY = "Pulley: Alternator";
+	// The instrument cluster's numbers and marks on their own (lit green over it), the gearbox without its lever (on the car),
+	// and the lever, which moves through its gate.
+	inline const std::string CLUSTER_MARKINGS = "Cluster Markings";
+	inline const std::string TRANSMISSION_BODY = "Transmission (Body)";
+	inline const std::string GEAR_LEVER = "Gear Lever";
+	inline const std::string HANDBRAKE_LEVER = "Handbrake Lever";
+	inline const std::string HEADLIGHT_BEAM = "Headlight Beam";
+	inline const std::string STOP_LAMP = "Stop Lamp";
+	inline const std::string SUPPORT_POST = "Car Support Post";
+	// The parking lot upgrade: its asphalt and its painted lines, and the sand that's there until it's laid.
+	inline const std::string PARKING_LOT = "Parking Lot";
+	inline const std::string PARKING_LOT_LINES = "Parking Lot Lines";
+	inline const std::string PARKING_LOT_SAND = "Parking Lot Sand";
 	// The right-hand fender and door (the parts' own models are the left-hand ones: see LoadCarParts), and the fuel filler's flap.
 	inline const std::string FENDER_RIGHT = "Front Fender (Right)";
 	inline const std::string DOOR_RIGHT = "Door (Right)";
@@ -379,11 +399,14 @@ struct MachineFixture
 
 // A thin skin over one machinable surface, re-textured to show its finish: honed crosshatch,
 // fresh grinding, glazing, scoring. It follows its part around.
+// Or (spin not 0) a part's pulley, a model of its own over the part's body, that the fan belt turns about the part's
+// own x axis while its engine runs: this many turns for each turn of the crank.
 struct SurfaceOverlay
 {
 	std::string featureName = "";
 	std::string model = "";
 	glm::vec3 offset = {};	// in the part's own space
+	float spin = 0.f;
 };
 
 // A spot on a part where one of its features is measured, in the part's own space.
@@ -418,6 +441,9 @@ public:
 	uint32_t TextureFor(const std::string& modelName, const std::string& fallbackTexture) const;
 
 	uint32_t PartModel(PartType type) const;
+	// The model a part is in the shop: the same, but for those whose pulley turns (the water pump, the alternator),
+	// their body alone, the pulley being one of its overlays.
+	uint32_t WorldPartModel(PartType type) const;
 	uint32_t PartTexture(const Part& part) const;
 	// Colour multiplier so different alloys read differently under the same texture.
 	glm::vec4 PartTint(MaterialType material) const;

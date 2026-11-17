@@ -180,6 +180,8 @@ Sound ShopWorld::FootstepAt(const glm::vec3& feet) const
 			return Sound::FOOTSTEP_CONCRETE;
 	if (m_bayBuilt && (on(BAY_DRIVE) || on(BAY_DRIVE_LINK)))
 		return Sound::FOOTSTEP_CONCRETE;
+	if (m_lotBuilt && on(PARKING_LOT))
+		return Sound::FOOTSTEP_CONCRETE;
 	return Roads::On({ feet.x, feet.z }) ? Sound::FOOTSTEP_CONCRETE : Sound::FOOTSTEP_GRASS;
 }
 
@@ -275,25 +277,8 @@ void ShopWorld::SetNeighbours(const std::vector<float>& offsets)
 
 	// The desert on their plots (round the building, and down the drive to the highway) is cleared, and what
 	// was there stops being in the way; it's all back when they're gone.
-	auto onPlot = [&](glm::vec2 at) {
-		return std::any_of(offsets.begin(), offsets.end(), [&](float offset) {
-			float x = at.x - offset;
-			bool byShack = x > BAY_MIN_X - 6.f && x < HALF_WIDTH + 8.f && at.y > -HALF_DEPTH - 8.f && at.y < HALF_DEPTH + 8.f;
-			bool onDrive = x > DRIVE_MIN_X - 4.f && x < DRIVE_MAX_X + 4.f && at.y > 0.f && at.y < HIGHWAY_NEAR_Z;
-			return byShack || onDrive;
-		});
-	};
-	for (const auto& piece : m_scenery)
-	{
-		bool cleared = onPlot(piece.at);
-		piece.object->SetVisible(!cleared);
-		// Below the floor, it's in no one's way.
-		for (const auto& footprint : piece.footprints)
-			for (auto* list : { &m_sceneryObstacles, &m_staticObstacles })
-				for (auto& obstacle : *list)
-					if (obstacle.min == footprint.min && obstacle.max == footprint.max)
-						obstacle.top = cleared ? -1e5f : footprint.top;
-	}
+	m_neighbourOffsets = offsets;
+	RefreshScenery();
 	RebuildCollision();
 }
 

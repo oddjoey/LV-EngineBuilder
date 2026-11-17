@@ -133,6 +133,27 @@ namespace
 			case HandToolKind::THINNER:
 				return { "Hold the left button on paint on a wall or the floor to wipe it off (the mouse wheel sets how wide), or on a part or "
 					"tool to strip its coat." };
+			case HandToolKind::FLOOR_JACK:
+				return { "Carry it to the car: the lifting points are marked, two at each corner (the sill's jacking point, and a place for a "
+					"stand beside it under the floor). Click on one to slide the jack under it.",
+					"Aim at the jack and hold the left button to pump that corner up; hold the right button to let it down again.",
+					"E on the jack takes it away. A corner with nothing under it comes down, so put a jack stand under it first." };
+			case HandToolKind::JACK_STAND:
+				return { "Jack a corner of the car up first: a stand only goes under one that's off the ground.",
+					"Carry the stand to that corner and click on its other lifting point: it's set to the height the corner is at.",
+					"Let the jack down (or take it away) and the corner rests on the stand. E on a stand takes it back: with nothing else "
+					"under that corner, it comes down." };
+			// The rest of the car's tools say how they're used in their own descriptions.
+			case HandToolKind::FUNNEL:
+			case HandToolKind::BRAKE_BLEEDER:
+			case HandToolKind::SPRING_COMPRESSOR:
+			case HandToolKind::TIRE_IRONS:
+			case HandToolKind::TIMING_LIGHT:
+			case HandToolKind::TIRE_GAUGE:
+			case HandToolKind::ALIGNMENT_GAUGE:
+			case HandToolKind::SCREWDRIVER:
+				return { "Hold it and aim at what it works on at the car: what it can reach is marked.",
+					"The left and right buttons work it (see above); the prompt in the corner says what each does where you're aiming." };
 			case HandToolKind::NONE:
 				break;
 		}
@@ -2555,50 +2576,71 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 
 		// Grouped by the job they do, cheapest first within each: the measuring tools by what they
 		// measure, then the spanners.
+		// (The books first: they say what everything else is for. Then the spanners, which every job needs; what
+		// puts an engine together; the measuring tools by what they measure; and the car's own tools by the job.)
+		enum Shelf { MANUALS, WRENCHES, SOCKETS, TORQUE, CORDLESS, ENGINE_ASSEMBLY, MEASURE_OUTSIDE, MEASURE_BORES, MEASURE_FLAT, MEASURE_ENGINE, MEASURE_OTHER,
+			CAR_LIFTING, CAR_FLUIDS, CAR_WHEELS, CAR_TUNE, PAINT_MARKERS, PAINT_SPRAY, PAINT_CLEAN };
 		static const char* const SHELVES[] = {
-			"Outside sizes: journals, stems, lengths",
-			"Bores",
-			"Flatness and runout",
-			"On the engine: clearances, gaps, heights",
-			"Springs, volumes and surface finish",
-			"Sockets and drives",
+			"Service manuals",
 			"Wrenches",
-			"Torque",
-			"Pistons and rods",
+			"Sockets and what drives them",
+			"Torque wrenches",
 			"Cordless: tools, batteries and chargers",
-			"Manuals",
+			"Engine assembly: pistons, rings and valve springs",
+			"Measuring: outside sizes (journals, stems, lengths)",
+			"Measuring: bores",
+			"Measuring: flatness, runout, squareness and bend",
+			"Measuring: on the assembled engine (clearances, gaps, heights, belts)",
+			"Measuring: springs, volumes and surface finish",
+			"Car: lifting it",
+			"Car: fluids and brakes",
+			"Car: wheels, tires and suspension",
+			"Car: tune-up",
 			"Paint markers",
 			"Spray paint",
 			"Cleaning up",
 		};
-		auto shelfOf = [](const MeasuringTool& tool) {
+		auto shelfOf = [](const MeasuringTool& tool) -> int {
 			if (tool.manual)
-				return 10;
+				return MANUALS;
 			if (tool.Paints())
-				return tool.handKind == HandToolKind::MARKER ? 11 : tool.handKind == HandToolKind::SPRAY_CAN ? 12 : 13;
+				return tool.handKind == HandToolKind::MARKER ? PAINT_MARKERS : tool.handKind == HandToolKind::SPRAY_CAN ? PAINT_SPRAY : PAINT_CLEAN;
 			if (tool.powered || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
-				return 9;
-			if (tool.handKind == HandToolKind::PIN_PRESS || tool.handKind == HandToolKind::RING_COMPRESSOR || tool.handKind == HandToolKind::VALVE_SPRING_COMPRESSOR)
-				return 8;
+				return CORDLESS;
 			auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
 			switch (tool.handKind)
 			{
+				case HandToolKind::PIN_PRESS:
+				case HandToolKind::RING_COMPRESSOR:
+				case HandToolKind::VALVE_SPRING_COMPRESSOR:	return ENGINE_ASSEMBLY;
 				case HandToolKind::SOCKETS:
 				case HandToolKind::RATCHET:
-				case HandToolKind::BREAKER_BAR:		return 5;
-				case HandToolKind::WRENCHES:		return 6;
-				case HandToolKind::TORQUE_WRENCH:	return 7;
+				case HandToolKind::IMPACT:
+				case HandToolKind::BREAKER_BAR:		return SOCKETS;
+				case HandToolKind::WRENCHES:
+				case HandToolKind::COMBINATION_WRENCH:	return WRENCHES;
+				case HandToolKind::TORQUE_WRENCH:	return TORQUE;
+				case HandToolKind::FLOOR_JACK:
+				case HandToolKind::JACK_STAND:		return CAR_LIFTING;
+				case HandToolKind::FUNNEL:
+				case HandToolKind::BRAKE_BLEEDER:	return CAR_FLUIDS;
+				case HandToolKind::SPRING_COMPRESSOR:
+				case HandToolKind::TIRE_IRONS:
+				case HandToolKind::TIRE_GAUGE:
+				case HandToolKind::ALIGNMENT_GAUGE:	return CAR_WHEELS;
+				case HandToolKind::TIMING_LIGHT:
+				case HandToolKind::SCREWDRIVER:		return CAR_TUNE;
 				default:							break;
 			}
 			if (!tool.assemblyChecks.empty())
-				return 3;
+				return MEASURE_ENGINE;
 			if (tool.measuresFinish || measures(FeatureKind::FORCE) || measures(FeatureKind::VOLUME))
-				return 4;
+				return MEASURE_OTHER;
 			if (measures(FeatureKind::BORE))
-				return 1;
+				return MEASURE_BORES;
 			if (measures(FeatureKind::FLATNESS) || measures(FeatureKind::RUNOUT) || measures(FeatureKind::SQUARENESS) || measures(FeatureKind::ALIGNMENT))
-				return 2;
-			return 0;
+				return MEASURE_FLAT;
+			return MEASURE_OUTSIDE;
 		};
 		std::vector<size_t> order(tools.size());
 		for (size_t i = 0; i < tools.size(); i++)
@@ -2630,7 +2672,8 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 			if (StoreCard(tool.name.c_str(), tool.name.c_str(), price, m_selectedTool == static_cast<int>(i), workshop.OwnsTool(i),
 				[&](ImDrawList* drawList, ImVec2 min, float size) {
 					ItemIcons::DrawTool(drawList, tool, min, size, locked ? IM_COL32(120, 120, 120, 160) : PartIcons::DEFAULT_COLOR); },
-				tool.manual || tool.Paints() || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER ? std::vector<float>{}
+				// (A rating only where there's something to rate: how fast a spanner turns, how close a gauge or torque wrench reads.)
+				tool.manual || tool.Paints() || (tool.IsHandTool() && tool.TurnSeconds() <= 0.0 && tool.handKind != HandToolKind::TORQUE_WRENCH) ? std::vector<float>{}
 					: tool.TurnSeconds() > 0.0 ? std::vector<float>{ Ratings::ToolPrecision(tool), Ratings::ToolSpeed(tool) } : std::vector<float>{ Ratings::ToolPrecision(tool) }))
 				m_selectedTool = static_cast<int>(i);
 		}
@@ -2705,7 +2748,7 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 			else if (tool.Paints())
 				ImGui::TextDisabled("For decorating: the walls and the floor take paint from as far off as you can see them, the ring round the crosshair showing how big (the mouse wheel changes it), and a spray can "
 					"or the thinner works on any part or tool too. It never wears off, but thinner takes it back off.");
-			else if (tool.handKind != HandToolKind::PIN_PRESS && tool.handKind != HandToolKind::RING_COMPRESSOR && tool.handKind != HandToolKind::VALVE_SPRING_COMPRESSOR)
+			else if (tool.TurnSeconds() > 0.0 || tool.handKind == HandToolKind::SOCKETS)
 				ImGui::TextDisabled("Every nut and bolt on the engine needs a socket (driven by a ratchet, impact or torque wrench) or a wrench of "
 					"its size, and a torque wrench to be done up to spec. How close the torque wrench gets "
 					"is how tight they really are, and the dyno finds out.");

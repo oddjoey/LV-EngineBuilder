@@ -1,3 +1,6 @@
 [submodule "LV"]
 	path = LV
 	url = https://github.com/oddjoey/LV.git
+[submodule "Libraries/monocypher"]
+	path = Libraries/monocypher
+	url = https://github.com/LoupVaillant/Monocypher

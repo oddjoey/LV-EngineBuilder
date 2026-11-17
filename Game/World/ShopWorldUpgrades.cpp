@@ -12,11 +12,12 @@ void ShopWorld::SyncUpgrades(const Workshop& workshop)
 {
 	bool bay = workshop.OwnsUpgrade(UpgradeKind::SIDE_BAY);
 	bool upper = workshop.OwnsUpgrade(UpgradeKind::SECOND_STORY);
-	if (bay != m_bayBuilt || upper != m_upperBuilt || !m_upgradesApplied)
-		BuildUpgrades(bay, upper);
+	bool lot = workshop.OwnsUpgrade(UpgradeKind::PARKING_LOT);
+	if (bay != m_bayBuilt || upper != m_upperBuilt || lot != m_lotBuilt || !m_upgradesApplied)
+		BuildUpgrades(bay, upper, lot);
 }
 
-void ShopWorld::BuildUpgrades(bool bay, bool upper)
+void ShopWorld::BuildUpgrades(bool bay, bool upper, bool lot)
 {
 	using namespace GarageLayout;
 	const float outerX = HALF_WIDTH + WALL;
@@ -29,6 +30,7 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper)
 	m_upgradeObjects.clear();
 	m_bayBuilt = bay;
 	m_upperBuilt = upper;
+	m_lotBuilt = lot;
 	m_upgradesApplied = true;
 
 	// The garage's own walls, siding, frames and glass in the version that goes with them. Objects are
@@ -81,6 +83,16 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper)
 	m_walkSurfaces.clear();
 	m_upgradeSurfaces.clear();
 	std::vector<FloorObstacle> extraObstacles;
+
+	// The parking lot beside the drive: asphalt and its painted bays, or the sand that's there till it's laid.
+	if (lot)
+	{
+		m_upgradeObjects.push_back(Spawn(ShopModels::PARKING_LOT, ShopTextures::ASPHALT, {}));
+		m_upgradeObjects.push_back(Spawn(ShopModels::PARKING_LOT_LINES, "", {}));
+		m_upgradeObjects.back()->SetCastsShadows(false);
+	}
+	else
+		m_upgradeObjects.push_back(Spawn(ShopModels::PARKING_LOT_SAND, ShopTextures::SAND, {}));
 
 	// Until the bay is built, sand where its floor and drive will go (the lot's sand leaves them out).
 	if (!bay)
@@ -179,6 +191,35 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper)
 	for (const auto& wall : m_walls)
 		m_staticObstacles.push_back({ { wall.min.x, wall.min.z }, { wall.max.x, wall.max.z }, wall.min.y, wall.max.y });
 	m_staticObstacles.insert(m_staticObstacles.end(), extraObstacles.begin(), extraObstacles.end());
+	// The desert's cleared off the parking lot (and comes back if the lot goes).
+	RefreshScenery();
+}
+
+void ShopWorld::RefreshScenery()
+{
+	using namespace GarageLayout;
+	// On a neighbour's plot (round their building, and down their drive to the highway), or on the parking lot.
+	auto cleared = [&](glm::vec2 at) {
+		if (m_lotBuilt && at.x > PARKING_LOT.min.x - 1.5f && at.x < PARKING_LOT.max.x + 1.5f && at.y > PARKING_LOT.min.y - 1.5f && at.y < PARKING_LOT.max.y + 1.5f)
+			return true;
+		return std::any_of(m_neighbourOffsets.begin(), m_neighbourOffsets.end(), [&](float offset) {
+			float x = at.x - offset;
+			bool byShack = x > BAY_MIN_X - 6.f && x < HALF_WIDTH + 8.f && at.y > -HALF_DEPTH - 8.f && at.y < HALF_DEPTH + 8.f;
+			bool onDrive = x > DRIVE_MIN_X - 4.f && x < DRIVE_MAX_X + 4.f && at.y > 0.f && at.y < HIGHWAY_NEAR_Z;
+			return byShack || onDrive;
+		});
+	};
+	for (const auto& piece : m_scenery)
+	{
+		bool gone = cleared(piece.at);
+		piece.object->SetVisible(!gone);
+		// Below the floor, it's in no one's way.
+		for (const auto& footprint : piece.footprints)
+			for (auto* list : { &m_sceneryObstacles, &m_staticObstacles })
+				for (auto& obstacle : *list)
+					if (obstacle.min == footprint.min && obstacle.max == footprint.max)
+						obstacle.top = gone ? -1e5f : footprint.top;
+	}
 }
 
 const std::vector<WalkSurface>& ShopWorld::GetWalkSurfaces() const
@@ -234,7 +275,9 @@ bool ShopWorld::OnDrive(const ShopBox& footprint) const
 void ShopWorld::UpdateLift(float deltaTime)
 {
 	// The carriages run up and down the posts; the arms go with them wherever the lift is moved to.
-	constexpr float LOWERED = 0.08f, RAISED = 1.75f, SPEED = 0.35f;
+	// (Right down, the arms' pads are low enough for the car to drive over them; right up, its roof is just under the
+	// lift's header.)
+	constexpr float LOWERED = 0.02f, RAISED = 1.78f, SPEED = 0.35f;
 	float target = m_liftRaised ? RAISED : LOWERED;
 	float step = SPEED * deltaTime;
 	m_liftMoving = m_liftHeight != target && m_liftStation < m_stations.size() && m_stations[m_liftStation].present;

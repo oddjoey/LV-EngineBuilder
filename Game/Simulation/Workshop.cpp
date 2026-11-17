@@ -543,7 +543,7 @@ int Workshop::SkillLevel(SkillKind skill) const
 	if (i >= Skills::COUNT)
 		return 0;
 	// An upgrade paid for with money, in an older save, counts as its perk (at no cost in points).
-	for (auto upgrade : { UpgradeKind::SIDE_BAY, UpgradeKind::SECOND_STORY, UpgradeKind::POST_LIFT })
+	for (auto upgrade : { UpgradeKind::SIDE_BAY, UpgradeKind::SECOND_STORY, UpgradeKind::POST_LIFT, UpgradeKind::PARKING_LOT })
 		if (UpgradePerk(upgrade) == skill && static_cast<size_t>(upgrade) < m_upgrades.size() && m_upgrades[static_cast<size_t>(upgrade)])
 			return (std::max)(m_skills[i], 1);
 	// Premium Colours came before the Wardrobe it now hangs off: a shop that has it can dress its monkey too.
@@ -578,7 +578,7 @@ bool Workshop::BuySkill(SkillKind skill)
 	m_skills[static_cast<size_t>(skill)]++;
 	Log(info.maxLevel > 1 ? std::format("{} level {} for {} skill point{}.", info.name, level + 1, cost, cost == 1 ? "" : "s")
 		: std::format("{} for {} skill point{}.", info.name, cost, cost == 1 ? "" : "s"));
-	if (skill == SkillKind::SIDE_BAY || skill == SkillKind::SECOND_STORY)
+	if (skill == SkillKind::SIDE_BAY || skill == SkillKind::SECOND_STORY || skill == SkillKind::PARKING_LOT)
 		Log(std::format("The builders have finished the {}.", info.name));
 	else if (skill == SkillKind::POST_LIFT)
 		Log("The lift is at the door in its crate.");
@@ -724,6 +724,7 @@ SkillKind Workshop::UpgradePerk(UpgradeKind upgrade)
 	{
 		case UpgradeKind::SIDE_BAY:		return SkillKind::SIDE_BAY;
 		case UpgradeKind::SECOND_STORY:	return SkillKind::SECOND_STORY;
+		case UpgradeKind::PARKING_LOT:	return SkillKind::PARKING_LOT;
 		default:						return SkillKind::POST_LIFT;
 	}
 }

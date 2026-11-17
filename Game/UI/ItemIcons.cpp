@@ -277,6 +277,25 @@ namespace ItemIcons
 				drawList->AddRect(p(0.22f, 0.5f), p(0.42f, 0.6f), color, 0.f, 0, line);
 				drawList->AddRectFilled(p(0.24f, 0.78f), p(0.4f, 0.84f), color);
 				break;
+			case ToolShape::FLOOR_JACK:
+				// A trolley jack side on: the body on its wheels, the arm up to its saddle, the handle out behind.
+				drawList->AddQuad(p(0.12f, 0.72f), p(0.7f, 0.72f), p(0.7f, 0.6f), p(0.2f, 0.6f), color, line * 1.4f);
+				drawList->AddCircleFilled(p(0.2f, 0.8f), size * 0.07f, color);
+				drawList->AddCircleFilled(p(0.64f, 0.8f), size * 0.055f, color);
+				drawList->AddLine(p(0.55f, 0.62f), p(0.26f, 0.38f), color, line * 1.8f);
+				drawList->AddLine(p(0.16f, 0.36f), p(0.36f, 0.36f), color, line * 2.f);
+				drawList->AddLine(p(0.66f, 0.6f), p(0.9f, 0.18f), color, line * 1.4f);
+				break;
+			case ToolShape::JACK_STAND:
+				// A jack stand: splayed legs, the post up out of them and its saddle.
+				drawList->AddLine(p(0.5f, 0.42f), p(0.2f, 0.86f), color, line * 1.8f);
+				drawList->AddLine(p(0.5f, 0.42f), p(0.8f, 0.86f), color, line * 1.8f);
+				drawList->AddLine(p(0.16f, 0.86f), p(0.84f, 0.86f), color, line * 1.4f);
+				drawList->AddLine(p(0.5f, 0.6f), p(0.5f, 0.2f), color, line * 2.2f);
+				drawList->AddLine(p(0.36f, 0.16f), p(0.36f, 0.24f), color, line * 1.4f);
+				drawList->AddLine(p(0.64f, 0.16f), p(0.64f, 0.24f), color, line * 1.4f);
+				drawList->AddLine(p(0.36f, 0.24f), p(0.64f, 0.24f), color, line * 1.4f);
+				break;
 		}
 	}
 

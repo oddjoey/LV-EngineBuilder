@@ -83,6 +83,8 @@ namespace ShopLayout
 	inline const glm::vec3 CAR_HOME = { (GarageLayout::DOOR_MIN_X + GarageLayout::DOOR_MAX_X) * 0.5f, 0.f, GarageLayout::HALF_DEPTH + GarageLayout::WALL + 5.4f };
 	constexpr float CAR_YAW = glm::half_pi<float>();
 	inline const glm::vec3 CAR_ENGINE_BAY = { 1.35f, 0.75f, 0.f };
+	// The underside of the car's floor, in its own space: what can be walked under when it's lifted.
+	constexpr float CAR_FLOOR_Y = 0.17f;
 	// Where the engine's deck sits, its middle, in the car's space: the block between the strut towers, the crank
 	// about 0.35 m off the ground and the flywheel end at the firewall.
 	inline const glm::vec3 CAR_ENGINE_MOUNT = { CarBody::ENGINE_X, CarBody::ENGINE_DECK_Y, 0.f };

@@ -43,7 +43,7 @@
 //   game -> server   query                                  what the server is, for the server list (in the clear)
 //                    hello <version> "ticket" "signature"
 //                    ops <author> <sequence> <count> (<kind> "key" "text")...
-//                    presence <id> <x> <y> <z> <yaw> <pitch> <arms> <crouching> <fur> <skin> <cap> <tail>
+//                    presence <id> <x> <y> <z> <yaw> <pitch> <arms> <posture: 0 standing, 1 crouching, 2 lying> <fur> <skin> <cap> <tail>
 //                                                           arms: 0 down, 1 the right one out (holding something), 2 both (carrying a delivery);
 //                                                           10 and up, sat in the car: 10 its driver's seat, 11 the passenger's, 12 and 13 the back
 //                    profile "layout"                       how their backpack and hotbar are laid out

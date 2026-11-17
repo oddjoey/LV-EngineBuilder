@@ -266,6 +266,10 @@ public:
 	CameraView DriveCamera(const FirstPersonController& player);
 	// The engine's note at the wheel, and where the car is, for the sound of it.
 	float GetDriveRpm() const { return m_drive.active ? m_drive.rpm : 0.f; }
+	// Whether the car's engine is firing just now (not for the moment its rev limiter cuts the ignition).
+	bool IsDriveFiring() const { return m_drive.active && m_drive.cut <= 0.f; }
+	// How dark it is outside, 0 (day) to 1 (night): the headlights' beams only show in the dark.
+	void SetDarkness(float darkness) { m_darkness = darkness; }
 	glm::vec3 GetCarPosition() const { return CarToWorld({ 1.2f, 0.6f, 0.f }); }
 	// Developer shortcuts: gets in (true if it started), and holds the throttle down for a while with the wheel turned.
 	bool DevStartDrive(Workshop& workshop);
@@ -281,13 +285,17 @@ public:
 	void DevHeadlights() { m_headlights.on = !m_headlights.on; }
 	// Turns the key from the driver's seat, and holds the car in a gear (-1 reverse, 0 neutral, 1 to 5) while `car drive` has its foot down.
 	void DevTurnKey(Workshop& workshop) { TurnKey(workshop); }
-	void DevGear(int gear) { m_devGear = gear; }
+	void DevGear(int gear) { m_devGear = gear; if (!m_drive.active) m_drive.gear = std::clamp(gear, -1, 5); }
+	void DevHandbrake() { m_handbrakeOn = !m_handbrakeOn; }
 	// Puts the car down somewhere else, pointing along a heading (degrees: 0 toward +x, 90 toward -z).
 	void DevPlaceCar(float x, float z, float degrees);
 	// Sets a front seat (0 the driver's, 1 the passenger's): slid (metres), reclined (radians), its back tipped forward or not.
 	void DevSeat(Workshop& workshop, int seat, float slide, float recline, bool folded);
 	// Turns the parked car's front wheels (-1 full right lock to 1 full left), to look at them from outside.
 	void DevSteer(float steer);
+	// Puts the shop's floor jack (or a jack stand) under one of the car's lifting points (0 to 7: each corner's jacking point,
+	// then its stand point), holding it this high. The shop has to own one, delivered (tool floor jack; wait 1).
+	bool DevSupport(Workshop& workshop, int point, float height, bool stand);
 
 	std::optional<UIRequest> Update(float deltaTime, Workshop& workshop, const FirstPersonController& player,
 		const InputManager& input, bool playerHasControl);
@@ -464,7 +472,10 @@ private:
 	// Shop upgrades: the side bay and the second story are built (or taken away again, loading a save
 	// without them) to match the workshop. The lift is a station like a machine.
 	void SyncUpgrades(const Workshop& workshop);
-	void BuildUpgrades(bool bay, bool upper);
+	void BuildUpgrades(bool bay, bool upper, bool lot = false);
+	// The cacti and scrub where something of the shop's or a neighbour's now stands (a neighbour's plot, the parking lot)
+	// are taken away, and what was in the way there no longer is; the rest are back.
+	void RefreshScenery();
 	// Whether equipment with this footprint stands on the shop floor (side bay included).
 	bool OnShopFloor(const ShopBox& footprint) const;
 	// Whether it's out on the drive in front of the roll-up door (or in the open doorway): where the hoist can be
@@ -709,6 +720,50 @@ private:
 	bool UpdateCarPanels(const Workshop& workshop, const FirstPersonController& player, const InputManager& input);
 	glm::vec3 CarToWorld(const glm::vec3& offset) const;
 	glm::quat CarRotation() const;
+	// The car as it stands before it leans on its springs: where the ground under the middle of it would be in its own
+	// space (lifted with it, on a jack, stands or the lift), and the way it's turned and tipped by whichever of its
+	// corners are up. What isn't on its springs (the wheels, the axle) is placed by these.
+	glm::vec3 CarOrigin() const;
+	glm::quat CarBaseRotation() const;
+
+	// The car off the ground (ShopWorldCarLift.cpp). Each corner sits as high as whatever holds it up: its wheel on the
+	// ground, a floor jack or a jack stand under one of its two lifting points (the jacking point on the sill and the
+	// place for a stand beside it), or the two-post lift's arms with the car parked between its posts. A corner with
+	// nothing under it comes down, onto its wheel or (with that off) its brake; the body tips to suit.
+	static constexpr int CAR_CORNERS = 4;			// as Corner: front left, front right, rear left, rear right
+	static constexpr int CAR_LIFT_POINTS = CAR_CORNERS * 2;	// a corner's jacking point (even), then its stand's place (odd)
+	static constexpr size_t NO_TOOL = SIZE_MAX;
+	struct CarSupport
+	{
+		size_t tool = NO_TOOL;		// the jack or stand under this point (its tool id), or NO_TOOL
+		float height = 0.f;			// how high it holds its corner, in metres above where the car sits on its wheels
+		pObject post = nullptr;		// the jack's ram or the stand's post, from the tool up to the car
+	};
+	std::array<CarSupport, CAR_LIFT_POINTS>	m_carSupports = {};
+	std::array<float, CAR_CORNERS>			m_cornerHeights = {};		// where each corner is now
+	std::array<float, CAR_CORNERS>			m_cornerSpeeds = {};		// and how fast it's coming down
+
+	// A lifting point, in the car's space.
+	static glm::vec3 CarLiftPoint(int point);
+	// How high a corner's own wheel holds it: 0 on its wheel and tire, lower (onto its brake) with them off.
+	float CornerFloor(const Workshop& workshop, int corner) const;
+	// How high the lift's arms hold the car (0: not at all), and whether it's parked between its posts to be lifted.
+	float LiftUnderCar() const;
+	bool CarOnLift() const;
+	// Any of it held up off its wheels (by a jack, a stand or the lift): it isn't going anywhere.
+	bool CarOffGround() const;
+	// The lifting point a tool is under, or -1.
+	int SupportPointOf(size_t tool) const;
+	// Each frame: lets go of supports that have been taken away (or the car moved off), brings each corner to where
+	// it's held (falling, if what held it has gone), and stands the rams and posts up under it.
+	void UpdateCarLift(const Workshop& workshop, float deltaTime);
+	// A floor jack or a jack stand in hand: the lifting points marked, and a click on one puts it under. True when
+	// it's aimed at one.
+	bool UpdateSupportTool(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolId);
+	// A jack under the car aimed at: the buttons pump it up and let it down. True while it's being worked.
+	bool UpdatePlacedJack(Workshop& workshop, const FirstPersonController& player, const InputManager& input, float deltaTime);
+	// Takes every jack and stand out from under the car (they stay where they stand).
+	void ReleaseCarSupports();
 	// The car's body as three boxes in its own space, for aiming at it and walking into it: the nose from the windshield's
 	// foot, as high as the hood; the cabin, up to the roof; the tail from the rear window's foot, as high as the trunk lid.
 	// (An open hood or lid stands up out of its box: the box goes up with it.)
@@ -885,6 +940,8 @@ private:
 	std::vector<ShopBox>							m_upgradeSurfaces = {};	// the upstairs floor, for things set down there
 	std::vector<glm::vec3>							m_shopLamps = {};
 	bool											m_bayBuilt = false;
+	bool											m_lotBuilt = false;		// the parking lot beside the drive
+	std::vector<float>								m_neighbourOffsets = {};	// where the other garages on this server stand (SetNeighbours)
 	// Paint on the walls and floor, and the coats sprayed over parts and tools: colour (RGB) and how
 	// thick, 0 to 1.
 	WallPaint										m_paint = {};
@@ -906,7 +963,7 @@ private:
 	size_t											m_liftStation = SIZE_MAX;
 	std::optional<int>								m_readRequested = std::nullopt;
 	pObject											m_liftArms = nullptr;
-	float											m_liftHeight = 0.08f;
+	float											m_liftHeight = 0.02f;
 	bool											m_liftRaised = false;
 	size_t										m_doorStation = 0;
 	bool											m_doorOpen = true;
@@ -915,7 +972,6 @@ private:
 	size_t										m_bayDoorStation = SIZE_MAX;
 	size_t									m_hoistStation = SIZE_MAX;
 	size_t									m_carStation = SIZE_MAX;
-	pObject									m_carStands = nullptr;	// under the car till it's on its wheels
 	pObject									m_fuelFlap = nullptr;	// the fuel filler's flap, in the right rear quarter
 	// The car's side glass, see-through: the fixed quarter windows, and each door's (kept on the door while it's on the car).
 	pObject									m_quarterGlass = nullptr;
@@ -930,6 +986,54 @@ private:
 	};
 	Headlights								m_headlights = {};
 	std::array<pObject, 2>					m_headlightLenses = {};	// the lamps in their pods, lit when they're on
+	// Each headlight's beam, a faint cone of light out ahead of it (seen in the dark), and the stop and tail lamp in
+	// each tail light: lit dimly with the headlights, brightly with the foot on the brake.
+	std::array<pObject, 2>					m_headlightBeams = {};
+	std::array<pObject, 2>					m_stopLamps = {};
+	// The handbrake's lever between the seats, and how far up it is (0 down to 1 pulled right up). It's on or off whether
+	// the engine runs or not: at a standstill its key pulls it up or lets it down; on the move it's on only while held.
+	pObject									m_handbrakeLever = nullptr;
+	float									m_handbrakeUp = 0.f;
+	bool									m_handbrakeOn = false;
+	// The engine in the car shaking on its mounts while it runs: how far it's rocked about its crank (radians) and lifted
+	// (metres) just now, the shake's phase, the torque roll it leans into with the throttle, and how much worse than new
+	// its mounts let it shake (1 on new mounts, done up).
+	struct EngineShake
+	{
+		float roll = 0.f;
+		float lift = 0.f;
+		float phase = 0.f;
+		float torque = 0.f;
+		float mounts = 1.f;
+	};
+	EngineShake								m_engineShake = {};
+	// A frame of it: from the revs, the throttle and the rev limiter, and the mounts' condition.
+	void ShakeEngine(const Workshop& workshop, float deltaTime);
+	// How much the engine's mounts let it move, against new ones done up (1): worn, split, missing or loose, more.
+	static float MountLooseness(const Workshop& workshop);
+	// The gear lever on the console, and where it is in its gate (across, the driver's left positive; along, forward
+	// positive), on its way to the gear's place.
+	pObject									m_gearLever = nullptr;
+	glm::vec2								m_leverAt = {};
+	// The instrument cluster's numbers and marks, lit green over its faces with the dash lights on.
+	pObject									m_clusterMarks = nullptr;
+	// The ignition: off, or turned on (to accessory: the gauges and lights live, the engine not running). A click on the
+	// key turns it between the two; held, it's turned on to start and the starter cranks for as long as it's held.
+	bool									m_keyOn = false;
+	bool									m_keyPressing = false;		// the button went down on the key, and hasn't come up
+	float									m_keyPressedAt = 0.f;		// when (m_time)
+	bool									m_crankAuto = false;		// the developer's key: it cranks till it starts, held or not
+	bool									m_clutchHeld = false;		// the clutch pedal's down, this frame
+	// The key held down: the starter, if it'll turn (or why not).
+	void BeginCranking(Workshop& workshop);
+	// The handbrake's key this frame: at a standstill it toggles the lever, on the move the lever's up while it's held.
+	void UpdateHandbrake(const InputManager& input, bool playerHasControl);
+	// At the wheel with the engine off: the wheel turns, the gears go in and out (no clutch needed), the pedals work.
+	void ParkedControls(float deltaTime, const InputManager& input, bool playerHasControl);
+	// The gear lever's place in the gate for a gear.
+	static glm::vec2 GearGate(int gear);
+	// How dark it is out (0 broad day to 1 night), for how much the beams show: set by the game from the time of day.
+	float									m_darkness = 0.f;
 	static constexpr int GAUGES = 5;		// the speedo, the tach, and the fuel, oil pressure and temperature gauges
 	std::array<pObject, GAUGES>				m_gaugeNeedles = {};
 	std::array<float, GAUGES>				m_gaugeReads = {};		// where each needle is, 0 to 1 of its sweep
@@ -1036,6 +1140,8 @@ private:
 	bool									m_hoodLatched = true;
 	// The key turned: the starter (then it runs, if it will), or off again once it's stopped.
 	void TurnKey(Workshop& workshop);
+	// A frame at the wheel with the car up off the ground: it revs, and its back wheels turn in the air.
+	void SpinOffGround(float deltaTime, const InputManager& input, bool playerHasControl);
 	// A frame of the engine running with no one at the wheel.
 	void IdleCar(float deltaTime, Workshop& workshop);
 	// Driven now: the engine running, the driver in their seat.
@@ -1065,6 +1171,14 @@ private:
 		float speed = 0.f;				// m/s along the car's nose (backward when negative)
 		float steer = 0.f;				// the front wheels' angle, radians, left positive
 		float spin = 0.f;				// how far the wheels have turned, radians
+		// The back wheels', which the handbrake locks (they slide while the fronts roll on) and which turn by themselves
+		// with the back of the car off the ground.
+		float rearSpin = 0.f;
+		bool handbrake = false;			// the lever's pulled up
+		bool footBrake = false;			// the foot's on the brake (the stop lamps are lit)
+		// The rev limiter: at the red line the ignition's cut for a moment, the revs drop back, and it fires again.
+		float cut = 0.f;				// seconds of the cut still to go
+		float bangDue = 0.f;			// and till the exhaust may bang again
 		float rpm = 0.f;
 		int gear = 1;					// -1 reverse, 0 neutral, 1 to 5
 		float throttle = 0.f;
@@ -1112,8 +1226,10 @@ private:
 	bool CarBlocked(const glm::vec3& position, float yaw) const;
 	// Whether there's something hard to drive on there (the lot's concrete or a road), not sand.
 	bool OnPaving(glm::vec2 point) const;
-	// The map and the lap, and from outside the car its gauges.
+	// The map and the lap, and the car's gauges over the hotbar.
 	void DrawDriveHud(const Workshop& workshop) const;
+	// Whether the gauges' faces are lit (green): with the headlights' switch on and the battery feeding them.
+	bool GaugesLit(const Workshop& workshop) const;
 	bool											m_bayDoorOpen = false;
 	float											m_bayDoorAmount = 0.f;
 	std::unordered_map<ItemRef, ItemVisual, ItemRefHash>	m_items = {};

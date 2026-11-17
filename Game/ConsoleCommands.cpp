@@ -467,6 +467,22 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_world.DevGear(static_cast<int>(gear.value_or(1.0)));
 			m_console.Print("Held in that gear while car drive has its foot down.");
 		}
+		else if (what == "handbrake")
+		{
+			m_world.DevHandbrake();
+			m_console.Print("The handbrake, pulled or let down.");
+		}
+		else if (what == "jack" || what == "stand")
+		{
+			// car jack|stand <point 0-7> [height]: puts the shop's floor jack (or a stand) under that lifting point, holding it that high.
+			auto point = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			auto height = args.size() > 2 ? Number(args[2]) : std::nullopt;
+			if (!point)
+				return m_console.Error("Usage: car jack|stand <point 0-7> [height]");
+			if (!m_world.DevSupport(*m_workshop, static_cast<int>(*point), static_cast<float>(height.value_or(0.2)), what == "stand"))
+				return m_console.Error("No free one delivered: tool floor jack (or jack stand), then wait 1.");
+			m_console.Print("It's under the car.");
+		}
 		else if (what == "lights")
 		{
 			m_world.DevHeadlights();
@@ -604,7 +620,21 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Stand {} spinning at {} degrees a second.", *stand, *speed));
 	});
 
-	m_console.AddCommand("tp", "tp <x> <z> [y]", "Moves you to a spot on the floor (pos shows where you are).", [this](const Console::Arguments& args) {
+	m_console.AddCommand("lie", "lie [on|off]", "Lies you down flat on the floor (or gets you up), as the lie-down key does.", [this](const Console::Arguments& args) {
+		m_player.SetProne(Switch(args, m_player.IsProne()));
+		m_console.Print(m_player.IsProne() ? "Lying down." : "Up again.");
+	});
+
+	m_console.AddCommand("eye","eye <metres>", "Drops the first person camera this far below the eyes (0 puts it back), to look under things.",
+		[this](const Console::Arguments& args) {
+		auto drop = args.empty() ? std::optional<double>(0.0) : Number(args[0]);
+		if (!drop)
+			return m_console.Error("Usage: eye <metres>");
+		m_devEyeDrop = static_cast<float>(*drop);
+		m_console.Print(std::format("Camera {:.2f} m below the eyes.", *drop));
+	});
+
+	m_console.AddCommand("tp","tp <x> <z> [y]", "Moves you to a spot on the floor (pos shows where you are).", [this](const Console::Arguments& args) {
 		auto x = args.size() > 1 ? Number(args[0]) : std::nullopt;
 		auto z = args.size() > 1 ? Number(args[1]) : std::nullopt;
 		auto y = args.size() > 2 ? Number(args[2]) : std::optional<double>(0.0);

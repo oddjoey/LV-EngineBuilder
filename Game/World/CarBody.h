@@ -71,8 +71,8 @@ namespace CarBody
 	// The engine in its bay: the middle of its block's deck (its crank a quarter of a metre under that, along the car),
 	// forward of the firewall far enough for the distributor on the back of its head; and the rubber mounts it sits on,
 	// either side of its crankcase on perches off the chassis rails.
-	constexpr float ENGINE_X = 1.38f;
-	constexpr float ENGINE_DECK_Y = 0.575f;
+	constexpr float ENGINE_X = 1.26f;
+	constexpr float ENGINE_DECK_Y = 0.59f;
 	constexpr float CRANK_AXIS_Y = ENGINE_DECK_Y - 0.25f;
 	constexpr float BLOCK_REAR_X = ENGINE_X - 0.205f;	// the block's back face, the gearbox's bellhousing against it
 	constexpr float ENGINE_MOUNT_Y = ENGINE_DECK_Y - 0.29f;	// the perches' tops
@@ -128,6 +128,27 @@ namespace CarBody
 	constexpr float SEAT_X = -0.3f, SEAT_Y = 0.22f, SEAT_Z = 0.37f;		// where a front seat sits in the car, its slide in the middle
 	// The back seat: a bench across the car, each half of it a place to sit (a box round it, for aiming at it).
 	constexpr float REAR_SEAT_FRONT_X = -0.67f, REAR_SEAT_BACK_X = -1.27f, REAR_SEAT_BASE_Y = 0.24f, REAR_SEAT_TOP_Y = 0.87f, REAR_SEAT_HALF = 0.57f;
-	// The end of the tailpipe, under the bumper on the right, where the exhaust's smoke comes out.
-	constexpr float TAILPIPE[3] = { -2.26f, 0.105f, 0.45f };
+	// The exhaust, down the car's left (the side the engine's manifold is on). The engine's own downpipe drops from the
+	// manifold forward of the left engine mount and ends at a flange low in the bay (EXHAUST_JOINT, in the car's space).
+	// The front pipe bolts on there, runs back over the front crossmember and down under the floor along EXHAUST_Z,
+	// clear of the starter, to the catalytic converter; the pipe on from that swings out to the silencer behind the back
+	// axle (MUFFLER_Z), and the tailpipe ends under the bumper, where the smoke comes out.
+	constexpr float EXHAUST_JOINT[3] = { ENGINE_X + 0.12f, 0.30f, -0.24f };
+	constexpr float EXHAUST_Z = -0.28f, EXHAUST_Y = 0.12f, EXHAUST_PIPE_RADIUS = 0.022f;
+	constexpr float CATALYST[3] = { 0.15f, 0.f, EXHAUST_Z };		// the converter's place (its model is built in the car's height)
+	constexpr float CATALYST_HALF = 0.2f;							// half its length
+	constexpr float MUFFLER_Z = -0.42f, MUFFLER_X = -1.55f, MUFFLER_Y = 0.04f, MUFFLER_RADIUS = 0.06f, MUFFLER_HALF = 0.25f;
+	constexpr float TAILPIPE[3] = { -2.26f, MUFFLER_Y + MUFFLER_RADIUS, MUFFLER_Z };
+	// The handbrake's lever between the seats: its pivot at the back, on the tunnel, and how far it comes up, radians.
+	constexpr float HANDBRAKE_PIVOT[3] = { -0.36f, 0.46f, 0.03f };
+	constexpr float HANDBRAKE_PULL = 0.42f;
+	// Where the car's lifted from, either side at each end: the jacking point on the sill behind the front wheel (or
+	// ahead of the back one), and beside it, further in under the floor, the place a stand goes. (x and z are mirrored
+	// for the other three corners.) And how far a corner with no wheel on it sinks, onto its brake.
+	constexpr float JACK_POINT[3] = { 0.66f, 0.18f, 0.72f };
+	constexpr float STAND_POINT[3] = { 0.42f, 0.18f, 0.56f };
+	constexpr float NO_WHEEL_DROP = 0.15f;
+	// A tail light's stop and tail lamp: where its middle is on the lamp's own model (toward the car's middle from
+	// the lamp's own, by this), and its size.
+	constexpr float STOP_LAMP_IN = 0.0425f, STOP_LAMP_Y = 0.0925f, STOP_LAMP_WIDE = 0.185f, STOP_LAMP_HIGH = 0.155f;
 }

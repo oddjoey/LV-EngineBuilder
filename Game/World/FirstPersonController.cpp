@@ -49,20 +49,38 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 	if (Controls::Held(input, Control::RIGHT)) move += right;
 	if (Controls::Held(input, Control::LEFT)) move -= right;
 
+	// Lying down (the key toggles it): flat on the floor on a creeper's back, slow, to get under a car on its jacks.
+	// Getting up again needs room over the player; under something low they get up as far as there's room.
+	if (Controls::Pressed(input, Control::LIE_DOWN))
+	{
+		if (!m_prone)
+		{
+			m_prone = true;
+			m_crouching = false;
+		}
+		else if (HasHeadroom(obstacles, PRONE_HEAD_HEIGHT, CROUCH_HEAD_HEIGHT))
+		{
+			m_prone = false;
+			m_crouching = !HasHeadroom(obstacles, CROUCH_HEAD_HEIGHT, HEAD_HEIGHT);
+		}
+	}
+
 	// Crouching (held, Ctrl by default): lower and slower, no running or jumping. Letting go stands back up, unless
 	// something low overhead is in the way, and the eye eases between the two heights.
-	if (Controls::Held(input, Control::CROUCH))
+	if (m_prone)
+		m_crouching = false;
+	else if (Controls::Held(input, Control::CROUCH))
 		m_crouching = true;
-	else if (m_crouching && HasHeadroom(obstacles))
+	else if (m_crouching && HasHeadroom(obstacles, CROUCH_HEAD_HEIGHT, HEAD_HEIGHT))
 		m_crouching = false;
 
-	float targetEye = m_crouching ? CROUCH_EYE_HEIGHT : STAND_EYE_HEIGHT;
+	float targetEye = m_prone ? PRONE_EYE_HEIGHT : m_crouching ? CROUCH_EYE_HEIGHT : STAND_EYE_HEIGHT;
 	float easing = 1.f - std::exp(-CROUCH_EASE * deltaTime);
 	m_eyeHeight += (targetEye - m_eyeHeight) * easing;
 
 	if (glm::length(move) > 0.f)
 	{
-		float speed = (m_crouching ? m_crouchSpeed : Controls::Held(input, Control::RUN) ? m_runSpeed : m_walkSpeed) * m_speedScale;
+		float speed = (m_prone ? m_proneSpeed : m_crouching ? m_crouchSpeed : Controls::Held(input, Control::RUN) ? m_runSpeed : m_walkSpeed) * m_speedScale;
 		m_position += glm::normalize(move) * speed * deltaTime;
 	}
 
@@ -84,7 +102,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 
 	// Jumping: a fixed take-off speed and gravity. Walking, the feet stay on the ground: up a step, and
 	// down one rather than falling off it.
-	if (m_grounded && !m_crouching && Controls::Pressed(input, Control::JUMP))
+	if (m_grounded && !m_crouching && !m_prone && Controls::Pressed(input, Control::JUMP))
 	{
 		m_verticalVelocity = m_jumpSpeed;
 		m_grounded = false;
@@ -151,16 +169,16 @@ void FirstPersonController::ResolveCollisions(const std::vector<FloorObstacle>& 
 
 float FirstPersonController::HeadHeight() const
 {
-	return m_crouching ? CROUCH_HEAD_HEIGHT : HEAD_HEIGHT;
+	return m_prone ? PRONE_HEAD_HEIGHT : m_crouching ? CROUCH_HEAD_HEIGHT : HEAD_HEIGHT;
 }
 
-bool FirstPersonController::HasHeadroom(const std::vector<FloorObstacle>& obstacles) const
+bool FirstPersonController::HasHeadroom(const std::vector<FloorObstacle>& obstacles, float from, float to) const
 {
-	// Anything over the crouched head and below the standing one, where the player stands.
+	// Anything over the head as it is (from) and below where it would go (to), where the player is.
 	glm::vec2 position = { m_position.x, m_position.z };
 	for (const auto& obstacle : obstacles)
 	{
-		if (obstacle.bottom < m_position.y + CROUCH_HEAD_HEIGHT || obstacle.bottom >= m_position.y + HEAD_HEIGHT)
+		if (obstacle.bottom < m_position.y + from || obstacle.bottom >= m_position.y + to)
 			continue;
 		if (glm::length(position - glm::clamp(position, obstacle.min, obstacle.max)) < m_radius)
 			return false;

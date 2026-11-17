@@ -43,8 +43,9 @@ void Workshop::SetUpStartingCar()
 	FitNewEngineParts();
 	WearStartingEngine(0, 75.0);
 	FitNewCarParts();
-	FillAndBleedCar();
+	// (Its plugs and unions first: a circuit with a union undone holds nothing.)
 	DevPlugCar(true);
+	FillAndBleedCar();
 	WearStartingCar();
 	for (const auto& part : m_inventory)
 		part->MarkUsed();
@@ -739,8 +740,10 @@ void Workshop::DevAssembleCar()
 	if (!m_car)
 		m_car = std::make_unique<CarBuild>(CarSpec::LE86Coupe());
 	int fitted = FitNewCarParts();
-	FillAndBleedCar();
+	// Every plug and pipe's union done up before it's filled: with one undone the fluid runs straight out, and there's
+	// nothing in the lines to bleed.
 	DevPlugCar(true);
+	FillAndBleedCar();
 	CarChanged();
 	Log(std::format("Dev: fitted {} new OEM parts to the car, and filled and bled it.", fitted));
 }
@@ -808,15 +811,25 @@ void Workshop::FillAndBleedCar()
 		const auto& fs = spec.Fluid(circuit);
 		car.Fill(circuit, fs.product, (circuit == FluidCircuit::FUEL ? 30.0 : fs.level.max) - car.GetFluid(circuit).Total());
 	}
+	// Each line bled till nothing but fluid comes out, the reservoir topped up after every go so it never runs dry
+	// (which would let air back into them all).
 	for (int p = 0; p < BLEED_POINTS; p++)
 	{
-		for (int go = 0; go < 4; go++)
-			car.Bleed(static_cast<BleedPoint>(p));
-		auto circuit = p == static_cast<int>(BleedPoint::CLUTCH) ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES;
-		car.Fill(circuit, spec.Fluid(circuit).product, 1.0);
+		auto point = static_cast<BleedPoint>(p);
+		auto circuit = point == BleedPoint::CLUTCH ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES;
+		if (car.CircuitOpen(circuit))
+			continue;
+		for (int go = 0; go < 60 && car.GetFluid(circuit).air[p] > 0.0; go++)
+		{
+			car.Bleed(point);
+			car.Fill(circuit, spec.Fluid(circuit).product, 1.0);
+		}
 	}
-	car.BurpCoolant(BURP_MINUTES);
-	car.Fill(FluidCircuit::COOLANT, FluidProduct::COOLANT_50_50, 1.0);
+	for (int go = 0; go < 4 && car.GetFluid(FluidCircuit::COOLANT).airPocket > 0.0; go++)
+	{
+		car.BurpCoolant(BURP_MINUTES);
+		car.Fill(FluidCircuit::COOLANT, FluidProduct::COOLANT_50_50, 1.0);
+	}
 }
 
 int Workshop::DevStripCar(PartType type)
@@ -1297,8 +1310,7 @@ Workshop::CarDrive Workshop::StartCar()
 			pull = Dyno::Run(m_engines[engine]->assembly);
 	}
 	RoadTestResult result = RoadTest::Run(build.assembly, pull, complete);
-	if (result.starts)
-		build.engineHeat = (std::max)(build.engineHeat, 0.4);
+	// (It starts as warm as it was left: stone cold if it's sat, and warms up from there as it runs.)
 	drive.goes = result.starts && result.drives && result.steers && result.stops && result.topSpeed > 1.0;
 	if (!drive.goes)
 	{
@@ -1325,6 +1337,10 @@ bool Workshop::DriveCar(double seconds, double metres, double throttle)
 	// About a litre an hour ticking over, and nine litres a hundred kilometres on the move (more with the foot down).
 	double litres = seconds / 3600.0 * 1.0 + metres / 100000.0 * 9.0 * (0.7 + 0.9 * std::clamp(throttle, 0.0, 1.0));
 	build.assembly.Run(seconds / 3600.0, litres);
-	build.engineHeat = (std::min)(1.0, build.engineHeat + seconds / 120.0);
+	// It warms up as a car does: from cold, some five minutes ticking over, half that driven, quicker still worked
+	// hard; then the thermostat opens and holds it there.
+	double pace = seconds > 0.0 ? metres / seconds : 0.0;
+	double warming = 1.0 / CAR_ENGINE_WARM_SECONDS * (1.0 + 1.2 * std::clamp(pace / 25.0, 0.0, 1.0) + 0.8 * std::clamp(throttle, 0.0, 1.0));
+	build.engineHeat = (std::min)(1.0, build.engineHeat + seconds * warming);
 	return build.assembly.GetFluid(FluidCircuit::FUEL).Total() > 0.01;
 }

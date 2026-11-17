@@ -819,6 +819,50 @@ void ShopAssets::LoadTools()
 				Cylinder(builder, At({ 0.f, FOOT + 0.009f, 0.f }), 0.012f, 0.006f, steel, 16);
 				break;
 			}
+			case ToolShape::FLOOR_JACK:
+			{
+				// A trolley jack, standing on the floor with its saddle (let right down) over the origin: the side plates
+				// back along +x to the pump and its handle, steel wheels in front and castors behind. (What it lifts with
+				// is a ram of its own, up out of the saddle: see ShopWorld's car supports.)
+				const glm::vec3 red = { 0.72f, 0.1f, 0.08f };
+				for (float z : { -0.07f, 0.07f })
+				{
+					Box(builder, { 0.2f, 0.06f, z }, { 0.56f, 0.08f, 0.012f }, red);
+					Cylinder(builder, AlongZ({ -0.05f, 0.03f, z * 1.25f }), 0.03f, 0.024f, steel, 14);
+					Cylinder(builder, AlongZ({ 0.44f, 0.022f, z * 1.4f }), 0.022f, 0.02f, dark, 12);
+				}
+				Box(builder, { 0.2f, 0.025f, 0.f }, { 0.5f, 0.012f, 0.14f }, red);
+				Box(builder, { 0.33f, 0.07f, 0.f }, { 0.2f, 0.07f, 0.11f }, red * 0.8f);			// the pump's body
+				Cylinder(builder, At({ 0.f, 0.075f, 0.f }), 0.03f, 0.09f, dark, 14);				// the ram's sleeve
+				Cylinder(builder, At({ 0.f, FLOOR_JACK_LOW - 0.006f, 0.f }), 0.05f, 0.012f, steel, 18);	// the saddle
+				Cylinder(builder, glm::rotate(At({ 0.52f, 0.2f, 0.f }), -0.9f, glm::vec3(0.f, 0.f, 1.f)), 0.013f, 0.36f, steel, 10);
+				Cylinder(builder, glm::rotate(At({ 0.645f, 0.3f, 0.f }), -0.9f, glm::vec3(0.f, 0.f, 1.f)), 0.017f, 0.09f, dark, 10);	// its grip
+				break;
+			}
+			case ToolShape::JACK_STAND:
+			{
+				// A jack stand: four splayed legs on a square foot, and the tube its ratcheting post comes up out of
+				// (the post itself is ShopWorld's, as long as it's set).
+				const glm::vec3 red = { 0.72f, 0.1f, 0.08f };
+				constexpr float FOOT = 0.11f, TUBE_TOP = JACK_STAND_LOW - 0.02f;
+				for (float x : { -1.f, 1.f })
+					for (float z : { -1.f, 1.f })
+					{
+						const glm::vec3 foot = { x * FOOT, 0.006f, z * FOOT }, top = { x * 0.025f, TUBE_TOP - 0.02f, z * 0.025f };
+						const glm::vec3 run = top - foot, up = { 0.f, 1.f, 0.f };
+						const float length = glm::length(run);
+						const glm::mat4 lean = glm::rotate(At((foot + top) * 0.5f), std::acos(glm::dot(up, run / length)), glm::normalize(glm::cross(up, run)));
+						Cylinder(builder, lean, 0.011f, length, red, 8);
+					}
+				for (float side : { -1.f, 1.f })
+				{
+					Box(builder, { side * FOOT, 0.006f, 0.f }, { 0.02f, 0.012f, 2.f * FOOT + 0.02f }, red);
+					Box(builder, { 0.f, 0.006f, side * FOOT }, { 2.f * FOOT + 0.02f, 0.012f, 0.02f }, red);
+				}
+				Tube(builder, At({ 0.f, TUBE_TOP - 0.06f, 0.f }), 0.03f, 0.021f, 0.12f, red, 0.f, glm::two_pi<float>(), 14);
+				Box(builder, { 0.04f, TUBE_TOP - 0.05f, 0.f }, { 0.03f, 0.014f, 0.012f }, steel);		// the ratchet's handle
+				break;
+			}
 		}
 		AddModel(ToolModelName(tool), builder);
 	}
@@ -985,6 +1029,19 @@ uint32_t ShopAssets::PartModel(PartType type) const
 	return Model(PartTypeName(type));
 }
 
+uint32_t ShopAssets::WorldPartModel(PartType type) const
+{
+	// Unless it's been replaced with a model of the player's own (models.cfg), which can't be taken apart.
+	if (m_overrides.contains(PartTypeName(type)))
+		return PartModel(type);
+	switch (type)
+	{
+		case PartType::WATER_PUMP:	return Model(ShopModels::WATER_PUMP_BODY);
+		case PartType::ALTERNATOR:	return Model(ShopModels::ALTERNATOR_BODY);
+		default:					return PartModel(type);
+	}
+}
+
 uint32_t ShopAssets::PartTexture(const Part& part) const
 {
 	auto custom = m_modelTextures.find(PartTypeName(part.GetType()));
@@ -1076,6 +1133,14 @@ std::vector<SurfaceOverlay> ShopAssets::OverlaysFor(PartType type)
 		case PartType::CAMSHAFT:
 			for (int journal = 0; journal < CAM_JOURNALS; journal++)
 				overlays.push_back({ FeatureNames::CamJournal(journal), "Overlay: Cam Journal", { CamJournalX(journal), 0.f, 0.f } });
+			break;
+		// The pulleys the fan belt turns, geared to the crank's by their sizes (the crank's is 66 mm across the rim, the
+		// pump's 56, the alternator's 37).
+		case PartType::WATER_PUMP:
+			overlays.push_back({ "", ShopModels::WATER_PUMP_PULLEY, {}, 66.f / 56.f });
+			break;
+		case PartType::ALTERNATOR:
+			overlays.push_back({ "", ShopModels::ALTERNATOR_PULLEY, {}, 66.f / 37.f });
 			break;
 		default:
 			break;
@@ -2857,7 +2922,13 @@ void ShopAssets::LoadAncillaries()
 			float angle = bolt * glm::two_pi<float>() / 3.f;
 			Cylinder(pipe, At(EXHAUST_OUTLET + glm::vec3(std::cos(angle) * EXHAUST_BOLT_RING, -0.003f, std::sin(angle) * EXHAUST_BOLT_RING)), 0.009f, 0.006f, RUST, 14);
 		}
-		Cylinder(pipe, At(EXHAUST_OUTLET - glm::vec3(0.f, 0.106f, 0.f)), 0.022f, 0.2f, STEEL_GREY, 18);
+		// Down from the flange, then forward and out (in a car, ahead of the engine's mount and clear of it) and down
+		// again to its own flange low beside the sump, where the car's front pipe bolts on (CarBody::EXHAUST_JOINT).
+		const glm::vec3 o = EXHAUST_OUTLET;
+		bend(pipe, { o + glm::vec3(0.f, -0.006f, 0.f), o + glm::vec3(0.f, -0.1f, 0.f), o + glm::vec3(0.06f, -0.08f, -0.0425f),
+			o + glm::vec3(0.06f, -0.17f, -0.0425f) }, 0.022f, 0.022f, STEEL_GREY, 10);
+		Cylinder(pipe, At(o + glm::vec3(0.06f, -0.187f, -0.0425f)), 0.022f, 0.034f, STEEL_GREY, 18);
+		Cylinder(pipe, At(o + glm::vec3(0.06f, -0.203f, -0.0425f)), 0.034f, 0.006f, RUST, 20);
 		add(PartType::EXHAUST_PIPE, pipe);
 	}
 	{
@@ -2904,21 +2975,32 @@ void ShopAssets::LoadAncillaries()
 		Cylinder(pump, AlongX({ -0.031f, 0.f, 0.f }), 0.015f, 0.01f, CAST, 20);
 		Cylinder(pump, At({ -0.031f, -0.015f, 0.f }), 0.0016f, 0.0008f, DARK, 8);
 		Cylinder(pump, AlongX({ -0.0375f, 0.f, 0.f }), 0.02f, 0.003f, STEEL_GREY, 20);
-		// The pulley in the fan belt's plane: a grooved rim, its web with lightening holes, and the nut on the hub.
-		constexpr float PULLEY_X = ACCESSORY_BELT_X - WATER_PUMP_X;
-		const glm::vec3 PULLEY = { 0.6f, 0.6f, 0.62f };
-		Tube(pump, AlongX({ PULLEY_X, 0.f, 0.f }), 0.05f, 0.043f, 0.012f, PULLEY, 0.f, glm::two_pi<float>(), 32);
-		for (float side : { -1.f, 1.f })
-			Tube(pump, AlongX({ PULLEY_X + side * 0.0068f, 0.f, 0.f }), 0.0555f, 0.046f, 0.0016f, PULLEY, 0.f, glm::two_pi<float>(), 32);
-		Cylinder(pump, AlongX({ PULLEY_X + 0.004f, 0.f, 0.f }), 0.043f, 0.003f, PULLEY, 28);
-		for (int hole = 0; hole < 4; hole++)
-		{
-			float angle = hole * glm::half_pi<float>();
-			Cylinder(pump, AlongX({ PULLEY_X + 0.004f, std::sin(angle) * 0.029f, std::cos(angle) * 0.029f }), 0.0075f, 0.0034f, DARK, 14);
-		}
-		Cylinder(pump, AlongX({ (PULLEY_X + 0.004f - 0.0375f) * 0.5f, 0.f, 0.f }), 0.011f, -0.0375f - PULLEY_X - 0.004f, STEEL_GREY, 16);
-		Cylinder(pump, AlongX({ PULLEY_X + 0.001f, 0.f, 0.f }), 0.0085f, 0.004f, DARK, 6);
+		// The pulley in the fan belt's plane: a grooved rim, its web with lightening holes, and the nut on the hub. It's a
+		// model of its own as well (in the pump's space), turned by the belt while the engine runs; the pump in the shop is
+		// its body alone with that over it, and the whole pump is what's shown in the store and the books.
+		MeshBuilder body = pump, pulley;
+		pulley.SetUVScale(6.f);
+		auto addPulley = [&](MeshBuilder& builder) {
+			constexpr float PULLEY_X = ACCESSORY_BELT_X - WATER_PUMP_X;
+			const glm::vec3 PULLEY = { 0.6f, 0.6f, 0.62f };
+			Tube(builder, AlongX({ PULLEY_X, 0.f, 0.f }), 0.05f, 0.043f, 0.012f, PULLEY, 0.f, glm::two_pi<float>(), 32);
+			for (float side : { -1.f, 1.f })
+				Tube(builder, AlongX({ PULLEY_X + side * 0.0068f, 0.f, 0.f }), 0.0555f, 0.046f, 0.0016f, PULLEY, 0.f, glm::two_pi<float>(), 32);
+			Cylinder(builder, AlongX({ PULLEY_X + 0.004f, 0.f, 0.f }), 0.043f, 0.003f, PULLEY, 28);
+			for (int hole = 0; hole < 4; hole++)
+			{
+				float angle = hole * glm::half_pi<float>();
+				Cylinder(builder, AlongX({ PULLEY_X + 0.004f, std::sin(angle) * 0.029f, std::cos(angle) * 0.029f }), 0.0075f, 0.0034f, DARK, 14);
+			}
+			Cylinder(builder, AlongX({ (PULLEY_X + 0.004f - 0.0375f) * 0.5f, 0.f, 0.f }), 0.011f, -0.0375f - PULLEY_X - 0.004f, STEEL_GREY, 16);
+			// (The hub's nut, six-sided, so it's seen to turn.)
+			Cylinder(builder, AlongX({ PULLEY_X + 0.001f, 0.f, 0.f }), 0.0085f, 0.004f, DARK, 6);
+		};
+		addPulley(pump);
+		addPulley(pulley);
 		add(PartType::WATER_PUMP, pump);
+		AddModel(ShopModels::WATER_PUMP_BODY, body);
+		AddModel(ShopModels::WATER_PUMP_PULLEY, pulley);
 	}
 	{
 		// Origin at its pulley, the body running back along +X towards the block: the grooved pulley and its nut, the fan
@@ -2927,21 +3009,27 @@ void ShopAssets::LoadAncillaries()
 		MeshBuilder alternator;
 		alternator.SetUVScale(6.f);
 		const glm::vec3 CAST = { 0.80f, 0.80f, 0.78f }, STATOR = { 0.36f, 0.36f, 0.38f }, PULLEY = { 0.42f, 0.42f, 0.45f };
-		// The pulley: its V between two lips, the belt riding in it; the nut and washer on the shaft.
-		Tube(alternator, AlongX({}), 0.032f, 0.008f, 0.01f, PULLEY, 0.f, glm::two_pi<float>(), 28);
-		for (float side : { -1.f, 1.f })
-			Tube(alternator, AlongX({ side * 0.006f, 0.f, 0.f }), 0.037f, 0.008f, 0.002f, PULLEY, 0.f, glm::two_pi<float>(), 28);
-		Cylinder(alternator, AlongX({ -0.008f, 0.f, 0.f }), 0.009f, 0.002f, STEEL_GREY, 16);
-		Cylinder(alternator, AlongX({ -0.0105f, 0.f, 0.f }), 0.0075f, 0.004f, DARK, 6);
-		// The fan: a hub and its blades, swept.
-		Cylinder(alternator, AlongX({ 0.0115f, 0.f, 0.f }), 0.018f, 0.004f, STEEL_GREY, 18);
-		for (int blade = 0; blade < 12; blade++)
-		{
-			float angle = blade * glm::two_pi<float>() / 12.f;
-			alternator.SetTransform(glm::rotate(glm::rotate(At({ 0.0115f, 0.f, 0.f }), angle, glm::vec3(1.f, 0.f, 0.f)), 0.35f, glm::vec3(0.f, 1.f, 0.f)))
-				.SetColor(STEEL_GREY).AddBox({ 0.f, 0.03f, 0.f }, { 0.008f, 0.024f, 0.0015f });
-		}
-		alternator.ResetTransform();
+		// The pulley: its V between two lips, the belt riding in it; the nut and washer on the shaft. And the fan behind
+		// it, on the same shaft: a hub and its blades, swept. They turn together, so they're a model of their own as well
+		// (the alternator in the shop is its body with them over it; the whole of it is shown in the store and the books).
+		MeshBuilder spinning;
+		spinning.SetUVScale(6.f);
+		auto addPulley = [&](MeshBuilder& builder) {
+			Tube(builder, AlongX({}), 0.032f, 0.008f, 0.01f, PULLEY, 0.f, glm::two_pi<float>(), 28);
+			for (float side : { -1.f, 1.f })
+				Tube(builder, AlongX({ side * 0.006f, 0.f, 0.f }), 0.037f, 0.008f, 0.002f, PULLEY, 0.f, glm::two_pi<float>(), 28);
+			Cylinder(builder, AlongX({ -0.008f, 0.f, 0.f }), 0.009f, 0.002f, STEEL_GREY, 16);
+			Cylinder(builder, AlongX({ -0.0105f, 0.f, 0.f }), 0.0075f, 0.004f, DARK, 6);
+			Cylinder(builder, AlongX({ 0.0115f, 0.f, 0.f }), 0.018f, 0.004f, STEEL_GREY, 18);
+			for (int blade = 0; blade < 12; blade++)
+			{
+				float angle = blade * glm::two_pi<float>() / 12.f;
+				builder.SetTransform(glm::rotate(glm::rotate(At({ 0.0115f, 0.f, 0.f }), angle, glm::vec3(1.f, 0.f, 0.f)), 0.35f, glm::vec3(0.f, 1.f, 0.f)))
+					.SetColor(STEEL_GREY).AddBox({ 0.f, 0.03f, 0.f }, { 0.008f, 0.024f, 0.0015f });
+			}
+			builder.ResetTransform();
+		};
+		addPulley(spinning);
 		// The drive-end housing, its vents round it, and a through-bolt boss at each corner the length of the body.
 		Cylinder(alternator, AlongX({ 0.0305f, 0.f, 0.f }), 0.054f, 0.029f, CAST, 32);
 		for (int vent = 0; vent < 10; vent++)
@@ -2973,7 +3061,11 @@ void ShopAssets::LoadAncillaries()
 		}
 		Box(alternator, { ALTERNATOR_ADJUST_X + 0.006f, (ALTERNATOR_ADJUST_Y + 0.04f) * 0.5f, 0.f }, { 0.012f, ALTERNATOR_ADJUST_Y - 0.04f, 0.014f }, CAST);
 		Cylinder(alternator, AlongX({ ALTERNATOR_ADJUST_X + 0.006f, ALTERNATOR_ADJUST_Y, 0.f }), 0.008f, 0.012f, CAST, 16);
+		MeshBuilder alternatorBody = alternator;
+		addPulley(alternator);
 		add(PartType::ALTERNATOR, alternator);
+		AddModel(ShopModels::ALTERNATOR_BODY, alternatorBody);
+		AddModel(ShopModels::ALTERNATOR_PULLEY, spinning);
 	}
 	{
 		// Cast iron, built round the alternator's pivot (its origin), in the engine's turn: the pivot's boss, an arm back

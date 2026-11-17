@@ -482,6 +482,8 @@ public:
 	// How much tighter the valve lash reads cold than hot.
 	static constexpr double LASH_HOT_GROWTH = 0.05;
 	static constexpr double CAR_ENGINE_COOL_SECONDS = 20.0 * 60.0;
+	// From cold to its working temperature, ticking over (see DriveCar: sooner, driven).
+	static constexpr double CAR_ENGINE_WARM_SECONDS = 5.0 * 60.0;
 	// Developer shortcut: fits new OEM parts everywhere they'll go, the active engine in the bay if it's
 	// finished and free, and fills and bleeds everything.
 	void DevAssembleCar();

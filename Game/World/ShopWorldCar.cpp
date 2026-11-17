@@ -81,7 +81,7 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 			float side = SideOf(parent, parentIndex);
 			float x = CarAssembly::CornerOf(parent, parentIndex) >= Corner::REAR_LEFT ? REAR_AXLE_X : FRONT_AXLE_X;
 			// They go round with the wheel, and turn with it when it's steered.
-			float turned = angle - m_drive.spin;
+			float turned = angle - (x > 0.f ? m_drive.spin : m_drive.rearSpin);
 			// (On its stud, against the face of the wheel's centre.)
 			glm::vec3 local = { std::cos(turned) * 0.05f, std::sin(turned) * 0.05f, side * 0.031f };
 			CarPose nut = { glm::vec3(x, WHEEL_Y, side * WHEEL_Z) + local, FacingSide(side) };
@@ -175,7 +175,12 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 			// The tank's four on its corners in the trunk, each seat's four at the feet of its frame on the floor.
 			case CarSlot::FUEL_TANK_BOLT:		return { { -1.72f + of * 0.27f, 0.49f, pair * 0.37f }, NONE };
 			case CarSlot::SEAT_BOLT:			return { { -0.28f + of * 0.235f, 0.22f, s * 0.37f + pair * 0.17f }, NONE };
-			case CarSlot::CATALYTIC_CONVERTER_NUT: return { ring({ 0.352f, 0.12f, 0.28f }, 0.045f, 3), FACING_FRONT };
+			// Up through the flange where the front pipe meets the engine's downpipe, heads down.
+			case CarSlot::CATALYTIC_CONVERTER_NUT:
+			{
+				float turn = glm::two_pi<float>() * (hole + 0.5f) / 3.f;
+				return { { EXHAUST_JOINT[0] + std::cos(turn) * 0.03f, EXHAUST_JOINT[1] - 0.012f, EXHAUST_JOINT[2] + std::sin(turn) * 0.03f }, HEAD_DOWN };
+			}
 			default:
 				break;
 		}
@@ -268,7 +273,7 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 		// Brakes: the booster and master cylinder on the driver's side of the firewall, the lines along the floor.
 		case C::BRAKE_BOOSTER:		return { { 0.98f, BOOSTER_Y - 0.11f, BOOSTER_Z }, NONE };
 		case C::BRAKE_MASTER_CYLINDER: return { { 1.15f, BOOSTER_Y - 0.025f, BOOSTER_Z }, NONE };
-		case C::BRAKE_LINE_SET:		return { { -0.2f, 0.15f, -0.3f }, NONE };
+		case C::BRAKE_LINE_SET:		return { { -0.2f, 0.15f, -0.5f }, NONE };	// outboard of the exhaust
 		case C::BRAKE_HOSE:			return index < 2 ? CarPose{ { FRONT_AXLE_X - 0.08f, 0.3f, side * 0.42f }, NONE }
 										: CarPose{ { REAR_AXLE_X + 0.15f, 0.3f, 0.12f }, NONE };
 		case C::BRAKE_ROTOR:		return steered(side, { { FRONT_AXLE_X, WHEEL_Y, side * 0.6f }, Pitch(-m_drive.spin) * FacingSide(side) });
@@ -277,7 +282,7 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 		case C::BRAKE_CALIPER:		return steered(side, { { FRONT_AXLE_X + 0.085f, WHEEL_Y - 0.05f, side * 0.605f }, NONE });
 		case C::WHEEL_CYLINDER:		return { { REAR_AXLE_X, WHEEL_Y + 0.07f, side * 0.58f }, ACROSS };
 		case C::BRAKE_SHOE_SET:		return { { REAR_AXLE_X, WHEEL_Y - 0.025f, side * 0.63f }, NONE };
-		case C::BRAKE_DRUM:			return { { REAR_AXLE_X, WHEEL_Y, side * 0.6f }, Pitch(-m_drive.spin) * FacingSide(side) };
+		case C::BRAKE_DRUM:			return { { REAR_AXLE_X, WHEEL_Y, side * 0.6f }, Pitch(-m_drive.rearSpin) * FacingSide(side) };
 		case C::PARKING_BRAKE_CABLE: return { { -0.5f, 0.15f, 0.05f }, NONE };
 		// Drivetrain: the clutch behind the engine's flywheel, the gearbox down the tunnel to the driveshaft.
 		// (The mounts on their perches either side of the crankcase, each one's bracket in to the block.)
@@ -327,16 +332,16 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 			return { (from + to) * 0.5f - turn * glm::vec3(0.f, 0.021f, 0.f), turn };
 		}
 		case C::COOLING_FAN:		return { { 1.94f, 0.45f, 0.f }, Pitch(glm::half_pi<float>()) };	// against the back of the radiator's core
-		// Exhaust: from the downpipe back under the right of the floor to the tailpipe at the back.
-		case C::CATALYTIC_CONVERTER: return { { 0.15f, 0.07f, 0.28f }, NONE };
-		case C::MUFFLER:			return { { -1.55f, 0.03f, 0.45f }, TurnY(glm::pi<float>()) };
+		// Exhaust: down the car's left, from the engine's downpipe back under the floor to the tailpipe (see CarBody.h).
+		case C::CATALYTIC_CONVERTER: return { { CarBody::CATALYST[0], CarBody::CATALYST[1], CarBody::CATALYST[2] }, NONE };
+		case C::MUFFLER:			return { { CarBody::MUFFLER_X, CarBody::MUFFLER_Y, CarBody::MUFFLER_Z }, TurnY(glm::pi<float>()) };
 		// Wheels, at their corners: the tire round the wheel.
 		case C::WHEEL:
 		case C::TIRE:
 		{
 			// Rolled round its axle (the model stands on the ground, its axle the tire's radius up) by how far the car's
 			// gone, and the front ones turned by the steering with their knuckles.
-			glm::quat turn = ACROSS * Roll(m_drive.spin);
+			glm::quat turn = ACROSS * Roll(front ? m_drive.spin : m_drive.rearSpin);
 			CarPose rolled = { glm::vec3(axleX, WHEEL_Y, side * WHEEL_Z) - turn * glm::vec3(0.f, WHEEL_Y, 0.f), turn };
 			return front ? steered(side, rolled) : rolled;
 		}
@@ -345,19 +350,40 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 	return {};
 }
 
-glm::quat ShopWorld::CarRotation() const
+glm::quat ShopWorld::CarBaseRotation() const
 {
-	// (Turned to where it points, and leant on its springs as it's driven.)
+	// Turned to where it points, and tipped by how high each corner's held: nose up with the front higher than the
+	// back, over to its right with the left higher than the right.
 	if (m_carStation >= m_stations.size())
 		return glm::quat(1.f, 0.f, 0.f, 0.f);
+	const auto& h = m_cornerHeights;
 	glm::quat turned = m_stations[m_carStation].Rotation();
-	return m_drive.active ? turned * Roll(m_drive.roll) * Pitch(m_drive.pitch) : turned;
+	if (h[0] == h[1] && h[1] == h[2] && h[2] == h[3])
+		return turned;
+	constexpr float TRACK = 2.f * WHEEL_Z;
+	float nose = std::atan2((h[0] + h[1] - h[2] - h[3]) * 0.5f, FRONT_AXLE_X - REAR_AXLE_X);
+	float over = std::atan2((h[0] + h[2] - h[1] - h[3]) * 0.5f, TRACK);
+	return turned * Pitch(nose) * Roll(over);
+}
+
+glm::vec3 ShopWorld::CarOrigin() const
+{
+	if (m_carStation >= m_stations.size())
+		return glm::vec3(0.f);
+	const auto& h = m_cornerHeights;
+	return m_stations[m_carStation].position + glm::vec3(0.f, (h[0] + h[1] + h[2] + h[3]) * 0.25f, 0.f);
+}
+
+glm::quat ShopWorld::CarRotation() const
+{
+	// (As it stands, and leant on its springs as it's driven.)
+	glm::quat base = CarBaseRotation();
+	return m_drive.active ? base * Roll(m_drive.roll) * Pitch(m_drive.pitch) : base;
 }
 
 glm::vec3 ShopWorld::CarToWorld(const glm::vec3& offset) const
 {
-	glm::vec3 origin = m_carStation < m_stations.size() ? m_stations[m_carStation].position : glm::vec3(0.f);
-	return origin + CarRotation() * offset;
+	return CarOrigin() + CarRotation() * offset;
 }
 
 std::array<ShopBox, 3> ShopWorld::CarBoxes() const
@@ -561,9 +587,8 @@ void ShopWorld::PlaceOnCar(ItemVisual& visual, CarSlot slot, int index) const
 	}
 	if (unsprung && m_carStation < m_stations.size())
 	{
-		const auto& station = m_stations[m_carStation];
-		visual.object->SetPosition(station.position + station.Rotation() * pose.offset);
-		visual.object->SetRotation(station.Rotation() * pose.rotation);
+		visual.object->SetPosition(CarOrigin() + CarBaseRotation() * pose.offset);
+		visual.object->SetRotation(CarBaseRotation() * pose.rotation);
 	}
 	else
 	{
@@ -785,6 +810,8 @@ bool ShopWorld::OnPaving(glm::vec2 point) const
 			return true;
 	if (m_bayBuilt && (in(BAY_DRIVE.min, BAY_DRIVE.max) || in(BAY_DRIVE_LINK.min, BAY_DRIVE_LINK.max)))
 		return true;
+	if (m_lotBuilt && in(PARKING_LOT.min, PARKING_LOT.max))
+		return true;
 	for (const auto& building : m_neighbourObstacles)
 	{
 		float offset = (building.min.x + building.max.x) * 0.5f;
@@ -818,7 +845,7 @@ std::optional<int> ShopWorld::AimedSeat(const Workshop& workshop, const FirstPer
 	if (!aim || !aim->shell)
 		return std::nullopt;
 	using namespace CarBody;
-	glm::vec3 hit = glm::inverse(CarRotation()) * (aim->point - m_stations[m_carStation].position);
+	glm::vec3 hit = glm::inverse(CarRotation()) * (aim->point - CarOrigin());
 	constexpr float SLACK = 0.03f;
 	if (hit.x < REAR_SEAT_BACK_X - SLACK || hit.x > REAR_SEAT_FRONT_X + SLACK || hit.y < REAR_SEAT_BASE_Y - SLACK || hit.y > REAR_SEAT_TOP_Y + SLACK
 		|| std::abs(hit.z) > REAR_SEAT_HALF + SLACK)
@@ -911,9 +938,12 @@ void ShopWorld::UpdateExhaustSmoke(const Workshop& workshop, float deltaTime)
 	m_smokeRunning = running ? m_smokeRunning + deltaTime : 0.f;
 	if (running)
 	{
-		// Out of the tailpipe; with no silencer on, from under the floor where the pipe ends.
-		const glm::vec3 pipe = build->assembly.IsFilled(CarSlot::MUFFLER, 0) ? glm::vec3(CarBody::TAILPIPE[0], CarBody::TAILPIPE[1], CarBody::TAILPIPE[2])
-			: glm::vec3(-0.15f, 0.1f, 0.28f);
+		// Out of the tailpipe; with no silencer on, from under the floor where the pipe ends behind the converter; and
+		// with that off too, from the end of the engine's downpipe in the bay.
+		using namespace CarBody;
+		const glm::vec3 pipe = build->assembly.IsFilled(CarSlot::MUFFLER, 0) ? glm::vec3(TAILPIPE[0], TAILPIPE[1], TAILPIPE[2])
+			: build->assembly.IsFilled(CarSlot::CATALYTIC_CONVERTER, 0) ? glm::vec3(CATALYST[0] - 0.3f, EXHAUST_Y, EXHAUST_Z)
+			: glm::vec3(ENGINE_X + EXHAUST_JOINT[0], ENGINE_DECK_Y + EXHAUST_JOINT[1], EXHAUST_JOINT[2]);
 		// More of it, and blown out harder, the faster it's turning and with the foot down; thick and white for the
 		// first few seconds after it's started.
 		const float revs = std::clamp((m_drive.rpm - m_drive.idleRpm) / (REDLINE - m_drive.idleRpm), 0.f, 1.f);
@@ -1016,10 +1046,19 @@ bool ShopWorld::StartDrive(Workshop& workshop)
 	}
 	// What it'll do, from how it's built: the pull off the line from its time to 100 km/h (one that never gets there
 	// crawls up to what it can do), the brakes from how far it takes to stop, the cornering from its grip.
-	float devSeconds = m_drive.devSeconds, devSteer = m_drive.devSteer;
+	float devSeconds = m_drive.devSeconds, devSteer = m_drive.devSteer, spin = m_drive.spin, rearSpin = m_drive.rearSpin, steer = m_drive.steer;
+	int gear = m_drive.gear;
 	m_drive = {};
+	// (In whatever gear it was left in, its wheel as it was left, and the clutch pedal as the driver has it.)
+	m_drive.gear = gear;
+	m_drive.steer = steer;
+	m_drive.clutch = m_clutchHeld ? 0.f : 1.f;
+	m_keyOn = true;
 	m_drive.devSeconds = devSeconds;
 	m_drive.devSteer = devSteer;
+	// (Its wheels are where they were left.)
+	m_drive.spin = spin;
+	m_drive.rearSpin = rearSpin;
 	m_drive.active = true;
 	m_drive.topSpeed = (std::max)(static_cast<float>(car.topSpeed) / 3.6f, 3.f);
 	m_drive.pull = car.zeroToHundred > 0.0 ? std::clamp(27.8f / static_cast<float>(car.zeroToHundred) * 1.7f, 0.8f, 7.f)
@@ -1063,8 +1102,6 @@ bool ShopWorld::StartDrive(Workshop& workshop)
 			m_drive.rearGrip *= 0.95f;
 		}
 	}
-	// Out of gear: the gears are the driver's to change.
-	m_drive.gear = 0;
 	// It's no longer in its own way.
 	RebuildCollision();
 	return true;
@@ -1075,8 +1112,10 @@ void ShopWorld::EndDrive()
 	if (!m_drive.active)
 		return;
 	m_drive.active = false;
+	// (The wheel stays turned as it was, and it's left in its gear.)
 	m_drive.speed = 0.f;
-	m_drive.steer = 0.f;
+	m_drive.handbrake = m_drive.footBrake = false;
+	m_drive.cut = 0.f;
 	m_drive.roll = m_drive.pitch = 0.f;
 	m_supportChanged = true;
 	m_carLaidOutAt = glm::vec3(-1e9f);	// its wheels are put straight again
@@ -1185,17 +1224,48 @@ void ShopWorld::Drive(float deltaTime, Workshop& workshop, FirstPersonController
 	if (playerHasControl)
 		player.UpdateLook(input);
 
-	// The key (or a click on it in its barrel: see UpdateCarControls).
-	if (m_seat == 0 && playerHasControl && !justIn && Controls::Pressed(input, Control::IGNITION))
-		TurnKey(workshop);
+	// The key (clicked in its barrel: see UpdateCarControls). Held down past a moment it's turned to start, and the starter
+	// cranks for as long as it's held; let go before the engine catches, it springs back to on. A quick click turns it
+	// on (to accessory) or off.
+	constexpr float KEY_HOLD = 0.3f;
+	m_clutchHeld = playerHasControl && m_seat == 0 && Controls::Held(input, Control::CLUTCH);
+	const bool keyHeld = m_keyPressing && playerHasControl && Controls::Held(input, Control::PRIMARY);
+	if (m_seat == 0 && keyHeld && !m_drive.active && m_cranking <= 0.f && m_time - m_keyPressedAt >= KEY_HOLD)
+		BeginCranking(workshop);
+	if (m_keyPressing && !keyHeld)
+	{
+		m_keyPressing = false;
+		if (m_time - m_keyPressedAt < KEY_HOLD && !m_drive.active)
+		{
+			m_keyOn = !m_keyOn;
+			Cue(Sound::CLICK, GetCarPosition(), 0.5f);
+		}
+	}
 	if (m_cranking > 0.f)
 	{
-		m_cranking -= deltaTime;
-		if (m_cranking <= 0.f && m_seat == 0)
-			StartDrive(workshop);
+		if (!m_crankAuto && !keyHeld)
+			m_cranking = 0.f;
+		else
+		{
+			m_cranking -= deltaTime;
+			if (m_cranking <= 0.f && m_seat == 0)
+			{
+				m_crankAuto = false;
+				StartDrive(workshop);
+			}
+		}
 	}
-	if (CarBeingDriven())
+	if (m_seat == 0)
+		UpdateHandbrake(input, playerHasControl);
+	if (CarBeingDriven() && CarOffGround())
+		SpinOffGround(deltaTime, input, playerHasControl);
+	else if (CarBeingDriven())
 		MoveCar(deltaTime, workshop, input, playerHasControl);
+	else if (m_seat == 0)
+		ParkedControls(deltaTime, input, playerHasControl);
+	// Driven off, it leaves whatever's under it (let down to the ground) behind.
+	if (CarBeingDriven() && std::abs(m_drive.speed) > 0.2f)
+		ReleaseCarSupports();
 
 	// Whoever's in it goes with it: kept in their seat, and turned as the car turns.
 	float turned = std::remainder(station.yaw - m_seatLastYaw, glm::two_pi<float>());
@@ -1219,13 +1289,13 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 	auto& drive = m_drive;
 	// The pedals and the wheel. Forward pulls away (or brakes, going backward); back brakes, then reverses.
 	float go = 0.f, steerTo = 0.f;
-	bool handbrake = false;
+	// (The lever: see UpdateHandbrake.)
+	bool handbrake = m_handbrakeOn;
 	const float speedBefore = drive.speed;
 	if (playerHasControl)
 	{
 		go = (Controls::Held(input, Control::FORWARD) ? 1.f : 0.f) - (Controls::Held(input, Control::BACK) ? 1.f : 0.f);
 		steerTo = (Controls::Held(input, Control::LEFT) ? 1.f : 0.f) - (Controls::Held(input, Control::RIGHT) ? 1.f : 0.f);
-		handbrake = Controls::Held(input, Control::JUMP);
 	}
 	// (The developer's foot: forward for so long, or backward for a time given as less than nothing.)
 	const bool devDriving = drive.devSeconds != 0.f;
@@ -1235,6 +1305,7 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 		drive.devSeconds = go > 0.f ? (std::max)(0.f, drive.devSeconds - deltaTime) : (std::min)(0.f, drive.devSeconds + deltaTime);
 		steerTo = drive.devSteer;
 	}
+	drive.handbrake = handbrake;
 	// Off the asphalt, in the sand: it bogs down, won't pull or go as it does on the road, and slides sooner.
 	drive.offRoad = !OnPaving({ station.position.x, station.position.z });
 	float pull = drive.pull, grip = drive.grip;
@@ -1304,7 +1375,8 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 			wheelRevs = REDLINE * (std::max)(along, 0.f) / top;
 			const float revs = std::clamp(wheelRevs / REDLINE, drive.idleRpm / REDLINE, 1.2f);
 			const float gearing = std::pow(GEAR_TOP[1] / GearTop(drive.gear), 0.85f);
-			const float torque = wheelRevs >= REDLINE ? 0.f : 0.45f + 1.1f * revs - 0.75f * revs * revs;
+			// (Nothing at all while the rev limiter has the ignition cut.)
+			const float torque = drive.cut > 0.f ? 0.f : 0.45f + 1.1f * revs - 0.75f * revs * revs;
 			if (throttle > 0.f)
 				speed += way * pull * 1.3f * torque * gearing * bite * deltaTime;
 			else if (wheelRevs > drive.idleRpm)
@@ -1312,7 +1384,7 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 			else if (brake == 0.f && !handbrake)
 				speed += way * pull * 0.35f * gearing * bite * deltaTime;
 			// Braked to a stop in gear with the clutch up, it stalls.
-			if (bite > 0.9f && wheelRevs < 300.f && throttle == 0.f && (brake > 0.f || handbrake))
+			if (bite > 0.9f && wheelRevs < 300.f && throttle == 0.f && (brake > 0.f || handbrake) && std::abs(speed) < 0.3f)
 			{
 				Toast("Stalled: clutch down ([Clutch]) before it stops.");
 				EndDrive();
@@ -1320,7 +1392,8 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 			}
 		}
 		// What always slows it: the road and the air (which is what sets its top speed), the brakes, the sand.
-		float slowing = 0.25f + 0.32f * drive.pull * (pace / drive.topSpeed) * (pace / drive.topSpeed) + brake * drive.braking + (handbrake ? drive.braking * 0.6f : 0.f);
+		// (The handbrake locks the back wheels: they skid, which stops it less hard than the brakes but holds it still.)
+		float slowing = 0.25f + 0.32f * drive.pull * (pace / drive.topSpeed) * (pace / drive.topSpeed) + brake * drive.braking + (handbrake ? drive.braking * 0.35f : 0.f);
 		if (drive.offRoad)
 			slowing += 0.5f + pace * 0.12f;
 		float slowed = (std::min)(std::abs(speed), slowing * deltaTime);
@@ -1354,6 +1427,7 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 		drive.speed = pace * static_cast<float>(direction);
 	}
 	drive.throttle = throttle;
+	drive.footBrake = brake > 0.f;
 
 	// The wheel goes as far over at any speed, and comes back to the middle by itself (faster the more caster it has).
 	float turnRate = (steerTo != 0.f ? 2.f : drive.selfCentre) * deltaTime;
@@ -1378,8 +1452,9 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 	const float frontSpent = along < 0.f ? -along * 0.65f : 0.f, rearSpent = along > 0.f ? along : -along * 0.35f;
 	const float frontHold = std::sqrt((std::max)(frontShare * frontShare - frontSpent * frontSpent, frontShare * frontShare * 0.04f));
 	float rearHold = std::sqrt((std::max)(rearShare * rearShare - rearSpent * rearSpent, rearShare * rearShare * 0.06f));
-	if (handbrake)
-		rearHold *= 0.35f;
+	// Locked by the handbrake the back tires are skidding: they hardly hold sideways at all, and the tail swings out.
+	if (handbrake && std::abs(drive.speed) > 0.5f)
+		rearHold *= 0.12f;
 
 	// Moved a little at a time (so nothing thin is driven straight through), its tires pushing it sideways and round
 	// by how far each axle is slipping across the way it's pointed: the front ones turned with the wheel. Turned
@@ -1434,15 +1509,18 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 	drive.speed = forward;
 	drive.slide = sideways;
 	drive.yawRate = turning;
-	drive.sliding = forward > 4.f && (spinning || std::abs(rearSlip) > 0.16f || std::abs(frontSlip) > 0.2f);
+	drive.sliding = forward > 4.f && (spinning || handbrake || std::abs(rearSlip) > 0.16f || std::abs(frontSlip) > 0.2f);
 	drive.bumped += deltaTime;
 	station.yaw = std::remainder(station.yaw, glm::two_pi<float>());
 	// The body leans out of the bend, squats pulling away and dives braking (and shakes, over the sand).
 	float shake = drive.offRoad ? (std::min)(std::abs(forward) / 12.f, 1.f) : 0.f;
 	LeanCar(deltaTime, along + shake * 3.f * std::sin(m_time * 31.f), forward * turning + shake * 4.f * std::sin(m_time * 23.f));
-	station.object->SetPosition(station.position);
+	station.object->SetPosition(CarOrigin());
 	station.object->SetRotation(CarRotation());
 	drive.spin = std::fmod(drive.spin + moved / WHEEL_Y, glm::two_pi<float>());
+	// The back wheels turn with it too, but not locked by the handbrake: they slide.
+	if (!handbrake)
+		drive.rearSpin = std::fmod(drive.rearSpin + moved / WHEEL_Y, glm::two_pi<float>());
 
 	// A lap of the highway, timed from the chequered line across its front straight each time it's crossed the same way.
 	{
@@ -1502,7 +1580,29 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 	// Turning with the wheels it follows them closely; free of them (out of gear, or the clutch down) it spins up
 	// quickly with the foot down and its flywheel carries it on, falling away slowly, with it off.
 	const bool freed = manual && (drive.gear == 0 || drive.clutch < 0.5f);
-	drive.rpm += (revs - drive.rpm) * (1.f - std::exp(-deltaTime * (!freed ? 6.f : revs > drive.rpm ? 5.f : 1.1f)));
+	// The rev limiter: at the red line it cuts the ignition, the revs fall back a few hundred, and it fires again, so
+	// held there it bounces off the line, popping in the exhaust.
+	constexpr float CUT_SECONDS = 0.07f, CUT_DROP = 1.6f;
+	if (drive.cut > 0.f)
+	{
+		drive.cut -= deltaTime;
+		revs = (std::min)(revs, drive.rpm);
+		drive.rpm -= REDLINE * CUT_DROP * deltaTime;
+	}
+	else
+		drive.rpm += (revs - drive.rpm) * (1.f - std::exp(-deltaTime * (!freed ? 6.f : revs > drive.rpm ? 5.f : 1.1f)));
+	drive.bangDue = (std::max)(0.f, drive.bangDue - deltaTime);
+	if (drive.cut <= 0.f && drive.rpm >= REDLINE && throttle > 0.f)
+	{
+		drive.cut = CUT_SECONDS;
+		drive.rpm = (std::min)(drive.rpm, REDLINE + 40.f);
+		if (drive.bangDue <= 0.f)
+		{
+			using namespace CarBody;
+			Cue(Sound::EXHAUST_BANG, CarToWorld({ TAILPIPE[0], TAILPIPE[1], TAILPIPE[2] }), 0.9f);
+			drive.bangDue = 0.12f;
+		}
+	}
 
 	// Fuel burned by the mile; out of it, that's that.
 	if (!workshop.DriveCar(deltaTime, std::abs(moved), throttle))
@@ -1516,11 +1616,17 @@ std::string ShopWorld::SeatPrompt() const
 {
 	if (m_seat != 0)
 		return "[F] Get out";
+	const std::string handbrake = std::format("[Space] Handbrake {}", m_handbrakeOn ? "off" : "on");
 	if (!m_drive.active)
-		return m_cranking > 0.f ? "Turning over..." : "[I] Turn the key   [F] Get out";
+	{
+		if (m_cranking > 0.f)
+			return "Cranking: keep holding the key";
+		return std::format("Hold [LMB] on the key (right of the wheel) to start it   [LMB] Key {}   [A]/[D] Steer   [Up]/[Down] Gear ({}){}   {}   [F] Get out",
+			m_keyOn ? "off" : "on", GearName(m_drive.gear), m_drive.gear != 0 ? ": hold [Clutch] to start in gear" : "", handbrake);
+	}
 	bool stopped = std::abs(m_drive.speed) <= GET_OUT_SPEED;
-	return stopped ? "Hold [Clutch] Clutch   [Up]/[Down] Gear up, down   [W] Throttle   [S] Brake   [A]/[D] Steer   [Space] Handbrake   [I] Switch off   [F] Get out"
-		: "Hold [Clutch] Clutch   [Up]/[Down] Gear   [Space] Handbrake";
+	return stopped ? std::format("Hold [Clutch] Clutch   [Up]/[Down] Gear up, down   [W] Throttle   [S] Brake   [A]/[D] Steer   {}   [F] Get out", handbrake)
+		: "Hold [Clutch] Clutch   [Up]/[Down] Gear   Hold [Space] Handbrake";
 }
 
 void ShopWorld::PoseCarInstruments(const Workshop& workshop, float deltaTime)
@@ -1550,18 +1656,107 @@ void ShopWorld::PoseCarInstruments(const Workshop& workshop, float deltaTime)
 			lens->SetEmissive(m_headlights.on && m_headlights.amount > 0.6f && fed ? 4.f : 0.f);
 		}
 
-	// The gauges: live with the engine running, their needles settling to what they read.
+	// The headlights' beams: a faint cone of light out ahead of each lamp that's lit, seen more the darker it is.
+	for (int side = 0; side < 2; side++)
+		if (const auto& beam = m_headlightBeams[side])
+		{
+			bool lit = present && m_headlights.on && m_headlights.amount > 0.9f && build->assembly.IsFilled(CarSlot::HEADLIGHT, side)
+				&& build->assembly.IsPlugged(side == 0 ? CarPlug::HEADLIGHT_LEFT : CarPlug::HEADLIGHT_RIGHT);
+			beam->SetVisible(lit);
+			if (!lit)
+				continue;
+			using namespace CarBody;
+			const float z = (side == 0 ? -1.f : 1.f) * (LAMP_LID_INNER + HOOD_HALF) * 0.5f;
+			constexpr float LENGTH = 11.f, WIDTH = 2.6f;
+			beam->SetPosition(CarToWorld({ NOSE_X - 0.05f, 0.66f, z }));
+			beam->SetRotation(CarRotation() * Pitch(-0.055f));
+			beam->SetScale({ LENGTH, WIDTH, WIDTH });
+			beam->SetTint({ 1.f, 0.96f, 0.82f, 0.025f + 0.07f * m_darkness });
+		}
+
+	// The tail lights' stop lamps: dim red with the headlights on, bright with the foot on the brake. (Fed from the
+	// battery like the rest of the lights.)
+	bool fed = present && build->assembly.IsFilled(CarSlot::BATTERY, 0) && build->assembly.IsPlugged(CarPlug::BATTERY)
+		&& build->assembly.IsPlugged(CarPlug::GROUND);
+	for (int side = 0; side < 2; side++)
+		if (const auto& lamp = m_stopLamps[side])
+		{
+			bool braking = (m_drive.active || m_keyOn) && m_drive.footBrake;
+			bool lit = fed && build->assembly.IsFilled(CarSlot::TAIL_LIGHT, side) && (m_headlights.on || braking);
+			lamp->SetVisible(lit);
+			if (!lit)
+				continue;
+			using namespace CarBody;
+			// (On the lamp's own model: toward the car's middle from the lamp's own, on its back face. The right one's the mirror.)
+			const float out = side == 0 ? 1.f : -1.f;
+			auto pose = PoseOnCar(CarSlot::TAIL_LIGHT, side);
+			lamp->SetPosition(CarToWorld(pose.offset + pose.rotation * glm::vec3(-out * STOP_LAMP_IN, STOP_LAMP_Y, -0.043f)));
+			lamp->SetRotation(CarRotation() * pose.rotation);
+			lamp->SetTint({ 1.f, 0.12f, 0.08f, 1.f });
+			lamp->SetEmissive(braking ? 3.5f : 0.9f);
+		}
+
+	// The handbrake's lever, up while it's pulled (whether the engine's running or not).
+	{
+		float target = m_handbrakeOn ? 1.f : 0.f;
+		m_handbrakeUp += (target - m_handbrakeUp) * (1.f - std::exp(-deltaTime * 18.f));
+		if (m_handbrakeLever)
+		{
+			m_handbrakeLever->SetVisible(present);
+			using namespace CarBody;
+			m_handbrakeLever->SetPosition(CarToWorld({ HANDBRAKE_PIVOT[0], HANDBRAKE_PIVOT[1], HANDBRAKE_PIVOT[2] }));
+			m_handbrakeLever->SetRotation(CarRotation() * Pitch(0.12f + HANDBRAKE_PULL * m_handbrakeUp));
+		}
+	}
+
+	ShakeEngine(workshop, deltaTime);
+
+	// The gear lever, through its gate to the gear it's in (to neutral while a gear's being crunched in).
+	{
+		glm::vec2 want = GearGate(m_drive.shifting > 0.f ? 0 : m_drive.gear);
+		m_leverAt += (want - m_leverAt) * (1.f - std::exp(-deltaTime * 14.f));
+		bool shown = present && build->assembly.IsFilled(CarSlot::TRANSMISSION, 0);
+		if (m_gearLever)
+		{
+			m_gearLever->SetVisible(shown);
+			if (shown)
+			{
+				// (Its ball in the gearbox's tail, which is turned end for end on the car.)
+				m_gearLever->SetPosition(CarToWorld({ GEARBOX_X - 0.59f, SHAFT_Y - 0.15f + 0.255f, 0.f }));
+				m_gearLever->SetRotation(CarRotation() * glm::angleAxis(-m_leverAt.y * 0.24f, glm::vec3(0.f, 0.f, 1.f))
+					* glm::angleAxis(-m_leverAt.x * 0.16f, glm::vec3(1.f, 0.f, 0.f)));
+			}
+		}
+	}
+
+	// The gauges: live with the key on (the fuel and temperature) or the engine running (all of them), their needles
+	// settling to what they read.
 	bool cluster = present && build->assembly.IsFilled(CarSlot::INSTRUMENT_CLUSTER, 0);
+	// (The cluster's numbers and marks glow green, over its faces, with the dash lights on.)
+	if (m_clusterMarks)
+	{
+		bool lit = cluster && GaugesLit(workshop);
+		m_clusterMarks->SetVisible(lit);
+		if (lit)
+		{
+			auto at = PoseOnCar(CarSlot::INSTRUMENT_CLUSTER, 0);
+			m_clusterMarks->SetPosition(CarToWorld(at.offset + at.rotation * glm::vec3(0.f, 0.f, -0.0004f)));
+			m_clusterMarks->SetRotation(CarRotation() * at.rotation);
+			m_clusterMarks->SetTint({ 0.3f, 1.7f, 0.45f, 1.f });
+			m_clusterMarks->SetEmissive(1.4f);
+		}
+	}
 	float reads[GAUGES] = {};
 	using namespace CarBody;
-	if (cluster && m_drive.active)
+	if (cluster && (m_drive.active || m_keyOn))
 	{
 		double tank = build->assembly.GetSpec().Fluid(FluidCircuit::FUEL).capacity;
-		reads[0] = std::abs(m_drive.speed) * 3.6f / SPEEDO_TOP;
-		reads[1] = m_drive.rpm / TACH_TOP;
+		const bool running = m_drive.active;
+		reads[0] = running ? std::abs(m_drive.speed) * 3.6f / SPEEDO_TOP : 0.f;
+		reads[1] = running ? m_drive.rpm / TACH_TOP : 0.f;
 		reads[2] = tank > 0.0 ? static_cast<float>(build->assembly.GetFluid(FluidCircuit::FUEL).Total() / tank) : 0.f;
-		reads[3] = 0.4f + 0.35f * std::clamp(m_drive.rpm / 4000.f, 0.f, 1.f);	// the oil's pressure, up with the revs
-		reads[4] = static_cast<float>(workshop.CarEngineHeat()) * 0.55f;		// warmed right through, it sits about half way
+		reads[3] = running ? 0.4f + 0.35f * std::clamp(m_drive.rpm / 4000.f, 0.f, 1.f) : 0.f;	// the oil's pressure, up with the revs
+		reads[4] = static_cast<float>(workshop.CarEngineHeat()) * 0.5f;		// stone cold at the bottom; warmed right through, it sits half way
 		// A gauge whose sender isn't plugged in reads nothing.
 		if (!build->assembly.IsPlugged(CarPlug::OIL_SENDER))
 			reads[3] = 0.f;
@@ -1581,6 +1776,8 @@ void ShopWorld::PoseCarInstruments(const Workshop& workshop, float deltaTime)
 		needle->SetVisible(cluster);
 		if (!cluster)
 			continue;
+		// (Lit green with the headlights, like the faces.)
+		needle->SetEmissive(GaugesLit(workshop) ? 1.6f : 0.8f);
 		bool big = gauge < 2;
 		float turn = (big ? GAUGE_SWEEP : GAUGE_SMALL_SWEEP) * (m_gaugeReads[gauge] - 0.5f);
 		needle->SetPosition(CarToWorld(pose.offset + pose.rotation * PIVOTS[gauge]));
@@ -1666,27 +1863,26 @@ void ShopWorld::DrawDriveHud(const Workshop& workshop) const
 			ShadowText(draw, { corner.x + 4.f * unit, corner.y - 22.f * unit }, IM_COL32(200, 200, 200, 200), "Cross the chequered line on the highway to time a lap", false);
 	}
 
-	// From outside the car, its gauges, bottom right: the tach with the gear in it, the speedo, and the fuel and
-	// temperature beside them. (At the wheel they're there on the dash, and only the gear it's in is shown.)
-	if (!m_thirdPerson)
-	{
-		if (m_drive.active && m_seat == 0)
-			ShadowText(draw, { display.x * 0.5f, display.y - 188.f }, IM_COL32(200, 200, 200, 200),
-				GearName(m_drive.gear), true);
-		return;
-	}
+	// Its gauges, at the bottom of the screen in the middle, just over the hotbar: the tach with the gear in it, the
+	// speedo, and between them the fuel and temperature. Faces lit green with the headlights on, as the dash's are.
 	const auto* build = workshop.GetCar();
 	const bool running = m_drive.active;
+	const bool lit = GaugesLit(workshop);
+	// (Only the numbers and marks are lit: the faces stay dark.)
+	const ImU32 FACE = IM_COL32(10, 10, 12, 190);
+	const ImU32 MARK = lit ? IM_COL32(120, 255, 150, 240) : INK;
+
 	// A dial: its marks round from lower left clockwise to lower right, some numbered, the last of them red.
 	auto dial = [&](ImVec2 middle, float radius, float reads, int marks, int numberEvery, float numberStep, int redFrom) {
 		const float from = glm::pi<float>() * 0.75f, sweep = glm::pi<float>() * 1.5f;
 		auto out = [&](float turn, float reach) { return ImVec2(middle.x + std::cos(turn) * radius * reach, middle.y + std::sin(turn) * radius * reach); };
-		draw->AddCircleFilled(middle, radius, IM_COL32(10, 10, 12, 190), 64);
+
+		draw->AddCircleFilled(middle, radius, FACE, 64);
 		draw->AddCircle(middle, radius, RIM, 64, 2.f * unit);
 		for (int mark = 0; mark <= marks; mark++)
 		{
 			float turn = from + sweep * static_cast<float>(mark) / marks;
-			ImU32 color = mark >= redFrom ? RED_INK : INK;
+			ImU32 color = mark >= redFrom ? RED_INK : MARK;
 			draw->AddLine(out(turn, 0.8f), out(turn, 0.93f), color, 2.f * unit);
 			if (mark % numberEvery == 0)
 			{
@@ -1699,32 +1895,38 @@ void ShopWorld::DrawDriveHud(const Workshop& workshop) const
 		draw->AddLine(out(turn + glm::pi<float>(), 0.12f), out(turn, 0.86f), AMBER_INK, 3.f * unit);
 		draw->AddCircleFilled(middle, radius * 0.07f, IM_COL32(40, 40, 44, 255), 16);
 	};
-	const float speed = std::abs(m_drive.speed) * 3.6f;
-	const ImVec2 speedo = { display.x - 150.f * unit, display.y - 150.f * unit }, tach = { display.x - 385.f * unit, display.y - 130.f * unit };
-	dial(speedo, 118.f * unit, running ? speed / 200.f : 0.f, 10, 2, 20.f, 99);
-	dial(tach, 96.f * unit, running ? m_drive.rpm / 8000.f : 0.f, 8, 1, 1.f, 6);
-	ShadowText(draw, { speedo.x, speedo.y + 38.f * unit }, INK, std::format("{:.0f}", running ? speed : 0.f), true);
-	ShadowText(draw, { speedo.x, speedo.y + 58.f * unit }, IM_COL32(190, 190, 190, 220), "km/h", true);
-	ShadowText(draw, { tach.x, tach.y + 30.f * unit }, INK, running ? GearName(m_drive.gear) : "off", true);
-	ShadowText(draw, { tach.x, tach.y + 50.f * unit }, IM_COL32(190, 190, 190, 220), "x1000 rpm", true);
-	// Fuel and temperature: a bar each, left of the tach.
-	auto bar = [&](float y, const char* name, float reads, bool warn) {
-		const ImVec2 corner = { display.x - 640.f * unit, y };
-		const float width = 130.f * unit, height = 12.f * unit;
-		ShadowText(draw, { corner.x, corner.y - 20.f * unit }, INK, name, false);
-		draw->AddRectFilled(corner, { corner.x + width, corner.y + height }, IM_COL32(10, 10, 12, 190), 3.f * unit);
+	// (The hotbar's top is 100 px up from the bottom, the name of what's in hand over it: these stand on that.)
+	const float speed = std::abs(m_drive.speed) * 3.6f, radius = 74.f * unit, baseY = display.y - 128.f - radius;
+	const ImVec2 tach = { display.x * 0.5f - 150.f * unit, baseY }, speedo = { display.x * 0.5f + 150.f * unit, baseY };
+	dial(speedo, radius, running ? speed / 200.f : 0.f, 10, 2, 20.f, 99);
+	dial(tach, radius, running ? m_drive.rpm / 8000.f : 0.f, 8, 1, 1.f, 6);
+	const ImU32 LABEL = lit ? IM_COL32(110, 220, 140, 220) : IM_COL32(190, 190, 190, 220);
+	ShadowText(draw, { speedo.x, speedo.y + 22.f * unit }, MARK, std::format("{:.0f}", running ? speed : 0.f), true);
+	ShadowText(draw, { speedo.x, speedo.y + 40.f * unit }, LABEL, "km/h", true);
+	ShadowText(draw, { tach.x, tach.y + 22.f * unit }, MARK, running ? GearName(m_drive.gear) : "off", true);
+	ShadowText(draw, { tach.x, tach.y + 40.f * unit }, LABEL, "x1000 rpm", true);
+	// Fuel and temperature: a bar each, between the dials. The temperature reads from cold at the bottom of its bar.
+	auto bar = [&](float y, const std::string& name, float reads, bool warn) {
+		const float width = 120.f * unit, height = 11.f * unit;
+		const ImVec2 corner = { display.x * 0.5f - width * 0.5f, y };
+		ShadowText(draw, { display.x * 0.5f, corner.y - 19.f * unit }, LABEL, name, true);
+		draw->AddRectFilled(corner, { corner.x + width, corner.y + height }, FACE, 3.f * unit);
 		draw->AddRectFilled(corner, { corner.x + width * std::clamp(reads, 0.f, 1.f), corner.y + height }, warn ? RED_INK : AMBER_INK, 3.f * unit);
-		draw->AddRect(corner, { corner.x + width, corner.y + height }, RIM, 3.f * unit, 0, 1.5f * unit);
+		draw->AddRect(corner, { corner.x + width, corner.y + height }, lit ? MARK : RIM, 3.f * unit, 0, 1.5f * unit);
 	};
 	double tank = build ? build->assembly.GetSpec().Fluid(FluidCircuit::FUEL).capacity : 0.0;
 	double fuel = build ? build->assembly.GetFluid(FluidCircuit::FUEL).Total() : 0.0;
 	float full = tank > 0.0 ? static_cast<float>(fuel / tank) : 0.f, heat = static_cast<float>(workshop.CarEngineHeat());
-	bar(display.y - 150.f * unit, std::format("Fuel  {:.1f} L", fuel).c_str(), full, full < 0.12f);
-	bar(display.y - 90.f * unit, "Temperature", heat * 0.62f, heat > 1.3f);
-	if (m_drive.offRoad && running)
-		ShadowText(draw, { tach.x, tach.y - 126.f * unit }, IM_COL32(230, 200, 140, 230), "In the sand", true);
-	if (m_drive.sliding && running)
-		ShadowText(draw, { speedo.x, speedo.y - 148.f * unit }, IM_COL32(240, 120, 90, 240), "Sliding", true);
+	bar(baseY - 30.f * unit, std::format("Fuel  {:.1f} L", fuel), full, full < 0.12f);
+	bar(baseY + 30.f * unit, heat < 0.05f ? "Temp: cold" : heat < 0.95f ? "Temp: warming up" : "Temp", heat * 0.5f, heat > 1.3f);
+}
+
+bool ShopWorld::GaugesLit(const Workshop& workshop) const
+{
+	// The dash's lights come on with the headlights' switch, fed from the battery.
+	const auto* build = workshop.GetCar();
+	return build && m_headlights.on && build->assembly.IsFilled(CarSlot::BATTERY, 0) && build->assembly.IsPlugged(CarPlug::BATTERY)
+		&& build->assembly.IsPlugged(CarPlug::GROUND);
 }
 
 void ShopWorld::DevSteer(float steer)
@@ -1738,6 +1940,7 @@ void ShopWorld::DevPlaceCar(float x, float z, float degrees)
 	if (m_carStation >= m_stations.size())
 		return;
 	auto& station = m_stations[m_carStation];
+	ReleaseCarSupports();
 	station.position = { x, 0.f, z };
 	station.yaw = glm::radians(degrees);
 	station.object->SetPosition(station.position);
@@ -1767,24 +1970,196 @@ void ShopWorld::TurnKey(Workshop& workshop)
 		return;
 	if (!m_drive.active && m_cranking <= 0.f)
 	{
-		// With no battery on it, or nothing from the battery to the starter, there's not a sound: only the key's click.
-		workshop.SettleCarPlugs();
-		if (auto dead = workshop.CarStarterDead())
-		{
-			Cue(Sound::CLICK, GetCarPosition(), 0.5f);
-			Toast(*dead);
-			return;
-		}
-		m_cranking = 1.1f;
-		Cue(Sound::STARTER, GetCarPosition(), 1.6f);
+		// (The developer's turn of it: cranks till it starts, out of gear.)
+		m_drive.gear = 0;
+		m_crankAuto = true;
+		BeginCranking(workshop);
 	}
 	else if (m_drive.active && std::abs(m_drive.speed) <= GET_OUT_SPEED)
 	{
 		EndDrive();
+		m_keyOn = false;
 		Cue(Sound::CLICK, GetCarPosition());
 	}
 	else if (m_drive.active)
 		Toast("Stop the car before switching it off.");
+}
+
+void ShopWorld::SpinOffGround(float deltaTime, const InputManager& input, bool playerHasControl)
+{
+	// Up on the lift, a jack or stands, it goes nowhere: the engine revs with the throttle, and in gear with the clutch
+	// up the back wheels turn in the air (unless the handbrake holds them).
+	auto& drive = m_drive;
+	drive.speed = drive.slide = drive.yawRate = 0.f;
+	const bool clutchDown = playerHasControl && Controls::Held(input, Control::CLUTCH);
+	drive.clutch = clutchDown ? (std::max)(0.f, drive.clutch - deltaTime / 0.08f) : (std::min)(1.f, drive.clutch + deltaTime / 0.45f);
+	if (playerHasControl && clutchDown && Controls::Pressed(input, Control::SHIFT_UP) && drive.gear < 5)
+		drive.gear++;
+	if (playerHasControl && (clutchDown || drive.gear == 1) && Controls::Pressed(input, Control::SHIFT_DOWN) && drive.gear > -1)
+		drive.gear--;
+	drive.throttle = playerHasControl && Controls::Held(input, Control::FORWARD) ? 1.f : 0.f;
+	drive.footBrake = playerHasControl && Controls::Held(input, Control::BACK);
+	drive.handbrake = m_handbrakeOn;
+	float revs = drive.idleRpm + drive.throttle * (REDLINE * 0.95f - drive.idleRpm);
+	if (drive.cut > 0.f)
+	{
+		drive.cut -= deltaTime;
+		drive.rpm -= REDLINE * 1.6f * deltaTime;
+	}
+	else
+		drive.rpm += (revs - drive.rpm) * (1.f - std::exp(-deltaTime * (revs > drive.rpm ? 5.f : 1.5f)));
+	if (drive.cut <= 0.f && drive.rpm >= REDLINE && drive.throttle > 0.f)
+	{
+		drive.cut = 0.07f;
+		using namespace CarBody;
+		Cue(Sound::EXHAUST_BANG, CarToWorld({ TAILPIPE[0], TAILPIPE[1], TAILPIPE[2] }), 0.9f);
+	}
+	if (drive.gear != 0 && drive.clutch > 0.5f && !drive.footBrake && !drive.handbrake)
+	{
+		float wheelSpeed = drive.rpm / REDLINE * GearTop(drive.gear) * drive.topSpeed * (drive.gear < 0 ? -1.f : 1.f);
+		drive.rearSpin = std::fmod(drive.rearSpin + wheelSpeed * deltaTime / WHEEL_Y, glm::two_pi<float>());
+		m_carLaidOutAt = glm::vec3(-1e9f);
+	}
+	LeanCar(deltaTime, 0.f, 0.f);
+}
+
+void ShopWorld::BeginCranking(Workshop& workshop)
+{
+	m_keyOn = true;
+	auto refuse = [&](const std::string& why) {
+		Cue(Sound::CLICK, GetCarPosition(), 0.5f);
+		Toast(why);
+		m_keyPressing = false;
+		m_crankAuto = false;
+	};
+	// With no battery on it, or nothing from the battery to the starter, there's not a sound: only the key's click.
+	workshop.SettleCarPlugs();
+	if (auto dead = workshop.CarStarterDead())
+		return refuse(*dead);
+	// In gear it only cranks with the clutch down (its interlock): otherwise the starter would drive the car.
+	if (m_drive.gear != 0 && !m_clutchHeld)
+		return refuse(std::format("It's in {}: hold the clutch down ([Clutch]) to start it, or put it in neutral.", GearName(m_drive.gear)));
+	m_cranking = 0.9f;
+	Cue(Sound::STARTER, GetCarPosition(), 1.6f);
+}
+
+void ShopWorld::UpdateHandbrake(const InputManager& input, bool playerHasControl)
+{
+	if (!playerHasControl)
+		return;
+	// On the move it's a press: up while the key's held, down when it's let go. At a standstill (or switched off) the key
+	// pulls it up and leaves it, or lets it down again.
+	const bool moving = m_drive.active && std::abs(m_drive.speed) > 0.5f && !CarOffGround();
+	const bool before = m_handbrakeOn;
+	if (moving)
+		m_handbrakeOn = Controls::Held(input, Control::JUMP);
+	else if (Controls::Pressed(input, Control::JUMP))
+		m_handbrakeOn = !m_handbrakeOn;
+	if (m_handbrakeOn != before)
+		Cue(m_handbrakeOn ? Sound::RATCHET : Sound::CLICK, CarToWorld({ CarBody::HANDBRAKE_PIVOT[0], CarBody::HANDBRAKE_PIVOT[1], CarBody::HANDBRAKE_PIVOT[2] }), 0.35f);
+}
+
+void ShopWorld::ParkedControls(float deltaTime, const InputManager& input, bool playerHasControl)
+{
+	// Switched off, at the wheel: it turns the front wheels (they stay where they're left), the lever goes in and out of
+	// gear without the clutch, and the brake pedal lights the stop lamps with the key on.
+	auto& drive = m_drive;
+	drive.speed = drive.slide = drive.yawRate = drive.throttle = 0.f;
+	drive.shifting = 0.f;
+	drive.clutch = m_clutchHeld ? 0.f : 1.f;
+	drive.footBrake = playerHasControl && Controls::Held(input, Control::BACK);
+	if (!playerHasControl)
+		return;
+	float steerTo = (Controls::Held(input, Control::LEFT) ? 1.f : 0.f) - (Controls::Held(input, Control::RIGHT) ? 1.f : 0.f);
+	if (steerTo != 0.f)
+	{
+		// (Heavier standing still: it goes over slower than on the move.)
+		float before = drive.steer;
+		drive.steer = std::clamp(drive.steer + steerTo * 1.1f * deltaTime, -CarBody::FULL_LOCK, CarBody::FULL_LOCK);
+		if (drive.steer != before)
+			m_carLaidOutAt = glm::vec3(-1e9f);
+	}
+	int gear = drive.gear;
+	if (Controls::Pressed(input, Control::SHIFT_UP) && gear < 5)
+		gear++;
+	if (Controls::Pressed(input, Control::SHIFT_DOWN) && gear > -1)
+		gear--;
+	if (gear != drive.gear)
+	{
+		drive.gear = gear;
+		Cue(Sound::CLICK, GetCarPosition(), 0.4f);
+	}
+}
+
+float ShopWorld::MountLooseness(const Workshop& workshop)
+{
+	const auto* build = workshop.GetCar();
+	if (!build)
+		return 1.f;
+	const auto& car = build->assembly;
+	// Each mount: new and sound holds it still; worn (used) a little looser; split (damaged) far looser; missing, the
+	// engine's only held by the other one and the gearbox.
+	float looseness = 0.f;
+	for (int side = 0; side < car.SlotCount(CarSlot::ENGINE_MOUNT); side++)
+	{
+		auto mount = car.Get(CarSlot::ENGINE_MOUNT, side);
+		looseness += !mount ? 5.f : mount->GetCondition() == PartCondition::DAMAGED ? 3.5f : mount->GetCondition() == PartCondition::USED ? 1.4f : 1.f;
+	}
+	looseness /= (std::max)(1, car.SlotCount(CarSlot::ENGINE_MOUNT));
+	// And their nuts and bolts: finger tight lets it knock about on them, snugged up by feel a little.
+	for (CarSlot slot : { CarSlot::ENGINE_MOUNT_NUT, CarSlot::ENGINE_MOUNT_BOLT })
+		for (int index = 0; index < car.SlotCount(slot); index++)
+		{
+			auto fastener = car.Get(slot, index);
+			looseness += !fastener ? 0.6f : fastener->GetTightness() == FastenerTightness::LOOSE ? 0.5f
+				: fastener->GetTightness() == FastenerTightness::SNUG ? 0.1f : 0.f;
+		}
+	return (std::min)(looseness, 7.f);
+}
+
+void ShopWorld::ShakeEngine(const Workshop& workshop, float deltaTime)
+{
+	auto& shake = m_engineShake;
+	const bool running = m_drive.active && m_engineInCar >= 0;
+	if (!running)
+	{
+		// Switched off, it settles back down on its mounts.
+		const float settle = 1.f - std::exp(-deltaTime * 10.f);
+		shake.roll += (0.f - shake.roll) * settle;
+		shake.lift += (0.f - shake.lift) * settle;
+		shake.torque = 0.f;
+		if (std::abs(shake.roll) < 1e-5f && std::abs(shake.lift) < 1e-6f)
+			shake.roll = shake.lift = 0.f;
+		return;
+	}
+	shake.mounts = MountLooseness(workshop);
+	// The shake: worst at idle (a four's lumpy at low revs), smoothing out as it revs, a little more with the foot down;
+	// fast enough to read as a buzz, slow enough to see. (Scaled by how loose the mounts let it be.)
+	const float revs = std::clamp((m_drive.rpm - m_drive.idleRpm) / 3000.f, 0.f, 1.f);
+	// (On new mounts the top of the engine buzzes a couple of millimetres at idle; on a split one, near a centimetre.)
+	const float strength = (0.0055f * (1.f - 0.6f * revs) + 0.002f * m_drive.throttle) * shake.mounts;
+	shake.phase = std::fmod(shake.phase + deltaTime * glm::two_pi<float>() * (11.f + 9.f * revs), glm::two_pi<float>() * 100.f);
+	// The torque roll: it leans over against its mounts with the throttle, and kicks back as the limiter cuts it.
+	const float lean = (m_drive.cut > 0.f ? -0.6f : m_drive.throttle) * 0.012f * shake.mounts;
+	shake.torque += (lean - shake.torque) * (1.f - std::exp(-deltaTime * (6.f / std::sqrt(shake.mounts))));
+	shake.roll = shake.torque + strength * (std::sin(shake.phase) + 0.45f * std::sin(shake.phase * 2.37f + 1.f));
+	shake.lift = strength * 0.3f * std::sin(shake.phase * 1.31f + 0.4f);
+}
+
+glm::vec2 ShopWorld::GearGate(int gear)
+{
+	// The gate, as the driver sees it: first and second on the left, third and fourth in the middle, fifth and reverse on
+	// the right; the odd ones forward, the even ones (and reverse) back. Neutral in the middle of it.
+	switch (gear)
+	{
+		case 1:		return { 1.f, 1.f };
+		case 2:		return { 1.f, -1.f };
+		case 3:		return { 0.f, 1.f };
+		case 4:		return { 0.f, -1.f };
+		case 5:		return { -1.f, 1.f };
+		case -1:	return { -1.f, -1.f };
+		default:	return { 0.f, 0.f };
+	}
 }
 
 void ShopWorld::IdleCar(float deltaTime, Workshop& workshop)
@@ -1915,6 +2290,23 @@ bool ShopWorld::UpdateCarControls(Workshop& workshop, const FirstPersonControlle
 		set.folded = !set.folded;
 		workshop.SetCarSeat(side, set);
 		Cue(set.folded ? Sound::PICK_UP : Sound::SET_DOWN, GetCarPosition());
+		return true;
+	}
+	// The key: a click turns it on or off (or switches the engine off); held, it starts it (see Drive).
+	if (*aimed == CarControl::IGNITION)
+	{
+		hint = m_drive.active ? "[LMB] Switch it off" : m_cranking > 0.f ? "Cranking: keep holding"
+			: m_keyOn ? "[LMB] Key off   Hold [LMB] Start it" : "[LMB] Key on   Hold [LMB] Start it";
+		m_prompt = m_prompt.empty() ? hint : hint + "   " + m_prompt;
+		if (!Controls::Pressed(input, Control::PRIMARY) && !std::exchange(m_devPress, false))
+			return false;
+		if (m_drive.active)
+			TurnKey(workshop);
+		else
+		{
+			m_keyPressing = true;
+			m_keyPressedAt = m_time;
+		}
 		return true;
 	}
 	switch (*aimed)

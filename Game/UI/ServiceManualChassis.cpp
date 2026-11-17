@@ -12,6 +12,104 @@
 #include "../Simulation/Workshop.h"
 #include "../World/ToolShapes.h"
 
+#include <map>
+
+namespace
+{
+	// What each of the chassis book's figures means, shown when the reader hovers over it (as the engine's book does,
+	// see ServiceManualTips.cpp). By the name the book prints; the bolt figures and gears are explained by ChassisTip.
+	const std::map<std::string, const char*> CHASSIS_TIPS = {
+		// General
+		{ "Wheelbase", "The distance between the front and rear axles' centres. A longer wheelbase is steadier in a straight line; a shorter one turns in quicker." },
+		{ "Track, front / rear", "The distance between the middles of the left and right tires on each axle. Wider is more stable in a bend." },
+		{ "Length x width x height", "The car's outside size: bumper to bumper, side to side, and ground to roof." },
+		{ "Curb mass", "What the car weighs ready to drive, with every fluid full and no one in it. Less mass accelerates, stops and turns better." },
+		{ "Weight on the front wheels", "How much of the car's weight sits on the front axle. Near half makes a car that's neutral in a bend; more on the front pushes wide." },
+		{ "Tires", "The tire size: width in mm / sidewall height as a percentage of the width, R for radial, and the rim's diameter in inches." },
+		{ "Gearbox", "The manual gearbox and how many forward gears it has." },
+		{ "Final drive", "The ratio of the differential's gears: turns of the driveshaft for one turn of the wheels. Higher pulls harder, lower goes faster." },
+		{ "Brakes, front / rear", "What stops each axle. Ventilated discs shed heat better; drums hold the handbrake easily." },
+		{ "Suspension, front / rear", "How each axle is carried: a MacPherson strut at the front, a live axle on four links and coils at the back." },
+		{ "Fit the part in hand where you aim", "Carry the part to the car: where it can go is marked. Aim at the mark and press the key." },
+		{ "Take a part off (its bolts out first)", "Undo and take out its nuts and bolts, and anything fitted over it, then take the part off." },
+		{ "Do a nut or bolt up (spanner in hand)", "Hold the button with a spanner of the right size on it. Only a torque wrench does it up to the figure in the book." },
+		{ "Undo it", "Hold the button with a spanner of the right size on a done-up nut or bolt." },
+		{ "Use a car tool", "Each of the car's tools is aimed at what it works on; the prompt says what each button does there." },
+		// Springs and steering
+		{ "Front spring free length", "The front coil spring's length on the bench with no load on it. A spring that's sagged shorter sits the car low and soft." },
+		{ "Front spring rate", "How much harder the front spring pushes for every millimetre it's squeezed. Stiffer holds the body flatter, but rides harder." },
+		{ "Rear spring free length", "The rear coil spring's length with no load on it. Shorter than this, it's sagged." },
+		{ "Rear spring rate", "How much harder the rear spring pushes for every millimetre it's squeezed." },
+		{ "Steering wheel free play", "How far the rim of the wheel turns before the front wheels start to. More is wear in the rack or the tie rod ends." },
+		// Brakes
+		{ "Front rotor thickness (new)", "How thick a new front disc is, read with a micrometer across its braking faces." },
+		{ "Rotor minimum thickness", "The thinnest a disc may be worn or skimmed. Thinner, it overheats and can crack: replace it." },
+		{ "Rotor runout, most", "How far the disc's face may wobble as it turns, read with a dial indicator. More and the pedal pulses." },
+		{ "Pad lining (new)", "How thick a new pad's friction material is, not counting its steel backing." },
+		{ "Pad lining minimum", "The least lining a pad may have left. Worn past it, the backing plate scores the disc." },
+		{ "Rear drum inside diameter (new)", "The diameter of a new drum's braking surface, inside." },
+		{ "Drum diameter, most", "The biggest a drum may be worn or turned out to. Past it, the shoes can't reach it properly: replace it." },
+		{ "Shoe lining (new)", "How thick a new brake shoe's lining is." },
+		{ "Shoe lining minimum", "The least lining a shoe may have left before it's replaced." },
+		{ "Pedal height from the floor", "How high the brake pedal sits at rest, from the floor under it." },
+		{ "Pedal free play", "How far the pedal moves before it starts pushing the master cylinder." },
+		{ "Pedal reserve, pushed hard, at least", "How far off the floor the pedal stays when it's pushed hard. Less means air in the lines or worn brakes." },
+		{ "Caliper / wheel cylinder / master bore", "The pistons' sizes: the front caliper's, the rear wheel cylinder's and the master cylinder's. Their ratio sets how the braking is shared." },
+		{ "Fluid", "The fluid the system takes. Use only what it says, or one it says will do." },
+		{ "System capacity", "How much fluid the whole system holds from empty, lines and all." },
+		// Clutch and drivetrain
+		{ "Clutch disc thickness (new)", "How thick a new clutch disc is across its linings." },
+		{ "Rivet depth, at least", "How far the rivets must stay below the lining's face. Less and they score the flywheel: the disc is worn out." },
+		{ "Clutch pedal free play", "How far the clutch pedal moves before it starts to work the clutch. Too little and the clutch slips." },
+		{ "Clutch capacity, new", "The most torque a new clutch holds before it slips. A worn one holds less." },
+		{ "Reverse", "The reverse gear's ratio: turns of the engine for one turn of the gearbox's output." },
+		// Electrical
+		{ "Battery, resting and charged", "The battery's voltage with nothing running, fully charged." },
+		{ "Battery while cranking, at least", "The least the battery's voltage may fall to while the starter turns. Lower, the battery is tired or flat." },
+		{ "Charging voltage at 2000 rpm", "What the alternator holds the battery at with the engine at 2000 rpm. Lower, it isn't charging; higher, it's overcharging." },
+		// Fluids
+		{ "Tank capacity", "How much fuel the tank holds." },
+		{ "Fuel", "The fuel the engine is built for. A higher octane will do; a lower one pings." },
+		{ "Capacity", "How much the circuit holds from dry, refilled after it's drained." },
+		{ "Correct level", "Where the level should be, between the marks on its dipstick, reservoir or filler." },
+		{ "Use", "The fluid this circuit takes." },
+		{ "Change every", "How many hours of running the fluid is good for before it's drained and replaced." },
+		// Tune-up
+		{ "Ignition timing at idle", "How far before top dead centre the plug fires at idle, read with a timing light on the crank pulley." },
+		{ "Idle speed, warm, in neutral", "The engine's speed ticking over, warmed up, out of gear: set with the carburettor's idle speed screw." },
+		{ "Idle mixture screw", "How far the mixture screw is turned out from lightly seated. Out is richer, in is leaner." },
+		{ "Primary main jet", "The size of the carburettor's main jet: bigger runs richer at full throttle." },
+		{ "Valve lash, intake, hot", "The gap between the intake rocker and its valve's tip with the engine hot, read with a feeler gauge." },
+		{ "Valve lash, exhaust, hot", "The gap between the exhaust rocker and its valve's tip with the engine hot." },
+		{ "Valve lash, intake, cold", "The intake gap with the engine cold: tighter than hot, as the valve is shorter." },
+		{ "Valve lash, exhaust, cold", "The exhaust gap with the engine cold." },
+		// Wheels and alignment
+		{ "Size", "The tire size: width in mm / sidewall as a percentage of the width, R for radial, and the rim's diameter in inches." },
+		{ "Pressure, cold", "What the tires are pumped to, measured cold (before a drive). Soft grips less and tugs the car to one side." },
+		{ "Tread depth (new)", "How deep a new tire's tread grooves are." },
+		{ "Tread depth, at least", "The least a tire may have: shallower, it can't clear water and must be replaced." },
+		{ "Front camber", "How far the top of a front wheel leans in (negative) or out from upright, seen from the front. A little negative grips harder in a bend." },
+		{ "Caster", "How far the steering's axis leans back, seen from the side. More makes the wheel come back to the middle by itself and the car steadier." },
+		{ "Front toe-in", "How much closer together the front tires are at the front than at the back. A little toe-in keeps it straight; too much scrubs the tires." },
+	};
+
+	// What a figure of the chassis book means: its own explanation, or for the nuts and bolts and the gears, what they all are.
+	std::string ChassisTip(const std::string& name)
+	{
+		if (auto it = CHASSIS_TIPS.find(name); it != CHASSIS_TIPS.end())
+			return it->second;
+		auto has = [&](const char* text) { return name.find(text) != std::string::npos; };
+		if (name.rfind("Gear ", 0) == 0)
+			return "This gear's ratio: turns of the engine for one turn of the gearbox's output. The low gears have the big numbers, and pull hardest.";
+		if (name.rfind("Lug Nut", 0) == 0 || name.rfind("Lug nut", 0) == 0)
+			return "The torque the wheel's nuts are done up to, in a star pattern. Loose, the wheel can come off; too tight stretches the studs and warps the disc.";
+		if (has("bolt") || has("Bolt") || has("nut") || has("Nut"))
+			return "The torque these are done up to with a torque wrench. Left finger tight they can come adrift on the road; done up by feel (snug), "
+				"the road test notices.";
+		return "";
+	}
+}
+
 // The project car's book: the LE86 Chassis Service Manual. Like the engine's, every figure in it comes
 // from the car's own spec (CarSpec::LE86Coupe), its build order and bolt table (CarAssembly), and the tool
 // list, so the book and the car never disagree.
@@ -65,7 +163,7 @@ void ServiceManual::BuildChassis(bool imperial)
 	};
 	auto figure = [&](const std::string& name, const std::string& value, const std::string& tip = "") {
 		Line line = { Kind::SPEC, name, value };
-		line.tip = tip;
+		line.tip = !tip.empty() ? tip : ChassisTip(name);
 		chapter->lines.push_back(std::move(line));
 	};
 	auto note = [&](const std::string& text) { chapter->lines.push_back({ Kind::NOTE, text }); };
@@ -125,6 +223,8 @@ void ServiceManual::BuildChassis(bool imperial)
 			case HandToolKind::TIRE_GAUGE:
 			case HandToolKind::ALIGNMENT_GAUGE:
 			case HandToolKind::SCREWDRIVER:
+			case HandToolKind::FLOOR_JACK:
+			case HandToolKind::JACK_STAND:
 				item(tool.name, tool.description, ToolModelName(tool), { { "Price", std::format("${:.0f}", tool.price) } });
 				break;
 			default:

@@ -29,6 +29,7 @@ enum class SkillKind
 	WORD_OF_MOUTH,		// shop: more reputation from sales and clean pulls
 	MACHINIST,			// tools: machines cut closer to the target
 	TRADE_ACCOUNT,		// tools: tools and machines cost less
+	PARKING_LOT,		// building: the sand beside the drive laid to asphalt (UpgradeKind::PARKING_LOT)
 	COUNT
 };
 
@@ -87,6 +88,8 @@ namespace Skills
 			{ SkillKind::WORD_OF_MOUTH, Group::SHOP, "Word of Mouth", "Each level, engines sold and clean dyno pulls earn 10% more reputation.", 3, 3, SkillKind::DYNO_CONTRACT },
 			{ SkillKind::MACHINIST, Group::TOOLS, "Machinist", "Each level, every machine cuts 12% closer to the size you set.", 3, 2, SkillKind::SOCKETS },
 			{ SkillKind::TRADE_ACCOUNT, Group::TOOLS, "Trade Account", "Each level, tools and machines cost 5% less at the parts computer.", 2, 3, SkillKind::MACHINIST },
+			{ SkillKind::PARKING_LOT, Group::BUILDING, "Parking Lot", "The sand to the right of the drive laid to asphalt, with five marked bays: hard, level ground "
+				"to park the car, jack it up and work on it outside.", 1, 3, ROOT },
 		} };
 		return skills;
 	}

@@ -242,6 +242,9 @@
     <ClCompile Include="Game\World\Roads.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldCarLift.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
     <ClCompile Include="Game\World\ShopWorldCarTools.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>

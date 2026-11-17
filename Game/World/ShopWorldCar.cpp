@@ -20,7 +20,7 @@ namespace
 	// The car's space: +X its nose, +Y up from the ground under its wheels, +Z its right side (as you sit in it).
 	using CarBody::FRONT_AXLE_X;
 	using CarBody::REAR_AXLE_X;
-	constexpr float WHEEL_Z = 0.69f;		// the tires' middles, either side
+	constexpr float WHEEL_Z = 0.75f;		// the tires' middles, either side: their outer walls just proud of the body, under its flared arches
 	constexpr float WHEEL_Y = 0.29f;		// the axle height: the tire's radius
 	constexpr float BODY_SIDE_Z = 0.8f;		// the panels' outer faces
 	constexpr float KINGPIN_Z = 0.55f;		// the front struts' axes, either side: what the steered wheels turn about
@@ -82,7 +82,8 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 			float x = CarAssembly::CornerOf(parent, parentIndex) >= Corner::REAR_LEFT ? REAR_AXLE_X : FRONT_AXLE_X;
 			// They go round with the wheel, and turn with it when it's steered.
 			float turned = angle - m_drive.spin;
-			glm::vec3 local = { std::cos(turned) * 0.05f, std::sin(turned) * 0.05f, side * 0.075f };
+			// (On its stud, against the face of the wheel's centre.)
+			glm::vec3 local = { std::cos(turned) * 0.05f, std::sin(turned) * 0.05f, side * 0.031f };
 			CarPose nut = { glm::vec3(x, WHEEL_Y, side * WHEEL_Z) + local, FacingSide(side) };
 			return x > 0.f ? steered(side, nut) : nut;
 		}
@@ -165,7 +166,7 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 			case CarSlot::ENGINE_MOUNT_BOLT:	return { { CarBody::ENGINE_X + end * 0.045f, MOUNT_TOP_Y, s * (CarBody::ENGINE_MOUNT_Z + 0.02f) }, NONE };
 			case CarSlot::PRESSURE_PLATE_BOLT:	return { ring({ BLOCK_REAR - 0.105f, SHAFT_Y, 0.f }, 0.095f, 6), FACING_BACK };
 			case CarSlot::BELLHOUSING_BOLT:		return { ring({ BLOCK_REAR - 0.012f, SHAFT_Y, 0.f }, 0.168f, 4), FACING_BACK };
-			case CarSlot::TRANSMISSION_MOUNT_BOLT: return { { GEARBOX_X - 0.3f + of * 0.02f, 0.16f, pair * 0.09f }, HEAD_DOWN };
+			case CarSlot::TRANSMISSION_MOUNT_BOLT: return { { GEARBOX_X - 0.3f + of * 0.02f, SHAFT_Y - 0.18f, pair * 0.09f }, HEAD_DOWN };
 			case CarSlot::DRIVESHAFT_FLANGE_NUT: return { ring({ REAR_AXLE_X + 0.24f, WHEEL_Y, 0.f }, 0.05f, 4), FACING_FRONT };
 			case CarSlot::STARTER_BOLT:			return { { BLOCK_REAR - 0.135f, SHAFT_Y - 0.025f + end * 0.06f, -0.2f }, FACING_BACK };
 			// On the firewall: the master cylinder's two studs on the booster's face, the booster's four round it.
@@ -202,14 +203,16 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 			return { { CarBody::DOOR_FRONT_X - CarBody::GAP, CarBody::ROCKER_TOP + CarBody::GAP, side * CarBody::SIDE },
 				TurnY(side * CarBody::DOOR_OPEN * CarPanelOpen(side < 0.f ? CarPanel::DOOR_LEFT : CarPanel::DOOR_RIGHT)) };
 		case C::HOOD:
-			return { { CarBody::HOOD_REAR_X + CarBody::GAP, CarBody::BELT_Y, 0.f }, Pitch(CarBody::HoodPitch() + CarBody::HOOD_OPEN * CarPanelOpen(CarPanel::HOOD)) };
+			// (Its latch released, it stands up a finger's width off the nose.)
+			return { { CarBody::HOOD_REAR_X + CarBody::GAP, CarBody::BELT_Y, 0.f },
+				Pitch(CarBody::HoodPitch() + CarBody::HOOD_OPEN * (std::max)(CarPanelOpen(CarPanel::HOOD), m_hoodLatched ? 0.f : 0.035f)) };
 		case C::TRUNK_LID:
 			return { { CarBody::TRUNK_FRONT_X - CarBody::GAP, CarBody::BELT_Y, 0.f }, Pitch(-CarBody::TRUNK_OPEN * CarPanelOpen(CarPanel::TRUNK)) };
 		case C::FRONT_BUMPER:		return { { CarBody::NOSE_X + 0.035f, 0.25f, 0.f }, ACROSS };
 		case C::REAR_BUMPER:		return { { CarBody::TAIL_X - 0.035f, 0.25f, 0.f }, ACROSS };
 		case C::HEADLIGHT:
 		{
-			// A pop-up: hinged along the back edge of its lid, which lies in the hood's surface till it swings up.
+			// A pop-up: hinged along the back edge of its lid, which lies in the hood's surface till it tilts up.
 			using namespace CarBody;
 			float x = NOSE_X - LAMP_LID_LENGTH + GAP;
 			float up = glm::smoothstep(0.f, 1.f, m_headlights.amount);
@@ -233,7 +236,7 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 		// Interior
 		case C::DASHBOARD:			return { { 0.6f, 0.55f, 0.f }, ACROSS };
 		case C::INSTRUMENT_CLUSTER:	return { { 0.39f, 0.705f, -0.37f }, ACROSS };	// in the dash's face, under its hood
-		case C::SEAT:				return { { -0.3f, 0.22f, side * 0.37f }, NONE };
+		case C::SEAT:				return { { CarBody::SEAT_X + m_seats[std::clamp(index, 0, 1)].slide, CarBody::SEAT_Y, side * CarBody::SEAT_Z }, NONE };	// slid along its rails
 		case C::STEERING_WHEEL:		return { { 0.22f, 0.78f, -0.37f }, Pitch(1.17f) * TurnY(m_drive.steer * 4.f) };	// on the column's end, square to it
 		// Front suspension, round the front wheels.
 		case C::FRONT_STRUT:
@@ -283,8 +286,8 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 		case C::PRESSURE_PLATE:		return { { BLOCK_REAR - 0.065f, SHAFT_Y, 0.f }, Pitch(glm::half_pi<float>()) };
 		case C::RELEASE_BEARING:	return { { BLOCK_REAR - 0.125f, SHAFT_Y, 0.f }, Pitch(glm::half_pi<float>()) };
 		case C::TRANSMISSION:		return { { GEARBOX_X, SHAFT_Y - 0.15f, 0.f }, TurnY(glm::pi<float>()) };
-		case C::TRANSMISSION_MOUNT:	return { { GEARBOX_X - 0.3f, 0.16f, 0.f }, ACROSS };
-		case C::CLUTCH_MASTER_CYLINDER: return { { 0.93f, 0.66f, -0.56f }, NONE };
+		case C::TRANSMISSION_MOUNT:	return { { GEARBOX_X - 0.3f, SHAFT_Y - 0.18f, 0.f }, ACROSS };
+		case C::CLUTCH_MASTER_CYLINDER: return { { CarBody::CLUTCH_MASTER[0], CarBody::CLUTCH_MASTER[1], CarBody::CLUTCH_MASTER[2] }, NONE };
 		case C::CLUTCH_RELEASE_CYLINDER: return { { BLOCK_REAR - 0.15f, SHAFT_Y - 0.09f, 0.175f }, NONE };
 		case C::DRIVESHAFT:
 		{
@@ -296,19 +299,33 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 		case C::FUEL_TANK:			return { { -1.72f, 0.24f, 0.f }, ACROSS };
 		case C::FUEL_SENDER:		return { { -1.6f, 0.3f, 0.18f }, NONE };	// down in the tank, its top just proud of it
 		case C::FUEL_LINE_SET:		return { { 0.f, 0.15f, 0.35f }, NONE };
-		case C::FUEL_FILTER:		return { { 0.93f, 0.625f, 0.5f }, NONE };
+		case C::FUEL_FILTER:		return { { CarBody::FUEL_FILTER[0], CarBody::FUEL_FILTER[1], CarBody::FUEL_FILTER[2] }, NONE };
 		// Electrical
 		// The battery on its tray behind the left headlight, the main loom across behind the dash and the engine's
 		// across the firewall, the fuse box up under the dash by the driver's door, the coil on the right inner wing.
 		case C::BATTERY:			return { { 1.66f, 0.52f, -0.5f }, NONE };
 		case C::MAIN_HARNESS:		return { { 0.82f, 0.56f, 0.f }, ACROSS };
-		case C::ENGINE_HARNESS:		return { { 0.915f, 0.74f, 0.2f }, ACROSS };
+
 		case C::FUSE_BOX:			return { { 0.6f, 0.5f, -0.6f }, NONE };
-		case C::IGNITION_COIL:		return { { 1.5f, 0.6f, 0.61f }, NONE };
+		case C::IGNITION_COIL:		return { { CarBody::IGNITION_COIL[0], CarBody::IGNITION_COIL[1], CarBody::IGNITION_COIL[2] }, NONE };
 		case C::STARTER:			return { { BLOCK_REAR - 0.045f, SHAFT_Y - 0.07f, -0.2f }, NONE };
 		// Cooling: the radiator across the nose, the fan behind it.
 		case C::RADIATOR:			return { { 1.98f, 0.24f, 0.f }, ACROSS };
-		case C::RADIATOR_HOSE:		return index == 0 ? CarPose{ { 1.72f, 0.68f, 0.15f }, NONE } : CarPose{ { 1.72f, 0.32f, -0.2f }, NONE };
+		case C::RADIATOR_HOSE:
+		{
+			// Both on the car's right, from the radiator's outlets back to the engine: the upper one from the top tank
+			// to the thermostat's housing on the head, bowed up over the fan; the lower one from the bottom tank up to
+			// the water pump's inlet, bowed out and down clear of the belt. (The model is 0.48 m between its ends along
+			// its own X, its bow toward its +Y, its middle its radius above its origin.)
+			const glm::vec3 from = index == 0 ? glm::vec3(1.905f, 0.635f, 0.22f) : glm::vec3(1.905f, 0.255f, 0.25f);
+			const glm::vec3 to = index == 0 ? glm::vec3(CarBody::ENGINE_X + 0.185f, CarBody::ENGINE_DECK_Y + 0.1f, 0.128f)
+				: glm::vec3(CarBody::ENGINE_X + 0.245f, CarBody::ENGINE_DECK_Y - 0.1f, 0.135f);
+			const glm::vec3 x = glm::normalize(to - from);
+			const glm::vec3 bow = index == 0 ? glm::vec3(0.f, 1.f, 0.f) : glm::vec3(0.f, -0.5f, 1.f);
+			const glm::vec3 y = glm::normalize(bow - x * glm::dot(bow, x));
+			const glm::quat turn = glm::quat_cast(glm::mat3(x, y, glm::cross(x, y)));
+			return { (from + to) * 0.5f - turn * glm::vec3(0.f, 0.021f, 0.f), turn };
+		}
 		case C::COOLING_FAN:		return { { 1.94f, 0.45f, 0.f }, Pitch(glm::half_pi<float>()) };	// against the back of the radiator's core
 		// Exhaust: from the downpipe back under the right of the floor to the tailpipe at the back.
 		case C::CATALYTIC_CONVERTER: return { { 0.15f, 0.07f, 0.28f }, NONE };
@@ -330,13 +347,50 @@ ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 
 glm::quat ShopWorld::CarRotation() const
 {
-	return m_carStation < m_stations.size() ? m_stations[m_carStation].Rotation() : glm::quat(1.f, 0.f, 0.f, 0.f);
+	// (Turned to where it points, and leant on its springs as it's driven.)
+	if (m_carStation >= m_stations.size())
+		return glm::quat(1.f, 0.f, 0.f, 0.f);
+	glm::quat turned = m_stations[m_carStation].Rotation();
+	return m_drive.active ? turned * Roll(m_drive.roll) * Pitch(m_drive.pitch) : turned;
 }
 
 glm::vec3 ShopWorld::CarToWorld(const glm::vec3& offset) const
 {
 	glm::vec3 origin = m_carStation < m_stations.size() ? m_stations[m_carStation].position : glm::vec3(0.f);
 	return origin + CarRotation() * offset;
+}
+
+std::array<ShopBox, 3> ShopWorld::CarBoxes() const
+{
+	// As long and wide as the shell's model, from the floor under it.
+	glm::vec3 low = { -2.2f, 0.f, -0.86f }, high = { 2.2f, CarBody::ROOF_Y, 0.86f };
+	if (m_carStation < m_stations.size() && m_stations[m_carStation].object)
+		if (const auto* model = ModelOf(m_stations[m_carStation].object))
+		{
+			low = model->GetBoundsMin();
+			high = model->GetBoundsMax();
+		}
+	// The hood swings up about its back edge (1.1 m long, to 0.9 rad); the lid about its front (0.5 m, to 1.05 rad).
+	const float hood = CarBody::BELT_Y + 0.02f + 0.87f * CarPanelOpen(CarPanel::HOOD);
+	const float trunk = CarBody::BELT_Y + 0.02f + 0.45f * CarPanelOpen(CarPanel::TRUNK);
+	const float front = CarBody::WINDSHIELD_BASE_X, back = CarBody::REAR_WINDOW_BASE_X;
+	return { ShopBox{ { front, low.y, low.z }, { high.x, hood, high.z } },
+		ShopBox{ { back, low.y, low.z }, { front, high.y, high.z } },
+		ShopBox{ { low.x, low.y, low.z }, { back, trunk, high.z } } };
+}
+
+std::optional<float> ShopWorld::RayCarBody(const glm::vec3& origin, const glm::vec3& direction) const
+{
+	if (m_carStation >= m_stations.size())
+		return std::nullopt;
+	// Into the car's own space, where the boxes are square to it.
+	const glm::quat back = glm::inverse(CarRotation());
+	const glm::vec3 from = back * (origin - CarToWorld(glm::vec3(0.f))), along = back * direction;
+	std::optional<float> nearest;
+	for (const auto& box : CarBoxes())
+		if (auto hit = RayBox(from, along, box.min, box.max); hit && (!nearest || *hit < *nearest))
+			nearest = hit;
+	return nearest;
 }
 
 glm::vec3 ShopWorld::CarSlotCenter(CarSlot slot, int index) const
@@ -362,6 +416,8 @@ void ShopWorld::ToggleCarPanel(CarPanel panel)
 {
 	auto& state = m_carPanels[static_cast<size_t>(panel)];
 	state.open = !state.open;
+	if (panel == CarPanel::HOOD && !state.open)
+		m_hoodLatched = true;
 	Cue(state.open ? Sound::PICK_UP : Sound::SET_DOWN, CarToWorld({ 0.f, 0.8f, 0.f }));
 }
 
@@ -459,6 +515,8 @@ void ShopWorld::AnimateCarPanels(const Workshop& workshop, float deltaTime)
 		m_fuelFlap->SetRotation(CarRotation() * TurnY(CarBody::FLAP_OPEN * CarPanelOpen(CarPanel::FUEL_FLAP)));
 	}
 	PoseCarInstruments(workshop, deltaTime);
+	PoseSeatBacks(workshop, deltaTime);
+	UpdateExhaustSmoke(workshop, deltaTime);
 }
 
 bool ShopWorld::UpdateCarPanels(const Workshop& workshop, const FirstPersonController& player, const InputManager& input)
@@ -471,6 +529,12 @@ bool ShopWorld::UpdateCarPanels(const Workshop& workshop, const FirstPersonContr
 	m_prompt = m_prompt.empty() ? hint : m_prompt + "   " + hint;
 	if (!Controls::Pressed(input, Control::PRIMARY))
 		return false;
+	if (*aimed == CarPanel::HOOD && !IsCarPanelOpen(*aimed) && m_hoodLatched)
+	{
+		Toast("The hood's latched: pull its release, under the dash by the driver's door.");
+		Cue(Sound::CLICK, GetCarPosition());
+		return true;
+	}
 	ToggleCarPanel(*aimed);
 	return true;
 }
@@ -481,8 +545,31 @@ void ShopWorld::PlaceOnCar(ItemVisual& visual, CarSlot slot, int index) const
 	// A nut or bolt stands out of its hole while it's loose, as on the engine.
 	if (CarAssembly::IsFastenerSlot(slot) && visual.part && visual.part->GetTightness() == FastenerTightness::LOOSE && !PartWayDoneUp(*visual.part))
 		pose.offset += pose.rotation * glm::vec3(0.f, 0.012f, 0.f);
-	visual.object->SetPosition(CarToWorld(pose.offset));
-	visual.object->SetRotation(CarRotation() * pose.rotation);
+	// What's on the road, not on the springs (the wheels and what turns with them, the brakes, the back axle), stays
+	// level as the body leans.
+	bool unsprung = false;
+	switch (slot)
+	{
+		case CarSlot::WHEEL: case CarSlot::TIRE: case CarSlot::LUG_NUT: case CarSlot::BRAKE_ROTOR: case CarSlot::BRAKE_DRUM:
+		case CarSlot::BRAKE_CALIPER: case CarSlot::BRAKE_PAD_SET: case CarSlot::CALIPER_BOLT: case CarSlot::BRAKE_SHOE_SET:
+		case CarSlot::WHEEL_CYLINDER: case CarSlot::STEERING_KNUCKLE: case CarSlot::REAR_AXLE: case CarSlot::DIFFERENTIAL:
+		case CarSlot::DIFFERENTIAL_NUT:
+			unsprung = true;
+			break;
+		default:
+			break;
+	}
+	if (unsprung && m_carStation < m_stations.size())
+	{
+		const auto& station = m_stations[m_carStation];
+		visual.object->SetPosition(station.position + station.Rotation() * pose.offset);
+		visual.object->SetRotation(station.Rotation() * pose.rotation);
+	}
+	else
+	{
+		visual.object->SetPosition(CarToWorld(pose.offset));
+		visual.object->SetRotation(CarRotation() * pose.rotation);
+	}
 	visual.object->SetScale({ 1.f, 1.f, 1.f });
 }
 
@@ -625,7 +712,7 @@ namespace
 {
 	constexpr float WHEELBASE = FRONT_AXLE_X - REAR_AXLE_X;
 	constexpr float CAR_HALF_LENGTH = 2.12f;
-	constexpr float CAR_HALF_WIDTH = 0.83f;
+	constexpr float CAR_HALF_WIDTH = 0.85f;
 	constexpr float REVERSE_SPEED = 7.f;		// m/s
 	constexpr float REDLINE = 6200.f;
 	constexpr float GET_OUT_SPEED = 0.6f;		// m/s: it has to be all but stopped
@@ -634,7 +721,10 @@ namespace
 	// Where the head of whoever's in each seat is: the driver's (on the left), the front passenger's, and the two
 	// places on the back seat.
 	const glm::vec3 SEAT_HEADS[] = { { -0.36f, 1.07f, -0.37f }, { -0.36f, 1.07f, 0.37f }, { -1.0f, 1.03f, -0.33f }, { -1.0f, 1.03f, 0.33f } };
-	const char* GEAR_NAMES[] = { "R", "1st", "2nd", "3rd", "4th", "5th" };
+	const char* GEAR_NAMES[] = { "R", "N", "1st", "2nd", "3rd", "4th", "5th" };
+	const char* GearName(int gear) { return GEAR_NAMES[std::clamp(gear, -1, 5) + 1]; }
+	// How much of the car's top speed a gear runs out at.
+	float GearTop(int gear) { return GEAR_TOP[gear < 0 ? 0 : std::clamp(gear, 1, 5)]; }
 
 	// "1:23.4"
 	std::string LapText(float seconds)
@@ -707,33 +797,175 @@ bool ShopWorld::OnPaving(glm::vec2 point) const
 std::optional<int> ShopWorld::AimedSeat(const Workshop& workshop, const FirstPersonController& player) const
 {
 	const auto* build = workshop.GetCar();
-	if (!build || !m_hover || m_carStation >= m_stations.size() || !m_stations[m_carStation].present)
+	if (!build || m_carStation >= m_stations.size() || !m_stations[m_carStation].present)
 		return std::nullopt;
-	// Aimed at the car, any of it.
-	bool atCar = m_hover->kind == TargetKind::STATION && m_hover->stationIndex == m_carStation;
-	if (m_hover->kind == TargetKind::ITEM)
-		if (const auto* visual = Find(m_hover->item))
-			atCar = visual->place == ItemPlace::CAR;
-	if (!atCar)
-		return std::nullopt;
-	// The seat nearest the line of sight: a front one has to be in the car to be sat in (the back seat is part of it).
-	glm::vec3 eye = player.GetEyePosition(), forward = player.GetForward();
-	std::optional<int> nearest;
-	float nearestOff = 0.f;
-	for (int seat = 0; seat < SEATS; seat++)
+	// Only a seat that's itself under the crosshair. A front seat is a part (its base, or its back, which is aimed at
+	// as the seat): the one looked at, in the place it's bolted in.
+	if (m_hover && m_hover->kind == TargetKind::ITEM)
 	{
-		if (seat < 2 && !build->assembly.IsFilled(CarSlot::SEAT, seat))
-			continue;
-		glm::vec3 at = CarToWorld(SEAT_HEADS[seat] - glm::vec3(0.f, 0.4f, 0.f));
-		float along = (std::max)(glm::dot(at - eye, forward), 0.f);
-		float off = glm::length(at - (eye + forward * along));
-		if (!nearest || off < nearestOff)
+		const auto* visual = Find(m_hover->item);
+		if (visual && visual->part && visual->place == ItemPlace::CAR && visual->part->GetType() == PartType::SEAT)
 		{
-			nearest = seat;
-			nearestOff = off;
+			if (auto at = build->assembly.Find(visual->part.get()); at && at->first == CarSlot::SEAT)
+				return std::clamp(at->second, 0, 1);
+			return std::nullopt;
 		}
 	}
-	return nearest;
+	// The back seat is part of the car's shell: the first thing the crosshair is on has to be the shell (not a door,
+	// a window or a front seat in the way), at a point within the bench; the half of the bench it's in is the place.
+	// (What's hovered won't do for this: parts are found before the shell, so under the bench it's the axle.)
+	auto aim = AimAtCar(player, INTERACT_DISTANCE);
+	if (!aim || !aim->shell)
+		return std::nullopt;
+	using namespace CarBody;
+	glm::vec3 hit = glm::inverse(CarRotation()) * (aim->point - m_stations[m_carStation].position);
+	constexpr float SLACK = 0.03f;
+	if (hit.x < REAR_SEAT_BACK_X - SLACK || hit.x > REAR_SEAT_FRONT_X + SLACK || hit.y < REAR_SEAT_BASE_Y - SLACK || hit.y > REAR_SEAT_TOP_Y + SLACK
+		|| std::abs(hit.z) > REAR_SEAT_HALF + SLACK)
+		return std::nullopt;
+	return hit.z < 0.f ? 2 : 3;
+}
+
+glm::vec3 ShopWorld::SeatHead(int seat) const
+{
+	seat = std::clamp(seat, 0, SEATS - 1);
+	glm::vec3 head = SEAT_HEADS[seat];
+	if (seat < 2)
+	{
+		// A front seat's goes with the seat along its rails, and back and down as its back is leant back.
+		constexpr float SHOULDERS = 0.55f;		// how far up the back from its hinge the head is carried
+		const auto& set = m_seats[seat];
+		head.x += set.slide - (std::sin(set.recline) - std::sin(CarBody::SEAT_RECLINE)) * SHOULDERS;
+		head.y += (std::cos(set.recline) - std::cos(CarBody::SEAT_RECLINE)) * SHOULDERS;
+	}
+	return head;
+}
+
+void ShopWorld::PoseSeatBacks(const Workshop& workshop, float deltaTime)
+{
+	using namespace CarBody;
+	const auto* build = workshop.GetCar();
+	bool present = build && m_carStation < m_stations.size() && m_stations[m_carStation].present;
+	for (int side = 0; side < 2; side++)
+	{
+		auto& set = m_seats[side];
+		const auto& back = m_seatBacks[side];
+		pPart seat = present ? build->assembly.Get(CarSlot::SEAT, side) : nullptr;
+		// As the car has it set (which is saved with the car, and the same for everyone in the garage).
+		const CarSeatSetting setting = build ? build->assembly.GetSeatSetting(side) : CarSeatSetting{};
+		if (set.slide != setting.slide)
+			m_carLaidOutAt = glm::vec3(-1e9f);	// the seat's laid out again where it's been slid to
+		set.slide = setting.slide;
+		set.recline = setting.recline;
+		set.folded = seat && setting.folded;
+		float target = set.folded ? 1.f : 0.f;
+		if (set.fold != target)
+		{
+			float step = seat ? deltaTime / 0.4f : 1.f;
+			set.fold = set.fold < target ? (std::min)(target, set.fold + step) : (std::max)(target, set.fold - step);
+		}
+		if (!back)
+			continue;
+		const ItemVisual* visual = seat ? Find(ItemRef::Part(seat->GetId())) : nullptr;
+		bool shown = visual && visual->place == ItemPlace::CAR && visual->object->IsVisible();
+		back->SetVisible(shown);
+		back->SetPickable(shown);
+		if (!shown)
+			continue;
+		// Aimed at, it's the seat that's aimed at; and it looks as the seat does (its cloth, and lit up when it's picked out).
+		m_targets[back.get()] = { TargetKind::ITEM, visual->ref, 0, 0 };
+		back->SetTexture(visual->object->GetTextureIndex());
+		back->SetTint(visual->object->GetTint());
+		back->SetEmissive(visual->object->GetEmissive());
+		auto pose = PoseOnCar(CarSlot::SEAT, side);
+		float angle = glm::mix(set.recline, SEAT_FOLD, glm::smoothstep(0.f, 1.f, set.fold));
+		back->SetPosition(CarToWorld(pose.offset + glm::vec3(SEAT_HINGE_X, SEAT_HINGE_Y, 0.f)));
+		back->SetRotation(CarRotation() * Pitch(angle));
+	}
+}
+
+void ShopWorld::DevSeat(Workshop& workshop, int seat, float slide, float recline, bool folded)
+{
+	CarSeatSetting setting;
+	setting.slide = std::clamp(slide, -CarBody::SEAT_SLIDE, CarBody::SEAT_SLIDE);
+	setting.recline = std::clamp(recline, CarBody::SEAT_RECLINE_MIN, CarBody::SEAT_RECLINE_MAX);
+	setting.folded = folded;
+	workshop.SetCarSeat(std::clamp(seat, 0, 1), setting);
+}
+
+namespace
+{
+	// A number from 0 to 1, different each time.
+	float Chance()
+	{
+		static uint32_t state = 0x9E3779B9u;
+		state = state * 1664525u + 1013904223u;
+		return static_cast<float>(state >> 8) / 16777216.f;
+	}
+}
+
+void ShopWorld::UpdateExhaustSmoke(const Workshop& workshop, float deltaTime)
+{
+	const auto* build = workshop.GetCar();
+	bool running = m_drive.active && build && m_carStation < m_stations.size() && m_stations[m_carStation].present;
+	m_smokeRunning = running ? m_smokeRunning + deltaTime : 0.f;
+	if (running)
+	{
+		// Out of the tailpipe; with no silencer on, from under the floor where the pipe ends.
+		const glm::vec3 pipe = build->assembly.IsFilled(CarSlot::MUFFLER, 0) ? glm::vec3(CarBody::TAILPIPE[0], CarBody::TAILPIPE[1], CarBody::TAILPIPE[2])
+			: glm::vec3(-0.15f, 0.1f, 0.28f);
+		// More of it, and blown out harder, the faster it's turning and with the foot down; thick and white for the
+		// first few seconds after it's started.
+		const float revs = std::clamp((m_drive.rpm - m_drive.idleRpm) / (REDLINE - m_drive.idleRpm), 0.f, 1.f);
+		const float cold = std::clamp(1.f - m_smokeRunning / 6.f, 0.f, 1.f);
+		const float rate = 5.f + 9.f * revs + 5.f * m_drive.throttle + 6.f * cold;
+		m_smokeDue -= deltaTime;
+		const auto& station = m_stations[m_carStation];
+		const glm::vec3 heading = { std::cos(station.yaw), 0.f, -std::sin(station.yaw) };
+		for (int made = 0; m_smokeDue <= 0.f && made < 4; made++)
+		{
+			m_smokeDue += 1.f / rate;
+			// The next one free, or the oldest.
+			SmokePuff* puff = &m_smoke[0];
+			for (auto& candidate : m_smoke)
+				if (candidate.life <= 0.f || (puff->life > 0.f && candidate.age / candidate.life > puff->age / puff->life))
+					puff = &candidate;
+			if (!puff->object)
+				continue;
+			puff->age = 0.f;
+			puff->life = 1.1f + 0.9f * Chance();
+			puff->position = CarToWorld(pipe);
+			const float blown = 0.7f + 1.8f * revs + 1.2f * m_drive.throttle;
+			puff->velocity = CarRotation() * glm::vec3(-blown, 0.15f + 0.25f * Chance(), (Chance() - 0.5f) * 0.4f) + heading * (m_drive.speed * 0.2f);
+			puff->size = 0.07f + 0.05f * revs + 0.03f * Chance();
+			puff->thick = 0.3f + 0.3f * cold + 0.15f * m_drive.throttle;
+		}
+		m_smokeDue = (std::max)(m_smokeDue, -0.2f);
+	}
+	// Each drifts on, slowing and rising, swelling and thinning to nothing.
+	for (auto& puff : m_smoke)
+	{
+		if (!puff.object)
+			continue;
+		if (puff.life > 0.f)
+		{
+			puff.age += deltaTime;
+			if (puff.age >= puff.life)
+				puff.life = 0.f;
+		}
+		puff.object->SetVisible(puff.life > 0.f);
+		if (puff.life <= 0.f)
+			continue;
+		puff.velocity *= std::exp(-1.6f * deltaTime);
+		puff.velocity.y += 0.4f * deltaTime;
+		puff.position += puff.velocity * deltaTime;
+		puff.position.y = (std::max)(puff.position.y, 0.04f);
+		const float through = puff.age / puff.life;
+		const float shade = 0.62f + 0.3f * std::clamp(puff.thick - 0.3f, 0.f, 0.3f) / 0.3f;
+		puff.object->SetPosition(puff.position);
+		puff.object->SetScale(glm::vec3(puff.size * (1.f + 5.5f * through)));
+		puff.object->SetTint({ shade, shade, shade * 1.02f, puff.thick * std::pow(1.f - through, 1.5f) * (std::min)(1.f, puff.age / 0.06f) });
+	}
 }
 
 void ShopWorld::Sit(int seat, Workshop& workshop)
@@ -741,15 +973,23 @@ void ShopWorld::Sit(int seat, Workshop& workshop)
 	if (m_seat >= 0 || m_carStation >= m_stations.size() || !m_stations[m_carStation].present)
 		return;
 	m_seat = std::clamp(seat, 0, SEATS - 1);
+	DropHeldPlug(workshop);
 	m_seatJustIn = true;
 	m_seatLastYaw = m_stations[m_carStation].yaw;
 	// Nothing in hand in there.
 	m_handEmpty = true;
 	SyncHand();
 	Cue(Sound::SET_DOWN, GetCarPosition());
-	// In the driver's seat the key's turned straight away (they still sit there if it won't go).
-	if (m_seat == 0)
-		StartDrive(workshop);
+	// A front seat that was tipped forward has its back put up to be sat in.
+	if (const auto* build = workshop.GetCar(); build && m_seat < 2 && build->assembly.GetSeatSetting(m_seat).folded)
+	{
+		CarSeatSetting setting = build->assembly.GetSeatSetting(m_seat);
+		setting.folded = false;
+		workshop.SetCarSeat(m_seat, setting);
+	}
+	// (In the driver's seat, the key's theirs to turn: see Drive.) Left running, it's theirs to drive off.
+	if (CarBeingDriven())
+		RebuildCollision();
 }
 
 bool ShopWorld::DevStartDrive(Workshop& workshop)
@@ -788,9 +1028,43 @@ bool ShopWorld::StartDrive(Workshop& workshop)
 	m_drive.grip = std::clamp(static_cast<float>(car.lateralGrip), 0.3f, 1.3f) * 9.81f;
 	m_drive.idleRpm = car.idleRpm > 0.0 ? static_cast<float>(car.idleRpm) : 850.f;
 	m_drive.rpm = m_drive.idleRpm;
-	// Everything shut before it moves off.
-	for (auto& panel : m_carPanels)
-		panel.open = false;
+	// How it handles, from its alignment, its tires' pressures and its suspension.
+	if (const auto* build = workshop.GetCar())
+	{
+		const auto& fitted = build->assembly;
+		const auto& tune = fitted.GetTune();
+		const auto& spec = fitted.GetSpec();
+		const CarTune factory = CarTune::Factory(spec);
+		// Toe: out sharpens how the front bites (and makes it nervous), and far off either way scrubs its grip away.
+		// Camber: leaning in a little more than stock grips harder in a bend, leaning out less. Caster brings the
+		// wheel back to the middle.
+		float toe = static_cast<float>(tune.frontToe - factory.frontToe), camber = static_cast<float>(tune.frontCamber - factory.frontCamber);
+		m_drive.frontBite = 11.f * (1.f - std::clamp(toe * 0.04f, -0.25f, 0.25f));
+		m_drive.frontGrip = 1.f - (std::min)(0.15f, 0.02f * std::abs(toe)) + std::clamp(-camber * 0.03f, -0.1f, 0.06f);
+		m_drive.selfCentre = std::clamp(1.f + 0.6f * static_cast<float>(tune.caster), 0.6f, 3.5f);
+		// A soft tire grips less; one softer than the other across the front tugs the car its way.
+		auto soft = [&](int corner) { return static_cast<float>((std::max)(0.0, (factory.tirePressure[corner] - tune.tirePressure[corner]) / factory.tirePressure[corner])); };
+		m_drive.frontGrip *= 1.f - 0.25f * (soft(0) + soft(1));
+		m_drive.rearGrip = 1.f - 0.25f * (soft(2) + soft(3));
+		m_drive.tug = 0.03f * static_cast<float>((tune.tirePressure[1] - tune.tirePressure[0]) / factory.tirePressure[0]);
+		// Tired struts, shocks and springs let the body lean further and wallow; with no sway bar it rolls more
+		// and the tail's quicker to go.
+		int tired = 0, counted = 0;
+		for (CarSlot slot : { CarSlot::FRONT_STRUT, CarSlot::FRONT_COIL_SPRING, CarSlot::REAR_SHOCK, CarSlot::REAR_COIL_SPRING })
+			for (int index = 0; index < fitted.SlotCount(slot); index++, counted++)
+				if (auto part = fitted.Get(slot, index); !part || part->GetCondition() == PartCondition::DAMAGED)
+					tired++;
+		float worn = counted ? static_cast<float>(tired) / static_cast<float>(counted) : 0.f;
+		m_drive.lean = 1.f + 0.8f * worn;
+		m_drive.damping = 0.7f - 0.45f * worn;
+		if (!fitted.IsFilled(CarSlot::FRONT_SWAY_BAR, 0))
+		{
+			m_drive.lean *= 1.4f;
+			m_drive.rearGrip *= 0.95f;
+		}
+	}
+	// Out of gear: the gears are the driver's to change.
+	m_drive.gear = 0;
 	// It's no longer in its own way.
 	RebuildCollision();
 	return true;
@@ -803,6 +1077,7 @@ void ShopWorld::EndDrive()
 	m_drive.active = false;
 	m_drive.speed = 0.f;
 	m_drive.steer = 0.f;
+	m_drive.roll = m_drive.pitch = 0.f;
 	m_supportChanged = true;
 	m_carLaidOutAt = glm::vec3(-1e9f);	// its wheels are put straight again
 	RebuildCollision();
@@ -812,7 +1087,9 @@ void ShopWorld::LeaveSeat(FirstPersonController* player)
 {
 	if (m_seat < 0)
 		return;
-	EndDrive();
+	// (The engine's left running, if it was: see IdleCar.)
+	m_drive.speed = 0.f;
+	m_cranking = 0.f;
 	// Out beside the door of the seat they were in, or wherever round the car there's room to stand (the car's own
 	// box isn't in the way of that).
 	if (player)
@@ -841,6 +1118,8 @@ void ShopWorld::LeaveSeat(FirstPersonController* player)
 		player->SetPosition(out);
 	}
 	m_seat = -1;
+	m_supportChanged = true;
+	RebuildCollision();
 	Cue(Sound::SET_DOWN, GetCarPosition());
 }
 
@@ -858,6 +1137,15 @@ void ShopWorld::ToggleHeadlights(const Workshop& workshop)
 	if (!m_headlights.on && !car.IsFilled(CarSlot::HEADLIGHT, 0) && !car.IsFilled(CarSlot::HEADLIGHT, 1))
 	{
 		Toast("It has no headlights on it.");
+		return;
+	}
+	if (!m_headlights.on && (!car.IsPlugged(CarPlug::BATTERY) || !car.IsPlugged(CarPlug::GROUND)
+		|| (!car.IsPlugged(CarPlug::HEADLIGHT_LEFT) && !car.IsPlugged(CarPlug::HEADLIGHT_RIGHT))))
+	{
+		Toast(!car.IsPlugged(CarPlug::BATTERY) ? "Nothing: the harness's lead isn't on the battery."
+			: !car.IsPlugged(CarPlug::GROUND) ? "Nothing: the battery's ground strap isn't on the chassis."
+			: "Nothing: neither headlight is plugged into the harness.");
+		Cue(Sound::CLICK, GetCarPosition());
 		return;
 	}
 	m_headlights.on = !m_headlights.on;
@@ -897,23 +1185,28 @@ void ShopWorld::Drive(float deltaTime, Workshop& workshop, FirstPersonController
 	if (playerHasControl)
 		player.UpdateLook(input);
 
-	if (m_drive.active)
+	// The key (or a click on it in its barrel: see UpdateCarControls).
+	if (m_seat == 0 && playerHasControl && !justIn && Controls::Pressed(input, Control::IGNITION))
+		TurnKey(workshop);
+	if (m_cranking > 0.f)
+	{
+		m_cranking -= deltaTime;
+		if (m_cranking <= 0.f && m_seat == 0)
+			StartDrive(workshop);
+	}
+	if (CarBeingDriven())
 		MoveCar(deltaTime, workshop, input, playerHasControl);
-	else if (m_seat == 0 && playerHasControl && !justIn && Controls::Pressed(input, Control::FORWARD))
-		StartDrive(workshop);	// the key, turned again
-	if (m_seat == 0 && playerHasControl && Controls::Pressed(input, Control::HEADLIGHTS))
-		ToggleHeadlights(workshop);
 
 	// Whoever's in it goes with it: kept in their seat, and turned as the car turns.
 	float turned = std::remainder(station.yaw - m_seatLastYaw, glm::two_pi<float>());
 	m_seatLastYaw = station.yaw;
 	player.SetYaw(player.GetYaw() + turned);
-	player.SetPosition(CarToWorld(SEAT_HEADS[m_seat]) - (player.GetEyePosition() - player.GetFeetPosition()));
+	player.SetPosition(CarToWorld(SeatHead(m_seat)) - (player.GetEyePosition() - player.GetFeetPosition()));
 
 	// [F] gets out, once it's stopped.
 	if (playerHasControl && !justIn && Controls::Pressed(input, Control::MOVE))
 	{
-		if (!m_drive.active || std::abs(m_drive.speed) <= GET_OUT_SPEED)
+		if (!CarBeingDriven() || std::abs(m_drive.speed) <= GET_OUT_SPEED)
 			LeaveSeat(&player);
 		else
 			Toast("Stop the car before getting out.");
@@ -927,6 +1220,7 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 	// The pedals and the wheel. Forward pulls away (or brakes, going backward); back brakes, then reverses.
 	float go = 0.f, steerTo = 0.f;
 	bool handbrake = false;
+	const float speedBefore = drive.speed;
 	if (playerHasControl)
 	{
 		go = (Controls::Held(input, Control::FORWARD) ? 1.f : 0.f) - (Controls::Held(input, Control::BACK) ? 1.f : 0.f);
@@ -934,84 +1228,220 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 		handbrake = Controls::Held(input, Control::JUMP);
 	}
 	// (The developer's foot: forward for so long, or backward for a time given as less than nothing.)
-	if (drive.devSeconds != 0.f)
+	const bool devDriving = drive.devSeconds != 0.f;
+	if (devDriving)
 	{
 		go = drive.devSeconds > 0.f ? 1.f : -1.f;
 		drive.devSeconds = go > 0.f ? (std::max)(0.f, drive.devSeconds - deltaTime) : (std::min)(0.f, drive.devSeconds + deltaTime);
 		steerTo = drive.devSteer;
 	}
-	bool forward = drive.speed > 0.05f, backward = drive.speed < -0.05f;
-	float throttle = 0.f, brake = 0.f;
-	int direction = forward ? 1 : backward ? -1 : go > 0.f ? 1 : go < 0.f ? -1 : 0;
-	if (go != 0.f && (go > 0.f) == (direction > 0))
-		throttle = 1.f;
-	else if (go != 0.f)
-		brake = 1.f;
-	if (handbrake)
-		throttle = 0.f;
-	drive.throttle = throttle;
-
 	// Off the asphalt, in the sand: it bogs down, won't pull or go as it does on the road, and slides sooner.
 	drive.offRoad = !OnPaving({ station.position.x, station.position.z });
-	float limit = direction >= 0 ? drive.topSpeed : REVERSE_SPEED;
 	float pull = drive.pull, grip = drive.grip;
 	if (drive.offRoad)
 	{
-		limit *= 0.45f;
 		pull *= 0.7f;
 		grip *= 0.6f;
 	}
-	// How hard it pulls falls away to nothing at its top speed; the drag of the engine and the road slows it with the foot off.
-	float pace = std::abs(drive.speed);
-	if (throttle > 0.f && pace < limit)
-		pace += pull * (std::max)(0.f, 1.f - (pace / limit) * (pace / limit)) * (direction < 0 ? 0.6f : 1.f) * deltaTime;
+	// (The gears are the driver's to change. Only the developer's foot, with no gear held, has them changed for it.)
+	const bool manual = !devDriving || m_devGear != NO_DEV_GEAR;
+	if (manual && devDriving)
+		drive.gear = std::clamp(m_devGear, -1, 5);
+	float throttle = 0.f, brake = 0.f, pace = std::abs(drive.speed);
+	int direction = 0;
+	float wheelRevs = 0.f;		// what the wheels would have the engine turning at, in gear
+	if (manual)
+	{
+		// The driver's gearbox: forward is the throttle and back the brake, whatever gear it's in. The clutch pedal
+		// has to be down to move the lever (but for knocking it out into neutral), up and down through reverse,
+		// neutral and first to fifth; let up, it bites over half a second.
+		const bool clutchDown = playerHasControl && !devDriving && Controls::Held(input, Control::CLUTCH);
+		drive.clutch = clutchDown ? (std::max)(0.f, drive.clutch - deltaTime / 0.08f) : (std::min)(1.f, drive.clutch + deltaTime / 0.45f);
+		// (Without the clutch the lever still goes, but slowly and with a crunch: it's out of gear till it's in.)
+		constexpr float CRUNCH_SECONDS = 0.8f;
+		const int from = drive.shifting > 0.f ? drive.shiftingTo : drive.gear;
+		int wanted = from;
+		if (playerHasControl && Controls::Pressed(input, Control::SHIFT_UP) && from < 5)
+			wanted++;
+		if (playerHasControl && Controls::Pressed(input, Control::SHIFT_DOWN) && from > -1)
+			wanted--;
+		if (wanted != from)
+		{
+			if (wanted < 0 && drive.speed > 1.5f)
+				Toast("Stop before putting it in reverse.");
+			else if (clutchDown || wanted == 0)
+			{
+				drive.gear = wanted;
+				drive.shifting = 0.f;
+			}
+			else
+			{
+				drive.gear = 0;
+				drive.shiftingTo = wanted;
+				drive.shifting = CRUNCH_SECONDS;
+				Cue(Sound::RATCHET, GetCarPosition());
+			}
+		}
+		if (drive.shifting > 0.f)
+		{
+			// With the clutch put down meanwhile, it goes straight in.
+			drive.shifting = clutchDown ? 0.f : drive.shifting - deltaTime;
+			if (drive.shifting <= 0.f)
+				drive.gear = drive.shiftingTo;
+		}
+		throttle = go > 0.f && !handbrake ? 1.f : 0.f;
+		brake = go < 0.f ? 1.f : 0.f;
+		float speed = drive.speed;
+		const float bite = drive.gear != 0 ? drive.clutch : 0.f;
+		if (bite > 0.02f)
+		{
+			// In gear, as far as the clutch has bitten, the engine turns with the wheels (slipping to pull away from
+			// rest): it pulls hardest in the low gears and in the middle of its revs, not at all past the red line,
+			// holds the car back with the foot off, and at its idle creeps along.
+			const float way = drive.gear < 0 ? -1.f : 1.f;
+			const float top = GearTop(drive.gear) * drive.topSpeed;
+			const float along = speed * way;
+			wheelRevs = REDLINE * (std::max)(along, 0.f) / top;
+			const float revs = std::clamp(wheelRevs / REDLINE, drive.idleRpm / REDLINE, 1.2f);
+			const float gearing = std::pow(GEAR_TOP[1] / GearTop(drive.gear), 0.85f);
+			const float torque = wheelRevs >= REDLINE ? 0.f : 0.45f + 1.1f * revs - 0.75f * revs * revs;
+			if (throttle > 0.f)
+				speed += way * pull * 1.3f * torque * gearing * bite * deltaTime;
+			else if (wheelRevs > drive.idleRpm)
+				speed -= way * (std::min)(along, (0.3f + 1.6f * gearing * revs) * bite * deltaTime);
+			else if (brake == 0.f && !handbrake)
+				speed += way * pull * 0.35f * gearing * bite * deltaTime;
+			// Braked to a stop in gear with the clutch up, it stalls.
+			if (bite > 0.9f && wheelRevs < 300.f && throttle == 0.f && (brake > 0.f || handbrake))
+			{
+				Toast("Stalled: clutch down ([Clutch]) before it stops.");
+				EndDrive();
+				return;
+			}
+		}
+		// What always slows it: the road and the air (which is what sets its top speed), the brakes, the sand.
+		float slowing = 0.25f + 0.32f * drive.pull * (pace / drive.topSpeed) * (pace / drive.topSpeed) + brake * drive.braking + (handbrake ? drive.braking * 0.6f : 0.f);
+		if (drive.offRoad)
+			slowing += 0.5f + pace * 0.12f;
+		float slowed = (std::min)(std::abs(speed), slowing * deltaTime);
+		speed -= speed > 0.f ? slowed : -slowed;
+		drive.speed = speed;
+		pace = std::abs(speed);
+		direction = speed > 0.05f ? 1 : speed < -0.05f ? -1 : 0;
+	}
 	else
-		pace -= (0.35f + pace * 0.03f + brake * drive.braking + (handbrake ? drive.braking * 0.6f : 0.f)) * deltaTime;
-	if (drive.offRoad)
-		pace -= (0.5f + pace * 0.09f) * deltaTime;
-	pace = (std::max)(0.f, pace);
-	drive.speed = pace * static_cast<float>(direction);
+	{
+		// The developer's foot (`car drive`): forward pulls away (or brakes, going backward); back brakes, then reverses.
+		bool forward = drive.speed > 0.05f, backward = drive.speed < -0.05f;
+		direction = forward ? 1 : backward ? -1 : go > 0.f ? 1 : go < 0.f ? -1 : 0;
+		if (go != 0.f && (go > 0.f) == (direction > 0))
+			throttle = 1.f;
+		else if (go != 0.f)
+			brake = 1.f;
+		if (handbrake)
+			throttle = 0.f;
+		float limit = direction >= 0 ? drive.topSpeed : REVERSE_SPEED;
+		if (drive.offRoad)
+			limit *= 0.45f;
+		// How hard it pulls falls away to nothing at its top speed; the drag of the engine and the road slows it with the foot off.
+		if (throttle > 0.f && pace < limit)
+			pace += pull * (std::max)(0.f, 1.f - (pace / limit) * (pace / limit)) * (direction < 0 ? 0.6f : 1.f) * deltaTime;
+		else
+			pace -= (0.35f + pace * 0.03f + brake * drive.braking + (handbrake ? drive.braking * 0.6f : 0.f)) * deltaTime;
+		if (drive.offRoad)
+			pace -= (0.5f + pace * 0.09f) * deltaTime;
+		pace = (std::max)(0.f, pace);
+		drive.speed = pace * static_cast<float>(direction);
+	}
+	drive.throttle = throttle;
 
-	// The wheel: only as far as the tires will hold at speed.
-	float lock = (std::min)(CarBody::FULL_LOCK, std::atan(WHEELBASE * grip / (std::max)(pace * pace, 0.01f)));
-	float turnRate = 1.6f * deltaTime;
-	drive.steer += std::clamp(steerTo * lock - drive.steer, -turnRate, turnRate);
+	// The wheel goes as far over at any speed, and comes back to the middle by itself (faster the more caster it has).
+	float turnRate = (steerTo != 0.f ? 2.f : drive.selfCentre) * deltaTime;
+	drive.steer += std::clamp(steerTo * CarBody::FULL_LOCK - drive.steer, -turnRate, turnRate);
 	drive.steer = std::clamp(drive.steer, -CarBody::FULL_LOCK, CarBody::FULL_LOCK);
 
-	// Moved a little at a time, so nothing thin is driven straight through. Its back axle follows the front wheels round.
+	// What the tires can do. Each axle has its share of the grip: more on the front under braking and on the back
+	// pulling away, as the weight shifts. What an axle spends pushing or stopping the car it hasn't left for holding
+	// it sideways: the driven back wheels with the foot down, the front ones braking hard, and the back ones locked
+	// by the handbrake hardly hold at all. More throttle than the back tires can put down just spins them.
+	constexpr float CG_HEIGHT = 0.5f, HALF = WHEELBASE * 0.5f, TURNING_INERTIA = 1.5f, REAR_BITE = 12.f, SHAPE = 1.4f;
+	float along = (drive.speed - speedBefore) / (std::max)(deltaTime, 1e-4f);
+	const float shift = std::clamp(along * CG_HEIGHT / (9.81f * WHEELBASE), -0.2f, 0.2f);
+	const float frontShare = grip * (0.5f - shift) * drive.frontGrip, rearShare = grip * (0.5f + shift) * drive.rearGrip;
+	bool spinning = false;
+	if (along > rearShare && drive.speed * speedBefore >= 0.f)
+	{
+		drive.speed = speedBefore + (drive.speed > speedBefore ? rearShare : -rearShare) * deltaTime;
+		along = rearShare;
+		spinning = true;
+	}
+	const float frontSpent = along < 0.f ? -along * 0.65f : 0.f, rearSpent = along > 0.f ? along : -along * 0.35f;
+	const float frontHold = std::sqrt((std::max)(frontShare * frontShare - frontSpent * frontSpent, frontShare * frontShare * 0.04f));
+	float rearHold = std::sqrt((std::max)(rearShare * rearShare - rearSpent * rearSpent, rearShare * rearShare * 0.06f));
+	if (handbrake)
+		rearHold *= 0.35f;
+
+	// Moved a little at a time (so nothing thin is driven straight through), its tires pushing it sideways and round
+	// by how far each axle is slipping across the way it's pointed: the front ones turned with the wheel. Turned
+	// too hard for its speed the front pushes wide; with the back let go, the tail comes round. At a crawl (and
+	// going backward) it just follows its front wheels.
 	const glm::vec3 from = station.position;
 	bool wasBlocked = CarBlocked(station.position, station.yaw);
-	float travel = drive.speed * deltaTime;
-	int steps = std::clamp(static_cast<int>(std::ceil(std::abs(travel) / 0.08f)), 1, 12);
-	float moved = 0.f;
-	for (int step = 0; step < steps; step++)
+	const float turned = std::clamp(drive.steer + drive.tug, -CarBody::FULL_LOCK, CarBody::FULL_LOCK);
+	float forward = drive.speed, sideways = drive.slide, turning = drive.yawRate;
+	const int steps = std::clamp(static_cast<int>(std::ceil((std::abs(forward) + std::abs(sideways)) * deltaTime / 0.08f)), 6, 16);
+	const float step = deltaTime / static_cast<float>(steps);
+	float moved = 0.f, frontSlip = 0.f, rearSlip = 0.f;
+	for (int i = 0; i < steps; i++)
 	{
-		float part = travel / static_cast<float>(steps);
-		float yaw = station.yaw + part / WHEELBASE * std::tan(drive.steer);
-		// Turning about the back axle, not the middle of the car.
-		glm::vec3 heading = { std::cos(station.yaw), 0.f, -std::sin(station.yaw) };
-		glm::vec3 axle = station.position + heading * (REAR_AXLE_X + part);
-		glm::vec3 position = axle - glm::vec3(std::cos(yaw), 0.f, -std::sin(yaw)) * REAR_AXLE_X;
+		if (forward > 1.5f)
+		{
+			frontSlip = turned - std::atan2(sideways + HALF * turning, forward);
+			rearSlip = -std::atan2(sideways - HALF * turning, forward);
+			float front = frontHold * std::sin(SHAPE * std::atan(drive.frontBite * frontSlip));
+			float rear = rearHold * std::sin(SHAPE * std::atan(REAR_BITE * rearSlip));
+			float push = front * std::cos(turned) + rear;
+			sideways += (push - forward * turning) * step;
+			turning += HALF * (front * std::cos(turned) - rear) / TURNING_INERTIA * step;
+			forward += (sideways * turning - front * std::sin(turned)) * step;
+		}
+		// Following its front wheels round about its back axle, as far as it's too slow for the tires to slip.
+		float slipping = forward > 0.f ? std::clamp((forward - 1.5f) / 3.f, 0.f, 1.f) : 0.f;
+		float follows = forward * std::tan(turned) / WHEELBASE;
+		turning = glm::mix(follows, turning, slipping);
+		sideways = glm::mix(follows * HALF, sideways, slipping);
+
+		float yaw = station.yaw + turning * step;
+		glm::vec3 heading = { std::cos(station.yaw), 0.f, -std::sin(station.yaw) }, left = { -std::sin(station.yaw), 0.f, -std::cos(station.yaw) };
+		glm::vec3 position = station.position + (heading * forward + left * sideways) * step;
 		// Into something: it stops (with a thump, if it was moving). One that's parked in something already can
 		// still be driven out of it.
 		bool blocked = CarBlocked(position, yaw);
 		if (!wasBlocked && blocked)
 		{
-			if (std::abs(drive.speed) > 1.5f && drive.bumped > 0.4f)
+			if (std::abs(forward) + std::abs(sideways) > 1.5f && drive.bumped > 0.4f)
 				Cue(Sound::DROP, GetCarPosition());
 			drive.bumped = 0.f;
-			drive.speed = -drive.speed * 0.15f;
+			forward = -forward * 0.15f;
+			sideways = turning = 0.f;
 			break;
 		}
 		wasBlocked = blocked;
 		station.position = position;
 		station.yaw = yaw;
-		moved += part;
+		moved += forward * step;
 	}
+	drive.speed = forward;
+	drive.slide = sideways;
+	drive.yawRate = turning;
+	drive.sliding = forward > 4.f && (spinning || std::abs(rearSlip) > 0.16f || std::abs(frontSlip) > 0.2f);
 	drive.bumped += deltaTime;
 	station.yaw = std::remainder(station.yaw, glm::two_pi<float>());
+	// The body leans out of the bend, squats pulling away and dives braking (and shakes, over the sand).
+	float shake = drive.offRoad ? (std::min)(std::abs(forward) / 12.f, 1.f) : 0.f;
+	LeanCar(deltaTime, along + shake * 3.f * std::sin(m_time * 31.f), forward * turning + shake * 4.f * std::sin(m_time * 23.f));
 	station.object->SetPosition(station.position);
-	station.object->SetRotation(station.Rotation());
+	station.object->SetRotation(CarRotation());
 	drive.spin = std::fmod(drive.spin + moved / WHEEL_Y, glm::two_pi<float>());
 
 	// A lap of the highway, timed from the chequered line across its front straight each time it's crossed the same way.
@@ -1040,21 +1470,39 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 
 	// The engine's note: up through each gear as it gathers speed, and with the foot down.
 	pace = std::abs(drive.speed);
-	if (direction < 0)
-		drive.gear = 0;
+	float revs = 0.f;
+	if (manual)
+	{
+		// Out of gear it revs freely with the foot down; in gear it turns with the wheels, the clutch slipping (and
+		// the revs up a little with the throttle) while that's under its idle.
+		const float free = drive.idleRpm + throttle * (REDLINE * 0.92f - drive.idleRpm);
+		const float geared = wheelRevs > drive.idleRpm ? (std::min)(wheelRevs, REDLINE + 150.f) : drive.idleRpm + throttle * 1400.f;
+		revs = drive.gear == 0 ? free : glm::mix(free, geared, drive.clutch);
+		// A door left open is blown shut once it's moving.
+		if (pace > 4.f)
+			m_carPanels[static_cast<size_t>(CarPanel::DOOR_LEFT)].open = m_carPanels[static_cast<size_t>(CarPanel::DOOR_RIGHT)].open = false;
+	}
 	else
 	{
-		// Up a gear near the red line, down one when the revs have dropped well off.
-		int gear = (std::max)(drive.gear, 1);
-		while (gear < 5 && pace > GEAR_TOP[gear] * drive.topSpeed * 0.9f)
-			gear++;
-		while (gear > 1 && pace < GEAR_TOP[gear - 1] * drive.topSpeed * 0.55f)
-			gear--;
-		drive.gear = gear;
+		if (direction < 0)
+			drive.gear = -1;
+		else
+		{
+			// Up a gear near the red line, down one when the revs have dropped well off.
+			int gear = (std::max)(drive.gear, 1);
+			while (gear < 5 && pace > GEAR_TOP[gear] * drive.topSpeed * 0.9f)
+				gear++;
+			while (gear > 1 && pace < GEAR_TOP[gear - 1] * drive.topSpeed * 0.55f)
+				gear--;
+			drive.gear = gear;
+		}
+		revs = drive.idleRpm + (REDLINE - drive.idleRpm) * (std::min)(1.f, pace / (GearTop(drive.gear) * drive.topSpeed));
+		revs += throttle * 250.f;
 	}
-	float revs = drive.idleRpm + (REDLINE - drive.idleRpm) * (std::min)(1.f, pace / (GEAR_TOP[drive.gear] * drive.topSpeed));
-	revs += throttle * 250.f;
-	drive.rpm += (revs - drive.rpm) * (1.f - std::exp(-deltaTime * 6.f));
+	// Turning with the wheels it follows them closely; free of them (out of gear, or the clutch down) it spins up
+	// quickly with the foot down and its flywheel carries it on, falling away slowly, with it off.
+	const bool freed = manual && (drive.gear == 0 || drive.clutch < 0.5f);
+	drive.rpm += (revs - drive.rpm) * (1.f - std::exp(-deltaTime * (!freed ? 6.f : revs > drive.rpm ? 5.f : 1.1f)));
 
 	// Fuel burned by the mile; out of it, that's that.
 	if (!workshop.DriveCar(deltaTime, std::abs(moved), throttle))
@@ -1069,9 +1517,10 @@ std::string ShopWorld::SeatPrompt() const
 	if (m_seat != 0)
 		return "[F] Get out";
 	if (!m_drive.active)
-		return "[W] Start it   [L] Headlights   [F] Get out";
-	return std::abs(m_drive.speed) <= GET_OUT_SPEED ? "[W]/[S] Drive   [A]/[D] Steer   [Space] Handbrake   [L] Headlights   [F] Get out"
-		: "[Space] Handbrake   [L] Headlights";
+		return m_cranking > 0.f ? "Turning over..." : "[I] Turn the key   [F] Get out";
+	bool stopped = std::abs(m_drive.speed) <= GET_OUT_SPEED;
+	return stopped ? "Hold [Clutch] Clutch   [Up]/[Down] Gear up, down   [W] Throttle   [S] Brake   [A]/[D] Steer   [Space] Handbrake   [I] Switch off   [F] Get out"
+		: "Hold [Clutch] Clutch   [Up]/[Down] Gear   [Space] Handbrake";
 }
 
 void ShopWorld::PoseCarInstruments(const Workshop& workshop, float deltaTime)
@@ -1096,23 +1545,32 @@ void ShopWorld::PoseCarInstruments(const Workshop& workshop, float deltaTime)
 			auto pose = PoseOnCar(CarSlot::HEADLIGHT, side);
 			lens->SetPosition(CarToWorld(pose.offset));
 			lens->SetRotation(CarRotation() * pose.rotation);
-			lens->SetEmissive(m_headlights.on && m_headlights.amount > 0.6f ? 4.f : 0.f);
+			// (Lit only if it's plugged in.)
+			bool fed = build->assembly.IsPlugged(side == 0 ? CarPlug::HEADLIGHT_LEFT : CarPlug::HEADLIGHT_RIGHT);
+			lens->SetEmissive(m_headlights.on && m_headlights.amount > 0.6f && fed ? 4.f : 0.f);
 		}
 
 	// The gauges: live with the engine running, their needles settling to what they read.
 	bool cluster = present && build->assembly.IsFilled(CarSlot::INSTRUMENT_CLUSTER, 0);
 	float reads[GAUGES] = {};
+	using namespace CarBody;
 	if (cluster && m_drive.active)
 	{
 		double tank = build->assembly.GetSpec().Fluid(FluidCircuit::FUEL).capacity;
-		reads[0] = std::abs(m_drive.speed) * 3.6f / 200.f;
-		reads[1] = m_drive.rpm / 8000.f;
+		reads[0] = std::abs(m_drive.speed) * 3.6f / SPEEDO_TOP;
+		reads[1] = m_drive.rpm / TACH_TOP;
 		reads[2] = tank > 0.0 ? static_cast<float>(build->assembly.GetFluid(FluidCircuit::FUEL).Total() / tank) : 0.f;
-		reads[3] = static_cast<float>(workshop.CarEngineHeat()) * 0.62f;	// warmed right through, it sits a little over half way
+		reads[3] = 0.4f + 0.35f * std::clamp(m_drive.rpm / 4000.f, 0.f, 1.f);	// the oil's pressure, up with the revs
+		reads[4] = static_cast<float>(workshop.CarEngineHeat()) * 0.55f;		// warmed right through, it sits about half way
+		// A gauge whose sender isn't plugged in reads nothing.
+		if (!build->assembly.IsPlugged(CarPlug::OIL_SENDER))
+			reads[3] = 0.f;
+		if (!build->assembly.IsPlugged(CarPlug::COOLANT_SENDER))
+			reads[4] = 0.f;
 	}
-	using namespace CarBody;
-	const glm::vec3 PIVOTS[GAUGES] = { { GAUGE_BIG_X, GAUGE_Y, -0.0575f }, { -GAUGE_BIG_X, GAUGE_Y, -0.0575f },
-		{ 0.f, GAUGE_Y + GAUGE_SMALL_Y, -0.0575f }, { 0.f, GAUGE_Y - GAUGE_SMALL_Y, -0.0575f } };
+	const float low = GAUGE_Y - GAUGE_SMALL_Y, behind = -0.054f;
+	const glm::vec3 PIVOTS[GAUGES] = { { GAUGE_BIG_X, GAUGE_Y, behind }, { -GAUGE_BIG_X, GAUGE_Y, behind },
+		{ GAUGE_FUEL_X, low, behind }, { GAUGE_OIL_X, low, behind }, { GAUGE_TEMP_X, low, behind } };
 	auto pose = PoseOnCar(CarSlot::INSTRUMENT_CLUSTER, 0);
 	for (int gauge = 0; gauge < GAUGES; gauge++)
 	{
@@ -1127,7 +1585,7 @@ void ShopWorld::PoseCarInstruments(const Workshop& workshop, float deltaTime)
 		float turn = (big ? GAUGE_SWEEP : GAUGE_SMALL_SWEEP) * (m_gaugeReads[gauge] - 0.5f);
 		needle->SetPosition(CarToWorld(pose.offset + pose.rotation * PIVOTS[gauge]));
 		needle->SetRotation(CarRotation() * pose.rotation * glm::angleAxis(turn, glm::vec3(0.f, 0.f, 1.f)));
-		needle->SetScale(glm::vec3(big ? 1.f : GAUGE_SMALL / GAUGE_BIG));
+		needle->SetScale(glm::vec3(big ? 1.f : GAUGE_SMALL / (GAUGE_BIG * 0.92f)));
 	}
 }
 
@@ -1136,7 +1594,7 @@ ShopWorld::CameraView ShopWorld::DriveCamera(const FirstPersonController& player
 	glm::quat look = player.GetRotation();
 	if (!m_thirdPerson)
 	{
-		m_thirdPersonView = { CarToWorld(SEAT_HEADS[std::clamp(m_seat, 0, SEATS - 1)]), look };
+		m_thirdPersonView = { CarToWorld(SeatHead(m_seat)), look };
 		return m_thirdPersonView;
 	}
 	// Behind and above it, swung round the car with the mouse (or out in front, looking back at it), kept out of the walls.
@@ -1209,9 +1667,14 @@ void ShopWorld::DrawDriveHud(const Workshop& workshop) const
 	}
 
 	// From outside the car, its gauges, bottom right: the tach with the gear in it, the speedo, and the fuel and
-	// temperature beside them. (At the wheel they're there on the dash.)
+	// temperature beside them. (At the wheel they're there on the dash, and only the gear it's in is shown.)
 	if (!m_thirdPerson)
+	{
+		if (m_drive.active && m_seat == 0)
+			ShadowText(draw, { display.x * 0.5f, display.y - 188.f }, IM_COL32(200, 200, 200, 200),
+				GearName(m_drive.gear), true);
 		return;
+	}
 	const auto* build = workshop.GetCar();
 	const bool running = m_drive.active;
 	// A dial: its marks round from lower left clockwise to lower right, some numbered, the last of them red.
@@ -1242,7 +1705,7 @@ void ShopWorld::DrawDriveHud(const Workshop& workshop) const
 	dial(tach, 96.f * unit, running ? m_drive.rpm / 8000.f : 0.f, 8, 1, 1.f, 6);
 	ShadowText(draw, { speedo.x, speedo.y + 38.f * unit }, INK, std::format("{:.0f}", running ? speed : 0.f), true);
 	ShadowText(draw, { speedo.x, speedo.y + 58.f * unit }, IM_COL32(190, 190, 190, 220), "km/h", true);
-	ShadowText(draw, { tach.x, tach.y + 30.f * unit }, INK, running ? GEAR_NAMES[std::clamp(m_drive.gear, 0, 5)] : "off", true);
+	ShadowText(draw, { tach.x, tach.y + 30.f * unit }, INK, running ? GearName(m_drive.gear) : "off", true);
 	ShadowText(draw, { tach.x, tach.y + 50.f * unit }, IM_COL32(190, 190, 190, 220), "x1000 rpm", true);
 	// Fuel and temperature: a bar each, left of the tach.
 	auto bar = [&](float y, const char* name, float reads, bool warn) {
@@ -1260,6 +1723,8 @@ void ShopWorld::DrawDriveHud(const Workshop& workshop) const
 	bar(display.y - 90.f * unit, "Temperature", heat * 0.62f, heat > 1.3f);
 	if (m_drive.offRoad && running)
 		ShadowText(draw, { tach.x, tach.y - 126.f * unit }, IM_COL32(230, 200, 140, 230), "In the sand", true);
+	if (m_drive.sliding && running)
+		ShadowText(draw, { speedo.x, speedo.y - 148.f * unit }, IM_COL32(240, 120, 90, 240), "Sliding", true);
 }
 
 void ShopWorld::DevSteer(float steer)
@@ -1281,3 +1746,244 @@ void ShopWorld::DevPlaceCar(float x, float z, float degrees)
 	m_carLaidOutAt = glm::vec3(-1e9f);
 	RebuildCollision();
 }
+
+glm::vec3 ShopWorld::SeatHips(int seat) const
+{
+	// On the cushion (the front seats' tops, and the back seat's a little higher), forward of where the head is.
+	glm::vec3 head = SEAT_HEADS[std::clamp(seat, 0, SEATS - 1)];
+	if (seat >= 0 && seat < 2)
+		head.x += m_seats[seat].slide;
+	return CarToWorld({ head.x + 0.1f, (seat < 2 ? 0.365f : 0.385f) + PlayerAvatar::SEATED_HIP_HEIGHT, head.z });
+}
+
+float ShopWorld::SeatYaw() const
+{
+	return (m_carStation < m_stations.size() ? m_stations[m_carStation].yaw : 0.f) - glm::half_pi<float>();
+}
+
+void ShopWorld::TurnKey(Workshop& workshop)
+{
+	if (m_seat != 0)
+		return;
+	if (!m_drive.active && m_cranking <= 0.f)
+	{
+		// With no battery on it, or nothing from the battery to the starter, there's not a sound: only the key's click.
+		workshop.SettleCarPlugs();
+		if (auto dead = workshop.CarStarterDead())
+		{
+			Cue(Sound::CLICK, GetCarPosition(), 0.5f);
+			Toast(*dead);
+			return;
+		}
+		m_cranking = 1.1f;
+		Cue(Sound::STARTER, GetCarPosition(), 1.6f);
+	}
+	else if (m_drive.active && std::abs(m_drive.speed) <= GET_OUT_SPEED)
+	{
+		EndDrive();
+		Cue(Sound::CLICK, GetCarPosition());
+	}
+	else if (m_drive.active)
+		Toast("Stop the car before switching it off.");
+}
+
+void ShopWorld::IdleCar(float deltaTime, Workshop& workshop)
+{
+	auto& drive = m_drive;
+	drive.speed = drive.slide = drive.yawRate = 0.f;
+	drive.throttle = 0.f;
+	LeanCar(deltaTime, 0.f, 0.f);
+	// Left in gear with no foot on the clutch, it stalls.
+	if (drive.gear != 0)
+	{
+		Toast("It stalled: it was left in gear.");
+		return EndDrive();
+	}
+	drive.rpm += (drive.idleRpm - drive.rpm) * (1.f - std::exp(-deltaTime * 4.f));
+	if (!workshop.DriveCar(deltaTime, 0.0, 0.0))
+	{
+		Toast("It's run out of fuel.");
+		EndDrive();
+	}
+}
+
+std::optional<ShopWorld::CarControl> ShopWorld::AimedCarControl(const Workshop& workshop, const FirstPersonController& player) const
+{
+	const auto* build = workshop.GetCar();
+	if (!build || m_carStation >= m_stations.size() || !m_stations[m_carStation].present || (IsSeated() && m_thirdPerson))
+		return std::nullopt;
+	const auto& car = build->assembly;
+	glm::vec3 eye = m_thirdPerson ? m_thirdPersonView.position : player.GetEyePosition();
+	glm::vec3 forward = m_thirdPerson ? m_thirdPersonView.rotation * glm::vec3(0.f, 0.f, -1.f) : player.GetForward();
+	std::optional<CarControl> nearest;
+	float nearestOff = 0.f;
+	// The one nearest the line of sight, within arm's reach and close enough to it to be meant.
+	auto consider = [&](CarControl control, const glm::vec3& onCar, float size) {
+		glm::vec3 at = CarToWorld(onCar);
+		float along = glm::dot(at - eye, forward);
+		if (along <= 0.f || along > 1.6f)
+			return;
+		float off = glm::length(at - (eye + forward * along));
+		if (off < size && (!nearest || off < nearestOff))
+		{
+			nearest = control;
+			nearestOff = off;
+		}
+	};
+	using namespace CarBody;
+	if (car.IsFilled(CarSlot::DASHBOARD, 0))
+	{
+		consider(CarControl::HEADLIGHTS, { HEADLIGHT_KNOB[0], HEADLIGHT_KNOB[1], HEADLIGHT_KNOB[2] }, 0.045f);
+		consider(CarControl::HOOD_RELEASE, { HOOD_RELEASE[0], HOOD_RELEASE[1], HOOD_RELEASE[2] }, 0.06f);
+		if (m_seat == 0)
+			consider(CarControl::IGNITION, { IGNITION_BARREL[0], IGNITION_BARREL[1], IGNITION_BARREL[2] }, 0.045f);
+	}
+	// From a seat, the doors' inside handles (wherever the doors have swung to).
+	if (IsSeated())
+		for (int side = 0; side < 2; side++)
+			if (car.IsFilled(CarSlot::DOOR, side))
+			{
+				auto pose = PoseOnCar(CarSlot::DOOR, side);
+				float in = side == 0 ? 1.f : -1.f;
+				consider(side == 0 ? CarControl::DOOR_LEFT : CarControl::DOOR_RIGHT, pose.offset + pose.rotation * glm::vec3(DOOR_HANDLE_X, DOOR_HANDLE_Y, in * DOOR_HANDLE_IN), 0.09f);
+			}
+	// The front seats' own controls, each on the seat's side by its door. From the seat itself, the bar that lets it
+	// slide and the knob that leans its back; from anywhere else that can get at it (another seat, or outside with
+	// that door open), the catch that tips its back forward.
+	for (int side = 0; side < 2; side++)
+		if (car.IsFilled(CarSlot::SEAT, side))
+		{
+			auto pose = PoseOnCar(CarSlot::SEAT, side);
+			const float out = side == 0 ? 1.f : -1.f;		// the controls are built on the seat's left: mirrored for the right one
+			if (m_seat == side)
+			{
+				consider(CarControl::SEAT_SLIDE, pose.offset + glm::vec3(SEAT_SLIDE_BAR[0], SEAT_SLIDE_BAR[1], 0.f), 0.1f);
+				consider(CarControl::SEAT_RECLINE, pose.offset + glm::vec3(SEAT_RECLINER[0], SEAT_RECLINER[1], out * SEAT_RECLINER[2]), 0.07f);
+				continue;
+			}
+			CarPanel door = side == 0 ? CarPanel::DOOR_LEFT : CarPanel::DOOR_RIGHT;
+			if (!IsSeated() && car.IsFilled(CarSlot::DOOR, side) && CarPanelOpen(door) < 0.5f)
+				continue;
+			const auto& set = m_seats[side];
+			float angle = glm::mix(set.recline, SEAT_FOLD, glm::smoothstep(0.f, 1.f, set.fold));
+			glm::vec3 catchAt = pose.offset + glm::vec3(SEAT_HINGE_X, SEAT_HINGE_Y, 0.f)
+				+ Pitch(angle) * glm::vec3(SEAT_FOLD_CATCH[0], SEAT_FOLD_CATCH[1], out * (SEAT_FOLD_CATCH[2] - 0.02f));
+			consider(side == 0 ? CarControl::SEAT_FOLD_LEFT : CarControl::SEAT_FOLD_RIGHT, catchAt, 0.06f);
+		}
+	return nearest;
+}
+
+bool ShopWorld::UpdateCarControls(Workshop& workshop, const FirstPersonController& player, const InputManager& input)
+{
+	m_aimedCarControl = false;
+	auto aimed = AimedCarControl(workshop, player);
+	if (!aimed)
+		return false;
+	m_aimedCarControl = true;
+	std::string hint;
+	CarPanel door = *aimed == CarControl::DOOR_LEFT ? CarPanel::DOOR_LEFT : CarPanel::DOOR_RIGHT;
+	// The seat's own adjusters go both ways: the left button one, the right the other.
+	if ((*aimed == CarControl::SEAT_SLIDE || *aimed == CarControl::SEAT_RECLINE) && m_seat >= 0 && m_seat < 2)
+	{
+		using namespace CarBody;
+		const bool slide = *aimed == CarControl::SEAT_SLIDE;
+		hint = slide ? "[LMB] Slide the seat forward   [RMB] Slide it back" : "[LMB] Sit the seat's back up   [RMB] Lean it back";
+		m_prompt = m_prompt.empty() ? hint : hint + "   " + m_prompt;
+		const int way = Controls::Pressed(input, Control::PRIMARY) || std::exchange(m_devPress, false) ? 1 : Controls::Pressed(input, Control::SET_DOWN) ? -1 : 0;
+		if (way == 0)
+			return false;
+		CarSeatSetting set = workshop.GetCar()->assembly.GetSeatSetting(m_seat);
+		float& value = slide ? set.slide : set.recline;
+		const float before = value;
+		value = slide ? std::clamp(value + way * SEAT_SLIDE_STEP, -SEAT_SLIDE, SEAT_SLIDE)
+			: std::clamp(value - way * SEAT_RECLINE_STEP, SEAT_RECLINE_MIN, SEAT_RECLINE_MAX);
+		if (value == before)
+			Toast(slide ? "That's as far as the seat slides." : "That's as far as its back goes.");
+		else
+			Cue(Sound::CLICK, GetCarPosition(), 0.6f);
+		workshop.SetCarSeat(m_seat, set);
+		return true;
+	}
+	if (*aimed == CarControl::SEAT_FOLD_LEFT || *aimed == CarControl::SEAT_FOLD_RIGHT)
+	{
+		const int side = *aimed == CarControl::SEAT_FOLD_LEFT ? 0 : 1;
+		CarSeatSetting set = workshop.GetCar()->assembly.GetSeatSetting(side);
+		hint = set.folded ? "[LMB] Put the seat's back up" : "[LMB] Tip the seat's back forward";
+		m_prompt = m_prompt.empty() ? hint : hint + "   " + m_prompt;
+		if (!Controls::Pressed(input, Control::PRIMARY) && !std::exchange(m_devPress, false))
+			return false;
+		set.folded = !set.folded;
+		workshop.SetCarSeat(side, set);
+		Cue(set.folded ? Sound::PICK_UP : Sound::SET_DOWN, GetCarPosition());
+		return true;
+	}
+	switch (*aimed)
+	{
+		case CarControl::HEADLIGHTS:	hint = m_headlights.on ? "[LMB] Headlights off" : "[LMB] Headlights on"; break;
+		case CarControl::HOOD_RELEASE:	hint = "[LMB] Pull the hood's release"; break;
+		case CarControl::IGNITION:		hint = m_drive.active ? "[LMB] Switch it off" : "[LMB] Turn the key"; break;
+		default:						hint = IsCarPanelOpen(door) ? "[LMB] Shut the door" : "[LMB] Open the door"; break;
+	}
+	m_prompt = m_prompt.empty() ? hint : hint + "   " + m_prompt;
+	if (!Controls::Pressed(input, Control::PRIMARY) && !std::exchange(m_devPress, false))
+		return false;
+	switch (*aimed)
+	{
+		case CarControl::HEADLIGHTS:
+			ToggleHeadlights(workshop);
+			break;
+		case CarControl::HOOD_RELEASE:
+			if (IsCarPanelOpen(CarPanel::HOOD) || !m_hoodLatched)
+				Toast("It's released already: lift the hood from the front.");
+			else
+			{
+				m_hoodLatched = false;
+				m_carLaidOutAt = glm::vec3(-1e9f);	// the hood's laid out again, popped
+				Cue(Sound::CLICK, GetCarPosition());
+				Toast("The hood's popped: lift it from the front.");
+			}
+			break;
+		case CarControl::IGNITION:
+			TurnKey(workshop);
+			break;
+		default:
+			if (std::abs(m_drive.speed) > 2.f)
+				Toast("Not while it's moving.");
+			else
+				ToggleCarPanel(door);
+			break;
+	}
+	return true;
+}
+
+void ShopWorld::DevSit(int seat, Workshop& workshop, FirstPersonController& player)
+{
+	LeaveSeat(&player);
+	Sit(seat, workshop);
+	// Faced forward now, so a look after it stays where it's put.
+	if (m_seat >= 0)
+	{
+		player.SetYaw(m_stations[m_carStation].yaw - glm::half_pi<float>());
+		player.SetPitch(-0.06f);
+		m_seatJustIn = false;
+	}
+}
+
+void ShopWorld::LeanCar(float deltaTime, float alongAcceleration, float sideAcceleration)
+{
+	// On its springs: each way it leans is pulled to where the push on it would hold it, and damped (less, on tired
+	// dampers, so it wallows). Turning left (a push to its left) rolls it to its right; pulling away lifts its nose.
+	auto& drive = m_drive;
+	constexpr float STIFFNESS = 9.f, ROLL_PER = 0.0058f, PITCH_PER = 0.0032f;
+	auto spring = [&](float& angle, float& rate, float target) {
+		for (int i = 0; i < 4; i++)
+		{
+			float h = deltaTime * 0.25f;
+			rate += (STIFFNESS * STIFFNESS * (target - angle) - 2.f * drive.damping * STIFFNESS * rate) * h;
+			angle += rate * h;
+		}
+	};
+	spring(drive.roll, drive.rollRate, std::clamp(sideAcceleration * ROLL_PER * drive.lean, -0.1f, 0.1f));
+	spring(drive.pitch, drive.pitchRate, std::clamp(alongAcceleration * PITCH_PER * drive.lean, -0.06f, 0.06f));
+}
+

@@ -492,7 +492,10 @@ namespace PartIcons
 				drawList->AddLine(p(0.10f, 0.80f), p(0.50f, 0.80f), color, line * 1.6f);
 				break;
 			default:
-				drawList->AddRect(p(0.2f, 0.2f), p(0.8f, 0.8f), color, 0.f, 0, line);
+				if (IsCarPart(type))
+					DrawCarPart(drawList, type, min, size, color);
+				else
+					drawList->AddRect(p(0.2f, 0.2f), p(0.8f, 0.8f), color, 0.f, 0, line);
 				break;
 		}
 	}

@@ -124,6 +124,7 @@ private:
 		float pitch = 0.f;
 		// NetProtocol's presence: 0 down, 1 the right one out, 2 both; and crouched or not.
 		int arms = 0;
+		int seat = -1;		// which of the car's seats they're in, or -1
 		bool crouching = false;
 		MonkeyLook look = {};
 		// Where they're drawn: eased towards where they are, between the updates.

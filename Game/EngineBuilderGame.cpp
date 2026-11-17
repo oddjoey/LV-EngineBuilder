@@ -17,7 +17,6 @@
 #include "FrameProfiler.h"
 #include "Save/SaveGame.h"
 #include "UI/MonkeyUI.h"
-#include "UI/RankUI.h"
 #include "World/GarageLayout.h"
 
 namespace
@@ -110,7 +109,8 @@ void EngineBuilderGame::OnLoadAssets()
 	m_player.ApplyToCamera(*m_camera);
 
 	m_ui.SetPartAvailability([this](uint32_t partId) { return !m_world.IsPackaged(partId); });
-	// The backpack, a tab beside it to dress your monkey, and one for the shop's rank.
+	// The backpack, with your monkey beside it to dress, and a tab for your stats. (The shop's rank and skills are on
+	// the parts computer.)
 	m_ui.SetBackpackContents([this] {
 		if (!ImGui::BeginTabBar("BackpackTabs"))
 			return;
@@ -131,12 +131,6 @@ void EngineBuilderGame::OnLoadAssets()
 		{
 			m_inventoryUI.CancelDrag();
 			m_inventoryUI.DrawPlayerStats(m_world, *m_workshop);
-			ImGui::EndTabItem();
-		}
-		if (ImGui::BeginTabItem(m_workshop->SkillPoints() > 0 ? std::format("Rank & Skills ({})###Rank", m_workshop->SkillPoints()).c_str() : "Rank & Skills###Rank"))
-		{
-			m_inventoryUI.CancelDrag();
-			RankUI::Draw(*m_workshop);
 			ImGui::EndTabItem();
 		}
 		ImGui::EndTabBar();

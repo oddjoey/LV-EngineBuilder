@@ -307,6 +307,7 @@ namespace ShopModels
 	// The right-hand fender and door (the parts' own models are the left-hand ones: see LoadCarParts), and the fuel filler's flap.
 	inline const std::string FENDER_RIGHT = "Front Fender (Right)";
 	inline const std::string DOOR_RIGHT = "Door (Right)";
+	inline const std::string TAIL_LIGHT_RIGHT = "Tail Light (Right)";
 	inline const std::string FUEL_FLAP = "Fuel Flap";
 	inline const std::string HEADLIGHT_LENS = "Headlight Lens";		// the lamp in a headlight's pod, lit when they're on
 	inline const std::string GAUGE_NEEDLE = "Gauge Needle";
@@ -314,6 +315,24 @@ namespace ShopModels
 	inline const std::string DOOR_GLASS = "Door Glass";
 	inline const std::string DOOR_GLASS_RIGHT = "Door Glass Right";
 	inline const std::string CAR_QUARTER_GLASS = "Car Quarter Glass";
+	// A front seat on the car is in two: its base, and the back that reclines and tips forward on it.
+	inline const std::string SEAT_BASE = "Seat Base";
+	inline const std::string SEAT_BACK = "Seat Back";
+	inline const std::string SMOKE_PUFF = "Smoke Puff";
+	// The car's looms: a plug on the end of a wire, the socket it goes in, and a metre of wire.
+	inline const std::string HARNESS_PLUG = "Harness Plug";
+	inline const std::string HARNESS_SOCKET = "Harness Socket";
+	inline const std::string HARNESS_WIRE = "Harness Wire";
+	inline const std::string HARNESS_CLIP = "Harness Clip";
+	inline const std::string GROUND_STUD = "Ground Stud";
+	// The car's pipes, done up like its plugs: a hard pipe's flare nut and the port it screws into, a hose's clipped
+	// end and the stub it pushes onto; and where each line set's pipes come from in the bay.
+	inline const std::string PIPE_UNION = "Pipe Union";
+	inline const std::string PIPE_PORT = "Pipe Port";
+	inline const std::string HOSE_END = "Hose End";
+	inline const std::string HOSE_STUB = "Hose Stub";
+	inline const std::string BRAKE_LINE_BLOCK = "Brake Line Block";
+	inline const std::string FUEL_LINE_RISER = "Fuel Line Riser";
 	inline const std::string COMPUTER_DESK = "Computer Desk";
 	inline const std::string PACKAGE_BOX = "Package: Box";
 	inline const std::string PACKAGE_CRATE = "Package: Crate";

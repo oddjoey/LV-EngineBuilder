@@ -194,6 +194,9 @@
     <ClCompile Include="Game\UI\PartIcons.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
+    <ClCompile Include="Game\UI\PartIconsCar.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
     <ClCompile Include="Game\UI\PauseMenu.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
@@ -240,6 +243,9 @@
       <Filter>Game\World</Filter>
     </ClCompile>
     <ClCompile Include="Game\World\ShopWorldCarTools.cpp">
+      <Filter>Game\World</Filter>
+    </ClCompile>
+    <ClCompile Include="Game\World\ShopWorldCarWiring.cpp">
       <Filter>Game\World</Filter>
     </ClCompile>
     <ClCompile Include="Game\World\ShopLighting.cpp">

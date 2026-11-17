@@ -320,9 +320,9 @@ namespace
 		{ PartType::BATTERY,				"Battery",					S::ELECTRICAL,		90.0,	0,		false,	false,	false,	false,	2, 2,
 			"12 V, 40 Ah lead-acid battery. Charge it before the first crank: a flat one won't turn the starter." },
 		{ PartType::MAIN_HARNESS,			"Main Harness",				S::ELECTRICAL,		260.0,	0,		true,	false,	false,	true,	0, 0,
-			"The body's wiring: dash, lights, fuse box and the run back to the boot. Chafed or cut wires blow fuses." },
-		{ PartType::ENGINE_HARNESS,			"Engine Harness",			S::ELECTRICAL,		120.0,	0,		true,	false,	false,	false,	3, 2,
-			"The engine bay's loom: starter, alternator, coil, distributor and the senders. Plugs into the main harness at the firewall." },
+			"The car's wiring: dash, lights, fuse box, the run back to the boot, and the branch through the firewall to the starter, coil, "
+			"distributor, alternator and senders. Chafed or cut wires blow fuses." },
+
 		{ PartType::FUSE_BOX,				"Fuse Box",					S::ELECTRICAL,		50.0,	0,		true,	false,	false,	false,	2, 1,
 			"Fuses and relays under the dash. Every circuit goes through it." },
 		{ PartType::IGNITION_COIL,			"Ignition Coil",			S::ELECTRICAL,		45.0,	0,		true,	false,	false,	false,	1, 2,

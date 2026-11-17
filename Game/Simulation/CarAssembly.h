@@ -74,7 +74,6 @@ enum class CarSlot
 	FUEL_FILTER,
 	BATTERY,
 	MAIN_HARNESS,
-	ENGINE_HARNESS,
 	FUSE_BOX,
 	IGNITION_COIL,
 	STARTER,
@@ -125,6 +124,55 @@ constexpr int CAR_PART_SLOTS = static_cast<int>(CarSlot::ENGINE);
 constexpr int CAR_FASTENER_SLOTS = static_cast<int>(CarSlot::COUNT) - static_cast<int>(CarSlot::STRUT_MOUNT_NUT);
 static_assert(static_cast<int>(PartType::TIRE) - static_cast<int>(FIRST_CAR_PART) == static_cast<int>(CarSlot::TIRE),
 	"The car's part slots must line up with their part types.");
+
+// The plugs on the car's harness, each of which has to be pushed onto what it feeds by hand: the battery, the two
+// headlights and the cooling fan at the front, and the starter, the coil, the distributor, the alternator and the two
+// senders on the engine (the coolant's temperature, the oil's pressure). Last, and not the harness's, is the battery's
+// own ground strap: from its negative post to a stud on the body. Till that's on, nothing electrical on the car works.
+//
+// The car's pipes are done up the same way, each a union on the end of a pipe: the brake line set's five (the master
+// cylinder's two ports, front and rear, and the three flexible hoses), the clutch's one (the pipe off its master
+// cylinder, onto the release cylinder), and the fuel line set's three (the tank, the filter, and the hose on from the
+// filter to the engine's pump). A brake or clutch union undone lets air in and fluid out; with a fuel one off the
+// engine gets none.
+enum class CarPlug { BATTERY, HEADLIGHT_LEFT, HEADLIGHT_RIGHT, COOLING_FAN, STARTER, IGNITION_COIL, DISTRIBUTOR, ALTERNATOR, COOLANT_SENDER, OIL_SENDER,
+	GROUND,
+	BRAKE_FRONT_PORT, BRAKE_REAR_PORT, BRAKE_HOSE_LEFT, BRAKE_HOSE_RIGHT, BRAKE_HOSE_REAR, CLUTCH_PIPE, FUEL_TANK, FUEL_FILTER, FUEL_PUMP,
+	COUNT };
+// What a plug is: a wire's connector, the battery's strap, a hard pipe's flare nut, or a rubber hose's end.
+enum class CarPlugKind { WIRE, STRAP, PIPE, HOSE };
+inline CarPlugKind CarPlugKindOf(CarPlug plug)
+{
+	return plug == CarPlug::GROUND ? CarPlugKind::STRAP : plug >= CarPlug::FUEL_TANK && plug <= CarPlug::FUEL_PUMP ? CarPlugKind::HOSE
+		: plug >= CarPlug::BRAKE_FRONT_PORT && plug <= CarPlug::CLUTCH_PIPE ? CarPlugKind::PIPE : CarPlugKind::WIRE;
+}
+// Those that go onto something on the engine itself, not a part of the car.
+inline bool CarPlugOnEngine(CarPlug plug)
+{
+	return (plug >= CarPlug::DISTRIBUTOR && plug <= CarPlug::OIL_SENDER) || plug == CarPlug::FUEL_PUMP;
+}
+constexpr int CAR_PLUGS = static_cast<int>(CarPlug::COUNT);
+constexpr uint32_t ALL_CAR_PLUGS = (1u << CAR_PLUGS) - 1u;
+// What a plug is called by what it goes onto ("distributor"), and whether it's on the harness's engine branch.
+const char* CarPlugName(CarPlug plug);
+// All but the ground strap are the main harness's: the battery's lead, the lights and fan at the front, and the
+// branch that comes through the firewall to the engine (the starter, the coil, the distributor, the alternator and
+// the two senders).
+inline bool OnEngineBranch(CarPlug plug) { return plug >= CarPlug::STARTER && plug <= CarPlug::OIL_SENDER; }
+// A plug's wire can be clipped to the car along its way, to lead it tidily round things: up to this many clips on
+// each, in order from the loom, each a point in the car's space (+x its nose, +y up, +z its right).
+constexpr int CAR_WIRE_CLIPS = 6;
+using CarWirePoint = std::array<float, 3>;
+
+// How a front seat is set: slid along its rails (metres, forward positive), its back leant back (radians), and its
+// back tipped forward (to let someone into the back) or not.
+struct CarSeatSetting
+{
+	float slide = 0.f;
+	float recline = 0.26f;
+	bool folded = false;
+	bool operator==(const CarSeatSetting&) const = default;
+};
 
 // The four corners, for parts that come in pairs or fours.
 enum class Corner { FRONT_LEFT, FRONT_RIGHT, REAR_LEFT, REAR_RIGHT };
@@ -221,6 +269,48 @@ public:
 
 	CarTune& GetTune();
 	const CarTune& GetTune() const;
+
+	// The looms' plugs. The loom a plug is on, and the part of the car it goes onto (nothing for those that go
+	// onto the engine: the workshop knows what's on that). One is only ever on while its loom is fitted: taking the
+	// loom off, or what the plug is on, pulls it.
+	static CarSlot PlugHarness(CarPlug plug)
+	{
+		if (plug >= CarPlug::BRAKE_FRONT_PORT && plug <= CarPlug::BRAKE_HOSE_REAR)
+			return CarSlot::BRAKE_LINE_SET;
+		if (plug == CarPlug::CLUTCH_PIPE)
+			return CarSlot::CLUTCH_MASTER_CYLINDER;
+		if (plug >= CarPlug::FUEL_TANK && plug <= CarPlug::FUEL_PUMP)
+			return CarSlot::FUEL_LINE_SET;
+		return plug == CarPlug::GROUND ? CarSlot::BATTERY : CarSlot::MAIN_HARNESS;
+	}
+	// Whether a part's plugs are picked from a list at it (a loom or a line set, with several), not just found by it.
+	static bool HasPlugMenu(CarSlot harness)
+	{
+		return harness == CarSlot::MAIN_HARNESS || harness == CarSlot::BRAKE_LINE_SET || harness == CarSlot::FUEL_LINE_SET;
+	}
+	static std::optional<std::pair<CarSlot, int>> PlugTarget(CarPlug plug);
+	bool IsPlugged(CarPlug plug) const { return (m_plugs & (1u << static_cast<int>(plug))) != 0; }
+	void SetPlugged(CarPlug plug, bool plugged);
+	uint32_t GetPlugs() const { return m_plugs; }
+	void RestorePlugs(uint32_t plugs) { m_plugs = plugs & ALL_CAR_PLUGS; }
+	// The first of a circuit's unions that isn't done up, by what it goes onto.
+	std::optional<CarPlug> OpenUnion(FluidCircuit circuit) const;
+	// The clips a plug's wire is led through (they go with its loom: taking the loom off takes them too).
+	const std::vector<CarWirePoint>& GetWireClips(CarPlug plug) const { return m_wireClips[static_cast<int>(plug)]; }
+	bool AddWireClip(CarPlug plug, const CarWirePoint& at);
+	void RemoveWireClip(CarPlug plug, int index);
+	// The two front seats' settings (0 the driver's, 1 the passenger's).
+	const CarSeatSetting& GetSeatSetting(int seat) const { return m_seatSettings[seat == 1 ? 1 : 0]; }
+	void SetSeatSetting(int seat, const CarSeatSetting& setting) { m_seatSettings[seat == 1 ? 1 : 0] = setting; }
+	// Where on the body the battery's ground strap is bolted (when CarPlug::GROUND is on), in the car's space: anywhere
+	// on the shell its strap reaches.
+	static constexpr CarWirePoint DEFAULT_GROUND_POINT = { 1.42f, 0.65f, -0.462f };	// on the wheel housing, behind the battery
+	const CarWirePoint& GetGroundPoint() const { return m_groundPoint; }
+	void SetGroundPoint(const CarWirePoint& at) { m_groundPoint = at; }
+	// And which way the panel it's bolted to faces there (a unit vector out of it): its stud stands out along this.
+	static constexpr CarWirePoint DEFAULT_GROUND_NORMAL = { 0.552f, 0.834f, 0.f };
+	const CarWirePoint& GetGroundNormal() const { return m_groundNormal; }
+	void SetGroundNormal(const CarWirePoint& normal) { m_groundNormal = normal; }
 private:
 	using Positions = std::vector<std::pair<CarSlot, int>>;
 	static constexpr size_t SLOTS = static_cast<size_t>(CarSlot::COUNT);
@@ -239,4 +329,9 @@ private:
 	int											m_engine = -1;
 	std::array<FluidLevel, FLUID_CIRCUITS>		m_fluids = {};
 	CarTune										m_tune = {};
+	uint32_t									m_plugs = 0;	// a bit for each CarPlug that's pushed home
+	std::array<std::vector<CarWirePoint>, CAR_PLUGS> m_wireClips = {};
+	std::array<CarSeatSetting, 2>				m_seatSettings = {};
+	CarWirePoint								m_groundNormal = DEFAULT_GROUND_NORMAL;
+	CarWirePoint								m_groundPoint = DEFAULT_GROUND_POINT;
 };

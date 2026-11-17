@@ -111,10 +111,21 @@ void PlayerAvatar::SetLook(const MonkeyLook& look)
 	SetVisible(m_visible);
 }
 
+void PlayerAvatar::SetScale(float scale)
+{
+	if (scale == m_scale)
+		return;
+	m_scale = scale;
+	for (auto* object : Pieces())
+		if (*object)
+			(*object)->SetScale(glm::vec3(scale));
+}
+
 void PlayerAvatar::Pose(float deltaTime, const glm::vec3& feet, float yaw, float pitch, bool crouching, int arms)
 {
 	if (!m_torso)
 		return;
+	SetScale(1.f);
 	if (!m_posed)
 	{
 		m_lastFeet = feet;
@@ -228,4 +239,58 @@ std::vector<PlayerAvatar::StandingPiece> PlayerAvatar::Standing(const MonkeyLook
 		pieces.push_back({ ShopModels::PLAYER_FOOT, at(knee), skin });
 	}
 	return pieces;
+}
+
+void PlayerAvatar::PoseSeated(const glm::vec3& hips, float yaw, float lookYaw, float pitch, bool atWheel)
+{
+	if (!m_torso)
+		return;
+	m_posed = true;
+	m_lastFeet = hips;
+	m_speed = 0.f;
+	const float scale = SEATED_SCALE;
+	SetScale(scale);
+	// Leant back a little in the seat.
+	glm::quat facing = ShopLayout::Yaw(yaw);
+	glm::quat torso = facing * glm::angleAxis(0.3f, X_AXIS);
+	auto on = [&](const glm::vec3& joint) { return hips + torso * ((joint - PELVIS) * scale); };
+	m_torso->SetPosition(on({ 0.f, 0.f, 0.f }));
+	m_torso->SetRotation(torso);
+	glm::vec3 neck = on(NECK);
+	m_head->SetPosition(neck);
+	m_head->SetRotation(ViewRotation(lookYaw, std::clamp(pitch, -0.8f, 0.8f)));
+	m_eye = neck + glm::vec3(0.f, EYE_ABOVE_NECK * scale, 0.f);
+	// The thighs along the cushion, the shins down into the footwell.
+	for (int side = 0; side < 2; side++)
+	{
+		glm::vec3 hip = hips + facing * glm::vec3(HIP_X[side] * scale, 0.f, 0.f);
+		glm::quat thigh = facing * glm::angleAxis(1.5f, X_AXIS);
+		m_thigh[side]->SetPosition(hip);
+		m_thigh[side]->SetRotation(thigh);
+		m_shin[side]->SetPosition(hip + thigh * glm::vec3(0.f, -THIGH_LENGTH * scale, 0.f));
+		m_shin[side]->SetRotation(facing * glm::angleAxis(0.5f, X_AXIS));
+	}
+	for (int side = 0; side < 2; side++)
+	{
+		glm::quat pose = facing * glm::angleAxis(atWheel ? 1.2f : 0.45f, X_AXIS);
+		glm::vec3 shoulder = on(SHOULDER[side]);
+		m_arm[side]->SetPosition(shoulder);
+		m_arm[side]->SetRotation(pose);
+		if (side == 1)
+			m_hand = shoulder + pose * glm::vec3(0.f, -HAND_REACH * scale, 0.f);
+	}
+	auto ride = [](const pObject& rider, const pObject& on) {
+		rider->SetPosition(on->GetPosition());
+		rider->SetRotation(on->GetRotation());
+	};
+	ride(m_belly, m_torso);
+	ride(m_tail, m_torso);
+	ride(m_face, m_head);
+	ride(m_eyes, m_head);
+	ride(m_cap, m_head);
+	for (int side = 0; side < 2; side++)
+	{
+		ride(m_paw[side], m_arm[side]);
+		ride(m_foot[side], m_shin[side]);
+	}
 }

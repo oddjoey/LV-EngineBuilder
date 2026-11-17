@@ -15,6 +15,7 @@
 #include "ItemIcons.h"
 #include "MaterialText.h"
 #include "Ratings.h"
+#include "RankUI.h"
 #include "ModelPreview.h"
 #include "../FrameProfiler.h"
 #include "PartIcons.h"
@@ -1895,6 +1896,7 @@ void WorkshopUI::DrawStoreTab(Workshop& workshop)
 		case StoreCategory::FURNITURE:	DrawFurnitureStore(workshop); break;
 		case StoreCategory::PAINT:		DrawToolStore(workshop, true); break;
 		case StoreCategory::CAR:		DrawCarStore(workshop); break;
+		case StoreCategory::SKILLS:		RankUI::Draw(workshop); break;
 	}
 }
 
@@ -1917,6 +1919,7 @@ namespace
 		{ StoreCategory::FURNITURE, "Shop Fittings", "shop-fittings", "Shop Fittings", "Benches, shelving, engine stands and the rest of a working shop." },
 		{ StoreCategory::PAINT, "Paint", "paint", "Paint", "Markers, spray cans and thinner, for the parts and the walls." },
 		{ StoreCategory::CAR, "LE86 Parts", "le86", "LE86 Parts", "Every part for the LE86, and the fluids to fill it." },
+		{ StoreCategory::SKILLS, "Rank & Skills", "account/rank", "Rank & Skills", "How your shop stands, and the perks its reputation has earned." },
 	};
 	constexpr const char* STORE_NAME = "MonkeyKobo";
 	constexpr const char* STORE_HOST = "monkeykobo.love/shop";	// the site, and its shop
@@ -2122,7 +2125,10 @@ void WorkshopUI::DrawStoreWindow(Workshop& workshop)
 	float linkX = origin.x + 22.f;
 	for (const auto& link : STORE_PAGES)
 	{
-		float linkWidth = ImGui::CalcTextSize(link.link).x;
+		// (The shop's own page says how many skill points are waiting to be spent.)
+		const std::string label = link.category == StoreCategory::SKILLS && workshop.SkillPoints() > 0
+			? std::format("{} ({})", link.link, workshop.SkillPoints()) : std::string(link.link);
+		float linkWidth = ImGui::CalcTextSize(label.c_str()).x;
 		ImGui::SetCursorScreenPos({ linkX - 8.f, menuY });
 		ImGui::PushID(link.path);
 		if (ImGui::InvisibleButton("Link", { linkWidth + 16.f, MENU_HEIGHT }))
@@ -2132,7 +2138,7 @@ void WorkshopUI::DrawStoreWindow(Workshop& workshop)
 		bool active = link.category == m_storeCategory;
 		if (hovered)
 			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-		drawList->AddText({ linkX, menuY + (MENU_HEIGHT - font) * 0.5f }, active ? site.linkActive : hovered ? site.linkHover : ink, link.link);
+		drawList->AddText({ linkX, menuY + (MENU_HEIGHT - font) * 0.5f }, active ? site.linkActive : hovered ? site.linkHover : ink, label.c_str());
 		if (active || hovered)
 			drawList->AddRectFilled({ linkX - 2.f, menuY + MENU_HEIGHT - 4.f }, { linkX + linkWidth + 2.f, menuY + MENU_HEIGHT - 1.f },
 				active ? orange : site.linkUnderline);
@@ -2164,16 +2170,38 @@ void WorkshopUI::DrawStoreWindow(Workshop& workshop)
 
 		const float footerHeight = ImGui::GetTextLineHeightWithSpacing() * 6.f + 26.f;
 		constexpr float CART_WIDTH = 330.f;
-		if (ImGui::BeginChild("StoreMain", { -CART_WIDTH - ImGui::GetStyle().ItemSpacing.x, -footerHeight }, ImGuiChildFlags_None,
-			ImGuiWindowFlags_NoBackground))
-			DrawStoreTab(workshop);
-		ImGui::EndChild();
-		ImGui::SameLine();
-		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
-		if (ImGui::BeginChild("Cart", { 0.f, -footerHeight }, ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding))
-			DrawCart(workshop);
-		ImGui::EndChild();
-		ImGui::PopStyleVar();
+		if (m_storeCategory == StoreCategory::SKILLS)
+		{
+			// The shop's own page: the whole width (there's nothing to put in the cart), on a dark panel, which the
+			// skill tree's colours are picked for.
+			const std::pair<ImGuiCol, ImVec4> dark[] = {
+				{ ImGuiCol_ChildBg, { 0.11f, 0.12f, 0.14f, 1.f } }, { ImGuiCol_Text, { 0.9f, 0.9f, 0.9f, 1.f } }, { ImGuiCol_TextDisabled, { 0.58f, 0.59f, 0.62f, 1.f } },
+				{ ImGuiCol_FrameBg, { 0.2f, 0.21f, 0.24f, 1.f } }, { ImGuiCol_PlotHistogram, { 0.3f, 0.6f, 0.34f, 1.f } },
+				{ ImGuiCol_Separator, { 0.32f, 0.33f, 0.37f, 1.f } }, { ImGuiCol_Border, { 0.32f, 0.33f, 0.37f, 1.f } },
+				{ ImGuiCol_PopupBg, { 0.14f, 0.15f, 0.17f, 1.f } },
+			};
+			for (const auto& [index, color] : dark)
+				ImGui::PushStyleColor(index, color);
+			ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
+			if (ImGui::BeginChild("StoreMain", { 0.f, -footerHeight }, ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding))
+				DrawStoreTab(workshop);
+			ImGui::EndChild();
+			ImGui::PopStyleVar();
+			ImGui::PopStyleColor(static_cast<int>(std::size(dark)));
+		}
+		else
+		{
+			if (ImGui::BeginChild("StoreMain", { -CART_WIDTH - ImGui::GetStyle().ItemSpacing.x, -footerHeight }, ImGuiChildFlags_None,
+				ImGuiWindowFlags_NoBackground))
+				DrawStoreTab(workshop);
+			ImGui::EndChild();
+			ImGui::SameLine();
+			ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.f);
+			if (ImGui::BeginChild("Cart", { 0.f, -footerHeight }, ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding))
+				DrawCart(workshop);
+			ImGui::EndChild();
+			ImGui::PopStyleVar();
+		}
 
 		// The footer: order updates, and the small print.
 		ImGui::TextDisabled("Order updates");
@@ -3721,12 +3749,12 @@ void WorkshopUI::DrawToolBuy(Workshop& workshop, size_t toolIndex)
 		if (tool.skill >= 0 && workshop.SkillLevel(static_cast<SkillKind>(tool.skill)) == 0)
 		{
 			ImGui::TextColored(COLOR_WARN, "Locked: needs the %s perk.", Skills::Of(static_cast<SkillKind>(tool.skill)).name);
-			ImGui::TextDisabled("Spend skill points on it in the backpack's Rank & Skills tab.");
+			ImGui::TextDisabled("Spend skill points on it on the parts computer's Rank & Skills page.");
 		}
 		else
 		{
 			ImGui::TextColored(COLOR_WARN, "Locked: sold to rank %d shops (%s) and up.", tool.rank, ShopRank::Info(tool.rank).name);
-			ImGui::TextDisabled("Sell good engines to raise the shop's rank, or buy Supplier Connections in the Rank & Skills tab.");
+			ImGui::TextDisabled("Sell good engines to raise the shop's rank, or buy Supplier Connections on the Rank & Skills page.");
 		}
 		return;
 	}

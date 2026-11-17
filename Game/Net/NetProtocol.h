@@ -44,7 +44,8 @@
 //                    hello <version> "ticket" "signature"
 //                    ops <author> <sequence> <count> (<kind> "key" "text")...
 //                    presence <id> <x> <y> <z> <yaw> <pitch> <arms> <crouching> <fur> <skin> <cap> <tail>
-//                                                           arms: 0 down, 1 the right one out (holding something), 2 both (carrying a delivery)
+//                                                           arms: 0 down, 1 the right one out (holding something), 2 both (carrying a delivery);
+//                                                           10 and up, sat in the car: 10 its driver's seat, 11 the passenger's, 12 and 13 the back
 //                    profile "layout"                       how their backpack and hotbar are laid out
 //                    create                                 not in a garage yet: makes a new one, theirs
 //                    request <garage>                       asks to join one
@@ -72,7 +73,7 @@
 namespace NetProtocol
 {
 	// Both ends have to be the same game: the records are its save text.
-	constexpr long long VERSION = 29;
+	constexpr long long VERSION = 31;
 	constexpr uint16_t DEFAULT_PORT = 33333;
 	constexpr uint16_t ACCOUNT_PORT = 44444;
 	constexpr const char* ACCOUNT_IP = "localhost";

@@ -1,6 +1,7 @@
 #include "ShopAssets.h"
 
 #include <algorithm>
+#include <future>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -32,7 +33,9 @@ namespace
 	// meet again, so it goes round again.
 	void SeparateCoplanarFaces(std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, int rounds = 4)
 	{
-		struct Face { glm::vec3 normal; float distance; size_t first; };
+		// (Each with its colour and the box round it, to tell cheaply that two of them can't be lying on one another: there
+		// are millions of pairs to get through, and nearly all of them are the one colour or nowhere near each other.)
+		struct Face { glm::vec3 normal; float distance; size_t first; glm::vec3 color, low, high; };
 		std::vector<Face> faces;
 		glm::vec3 low(1e9f), high(-1e9f);
 		for (size_t i = 0; i + 2 < indices.size(); i += 3)
@@ -46,7 +49,11 @@ namespace
 			}
 			float area = glm::length(cross);
 			if (area > 1e-10f)
-				faces.push_back({ cross / area, glm::dot(cross / area, a), i });
+			{
+				const glm::vec3& b = vertices[indices[i + 1]].position;
+				const glm::vec3& c = vertices[indices[i + 2]].position;
+				faces.push_back({ cross / area, glm::dot(cross / area, a), i, vertices[indices[i]].color, glm::min(a, glm::min(b, c)), glm::max(a, glm::max(b, c)) });
+			}
 		}
 		if (faces.empty())
 			return;
@@ -97,16 +104,46 @@ namespace
 			byNormal[{ static_cast<int>(std::round(faces[f].normal.x * 1000.f)), static_cast<int>(std::round(faces[f].normal.y * 1000.f)),
 				static_cast<int>(std::round(faces[f].normal.z * 1000.f)) }].push_back(f);
 		std::vector<bool> lifted(vertices.size(), false);
+		std::vector<uint32_t> tints;
+		std::vector<float> along;
 		std::vector<glm::vec3> offset(vertices.size(), glm::vec3(0.f));
 		for (auto& [key, group] : byNormal)
 		{
 			std::sort(group.begin(), group.end(), [&](size_t a, size_t b) { return faces[a].distance < faces[b].distance; });
+			// (Their colours and how far along they are, each as one number side by side: nearly every pair is the one colour,
+			// and is done with in a single compare.)
+			tints.resize(group.size());
+			along.resize(group.size());
 			for (size_t i = 0; i < group.size(); i++)
-				for (size_t j = i + 1; j < group.size() && faces[group[j]].distance - faces[group[i]].distance < 2e-5f; j++)
+			{
+				const glm::vec3& c = faces[group[i]].color;
+				tints[i] = (static_cast<uint32_t>(std::clamp(c.x, 0.f, 1.f) * 1023.f + 0.5f) << 20) | (static_cast<uint32_t>(std::clamp(c.y, 0.f, 1.f) * 1023.f + 0.5f) << 10)
+					| static_cast<uint32_t>(std::clamp(c.z, 0.f, 1.f) * 1023.f + 0.5f);
+				along[i] = faces[group[i]].distance;
+			}
+			const uint32_t* tint = tints.data();
+			const float* plane = along.data();
+			const size_t count = group.size();
+			for (size_t i = 0; i < count; i++)
+				for (size_t j = i + 1; j < count && plane[j] - plane[i] < 2e-5f; j++)
 				{
+					if (tint[i] == tint[j])
+						continue;
 					const Face& a = faces[(std::min)(group[i], group[j])];
 					const Face& later = faces[(std::max)(group[i], group[j])];
-					if (glm::length(vertices[indices[a.first]].color - vertices[indices[later.first]].color) < 1e-3f || !overlap(a, later))
+					if (std::abs(a.color.x - later.color.x) < 6e-4f && std::abs(a.color.y - later.color.y) < 6e-4f && std::abs(a.color.z - later.color.z) < 6e-4f
+						&& glm::length(a.color - later.color) < 1e-3f)
+						continue;
+					if (a.high.x <= later.low.x || later.high.x <= a.low.x || a.high.y <= later.low.y || later.high.y <= a.low.y
+						|| a.high.z <= later.low.z || later.high.z <= a.low.z)
+					{
+						// (Clear of each other along an axis the plane isn't square to: they can't overlap in it.)
+						const glm::vec3 n = glm::abs(a.normal);
+						if ((n.x < 0.999f && (a.high.x <= later.low.x || later.high.x <= a.low.x)) || (n.y < 0.999f && (a.high.y <= later.low.y || later.high.y <= a.low.y))
+							|| (n.z < 0.999f && (a.high.z <= later.low.z || later.high.z <= a.low.z)))
+							continue;
+					}
+					if (!overlap(a, later))
 						continue;
 					for (int k = 0; k < 3; k++)
 					{
@@ -254,15 +291,23 @@ namespace
 
 void ShopAssets::Load()
 {
+	// How long each lot takes to make, in the log: this is most of the wait before the window shows anything.
+	auto started = std::chrono::steady_clock::now();
+	auto timed = [&](const char* what, auto&& load) {
+		load();
+		auto now = std::chrono::steady_clock::now();
+		LOG_INFO(std::string("Made the ") + what + " in " + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(now - started).count()) + " ms");
+		started = now;
+	};
 	LoadOverrides();
-	LoadTextures();
-	LoadEnvironment();
-	LoadOutdoors();
-	LoadMachines();
-	LoadParts();
-	LoadOverlays();
-	LoadTools();
-	LoadFurniture();
+	timed("textures", [&] { LoadTextures(); });
+	timed("shop's models", [&] { LoadEnvironment(); });
+	timed("outdoors' models", [&] { LoadOutdoors(); });
+	timed("machines' models", [&] { LoadMachines(); });
+	timed("parts' models", [&] { LoadParts(); });
+	timed("overlays", [&] { LoadOverlays(); });
+	timed("tools' models", [&] { LoadTools(); });
+	timed("furniture's models", [&] { LoadFurniture(); });
 }
 
 const std::vector<FeatureAnchor>& ShopAssets::FeatureAnchorsFor(PartType type)
@@ -865,7 +910,9 @@ void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder, b
 				throw std::runtime_error("file not found");
 			// Fitted to a height: measured as it comes in, then brought in again scaled to it, its base on the
 			// floor and its middle over the origin (then moved by any offset given).
+			// (The file's only read the once: what was measured is itself scaled and moved, not brought in a second time.)
 			auto options = entry.options;
+			bool made = false;
 			if (entry.height > 0.f)
 			{
 				auto probeOptions = options;
@@ -875,8 +922,19 @@ void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder, b
 				float fit = high.y > low.y ? entry.height / (high.y - low.y) : 1.f;
 				options.scale *= fit;
 				options.offset = entry.options.offset - glm::vec3((low.x + high.x) * 0.5f, low.y, (low.z + high.z) * 0.5f) * fit;
+				if (!options.normalize)
+				{
+					auto vertices = probe.GetVertices();
+					for (auto& vertex : vertices)
+						vertex.position = vertex.position * fit + options.offset;
+					m_models[name] = modelManager->CreateModel(::Model(name, vertices, probe.GetIndices()))->GetIndex();
+					made = true;
+				}
 			}
-			m_models[name] = modelManager->CreateModel(::Model(name, path, options))->GetIndex();
+			if (!made)
+			{
+				m_models[name] = modelManager->CreateModel(::Model(name, path, options))->GetIndex();
+			}
 
 			if (!entry.texture.empty())
 				m_modelTextures[name] = TextureManager::Get()->CreateTexture({ name, MODEL_FOLDER + entry.texture })->GetIndex();
@@ -1058,36 +1116,42 @@ uint32_t ShopAssets::SurfaceTexture(const Feature& feature) const
 void ShopAssets::LoadTextures()
 {
 	auto textureManager = TextureManager::Get();
-	auto add = [&](const std::string& name, const ProceduralTextures::Image& image)
-	{
-		m_textures[name] = textureManager->CreateTexture(name, image.width, image.height, image.pixels)->GetIndex();
+	// Each is a quarter of a million pixels of noise, and none needs any of the others: they're all made at once, on
+	// as many threads as there are, and handed to the renderer in this order as they finish.
+	const std::pair<std::string, ProceduralTextures::Image (*)()> MADE[] = {
+		{ ShopTextures::CONCRETE, &ProceduralTextures::Concrete },
+		{ ShopTextures::CAST_IRON, &ProceduralTextures::CastIron },
+		{ ShopTextures::ALUMINIUM, &ProceduralTextures::Aluminium },
+		{ ShopTextures::STEEL, &ProceduralTextures::BrushedSteel },
+		{ ShopTextures::WOOD, &ProceduralTextures::Wood },
+		{ ShopTextures::PAINT, &ProceduralTextures::PaintedMetal },
+		{ ShopTextures::PLASTER, &ProceduralTextures::Plaster },
+		{ ShopTextures::PEGBOARD, &ProceduralTextures::Pegboard },
+		{ ShopTextures::RUBBER, &ProceduralTextures::Rubber },
+		{ ShopTextures::CARDBOARD, &ProceduralTextures::Cardboard },
+		{ ShopTextures::SAND, &ProceduralTextures::Sand },
+		{ ShopTextures::ASPHALT, &ProceduralTextures::Asphalt },
+		{ ShopTextures::SIDING, &ProceduralTextures::Siding },
+		{ ShopTextures::PLANKS, &ProceduralTextures::Planks },
+		{ ShopTextures::ROCK, &ProceduralTextures::Rock },
+		{ ShopTextures::FOLIAGE, &ProceduralTextures::Foliage },
+		{ ShopTextures::HONED, &ProceduralTextures::Honed },
+		{ ShopTextures::BORED, &ProceduralTextures::Bored },
+		{ ShopTextures::GLAZED, &ProceduralTextures::Glazed },
+		{ ShopTextures::WORN, &ProceduralTextures::Worn },
+		{ ShopTextures::SCORED, &ProceduralTextures::Scored },
+		{ ShopTextures::GROUND, &ProceduralTextures::Ground },
+		{ ShopTextures::POLISHED, &ProceduralTextures::Polished },
+		{ ShopTextures::SURFACE_GROUND, &ProceduralTextures::SurfaceGround },
 	};
-
-	add(ShopTextures::CONCRETE, ProceduralTextures::Concrete());
-	add(ShopTextures::CAST_IRON, ProceduralTextures::CastIron());
-	add(ShopTextures::ALUMINIUM, ProceduralTextures::Aluminium());
-	add(ShopTextures::STEEL, ProceduralTextures::BrushedSteel());
-	add(ShopTextures::WOOD, ProceduralTextures::Wood());
-	add(ShopTextures::PAINT, ProceduralTextures::PaintedMetal());
-	add(ShopTextures::PLASTER, ProceduralTextures::Plaster());
-	add(ShopTextures::PEGBOARD, ProceduralTextures::Pegboard());
-	add(ShopTextures::RUBBER, ProceduralTextures::Rubber());
-	add(ShopTextures::CARDBOARD, ProceduralTextures::Cardboard());
-	add(ShopTextures::SAND, ProceduralTextures::Sand());
-	add(ShopTextures::ASPHALT, ProceduralTextures::Asphalt());
-	add(ShopTextures::SIDING, ProceduralTextures::Siding());
-	add(ShopTextures::PLANKS, ProceduralTextures::Planks());
-	add(ShopTextures::ROCK, ProceduralTextures::Rock());
-	add(ShopTextures::FOLIAGE, ProceduralTextures::Foliage());
-
-	add(ShopTextures::HONED, ProceduralTextures::Honed());
-	add(ShopTextures::BORED, ProceduralTextures::Bored());
-	add(ShopTextures::GLAZED, ProceduralTextures::Glazed());
-	add(ShopTextures::WORN, ProceduralTextures::Worn());
-	add(ShopTextures::SCORED, ProceduralTextures::Scored());
-	add(ShopTextures::GROUND, ProceduralTextures::Ground());
-	add(ShopTextures::POLISHED, ProceduralTextures::Polished());
-	add(ShopTextures::SURFACE_GROUND, ProceduralTextures::SurfaceGround());
+	std::vector<std::future<ProceduralTextures::Image>> making;
+	for (const auto& [name, make] : MADE)
+		making.push_back(std::async(std::launch::async, make));
+	for (size_t i = 0; i < making.size(); i++)
+	{
+		ProceduralTextures::Image image = making[i].get();
+		m_textures[MADE[i].first] = textureManager->CreateTexture(MADE[i].first, image.width, image.height, image.pixels)->GetIndex();
+	}
 
 	// Reserved: a tile's image is only made once WallPaint first paints it, so the pool costs nothing at
 	// start up. Clamped at their edges: a tile's paint mustn't blend into its opposite side at the seams.

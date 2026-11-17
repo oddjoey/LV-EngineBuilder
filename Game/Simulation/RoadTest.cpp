@@ -227,9 +227,15 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 	bool hasEngine = car.GetEngine() >= 0;
 	if (!hasEngine)
 		report(FindingSeverity::FAILURE, "There's no engine in it.");
-	else if (auto missing = firstMissing({ CarSlot::BATTERY, CarSlot::MAIN_HARNESS, CarSlot::FUSE_BOX, CarSlot::ENGINE_HARNESS,
+	else if (auto missing = firstMissing({ CarSlot::BATTERY, CarSlot::MAIN_HARNESS, CarSlot::FUSE_BOX,
 		CarSlot::STARTER, CarSlot::STEERING_COLUMN }))
 		report(FindingSeverity::FAILURE, std::format("Turning the key does nothing: the {} isn't on.", *missing));
+	else if (!car.IsPlugged(CarPlug::BATTERY))
+		report(FindingSeverity::FAILURE, "Turning the key does nothing: the main harness's lead isn't on the battery.");
+	else if (!car.IsPlugged(CarPlug::GROUND))
+		report(FindingSeverity::FAILURE, "Turning the key does nothing: the battery's ground strap isn't on the chassis.");
+	else if (!car.IsPlugged(CarPlug::STARTER))
+		report(FindingSeverity::FAILURE, "Turning the key does nothing: the harness's plug isn't on the starter.");
 	else if (WorstCondition(car, CarSlot::BATTERY) == PartCondition::DAMAGED)
 		report(FindingSeverity::FAILURE, "The battery's dead: the starter just clicks.");
 	else if (WorstCondition(car, CarSlot::STARTER) == PartCondition::DAMAGED)
@@ -249,12 +255,18 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 			report(FindingSeverity::FAILURE, "It cranks but won't fire: the engine isn't finished.");
 		else if (auto missing = firstMissing({ CarSlot::FUEL_TANK, CarSlot::FUEL_SENDER, CarSlot::FUEL_LINE_SET, CarSlot::FUEL_FILTER }))
 			report(FindingSeverity::FAILURE, std::format("It cranks but won't fire: no fuel gets to it without the {}.", *missing));
+		else if (auto open = car.OpenUnion(FluidCircuit::FUEL))
+			report(FindingSeverity::FAILURE, std::format("It cranks but won't fire: the fuel line isn't on the {}.", CarPlugName(*open)));
 		else if (level(FluidCircuit::FUEL) < 1.0)
 			report(FindingSeverity::FAILURE, "It cranks but won't fire: the tank's dry.");
 		else if (fuel != FluidProduct::COUNT && FluidFitFor(FluidCircuit::FUEL, fuel) == FluidFit::RUINOUS)
 			report(FindingSeverity::FAILURE, std::format("It won't run on {}.", FluidProductName(fuel)));
 		else if (!has(CarSlot::IGNITION_COIL))
 			report(FindingSeverity::FAILURE, "It cranks but there's no spark: the ignition coil isn't on.");
+		else if (!car.IsPlugged(CarPlug::IGNITION_COIL))
+			report(FindingSeverity::FAILURE, "It cranks but there's no spark: the harness's plug isn't on the ignition coil.");
+		else if (!car.IsPlugged(CarPlug::DISTRIBUTOR))
+			report(FindingSeverity::FAILURE, "It cranks but there's no spark: the harness's plug isn't on the distributor.");
 		else if (std::abs(tune.ignitionTiming - spec.tune.ignitionTimingNominal) > 20.0)
 			report(FindingSeverity::FAILURE, "It kicks back against the starter and won't catch: the timing is miles out.");
 		else
@@ -288,6 +300,16 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 			report(FindingSeverity::WARNING, "It runs hot and the heater blows cold: the cooling system is low or full of air. Burp it.");
 		if (!has(CarSlot::COOLING_FAN))
 			report(FindingSeverity::WARNING, "It overheats in traffic: there's no cooling fan.");
+		else if (!car.IsPlugged(CarPlug::COOLING_FAN))
+			report(FindingSeverity::WARNING, "It overheats in traffic: the cooling fan isn't plugged into the main harness.");
+		// What isn't plugged in doesn't stop it, but doesn't work.
+		if (!car.IsPlugged(CarPlug::ALTERNATOR))
+			report(FindingSeverity::WARNING, "The charge lamp stays on: the alternator isn't plugged in, and it's running the battery down.");
+		if (!car.IsPlugged(CarPlug::COOLANT_SENDER) || !car.IsPlugged(CarPlug::OIL_SENDER))
+			report(FindingSeverity::WARNING, std::format("The {} gauge reads nothing: its sender isn't plugged in.",
+				!car.IsPlugged(CarPlug::COOLANT_SENDER) ? "temperature" : "oil pressure"));
+		if (!car.IsPlugged(CarPlug::HEADLIGHT_LEFT) || !car.IsPlugged(CarPlug::HEADLIGHT_RIGHT))
+			report(FindingSeverity::WARNING, "A headlight isn't plugged in: it won't light.");
 
 		if (!has(CarSlot::CATALYTIC_CONVERTER))
 			report(FindingSeverity::WARNING, "It's deafening and it stinks: the exhaust ends at the downpipe.");
@@ -315,6 +337,11 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 			CarSlot::STRUT_ROD, CarSlot::WHEEL, CarSlot::TIRE }))
 		{
 			report(FindingSeverity::FAILURE, std::format("It goes nowhere: the {} isn't on.", *missing));
+			canDrive = false;
+		}
+		else if (!car.IsPlugged(CarPlug::CLUTCH_PIPE))
+		{
+			report(FindingSeverity::FAILURE, "The clutch pedal goes to the floor: the pipe from its master cylinder isn't on the release cylinder.");
 			canDrive = false;
 		}
 		else if (fluid(FluidCircuit::CLUTCH).Total() < spec.Fluid(FluidCircuit::CLUTCH).level.min * 0.5
@@ -384,6 +411,8 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 		if (auto missing = firstMissing({ CarSlot::BRAKE_MASTER_CYLINDER, CarSlot::BRAKE_LINE_SET, CarSlot::BRAKE_HOSE, CarSlot::BRAKE_ROTOR,
 			CarSlot::BRAKE_PAD_SET, CarSlot::BRAKE_CALIPER, CarSlot::WHEEL_CYLINDER, CarSlot::BRAKE_SHOE_SET, CarSlot::BRAKE_DRUM }))
 			report(FindingSeverity::FAILURE, std::format("No brakes: the {} isn't on. It wasn't taken out.", *missing));
+		else if (auto open = car.OpenUnion(FluidCircuit::BRAKES))
+			report(FindingSeverity::FAILURE, std::format("No brakes: the brake pipe isn't on the {}. It wasn't taken out.", CarPlugName(*open)));
 		else if (brakeFluid.Total() < brakeSpec.level.min * 0.5 || air > 0.5)
 			report(FindingSeverity::FAILURE, "The brake pedal goes straight to the floor: the brakes need filling and bleeding. It wasn't taken out.");
 		else if (!checkFasteners(CarSlot::CALIPER_BOLT, true))

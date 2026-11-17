@@ -1,6 +1,8 @@
 #include "ProceduralTextures.h"
 
 #include <algorithm>
+#include <future>
+#include <thread>
 #include <cmath>
 #include <functional>
 
@@ -53,16 +55,27 @@ namespace ProceduralTextures
 			image.width = size;
 			image.height = size;
 			image.pixels.resize(static_cast<size_t>(size) * size * 4);
-			for (int y = 0; y < size; y++)
-				for (int x = 0; x < size; x++)
-				{
-					glm::vec3 color = glm::clamp(shader(static_cast<float>(x) / size, static_cast<float>(y) / size, x, y), 0.f, 1.f);
-					size_t i = (static_cast<size_t>(y) * size + x) * 4;
-					image.pixels[i + 0] = static_cast<uint8_t>(color.r * 255.f);
-					image.pixels[i + 1] = static_cast<uint8_t>(color.g * 255.f);
-					image.pixels[i + 2] = static_cast<uint8_t>(color.b * 255.f);
-					image.pixels[i + 3] = 255;
-				}
+			// A pixel's colour is worked out from where it is and nothing else, so the rows are shared out in bands, each
+			// done on a thread of its own: this is a good part of the wait at start up.
+			auto rows = [&](int from, int to) {
+				for (int y = from; y < to; y++)
+					for (int x = 0; x < size; x++)
+					{
+						glm::vec3 color = glm::clamp(shader(static_cast<float>(x) / size, static_cast<float>(y) / size, x, y), 0.f, 1.f);
+						size_t i = (static_cast<size_t>(y) * size + x) * 4;
+						image.pixels[i + 0] = static_cast<uint8_t>(color.r * 255.f);
+						image.pixels[i + 1] = static_cast<uint8_t>(color.g * 255.f);
+						image.pixels[i + 2] = static_cast<uint8_t>(color.b * 255.f);
+						image.pixels[i + 3] = 255;
+					}
+			};
+			const int bands = std::clamp(static_cast<int>(std::thread::hardware_concurrency()), 1, 16);
+			std::vector<std::future<void>> working;
+			for (int band = 1; band < bands; band++)
+				working.push_back(std::async(std::launch::async, rows, size * band / bands, size * (band + 1) / bands));
+			rows(0, size / bands);
+			for (auto& done : working)
+				done.get();
 			return image;
 		}
 	}

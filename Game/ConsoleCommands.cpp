@@ -412,6 +412,61 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_world.DevPlaceCar(static_cast<float>(*x), static_cast<float>(*z), static_cast<float>(heading.value_or(0.0)));
 			m_console.Print("The car's there.");
 		}
+		else if (what == "plug")
+		{
+			// car plug <n>: takes that plug (a CarPlug's number) in hand, pulling it off what it's on.
+			m_world.DevTakePlug(*m_workshop, static_cast<int>((args.size() > 1 ? Number(args[1]) : std::nullopt).value_or(0.0)));
+			m_console.Print("The plug is in hand.");
+		}
+		else if (what == "letgo")
+		{
+			// car letgo: lets go of the plug in hand (back into its loom, unclipped).
+			m_world.DevLetGoPlug(*m_workshop);
+			m_console.Print("Let go.");
+		}
+		else if (what == "menurow")
+		{
+			// car menurow <n>: picks out a row of the open plug list (counting from 0; the last pulls them all).
+			m_world.DevPlugMenuRow(static_cast<int>((args.size() > 1 ? Number(args[1]) : std::nullopt).value_or(0.0)));
+			m_console.Print("Row picked.");
+		}
+		else if (what == "plugs")
+		{
+			// car plugs [off]: pushes every one of the looms' plugs home, or pulls them all.
+			bool off = args.size() > 1 && args[1] == "off";
+			m_workshop->DevPlugCar(!off);
+			m_console.Print(off ? "Every plug is hanging loose." : "Every plug is pushed home.");
+		}
+		else if (what == "seat")
+		{
+			// car seat <0|1> [slide] [recline] [fold]: sets a front seat (metres along its rails, radians leant back, tipped forward or not).
+			auto seat = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			auto slide = args.size() > 2 ? Number(args[2]) : std::nullopt, recline = args.size() > 3 ? Number(args[3]) : std::nullopt;
+			m_world.DevSeat(*m_workshop, static_cast<int>(seat.value_or(0.0)), static_cast<float>(slide.value_or(0.0)), static_cast<float>(recline.value_or(0.26)),
+				args.size() > 4 && args[4] == "fold");
+			m_console.Print("The seat's set.");
+		}
+		else if (what == "out")
+		{
+			m_world.DevLeave(m_player);
+			m_console.Print("Out of the car.");
+		}
+		else if (what == "press")
+		{
+			m_world.DevPress();
+			m_console.Print("Clicks the next of the car's switches aimed at.");
+		}
+		else if (what == "key")
+		{
+			m_world.DevTurnKey(*m_workshop);
+			m_console.Print("The key, turned.");
+		}
+		else if (what == "gear")
+		{
+			auto gear = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			m_world.DevGear(static_cast<int>(gear.value_or(1.0)));
+			m_console.Print("Held in that gear while car drive has its foot down.");
+		}
 		else if (what == "lights")
 		{
 			m_world.DevHeadlights();
@@ -462,6 +517,11 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		}
 		if (!args.empty() && args[0] == "store")
 		{
+			if (args.size() > 1 && args[1] == "skills")
+			{
+				m_ui.OpenStore(StoreCategory::SKILLS);
+				return m_console.Print("The parts computer's Rank & Skills page.");
+			}
 			m_ui.OpenStore(args.size() > 1 && args[1] == "hardware" ? StoreCategory::HARDWARE : args.size() > 1 && args[1] == "parts" ? StoreCategory::PARTS : StoreCategory::CAR);
 			return m_console.Print("The store's LE86 Parts page.");
 		}

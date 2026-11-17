@@ -26,7 +26,11 @@ namespace
 		{ "roll_forward", "Roll the engine on its stand the other way", "Working", "X", GLFW_KEY_X },
 		{ "wrench_size", "Take the battery off a cordless tool", "Working", "C", GLFW_KEY_C },
 		{ "turn_held", "Hold and move the mouse to turn what you're holding, to set it down that way", "Working", "Q", GLFW_KEY_Q },
-		{ "headlights", "At the car's wheel: pop the headlights up and switch them on, or off and down", "Working", "L", GLFW_KEY_L },
+
+		{ "ignition", "At the car's wheel: turn the key, to start it or switch it off", "Working", "I", GLFW_KEY_I },
+		{ "shift_up", "At the car's wheel: up a gear", "Working", "Up", GLFW_KEY_E },
+		{ "shift_down", "At the car's wheel: down a gear", "Working", "Down", GLFW_KEY_Q },
+		{ "clutch", "At the car's wheel: the clutch pedal (hold it down to change gear)", "Working", "Clutch", GLFW_KEY_C },
 		{ "backpack", "Open or close your backpack", "Screens and view", "Tab", GLFW_KEY_TAB },
 		{ "third_person", "View: first person, from behind, from in front, and back", "Screens and view", "F5", GLFW_KEY_F5 },
 		{ "dev_menu", "Developer menu", "Screens and view", "F3", GLFW_KEY_F3 },

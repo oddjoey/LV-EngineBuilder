@@ -63,28 +63,71 @@ namespace CarBody
 	constexpr float TRUNK_OPEN = 1.05f;
 	constexpr float FLAP_OPEN = 1.45f;
 	constexpr float FULL_LOCK = 0.6f;		// the front wheels turned as far as they go, radians
-	// The pop-up headlights: each pod swings up about the back edge of its lid by this much, radians.
-	constexpr float LAMP_POP = 0.5f;
+	// The pop-up headlights: each pod tilts up about the back edge of its lid by this much, radians (which lifts the
+	// lid's front edge near a quarter of a metre), and the lamp's face under it is this tall.
+	constexpr float LAMP_POP = 0.7f;
+	constexpr float LAMP_FACE = 0.22f;
 
 	// The engine in its bay: the middle of its block's deck (its crank a quarter of a metre under that, along the car),
 	// forward of the firewall far enough for the distributor on the back of its head; and the rubber mounts it sits on,
 	// either side of its crankcase on perches off the chassis rails.
-	constexpr float ENGINE_X = 1.26f;
-	constexpr float ENGINE_DECK_Y = 0.59f;
+	constexpr float ENGINE_X = 1.38f;
+	constexpr float ENGINE_DECK_Y = 0.575f;
 	constexpr float CRANK_AXIS_Y = ENGINE_DECK_Y - 0.25f;
 	constexpr float BLOCK_REAR_X = ENGINE_X - 0.205f;	// the block's back face, the gearbox's bellhousing against it
-	constexpr float ENGINE_MOUNT_Y = 0.30f;				// the perches' tops
+	constexpr float ENGINE_MOUNT_Y = ENGINE_DECK_Y - 0.29f;	// the perches' tops
 	constexpr float ENGINE_MOUNT_Z = 0.24f;
 	constexpr float FIREWALL_X = 0.88f;
+	// The plumbing in the bay: the clutch's master cylinder on the firewall at the driver's feet; the fuel filter in the
+	// other back corner (its base: it stands this tall, a stub out of each end), and under it the end of the fuel line,
+	// up through the top of the wheel housing; and the brake pipes' junction block on the driver's wheel housing, under
+	// the master cylinder.
+	constexpr float CLUTCH_MASTER[3] = { 0.93f, 0.66f, -0.56f };
+	constexpr float FUEL_FILTER[3] = { 0.93f, 0.67f, 0.5f };
+	constexpr float FUEL_FILTER_HEIGHT = 0.125f;
+	constexpr float IGNITION_COIL[3] = { 1.63f, 0.55f, 0.61f };	// on the inner wing, ahead of the wheel housing
+	constexpr float FUEL_RISER[3] = { 0.905f, 0.585f, 0.43f };
+	constexpr float BRAKE_BLOCK[3] = { 1.15f, 0.52f, -0.385f };
 	// The front wheels' housings in the engine bay: a tub this radius about the axle, walled off from the bay this far out.
 	constexpr float FRONT_TUB = 0.40f;
 	constexpr float FRONT_TUB_WALL_Z = 0.40f;
 	// The instrument cluster's dials, in its own space (it faces -z, the driver's left +x): the two big ones either
 	// side of its middle, the two little ones between them, one over the other; how big each is, and how far its
 	// needle swings from its lowest mark to its highest (about straight up).
-	constexpr float GAUGE_Y = 0.075f;
-	constexpr float GAUGE_BIG_X = 0.105f, GAUGE_BIG = 0.062f, GAUGE_SWEEP = 4.71f;
-	constexpr float GAUGE_SMALL_Y = 0.036f, GAUGE_SMALL = 0.027f, GAUGE_SMALL_SWEEP = 2.1f;
+	constexpr float GAUGE_Y = 0.072f;
+	constexpr float GAUGE_BIG_X = 0.075f, GAUGE_BIG = 0.058f, GAUGE_SWEEP = 4.19f;
+	// The three little ones are bars along the bottom, a needle swinging under each from a pivot below it: the fuel
+	// gauge out on the driver's left, the oil pressure and temperature gauges on the right.
+	constexpr float GAUGE_FUEL_X = 0.165f, GAUGE_OIL_X = -0.147f, GAUGE_TEMP_X = -0.176f;
+	constexpr float GAUGE_SMALL_Y = 0.03f, GAUGE_SMALL = 0.026f, GAUGE_SMALL_SWEEP = 1.0f;
+	constexpr float SPEEDO_TOP = 180.f, TACH_TOP = 8000.f;
+	// What's worked by hand from the seats, in the car's space: the headlights' knob on the dash by the driver's door,
+	// the hood's release under the dash beside it, and the ignition's barrel on the dash right of the column.
+	constexpr float DASH_X = 0.6f, DASH_Y = 0.55f;		// where the dashboard sits (it's built across the car)
+	constexpr float HEADLIGHT_KNOB[3] = { 0.33f, 0.745f, -0.628f };
+	constexpr float HOOD_RELEASE[3] = { 0.4f, 0.5f, -0.66f };
+	constexpr float IGNITION_BARREL[3] = { 0.33f, 0.665f, -0.12f };
 	// Where the steering's tie rods run, under the engine's sump.
 	constexpr float TIE_ROD_Y = 0.165f;
+	// The doors' inside handles, on the door's own model (from its hinge line: how far back along it, how far up from
+	// its bottom edge, and how far in from its outer skin the lever stands): on the cloth of the card behind the
+	// dashboard's end, where they show with the door shut.
+	constexpr float DOOR_HANDLE_X = -0.6f, DOOR_HANDLE_Y = 0.47f, DOOR_HANDLE_IN = 0.094f;
+	// A front seat, in its own space (it faces +x, its frame on y = 0). Its back hinges on the cushion's back edge:
+	// leant back by SEAT_RECLINE as it comes (the recliner's knob takes it from nearly upright to well back), and
+	// tipped forward to SEAT_FOLD to let someone into the back. The whole seat slides this far either way on its
+	// rails. What's worked by hand: the slide's bar under the front of the cushion, the recliner's knob by the hinge
+	// (both on the seat's base), and the fold's catch on the shoulder of the back (on the back, from its hinge).
+	constexpr float SEAT_HINGE_X = -0.2f, SEAT_HINGE_Y = 0.13f;
+	constexpr float SEAT_RECLINE = 0.26f, SEAT_RECLINE_MIN = 0.06f, SEAT_RECLINE_MAX = 0.8f, SEAT_RECLINE_STEP = 0.06f;
+	constexpr float SEAT_FOLD = -0.72f;
+	constexpr float SEAT_SLIDE = 0.1f, SEAT_SLIDE_STEP = 0.02f;
+	constexpr float SEAT_SLIDE_BAR[3] = { 0.26f, 0.05f, 0.f };
+	constexpr float SEAT_RECLINER[3] = { -0.18f, 0.1f, -0.265f };
+	constexpr float SEAT_FOLD_CATCH[3] = { 0.f, 0.47f, -0.245f };
+	constexpr float SEAT_X = -0.3f, SEAT_Y = 0.22f, SEAT_Z = 0.37f;		// where a front seat sits in the car, its slide in the middle
+	// The back seat: a bench across the car, each half of it a place to sit (a box round it, for aiming at it).
+	constexpr float REAR_SEAT_FRONT_X = -0.67f, REAR_SEAT_BACK_X = -1.27f, REAR_SEAT_BASE_Y = 0.24f, REAR_SEAT_TOP_Y = 0.87f, REAR_SEAT_HALF = 0.57f;
+	// The end of the tailpipe, under the bumper on the right, where the exhaust's smoke comes out.
+	constexpr float TAILPIPE[3] = { -2.26f, 0.105f, 0.45f };
 }

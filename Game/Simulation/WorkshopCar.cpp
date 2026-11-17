@@ -44,6 +44,7 @@ void Workshop::SetUpStartingCar()
 	WearStartingEngine(0, 75.0);
 	FitNewCarParts();
 	FillAndBleedCar();
+	DevPlugCar(true);
 	WearStartingCar();
 	for (const auto& part : m_inventory)
 		part->MarkUsed();
@@ -703,6 +704,7 @@ const RoadTestResult& Workshop::RoadTestCar()
 	static const RoadTestResult NONE = {};
 	if (!m_car)
 		return NONE;
+	SettleCarPlugs();
 	auto& build = *m_car;
 	int engine = GetEngineInCar();
 	DynoResult pull;
@@ -738,6 +740,7 @@ void Workshop::DevAssembleCar()
 		m_car = std::make_unique<CarBuild>(CarSpec::LE86Coupe());
 	int fitted = FitNewCarParts();
 	FillAndBleedCar();
+	DevPlugCar(true);
 	CarChanged();
 	Log(std::format("Dev: fitted {} new OEM parts to the car, and filled and bled it.", fitted));
 }
@@ -929,7 +932,17 @@ namespace
 		return r;
 	}
 
-	constexpr long long CAR_TEXT_VERSION = 2;		// 2: no car sale (cars aren't sold)
+	// 2: no car sale (cars aren't sold). 3: the looms' plugs (a car from before has them all pushed home). 4: the
+	// clips on the plugs' wires, and how the front seats are set.
+	// 9: the engine harness folded into the main one (its lead to the battery, plug 11 in version 8, is gone).
+	// 10: no engine harness slot (the slots after it moved down one).
+	// 11: the pipes' unions (the brake lines', the clutch's and the fuel lines'): a car from before has them all done up.
+	constexpr long long CAR_TEXT_VERSION = 11;
+	constexpr int CAR_PLUGS_BEFORE_PIPES = 11;
+	constexpr long long OLD_ENGINE_HARNESS_SLOT = static_cast<long long>(CarSlot::FUSE_BOX);	// where it was before version 10
+	constexpr int CAR_PLUGS_IN_VERSION_8 = 12;
+	constexpr int CAR_PLUGS_BEFORE_ENGINE_BATTERY = 11;	// and before version 8 gave the engine harness its lead to the battery
+	constexpr int CAR_PLUGS_BEFORE_GROUND = 10;	// how many plugs a car had before version 5 gave it a ground strap
 }
 
 std::string Workshop::CarState() const
@@ -966,6 +979,21 @@ std::string Workshop::CarState() const
 		out.Num(tune.finalDrive);
 		WriteRoadTest(out, m_car->lastRoadTest);
 		out.Int(m_car->roadTestCurrent);
+		out.Int(car.GetPlugs());
+		for (int p = 0; p < CAR_PLUGS; p++)
+		{
+			const auto& clips = car.GetWireClips(static_cast<CarPlug>(p));
+			out.Int(clips.size());
+			for (const auto& clip : clips)
+				out.Num(clip[0]).Num(clip[1]).Num(clip[2]);
+		}
+		for (int seat = 0; seat < 2; seat++)
+		{
+			const auto& setting = car.GetSeatSetting(seat);
+			out.Num(setting.slide).Num(setting.recline).Int(setting.folded ? 1 : 0);
+		}
+		out.Num(car.GetGroundPoint()[0]).Num(car.GetGroundPoint()[1]).Num(car.GetGroundPoint()[2]);
+		out.Num(car.GetGroundNormal()[0]).Num(car.GetGroundNormal()[1]).Num(car.GetGroundNormal()[2]);
 	}
 	out.Int(m_carCarried.size());
 	for (const auto& [host, carried] : m_carCarried)
@@ -979,7 +1007,7 @@ bool Workshop::RestoreCarState(const std::string& text)
 {
 	Reader in(text);
 	long long version = in.Int();
-	if (version != CAR_TEXT_VERSION)
+	if (version < 2 || version > CAR_TEXT_VERSION)
 		return false;
 	std::unique_ptr<CarBuild> build;
 	if (in.Int() != 0)
@@ -990,6 +1018,10 @@ bool Workshop::RestoreCarState(const std::string& text)
 		for (size_t i = 0; i < installed && !in.Failed(); i++)
 		{
 			long long slot = in.Int(), index = in.Int(), id = in.Int();
+			if (version < 10 && slot == OLD_ENGINE_HARNESS_SLOT)
+				continue;
+			if (version < 10 && slot > OLD_ENGINE_HARNESS_SLOT)
+				slot--;
 			auto part = FindPart(static_cast<uint32_t>(id));
 			if (!part || slot < 0 || slot >= static_cast<long long>(CarSlot::COUNT) || EngineOf(*part) >= 0)
 				continue;
@@ -1033,6 +1065,48 @@ bool Workshop::RestoreCarState(const std::string& text)
 		tune.finalDrive = in.Num();
 		build->lastRoadTest = ReadRoadTest(in);
 		build->roadTestCurrent = in.Int() != 0;
+		car.RestorePlugs(version >= 3 ? static_cast<uint32_t>(in.Int()) : ALL_CAR_PLUGS);
+		if (version < 11)
+			car.RestorePlugs(car.GetPlugs() | (ALL_CAR_PLUGS & ~((1u << CAR_PLUGS_BEFORE_PIPES) - 1u)));
+		// A car from before the ground strap has it on, so it still runs.
+		if (version < 5)
+			car.SetPlugged(CarPlug::GROUND, true);
+		if (version >= 4)
+		{
+			// (A plug that's since gone has its clips read and dropped.)
+			int written = version >= 11 ? CAR_PLUGS : version >= 9 ? CAR_PLUGS_BEFORE_PIPES : version >= 8 ? CAR_PLUGS_IN_VERSION_8
+				: version >= 5 ? CAR_PLUGS_BEFORE_ENGINE_BATTERY : CAR_PLUGS_BEFORE_GROUND;
+			for (int p = 0; p < written; p++)
+			{
+				size_t clips = in.Count();
+				for (size_t c = 0; c < clips && !in.Failed(); c++)
+				{
+					CarWirePoint at = { static_cast<float>(in.Num()), static_cast<float>(in.Num()), static_cast<float>(in.Num()) };
+					if (p < CAR_PLUGS)
+						car.AddWireClip(static_cast<CarPlug>(p), at);
+				}
+			}
+			for (int seat = 0; seat < 2; seat++)
+			{
+				CarSeatSetting setting;
+				setting.slide = static_cast<float>(in.Num());
+				setting.recline = static_cast<float>(in.Num());
+				setting.folded = in.Int() != 0;
+				car.SetSeatSetting(seat, setting);
+			}
+		}
+		if (version >= 6)
+		{
+			CarWirePoint at = { static_cast<float>(in.Num()), static_cast<float>(in.Num()), static_cast<float>(in.Num()) };
+			// (One from before the bolt stood out of its panel is put back where a car starts with it.)
+			if (version >= 7)
+				car.SetGroundPoint(at);
+		}
+		if (version >= 7)
+		{
+			CarWirePoint normal = { static_cast<float>(in.Num()), static_cast<float>(in.Num()), static_cast<float>(in.Num()) };
+			car.SetGroundNormal(normal);
+		}
 		// The fluids go back in last, as they were: installing the parts above opened every circuit.
 		car.RestoreFluids(fluids);
 	}
@@ -1058,7 +1132,148 @@ bool Workshop::RestoreCarState(const std::string& text)
 		m_car = std::move(build);
 	m_carCarried = carried;
 	m_fluidStock = stock;
+	SettleCarPlugs();
 	return true;
+}
+
+bool Workshop::CarPlugSocketFitted(CarPlug plug) const
+{
+	if (!m_car)
+		return false;
+	const auto& car = m_car->assembly;
+	if (!car.IsFilled(CarAssembly::PlugHarness(plug), 0))
+		return false;
+	// The battery's ground strap goes to a stud on the body, which is always there.
+	if (plug == CarPlug::GROUND)
+		return true;
+	if (auto target = CarAssembly::PlugTarget(plug))
+		return car.IsFilled(target->first, target->second);
+	// On the engine: it has to be in the bay, with what the plug goes onto on it (the senders are in the head's
+	// water outlet and the block).
+	int engine = car.GetEngine();
+	if (engine < 0)
+		return false;
+	const auto& fitted = GetAssembly(engine);
+	switch (plug)
+	{
+		// (The pump's hose comes on from the filter.)
+		case CarPlug::FUEL_PUMP:		return car.IsFilled(CarSlot::FUEL_FILTER, 0) && fitted.Get(AssemblySlot::FUEL_PUMP, 0) != nullptr;
+		case CarPlug::DISTRIBUTOR:		return fitted.Get(AssemblySlot::DISTRIBUTOR, 0) != nullptr;
+		case CarPlug::ALTERNATOR:		return fitted.Get(AssemblySlot::ALTERNATOR, 0) != nullptr;
+		case CarPlug::COOLANT_SENDER:	return fitted.Get(AssemblySlot::THERMOSTAT_HOUSING, 0) != nullptr;
+		default:						return fitted.Get(AssemblySlot::BLOCK, 0) != nullptr;
+	}
+}
+
+bool Workshop::ConnectCarPlug(CarPlug plug)
+{
+	if (!m_car || m_car->assembly.IsPlugged(plug))
+		return false;
+	if (!CarPlugSocketFitted(plug))
+	{
+		Log(std::format("There's nothing to put it on: the {} isn't there.", CarPlugName(plug)));
+		return false;
+	}
+	m_car->assembly.SetPlugged(plug, true);
+	CarChanged();
+	return true;
+}
+
+bool Workshop::DisconnectCarPlug(CarPlug plug)
+{
+	if (!m_car || !m_car->assembly.IsPlugged(plug))
+		return false;
+	m_car->assembly.SetPlugged(plug, false);
+	CarChanged();
+	return true;
+}
+
+void Workshop::SettleCarPlugs()
+{
+	if (!m_car)
+		return;
+	for (int p = 0; p < CAR_PLUGS; p++)
+		if (auto plug = static_cast<CarPlug>(p); m_car->assembly.IsPlugged(plug) && !CarPlugSocketFitted(plug))
+		{
+			m_car->assembly.SetPlugged(plug, false);
+			CarChanged();
+		}
+}
+
+bool Workshop::ClipCarWire(CarPlug plug, const CarWirePoint& at)
+{
+	return m_car && m_car->assembly.IsFilled(CarAssembly::PlugHarness(plug), 0) && m_car->assembly.AddWireClip(plug, at);
+}
+
+void Workshop::UnclipCarWire(CarPlug plug, int index)
+{
+	if (m_car)
+		m_car->assembly.RemoveWireClip(plug, index);
+}
+
+void Workshop::UnclipLooseCarWire(CarPlug plug)
+{
+	if (m_car && !m_car->assembly.IsPlugged(plug))
+		m_car->assembly.SetPlugged(plug, false);
+}
+
+int Workshop::DisconnectCarPlugs(CarSlot harness)
+{
+	int pulled = 0;
+	for (int p = 0; p < CAR_PLUGS; p++)
+		if (auto plug = static_cast<CarPlug>(p); CarAssembly::PlugHarness(plug) == harness && DisconnectCarPlug(plug))
+			pulled++;
+	return pulled;
+}
+
+void Workshop::SetCarSeat(int seat, const CarSeatSetting& setting)
+{
+	if (m_car)
+		m_car->assembly.SetSeatSetting(seat, setting);
+}
+
+std::optional<std::string> Workshop::CarStarterDead() const
+{
+	if (!m_car)
+		return "There's no car.";
+	const auto& car = m_car->assembly;
+	for (CarSlot slot : { CarSlot::BATTERY, CarSlot::MAIN_HARNESS, CarSlot::FUSE_BOX, CarSlot::STARTER })
+		if (!car.IsFilled(slot, 0))
+			return std::format("Nothing: the {} isn't on.", car.PositionName(slot, 0));
+	if (!car.IsPlugged(CarPlug::BATTERY))
+		return "Nothing: the main harness's lead isn't on the battery.";
+	if (!car.IsPlugged(CarPlug::GROUND))
+		return "Nothing: the battery's ground strap isn't on the body.";
+	if (!car.IsPlugged(CarPlug::STARTER))
+		return "Nothing: the harness's plug isn't on the starter.";
+	return std::nullopt;
+}
+
+bool Workshop::GroundCarBattery(const CarWirePoint& at, const CarWirePoint& normal)
+{
+	if (!m_car || m_car->assembly.IsPlugged(CarPlug::GROUND) || !CarPlugSocketFitted(CarPlug::GROUND))
+		return false;
+	m_car->assembly.SetGroundPoint(at);
+	m_car->assembly.SetGroundNormal(normal);
+	return ConnectCarPlug(CarPlug::GROUND);
+}
+
+void Workshop::DevPlugCar(bool plugged)
+{
+	if (!m_car)
+		return;
+	for (int p = 0; p < CAR_PLUGS; p++)
+		m_car->assembly.SetPlugged(static_cast<CarPlug>(p), plugged && CarPlugSocketFitted(static_cast<CarPlug>(p)));
+	// Pulled, they're as they came: no clips on their wires, the ground strap's bolt back where it started.
+	if (!plugged)
+	{
+		for (int p = 0; p < CAR_PLUGS; p++)
+			while (!m_car->assembly.GetWireClips(static_cast<CarPlug>(p)).empty())
+				m_car->assembly.RemoveWireClip(static_cast<CarPlug>(p), 0);
+		m_car->assembly.SetGroundPoint(CarAssembly::DEFAULT_GROUND_POINT);
+		m_car->assembly.SetGroundNormal(CarAssembly::DEFAULT_GROUND_NORMAL);
+	}
+	CarChanged();
 }
 
 
@@ -1070,6 +1285,7 @@ Workshop::CarDrive Workshop::StartCar()
 		drive.problem = "There's no car.";
 		return drive;
 	}
+	SettleCarPlugs();
 	auto& build = *m_car;
 	int engine = GetEngineInCar();
 	DynoResult pull;

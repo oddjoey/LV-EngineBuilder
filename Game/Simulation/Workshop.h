@@ -451,6 +451,29 @@ public:
 		double idleRpm = 0.0;
 	};
 	CarDrive StartCar();
+	// The looms' plugs (CarPlug). Whether what a plug goes onto is there to take it (its loom on, and the part: for
+	// those on the engine, the engine in the bay with that part on it); pushing one home and pulling it off (false,
+	// with why in the log, if it can't be); and SettleCarPlugs, which lets go of any whose part has since come off.
+	bool CarPlugSocketFitted(CarPlug plug) const;
+	bool ConnectCarPlug(CarPlug plug);
+	bool DisconnectCarPlug(CarPlug plug);
+	void SettleCarPlugs();
+	// A clip put on a plug's wire at a point on the car (false once it has as many as it takes), and one taken off.
+	bool ClipCarWire(CarPlug plug, const CarWirePoint& at);
+	void UnclipCarWire(CarPlug plug, int index);
+	// Takes every clip off a plug's wire that isn't plugged in (one let go, back into its loom).
+	void UnclipLooseCarWire(CarPlug plug);
+	// Pulls every one of a loom's plugs off what it's on (and its wire out of its clips). How many came off.
+	int DisconnectCarPlugs(CarSlot harness);
+	// A front seat set (clamped to what it can do by whoever calls it: this just keeps it).
+	void SetCarSeat(int seat, const CarSeatSetting& setting);
+	// Why turning the key would do nothing at all (no battery, a lead off it, no starter or nothing feeding it), if
+	// it would: the starter doesn't so much as click.
+	std::optional<std::string> CarStarterDead() const;
+	// Bolts the battery's ground strap to the body at a point, on a panel facing a way (both in the car's space).
+	bool GroundCarBattery(const CarWirePoint& at, const CarWirePoint& normal);
+	// Developer shortcut: every plug that can be pushed home, or all of them pulled.
+	void DevPlugCar(bool plugged);
 	// Driven for this long, this far: fuel burned, the oil and coolant aged, the engine warmed. False once the tank is dry.
 	bool DriveCar(double seconds, double metres, double throttle);
 	// The engine in the car cooling for this many seconds (a road test warms it right up).

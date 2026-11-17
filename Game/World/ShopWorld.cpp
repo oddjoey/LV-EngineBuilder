@@ -392,6 +392,41 @@ void ShopWorld::Build(const ShopAssets& assets)
 		glass->SetPickable(false);
 	}
 	m_carStands->SetPickable(false);
+	// The front seats' backs, the exhaust's smoke, and the looms' plugs with their sockets and wires.
+	auto extra = [&](const std::string& model) {
+		auto object = Spawn(model, "", CAR_HOME, CAR_YAW);
+		object->SetVisible(false);
+		object->SetPickable(false);
+		object->SetCastsShadows(false);
+		return object;
+	};
+	for (auto& back : m_seatBacks)
+		back = extra(ShopModels::SEAT_BACK);
+	for (auto& puff : m_smoke)
+		puff.object = extra(ShopModels::SMOKE_PUFF);
+	for (auto& plug : m_plugVisuals)
+	{
+		// (A wire's plug and socket; a pipe's flare nut and the port it screws into; a hose's clipped end and its stub.)
+		const CarPlugKind kind = CarPlugKindOf(static_cast<CarPlug>(&plug - m_plugVisuals.data()));
+		plug.plug = extra(kind == CarPlugKind::PIPE ? ShopModels::PIPE_UNION : kind == CarPlugKind::HOSE ? ShopModels::HOSE_END : ShopModels::HARNESS_PLUG);
+		plug.socket = extra(kind == CarPlugKind::STRAP ? ShopModels::GROUND_STUD : kind == CarPlugKind::PIPE ? ShopModels::PIPE_PORT
+			: kind == CarPlugKind::HOSE ? ShopModels::HOSE_STUB : ShopModels::HARNESS_SOCKET);
+		for (auto& wire : plug.wires)
+		{
+			wire = extra(ShopModels::HARNESS_WIRE);
+			wire->SetTint(kind == CarPlugKind::PIPE ? glm::vec4(0.55f, 0.57f, 0.6f, 1.f) : kind == CarPlugKind::HOSE ? glm::vec4(0.05f, 0.05f, 0.05f, 1.f)
+				: glm::vec4(0.07f, 0.07f, 0.08f, 1.f));
+		}
+		for (auto& clip : plug.clips)
+			clip = extra(ShopModels::HARNESS_CLIP);
+	}
+	for (auto& trunk : m_loomTrunks)
+	{
+		trunk = extra(ShopModels::HARNESS_WIRE);
+		trunk->SetTint({ 0.06f, 0.06f, 0.07f, 1.f });
+	}
+	m_lineFixtures[0] = extra(ShopModels::BRAKE_LINE_BLOCK);
+	m_lineFixtures[1] = extra(ShopModels::FUEL_LINE_RISER);
 	m_fixedStations = m_stations.size();
 
 	RebuildCollision();
@@ -406,7 +441,7 @@ void ShopWorld::RebuildCollision()
 		const auto& station = m_stations[i];
 		// A machine being carried around doesn't block anything until it's set down.
 		// Nor does the car get in its own way while it's being driven.
-		if (!station.present || (m_move && m_move->stationIndex == i) || (m_drive.active && i == m_carStation))
+		if (!station.present || (m_move && m_move->stationIndex == i) || (CarBeingDriven() && i == m_carStation))
 			continue;
 
 		for (const auto& surface : station.localSurfaces)
@@ -423,6 +458,13 @@ void ShopWorld::RebuildCollision()
 				{
 					glm::vec3 post = station.position + station.Rotation() * glm::vec3(side * 1.5f, 0.f, 0.f);
 					m_obstacles.push_back({ { post.x - 0.25f, post.z - 0.25f }, { post.x + 0.25f, post.z + 0.25f }, bounds.min.y, bounds.max.y });
+				}
+			// The car by its three boxes, each only as high as that part of it stands.
+			else if (i == m_carStation)
+				for (const auto& box : CarBoxes())
+				{
+					auto part = TransformBox(box, station.position, CarRotation());
+					m_obstacles.push_back({ { part.min.x, part.min.z }, { part.max.x, part.max.z }, part.min.y, part.max.y });
 				}
 			else
 				m_obstacles.push_back({ { bounds.min.x, bounds.min.z }, { bounds.max.x, bounds.max.z }, bounds.min.y, bounds.max.y });
@@ -503,11 +545,14 @@ int ShopWorld::ArmsOut() const
 
 void ShopWorld::UpdateSelfAvatar(float deltaTime, const FirstPersonController& player)
 {
-	bool show = m_viewModelVisible && m_thirdPerson && !IsSeated();	// in the car they're out of sight
+	bool show = m_viewModelVisible && m_thirdPerson;
 	if (show && !m_selfAvatar.IsSpawned())
 		m_selfAvatar.Spawn(*this, player.GetFeetPosition(), player.GetYaw(), m_look);
 	m_selfAvatar.SetVisible(show);
-	if (show)
+	// In the car they're sat in their seat (seen through its glass, from outside), their hands on the wheel if it's theirs.
+	if (show && IsSeated())
+		m_selfAvatar.PoseSeated(SeatHips(m_seat), SeatYaw(), player.GetYaw(), player.GetPitch(), m_seat == 0);
+	else if (show)
 		m_selfAvatar.Pose(deltaTime, player.GetFeetPosition(), player.GetYaw(), player.GetPitch(), player.IsCrouching(), ArmsOut());
 }
 
@@ -762,6 +807,9 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	UpdateDoor(deltaTime);
 	UpdateLift(deltaTime);
 	AnimateCarPanels(workshop, deltaTime);
+	// The car left running with no one at its wheel ticks over.
+	if (m_drive.active && m_seat != 0)
+		IdleCar(deltaTime, workshop);
 	{
 		PROFILE_SCOPE("world: sync");
 		// Only when the workshop's parts or tools have changed: building the lookups every frame cost more
@@ -832,6 +880,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		PoseCarriedPackages(player);
 		m_paint.Update(deltaTime);
 		UpdateViewModel(player);
+		PoseCarPlugs(workshop, player);
 	}
 
 	// Anything the simulation logs (a cut, a purchase, a refusal) shows up briefly on screen.
@@ -883,9 +932,13 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		return std::nullopt;
 
 	// In the car there's nothing else to do but ride, drive (ShopWorld::Drive) and get out again.
+	m_aimedCarControl = false;
 	if (IsSeated())
 	{
+		// (And what's in reach of the seat to click: the switches, the key, the doors' handles.)
 		m_prompt = SeatPrompt();
+		if (!m_thirdPerson)
+			UpdateCarControls(workshop, player, input);
 		return std::nullopt;
 	}
 
@@ -894,6 +947,10 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		UpdateMove(player, input);
 		return std::nullopt;
 	}
+
+	// A loom's list of plugs, open: the numbers and the wheel pick from it, not the hotbar.
+	if (UpdatePlugMenu(workshop, player, input))
+		return std::nullopt;
 
 	// Hotbar: 1-9 and 0 pick a slot, and the wheel steps through them (down to the right, up to the
 	// left); whatever is in the picked slot is in hand. The number of the slot already picked puts
@@ -938,12 +995,18 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		StartMove(m_hover->stationIndex);
 		return std::nullopt;
 	}
-	// [F] at the car (any of it) gets into the seat nearest what's aimed at: the driver's, to drive it.
-	if (auto seat = AimedSeat(workshop, player))
+	// The looms' plugs, taken in hand and pushed onto what they feed.
+	if (UpdateCarPlugs(workshop, player, input))
+		return std::nullopt;
+	// [F] looking at one of the car's seats gets into it: the driver's, to drive it. (Not at one of the seat's own
+	// catches: those are worked with a click.)
+	if (auto seat = AimedSeat(workshop, player); seat && !AimedCarControl(workshop, player))
 	{
-		static const char* HINTS[] = { "[F] Get in and drive", "[F] Sit in the passenger seat", "[F] Sit in the back", "[F] Sit in the back" };
-		m_prompt += (m_prompt.empty() ? "" : "   ") + std::string(HINTS[*seat]);
-		if (Controls::Pressed(input, Control::MOVE))
+		static const char* HINTS[] = { "Get in and drive", "Sit in the passenger seat", "Sit in the back", "Sit in the back" };
+		// (A click on the seat does it too, with nothing in hand.)
+		bool onSeat = !GetHeld();
+		m_prompt += (m_prompt.empty() ? "" : "   ") + std::string(onSeat ? "[LMB] / [F] " : "[F] ") + HINTS[*seat];
+		if (Controls::Pressed(input, Control::MOVE) || (onSeat && Controls::Pressed(input, Control::PRIMARY)))
 		{
 			Sit(*seat, workshop);
 			return std::nullopt;
@@ -1054,7 +1117,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	}
 
 	// The left button on one of the car's doors, its hood, trunk lid or fuel flap opens or shuts it.
-	if (!m_move && UpdateCarPanels(workshop, player, input))
+	if (!m_move && (UpdateCarControls(workshop, player, input) || UpdateCarPanels(workshop, player, input)))
 		return std::nullopt;
 
 	// A click works as E with empty hands or a part in hand, and with the Valve Spring Compressor aimed at a valve (it clamps on).
@@ -1781,7 +1844,7 @@ void ShopWorld::UpdateStations(const Workshop& workshop)
 	{
 		auto& station = m_stations[i];
 		station.object->SetPosition(station.position);
-		station.object->SetRotation(station.Rotation());
+		station.object->SetRotation(i == m_carStation ? CarRotation() : station.Rotation());
 		if (m_move && m_move->stationIndex == i)
 			continue;
 		station.object->SetEmissive(0.f);
@@ -2791,12 +2854,14 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 		}
 		// A fender, door or steering knuckle on the car's right side is the mirror of the left-hand one (it keeps that hand once it's off).
 		if (visual.part && visual.place == ItemPlace::CAR && workshop.GetCar()
-			&& (visual.part->GetType() == PartType::FRONT_FENDER || visual.part->GetType() == PartType::DOOR || visual.part->GetType() == PartType::STEERING_KNUCKLE))
+			&& (visual.part->GetType() == PartType::FRONT_FENDER || visual.part->GetType() == PartType::DOOR || visual.part->GetType() == PartType::STEERING_KNUCKLE
+				|| visual.part->GetType() == PartType::TAIL_LIGHT))
 			if (auto at = workshop.GetCar()->assembly.Find(visual.part.get()))
 			{
 				PartType handed = visual.part->GetType();
 				uint32_t wanted = at->second == 1 ? m_assets->Model(handed == PartType::FRONT_FENDER ? ShopModels::FENDER_RIGHT
-						: handed == PartType::DOOR ? ShopModels::DOOR_RIGHT : ShopModels::KNUCKLE_RIGHT)
+						: handed == PartType::DOOR ? ShopModels::DOOR_RIGHT : handed == PartType::TAIL_LIGHT ? ShopModels::TAIL_LIGHT_RIGHT
+						: ShopModels::KNUCKLE_RIGHT)
 					: m_assets->PartModel(visual.part->GetType());
 				if (visual.object->GetModelIndex() != wanted)
 				{
@@ -2804,6 +2869,16 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 					visual.carSlot = -1;
 				}
 			}
+		// A front seat on the car is its base alone: its back is a model of its own there (PoseSeatBacks), to recline and tip.
+		if (visual.part && visual.part->GetType() == PartType::SEAT)
+		{
+			uint32_t wanted = visual.place == ItemPlace::CAR ? m_assets->Model(ShopModels::SEAT_BASE) : m_assets->PartModel(PartType::SEAT);
+			if (visual.object->GetModelIndex() != wanted)
+			{
+				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				visual.carSlot = -1;
+			}
+		}
 		auto model = ModelOf(visual.object);
 		glm::vec4 tint = glm::vec4(1.f);
 		if (visual.part)
@@ -3273,13 +3348,22 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 	// tested by their triangles, so the one really in front wins; stations by their boxes, so aiming
 	// at the open space of a shelf or bench still means that station.
 	auto objectManager = ObjectManager::Get();
+	const pObject carObject = m_carStation < m_stations.size() ? m_stations[m_carStation].object : nullptr;
 	auto raycast = [&](bool stations) {
-		return objectManager->Raycast(player.GetEyePosition(), player.GetForward(), INTERACT_DISTANCE, [&](const pObject& object) {
+		auto hit = objectManager->Raycast(player.GetEyePosition(), player.GetForward(), INTERACT_DISTANCE, [&](const pObject& object) {
 			auto target = m_targets.find(object.get());
 			if (target == m_targets.end() || object.get() == heldObject)
 				return false;
+			// (The car's tested by its own three boxes, below: its one box stands as high as the roof over the hood too.)
+			if (stations && object == carObject)
+				return false;
 			return (target->second.kind == TargetKind::STATION) == stations;
 		}, !stations);
+		if (stations && carObject && carObject->IsVisible() && carObject->IsPickable() && m_targets.contains(carObject.get()))
+			if (auto distance = RayCarBody(player.GetEyePosition(), player.GetForward());
+					distance && *distance <= INTERACT_DISTANCE && (!hit || *distance < hit->distance))
+				hit = RaycastHit{ carObject, *distance, player.GetEyePosition() + player.GetForward() * *distance };
+		return hit;
 	};
 
 	// Carrying a part to an engine: it goes where you're looking, so aiming at an empty position
@@ -3295,6 +3379,15 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 	}
 
 	auto hit = raycast(false);
+	// What's behind the car's own body (a wheel, seen through the engine bay's inner wing) isn't in reach through it:
+	// the body is what's looked at.
+	if (hit && m_carStation < m_stations.size() && m_stations[m_carStation].present && hit->object != m_stations[m_carStation].object)
+	{
+		auto shell = objectManager->Raycast(player.GetEyePosition(), player.GetForward(), INTERACT_DISTANCE,
+			[&](const pObject& object) { return object == m_stations[m_carStation].object; }, true);
+		if (shell && shell->distance < hit->distance - 0.04f)
+			hit.reset();
+	}
 	if (!hit)
 		hit = raycast(true);
 	if (!hit && !fitStand)
@@ -3314,6 +3407,7 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 					&& ((visual->place != ItemPlace::STAND && visual->place != ItemPlace::CAR) || visual->part->GetTightness() == FastenerTightness::LOOSE);
 
 	m_hover = fitStand && !looseHardware ? Target{ TargetKind::STATION, {}, 0, *fitStand } : m_targets.at(hit->object.get());
+	m_hoverDistance = hit && !(fitStand && !looseHardware) ? hit->distance : 0.f;
 	// Aimed at a nut or bolt on the engine, it's that, though the ray went on down its hole into the part it holds.
 	if (m_hover->kind == TargetKind::ITEM)
 		if (const ItemVisual* aimed = Find(m_hover->item); aimed && aimed->place == ItemPlace::STAND && aimed->part

@@ -90,7 +90,7 @@ void MonkeyUI::Draw(MonkeyLook& look, const std::function<uint32_t(const std::st
 	ImGui::PushTextWrapPos(0.f);
 	if (!wardrobe)
 	{
-		ImGui::TextDisabled("You're the shop's monkey. Dressing it (fur, face, cap and tail) comes with the Wardrobe perk (Rank & Skills tab).");
+		ImGui::TextDisabled("You're the shop's monkey. Dressing it (fur, face, cap and tail) comes with the Wardrobe perk (Rank & Skills, on the parts computer).");
 		ImGui::PopTextWrapPos();
 		return;
 	}
@@ -108,7 +108,7 @@ void MonkeyUI::Draw(MonkeyLook& look, const std::function<uint32_t(const std::st
 	ColorRow("Face, hands and feet", look.skin, { std::begin(SKINS), std::end(SKINS) });
 	ColorRow("Cap", look.cap, with(CAPS, std::size(CAPS), PREMIUM_CAPS, std::size(PREMIUM_CAPS)));
 	if (!premium)
-		ImGui::TextDisabled("Gold, chrome and neon come with the Premium Colours perk (Rank & Skills tab).");
+		ImGui::TextDisabled("Gold, chrome and neon come with the Premium Colours perk (Rank & Skills, on the parts computer).");
 	ImGui::SeparatorText("Tail");
 	ImGui::Checkbox("Curly tail", &look.tail);
 	ImGui::PopItemWidth();

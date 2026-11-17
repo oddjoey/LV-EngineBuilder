@@ -29,6 +29,12 @@ public:
 	// presence has them (0 down, 1 the right one out, 2 both). How fast it walks is worked out from
 	// how far the feet have come since the last pose.
 	void Pose(float deltaTime, const glm::vec3& feet, float yaw, float pitch, bool crouching, int arms);
+	// Sat in a seat: its hips there, facing yaw (looking lookYaw and pitch), its legs out in front, its hands up to the
+	// wheel or in its lap.
+	void PoseSeated(const glm::vec3& hips, float yaw, float lookYaw, float pitch, bool atWheel);
+	// How big it's drawn sat in a car (its head is too big for the roof otherwise), and how high its hips sit off a cushion.
+	static constexpr float SEATED_SCALE = 0.8f;
+	static constexpr float SEATED_HIP_HEIGHT = 0.07f;
 	// The middle of the right hand, where what's held goes, and the eyes, as last posed.
 	glm::vec3 GetHand() const { return m_hand; }
 	glm::vec3 GetEye() const { return m_eye; }
@@ -65,6 +71,8 @@ private:
 	pObject m_foot[2] = { nullptr, nullptr };
 	MonkeyLook m_look = {};
 	bool m_visible = true;
+	float m_scale = 1.f;
+	void SetScale(float scale);
 
 	bool m_posed = false;
 	glm::vec3 m_lastFeet = {};

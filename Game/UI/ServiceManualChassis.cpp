@@ -250,6 +250,12 @@ void ServiceManual::BuildChassis(bool imperial)
 	step("Front: rotor on the knuckle's hub, pads, then the caliper over them.", { PartType::BRAKE_ROTOR, PartType::BRAKE_PAD_SET, PartType::BRAKE_CALIPER });
 	step("Rear: wheel cylinder on the backing plate, shoes, then the drum over them.", { PartType::WHEEL_CYLINDER, PartType::BRAKE_SHOE_SET, PartType::BRAKE_DRUM });
 	step("Parking brake cable, once both rear shoe sets are in.", { PartType::PARKING_BRAKE_CABLE });
+	text("Fitting the line set doesn't connect it. Its five pipes come off a junction block on the driver's wheel housing, under the master "
+		"cylinder: with the hood up and nothing in hand, click on the block (it's marked with a dot) for a list of them, and take one by its "
+		"number. Carry its union to what it goes on and screw it in with the left button: the master cylinder's front and rear ports, a "
+		"bracket on each front wheel housing where the hose comes through, and the front end of the rear axle's hose under the floor. Each "
+		"pipe only fits its own place, and can be clipped along the way like a wire (the use key), anywhere on the car. Undo a union and "
+		"that line lets air in and loses fluid: the brakes won't hold fluid, and the car won't be taken out, till all five are done up.");
 	figure("Brake booster nuts", holeTorque(CarSlot::BOOSTER_NUT));
 	figure("Master cylinder nuts", holeTorque(CarSlot::MASTER_CYLINDER_NUT));
 	figure("Caliper bolts", holeTorque(CarSlot::CALIPER_BOLT));
@@ -283,8 +289,10 @@ void ServiceManual::BuildChassis(bool imperial)
 	step("Pressure plate over it, its bolts done up evenly.", { PartType::PRESSURE_PLATE });
 	step("Release bearing, then the gearbox, onto the bellhousing bolts.", { PartType::RELEASE_BEARING, PartType::TRANSMISSION });
 	step("Transmission mount under its tail, and the driveshaft from the gearbox to the differential.", { PartType::TRANSMISSION_MOUNT, PartType::DRIVESHAFT });
-	step("Clutch master cylinder on the firewall, and the release cylinder on the bellhousing; fill and bleed them (chapter 11).",
+	step("Clutch master cylinder on the firewall, and the release cylinder on the bellhousing.",
 		{ PartType::CLUTCH_MASTER_CYLINDER, PartType::CLUTCH_RELEASE_CYLINDER });
+	step("The pipe hanging off the master cylinder: take it (left button, hood up) and screw its union into the top of the release "
+		"cylinder. Then fill and bleed them (chapter 11). Undone, it lets air in.");
 	figure("Pressure plate bolts", holeTorque(CarSlot::PRESSURE_PLATE_BOLT));
 	figure("Bellhousing bolts", holeTorque(CarSlot::BELLHOUSING_BOLT));
 	figure("Transmission mount bolts", holeTorque(CarSlot::TRANSMISSION_MOUNT_BOLT));
@@ -297,7 +305,7 @@ void ServiceManual::BuildChassis(bool imperial)
 	step("Engine mounts on the crossmember, left and right.", { PartType::ENGINE_MOUNT });
 	step("Lift the engine off its stand with the engine hoist. Its flywheel goes on there, on the hoist (or in the bay, before the clutch).");
 	step("Roll the hoist out to the car and over the bay, and lower the engine onto its mounts.");
-	step("Its two mount nuts, then the clutch and gearbox (chapter 8), the starter, the engine harness and the radiator hoses.");
+	step("Its two mount nuts, then the clutch and gearbox (chapter 8), the starter, the radiator hoses, and the harness's plugs on the engine (see Electrical).");
 	figure("Engine mount bolts (mount to body)", holeTorque(CarSlot::ENGINE_MOUNT_BOLT));
 	figure("Engine mount nuts (engine to mount)", holeTorque(CarSlot::ENGINE_MOUNT_NUT));
 	heading("Service in the Car");
@@ -309,14 +317,19 @@ void ServiceManual::BuildChassis(bool imperial)
 	bullet("The flywheel, with the clutch and gearbox off");
 	text("Anything else needs the engine out.");
 	heading("Taking It Out");
-	step("Take off what's behind and round it: the gearbox and clutch, the starter, the engine harness, the radiator hoses and the exhaust's "
+	step("Take off what's behind and round it: the gearbox and clutch, the starter, the harness's plugs on it, the radiator hoses and the exhaust's "
 		"downpipe, and its mount nuts.");
 	step("Roll the hoist over the bay and lift it out. Its oil and coolant are drained first.");
 
 	begin("10. Fuel, Electrical, Cooling and Exhaust");
 	heading("Fuel");
 	step("Fuel tank under the boot floor, and its sender.", { PartType::FUEL_TANK, PartType::FUEL_SENDER });
-	step("Fuel line set forward along the floor, and the filter in it by the engine.", { PartType::FUEL_LINE_SET, PartType::FUEL_FILTER });
+	step("Fuel line set forward along the floor, and the filter on the firewall, in the back corner of the bay on the passenger's side.",
+		{ PartType::FUEL_LINE_SET, PartType::FUEL_FILTER });
+	text("The line's three hoses are pushed on by hand, like the harness's plugs: click on the end of the line where it comes up through "
+		"the wheel housing beside the filter (marked with a dot, hood up) for a list of them. One goes on the tank's outlet, one up into "
+		"the bottom of the filter, and the third from the top of the filter to the pump on the side of the engine's head. With any of the "
+		"three off, the engine gets no fuel; and the engine can't be lifted out with the pump's hose on it.");
 	figure("Fuel tank bolts", holeTorque(CarSlot::FUEL_TANK_BOLT));
 	figure("Tank capacity", litres(car.Fluid(FluidCircuit::FUEL).capacity));
 	figure("Fuel", car.Fluid(FluidCircuit::FUEL).grade);
@@ -324,14 +337,33 @@ void ServiceManual::BuildChassis(bool imperial)
 	figure("Battery, resting and charged", band(car.batteryVoltage, "V", 1));
 	figure("Battery while cranking, at least", std::format("{:.1f} V", car.minCrankingVoltage));
 	figure("Charging voltage at 2000 rpm", band(car.chargingVoltage, "V", 1));
-	step("Main harness through the body, and the fuse box on it under the dash.", { PartType::MAIN_HARNESS, PartType::FUSE_BOX });
+	step("Main harness through the body, and the fuse box on it under the dash. It's the car's only loom: a branch of it comes through the "
+		"firewall to the engine.", { PartType::MAIN_HARNESS, PartType::FUSE_BOX });
 	step("Battery in the engine bay.", { PartType::BATTERY });
-	step("Engine harness, once the engine is in, then the ignition coil on it.", { PartType::ENGINE_HARNESS, PartType::IGNITION_COIL });
+	step("Ignition coil on the inner wing.", { PartType::IGNITION_COIL });
 	step("Starter, on the bellhousing once the gearbox is on.", { PartType::STARTER });
+	text("The battery has to be grounded: a strap from its negative post lies loose by it till it's bolted to the body. Take the strap (left button), aim at "
+		"bare bodywork anywhere it reaches (the inner wing, the firewall, a chassis rail) and click again: a stud goes in there to hold it. It has to be "
+		"the body itself, not a part bolted to it. Till it's on, nothing electrical works.");
+	text("Fitting the harness doesn't connect it. Its plugs are tucked away in it where it comes through the firewall, in the bay's back corner "
+		"on the driver's side: with the hood up and nothing in hand, click on it there (it's marked with a dot) for a list of its plugs, and take one by its number, or with the wheel and a click. "
+		"Carry it to what it feeds and push it onto its socket (left button again; the right lets it go, and it goes back in the loom). "
+		"A plug that's on something can be pulled straight off it, or picked from the same list. A plug only fits its own socket. It has ten: the battery's positive post, each headlight and the cooling fan "
+		"at the front, and on its engine branch the starter, the ignition coil, the distributor, the alternator, the coolant temperature sender "
+		"in the water outlet and the oil pressure sender in the block by the filter. Take off a part and its plug comes loose again. The "
+		"engine can't be lifted out with the distributor's, the alternator's or either sender's plug on it, and the harness itself only comes out "
+		"once every one of its plugs is pulled. (The spark plugs' leads are parts of "
+		"their own, from the distributor's cap to each plug: see the engine's manual.)");
+	text("To keep the wires tidy, clip them as you go. With a plug in hand, aim at somewhere under the hood and press the use key: the wire "
+		"is clipped there, and runs on from that clip. Each wire takes up to six clips, in the order they're put on, so a wire can be led "
+		"along the firewall or an inner wing and bent round whatever is in its way. A clip uses up wire, and a wire only has so much. With "
+		"nothing in hand, the right button on a clip takes it off. A wire that comes off, pulled or let go, comes out of its clips with it and goes back "
+		"into the loom. The list's last line pulls every plug off at once (or Backspace, with the list open).");
 	figure("Starter bolts", holeTorque(CarSlot::STARTER_BOLT));
 	heading("Cooling");
-	step("Radiator across the nose, and the cooling fan behind it (it needs the harness to run).", { PartType::RADIATOR, PartType::COOLING_FAN });
-	step("Upper and lower radiator hoses, from the radiator to the engine.", { PartType::RADIATOR_HOSE });
+	step("Radiator across the nose, with its pressure cap and its overflow bottle, and the cooling fan behind it (it needs the harness to run).", { PartType::RADIATOR, PartType::COOLING_FAN });
+	step("Upper and lower radiator hoses, both on the right: the upper from the radiator's top outlet to the thermostat housing, the lower from "
+		"its bottom outlet up to the water pump.", { PartType::RADIATOR_HOSE });
 	heading("Exhaust");
 	step("Catalytic converter onto the engine's downpipe, then the muffler behind it.", { PartType::CATALYTIC_CONVERTER, PartType::MUFFLER });
 	figure("Catalytic converter nuts", holeTorque(CarSlot::CATALYTIC_CONVERTER_NUT));
@@ -434,9 +466,13 @@ void ServiceManual::BuildChassis(bool imperial)
 		heading(symptom);
 		text(causes);
 	};
-	problem("Turning the key does nothing", "The battery, main harness, fuse box, engine harness or starter isn't on, or the battery is flat.");
+	problem("Turning the key does nothing (not even the starter)", "The battery, main harness, fuse box or starter isn't on, the harness's lead is off the "
+		"battery's positive post, the starter's plug is loose, the battery's ground strap isn't on the body, or the battery is flat.");
+	problem("A gauge, a headlight or the fan does nothing", "Its plug isn't pushed onto it: see Electrical.");
+	problem("It cranks but gets no fuel, with fuel in the tank", "One of the fuel line's three hoses is off: the tank's, the filter's or the pump's.");
+	problem("The brakes or the clutch won't take fluid", "A pipe's union is undone: the funnel says which.");
 	problem("It cranks but won't fire", "The engine isn't finished, the tank is dry or holds the wrong fuel, the fuel line or filter is "
-		"missing, the ignition coil isn't on, or the timing is miles out.");
+		"missing, the ignition coil isn't on, the coil's or the distributor's plug is off, or the timing is miles out.");
 	problem("The brake pedal goes to the floor", "The brakes have never been filled and bled, or the reservoir ran dry while bleeding and "
 		"drew air in. Spongy: some air is still in the lines.");
 	problem("It pulls to one side", "The front tire pressures don't match, or a caliper is sticking.");

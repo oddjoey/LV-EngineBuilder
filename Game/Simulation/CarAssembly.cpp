@@ -96,10 +96,11 @@ namespace
 		/* FUEL_FILTER */				{ 1, L::SINGLE, { { C::FUEL_LINE_SET } } },
 		/* BATTERY */					{ 1, L::SINGLE, { { C::MAIN_HARNESS } } },
 		/* MAIN_HARNESS */				{ 1, L::SINGLE, { { C::BODY_SHELL } } },
-		/* ENGINE_HARNESS */			{ 1, L::SINGLE, { { C::MAIN_HARNESS }, { C::ENGINE } } },
 		/* FUSE_BOX */					{ 1, L::SINGLE, { { C::MAIN_HARNESS } } },
-		/* IGNITION_COIL */				{ 1, L::SINGLE, { { C::ENGINE_HARNESS } } },
-		/* STARTER */					{ 1, L::SINGLE, { { C::TRANSMISSION }, { C::ENGINE_HARNESS } } },
+		// (Neither needs the harness on to be fitted: its plugs go onto them after, and it comes off again once
+		// they're all pulled. See RemovalBlockedBy.)
+		/* IGNITION_COIL */				{ 1, L::SINGLE, { { C::BODY_SHELL } } },
+		/* STARTER */					{ 1, L::SINGLE, { { C::TRANSMISSION } } },
 		/* RADIATOR */					{ 1, L::SINGLE, { { C::BODY_SHELL } } },
 		/* RADIATOR_HOSE */				{ 2, L::LIST,	{ { C::RADIATOR }, { C::ENGINE } } },
 		/* COOLING_FAN */				{ 1, L::SINGLE, { { C::RADIATOR }, { C::MAIN_HARNESS } } },
@@ -519,6 +520,13 @@ std::optional<std::string> CarAssembly::RemovalBlockedBy(CarSlot slot, int index
 	for (const auto& [other, otherIndex] : m_dependents[static_cast<size_t>(slot)].at(index))
 		if (IsFilled(other, otherIndex))
 			return PositionName(other, otherIndex);
+	// The harness comes out once every one of its plugs is pulled, and a line set once its unions are undone; and the
+	// engine, once the plugs and the fuel hose on it are off.
+	if (HasPlugMenu(slot) || slot == CarSlot::ENGINE)
+		for (int p = 0; p < CAR_PLUGS; p++)
+			if (auto plug = static_cast<CarPlug>(p); IsPlugged(plug) && (slot == CarSlot::ENGINE ? CarPlugOnEngine(plug) : PlugHarness(plug) == slot))
+				return CarPlugKindOf(plug) == CarPlugKind::WIRE ? std::format("{}'s plug", CarPlugName(plug))
+					: std::format("{} on the {}", CarPlugKindOf(plug) == CarPlugKind::HOSE ? "fuel hose" : "pipe's union", CarPlugName(plug));
 	return std::nullopt;
 }
 
@@ -569,6 +577,19 @@ pPart CarAssembly::Remove(CarSlot slot, int index)
 	OpenCircuitAt(slot, index);
 	position = nullptr;
 	m_positions.erase(part.get());
+	// Its plug comes off with it (or all of a loom's, with the loom).
+	for (int p = 0; p < CAR_PLUGS; p++)
+	{
+		auto plug = static_cast<CarPlug>(p);
+		auto target = PlugTarget(plug);
+		if (PlugHarness(plug) == slot || (target && target->first == slot && target->second == index))
+			SetPlugged(plug, false);
+		if (PlugHarness(plug) == slot)
+			m_wireClips[p].clear();
+	}
+	// A seat that's out has its back up.
+	if (slot == CarSlot::SEAT && index >= 0 && index < 2)
+		m_seatSettings[index].folded = false;
 	if (slot == CarSlot::DIFFERENTIAL)
 		m_tune.finalDrive = 0.0;
 	return part;
@@ -666,6 +687,24 @@ std::optional<std::string> CarAssembly::CircuitOpen(FluidCircuit circuit) const
 		for (int index = 0; index < SlotCount(slot); index++)
 			if (!IsFilled(slot, index))
 				return PositionName(slot, index);
+	// Its parts all there, a pipe's union left undone still lets it straight out. (Not the fuel's: the tank holds it.)
+	if (circuit != FluidCircuit::FUEL)
+		if (auto open = OpenUnion(circuit))
+			return std::format("Pipe's Union on the {}", CarPlugName(*open));
+	return std::nullopt;
+}
+
+std::optional<CarPlug> CarAssembly::OpenUnion(FluidCircuit circuit) const
+{
+	const CarPlug first = circuit == FluidCircuit::BRAKES ? CarPlug::BRAKE_FRONT_PORT : circuit == FluidCircuit::CLUTCH ? CarPlug::CLUTCH_PIPE
+		: circuit == FluidCircuit::FUEL ? CarPlug::FUEL_TANK : CarPlug::COUNT;
+	const CarPlug last = circuit == FluidCircuit::BRAKES ? CarPlug::BRAKE_HOSE_REAR : circuit == FluidCircuit::CLUTCH ? CarPlug::CLUTCH_PIPE
+		: CarPlug::FUEL_PUMP;
+	if (first == CarPlug::COUNT)
+		return std::nullopt;
+	for (int p = static_cast<int>(first); p <= static_cast<int>(last); p++)
+		if (!IsPlugged(static_cast<CarPlug>(p)))
+			return static_cast<CarPlug>(p);
 	return std::nullopt;
 }
 
@@ -831,6 +870,83 @@ void CarAssembly::OpenCircuitAt(CarSlot slot, int index)
 CarTune& CarAssembly::GetTune()
 {
 	return m_tune;
+}
+
+const char* CarPlugName(CarPlug plug)
+{
+	static const char* NAMES[] = { "battery", "left headlight", "right headlight", "cooling fan", "starter", "ignition coil", "distributor",
+		"alternator", "coolant temperature sender", "oil pressure sender", "chassis ground",
+		"master cylinder's front port", "master cylinder's rear port", "front left brake hose", "front right brake hose", "rear brake hose",
+		"clutch release cylinder", "fuel tank", "fuel filter", "fuel pump" };
+	static_assert(std::size(NAMES) == CAR_PLUGS, "Every plug wants a name.");
+	return NAMES[std::clamp(static_cast<int>(plug), 0, CAR_PLUGS - 1)];
+}
+
+std::optional<std::pair<CarSlot, int>> CarAssembly::PlugTarget(CarPlug plug)
+{
+	switch (plug)
+	{
+		case CarPlug::BATTERY:			return std::pair{ CarSlot::BATTERY, 0 };
+		case CarPlug::HEADLIGHT_LEFT:	return std::pair{ CarSlot::HEADLIGHT, 0 };
+		case CarPlug::HEADLIGHT_RIGHT:	return std::pair{ CarSlot::HEADLIGHT, 1 };
+		case CarPlug::COOLING_FAN:		return std::pair{ CarSlot::COOLING_FAN, 0 };
+		case CarPlug::STARTER:			return std::pair{ CarSlot::STARTER, 0 };
+		case CarPlug::IGNITION_COIL:	return std::pair{ CarSlot::IGNITION_COIL, 0 };
+		case CarPlug::BRAKE_FRONT_PORT:
+		case CarPlug::BRAKE_REAR_PORT:	return std::pair{ CarSlot::BRAKE_MASTER_CYLINDER, 0 };
+		case CarPlug::BRAKE_HOSE_LEFT:	return std::pair{ CarSlot::BRAKE_HOSE, 0 };
+		case CarPlug::BRAKE_HOSE_RIGHT:	return std::pair{ CarSlot::BRAKE_HOSE, 1 };
+		case CarPlug::BRAKE_HOSE_REAR:	return std::pair{ CarSlot::BRAKE_HOSE, 2 };
+		case CarPlug::CLUTCH_PIPE:		return std::pair{ CarSlot::CLUTCH_RELEASE_CYLINDER, 0 };
+		case CarPlug::FUEL_TANK:		return std::pair{ CarSlot::FUEL_TANK, 0 };
+		case CarPlug::FUEL_FILTER:		return std::pair{ CarSlot::FUEL_FILTER, 0 };
+		default:						return std::nullopt;
+	}
+}
+
+void CarAssembly::SetPlugged(CarPlug plug, bool plugged)
+{
+	const uint32_t bit = 1u << static_cast<int>(plug);
+	const bool was = (m_plugs & bit) != 0;
+	m_plugs = plugged ? (m_plugs | bit) : (m_plugs & ~bit);
+	// A brake or clutch union undone: air gets in where it feeds, and some of the fluid runs out of it.
+	if (was && !plugged && CarPlugKindOf(plug) == CarPlugKind::PIPE)
+	{
+		const bool clutch = plug == CarPlug::CLUTCH_PIPE;
+		auto& fluid = m_fluids[static_cast<size_t>(clutch ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES)];
+		std::vector<BleedPoint> points;
+		switch (plug)
+		{
+			case CarPlug::BRAKE_FRONT_PORT:	points = { BleedPoint::FRONT_LEFT, BleedPoint::FRONT_RIGHT }; break;
+			case CarPlug::BRAKE_HOSE_LEFT:	points = { BleedPoint::FRONT_LEFT }; break;
+			case CarPlug::BRAKE_HOSE_RIGHT:	points = { BleedPoint::FRONT_RIGHT }; break;
+			case CarPlug::CLUTCH_PIPE:		points = { BleedPoint::CLUTCH }; break;
+			default:						points = { BleedPoint::REAR_LEFT, BleedPoint::REAR_RIGHT }; break;
+		}
+		for (auto point : points)
+			fluid.air[static_cast<size_t>(point)] = 1.0;
+		for (auto& [product, amount] : fluid.litres)
+			amount *= 0.85;
+	}
+	// A wire that comes off is unclipped with it: it goes back into its loom.
+	if (!plugged)
+		m_wireClips[static_cast<int>(plug)].clear();
+}
+
+bool CarAssembly::AddWireClip(CarPlug plug, const CarWirePoint& at)
+{
+	auto& clips = m_wireClips[static_cast<int>(plug)];
+	if (static_cast<int>(clips.size()) >= CAR_WIRE_CLIPS)
+		return false;
+	clips.push_back(at);
+	return true;
+}
+
+void CarAssembly::RemoveWireClip(CarPlug plug, int index)
+{
+	auto& clips = m_wireClips[static_cast<int>(plug)];
+	if (index >= 0 && index < static_cast<int>(clips.size()))
+		clips.erase(clips.begin() + index);
 }
 
 const CarTune& CarAssembly::GetTune() const

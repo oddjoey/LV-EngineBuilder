@@ -657,7 +657,6 @@ pPart PartFactory::CreateAncillary(PartType type, const EngineSpec& spec, PartQu
 		case PartType::ENGINE_MOUNT:
 		case PartType::TRANSMISSION_MOUNT:		material = MaterialType::TYRE_RUBBER; break;
 		case PartType::MAIN_HARNESS:
-		case PartType::ENGINE_HARNESS:
 		case PartType::FUSE_BOX:				material = MaterialType::COPPER_WIRING; break;
 		case PartType::TRANSMISSION:
 		case PartType::BRAKE_CALIPER:

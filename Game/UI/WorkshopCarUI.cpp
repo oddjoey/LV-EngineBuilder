@@ -2,6 +2,7 @@
 #include "WorkshopUI.h"
 
 #include "ModelPreview.h"
+#include "PartIcons.h"
 #include "../Simulation/CarSpec.h"
 #include "../World/ShopAssets.h"
 
@@ -895,17 +896,9 @@ namespace
 
 void WorkshopUI::DrawCarStore(Workshop& workshop)
 {
-	// Like the parts store: catalogue cards on the left, each with a turning view of what it is, and the order
-	// form for the one picked on the right, with a bigger view of it.
+	// Like the parts store: catalogue cards on the left, each with its icon (the same one it has in the hotbar and the
+	// backpack), and the order form for the one picked on the right, with a turning view of it.
 	auto model = [&](const std::string& name) { return m_modelLookup ? m_modelLookup(name) : 0u; };
-	// A card's picture: the model, held still (drawn once) till the card is pointed at, when it turns; only drawn while in view.
-	auto turning = [&](const std::string& name, ImVec4 tint = { 1.f, 1.f, 1.f, 1.f }) {
-		return [&, name, tint](ImDrawList* drawList, ImVec2 min, float size) {
-			ImVec2 max = { min.x + size, min.y + size };
-			if (uint32_t index = model(name); index && ImGui::IsRectVisible(min, max))
-				ModelPreview::DrawAt(drawList, min, max, index, tint, ImGui::IsMouseHoveringRect(min, max));
-		};
-	};
 	auto price = [](double dollars) { return dollars < 10.0 ? std::format("${:.2f}", dollars) : std::format("${:.0f}", dollars); };
 	auto pickPart = [&](PartType type) {
 		m_carStoreKind = 1;
@@ -946,7 +939,8 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 			cheapest.type = type;
 			cheapest.condition = info.soldUsed ? PartCondition::USED : PartCondition::NEW;
 			if (StoreCard(PartTypeName(type), PartCatalog::StoreName(type), "from " + price(workshop.Quote(cheapest)),
-					m_carStoreKind == 1 && m_carStoreOrder.type == type, false, turning(PartTypeName(type))))
+					m_carStoreKind == 1 && m_carStoreOrder.type == type, false,
+					[type](ImDrawList* drawList, ImVec2 min, float size) { PartIcons::Draw(drawList, type, min, size); }))
 				pickPart(type);
 		}
 		ImGui::NewLine();
@@ -956,7 +950,8 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 			auto product = static_cast<FluidProduct>(p);
 			std::string label = std::format("{} ({:g} l)", FluidProductName(product), Workshop::FluidUnitLitres(product));
 			if (StoreCard(FluidProductName(product), label.c_str(), price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor()),
-					m_carStoreKind == 2 && m_carStoreFluid == p, false, turning(FluidModel(product), FluidTint(product))))
+					m_carStoreKind == 2 && m_carStoreFluid == p, false, [product](ImDrawList* drawList, ImVec2 min, float size) {
+						PartIcons::DrawFluid(drawList, FluidModel(product) == std::string("Fuel Can"), ImGui::ColorConvertFloat4ToU32(FluidTint(product)), min, size); }))
 			{
 				m_carStoreKind = 2;
 				m_carStoreFluid = p;

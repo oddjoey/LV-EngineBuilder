@@ -514,7 +514,7 @@ std::optional<std::string> Workshop::ToolLockedBecause(size_t toolIndex) const
 		return std::nullopt;
 	const auto& tool = ToolCatalog::Of(toolIndex);
 	if (tool.skill >= 0 && SkillLevel(static_cast<SkillKind>(tool.skill)) == 0)
-		return std::format("needs the {} perk (Rank & Skills tab).", Skills::Of(static_cast<SkillKind>(tool.skill)).name);
+		return std::format("needs the {} perk (Rank & Skills, on the parts computer).", Skills::Of(static_cast<SkillKind>(tool.skill)).name);
 	return std::format("needs shop rank {} ({}).", tool.rank, ShopRank::Info(tool.rank).name);
 }
 

@@ -282,6 +282,36 @@ namespace
 				s.Hiss(noise, 0.f, 0.65f, 2000.f, 7000.f, 0.08f, 0.03f);
 				return s.ToClip();
 			}
+			case Sound::STARTER:
+			{
+				// The solenoid's clunk, then the starter grinding the engine round: its whine sagging at each compression
+				// and picking up after it, a dull thump at each, the pinion's rattle over it all, and the last couple of
+				// turns firing as it catches.
+				Synth s(1.15f);
+				s.Thump(0.f, 150.f, 0.5f, 0.025f);
+				s.Burst(noise, 0.f, 0.02f, 3500.f, 0.45f, 0.0005f);
+				float phase = 0.f, turn = 0.f;
+				for (size_t i = 0; i < s.Size(); i++)
+				{
+					float t = s.Time(i);
+					if (t < 0.05f)
+						continue;
+					float envelope = (std::min)(1.f, (t - 0.05f) / 0.04f) * (std::min)(1.f, (1.15f - t) / 0.08f);
+					// Six compressions a second to begin with, quicker as it gets going.
+					turn += TWO_PI * (6.f + 3.5f * t) / RATE;
+					float load = 0.5f + 0.5f * std::cos(turn);
+					phase += TWO_PI * 310.f * (1.f + 0.2f * t) * (1.f - 0.24f * load) / RATE;
+					s.samples[i] += envelope * (0.09f + 0.05f * (1.f - load)) * (std::sin(phase) + 0.55f * std::sin(phase * 2.f) + 0.3f * std::sin(phase * 5.f));
+				}
+				for (float t = 0.09f; t < 1.08f; t += 1.f / (6.f + 3.5f * t))
+				{
+					bool firing = t > 0.82f;
+					s.Thump(t, firing ? 85.f : 62.f, firing ? 0.75f : 0.4f, firing ? 0.05f : 0.035f);
+					s.Burst(noise, t, firing ? 0.05f : 0.025f, firing ? 1400.f : 800.f, firing ? 0.4f : 0.16f, 0.0008f);
+				}
+				s.Hiss(noise, 0.05f, 1.05f, 1800.f, 5200.f, 0.05f, 0.04f);
+				return s.ToClip();
+			}
 			case Sound::MEASURE:
 			{
 				// A gauge's double beep.

@@ -24,7 +24,8 @@ struct BenchItem
 	// many deep; 0 for one lying there itself.
 	int depth = 0;
 };
-enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, PAINT, CAR };
+// (SKILLS isn't a shelf of the store but the shop's own page on the computer: its rank, and the perks to spend skill points on.)
+enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, PAINT, CAR, SKILLS };
 
 // ImGui front end for the workshop. It only ever shows the player what they've measured;
 // the true geometry is visible only with the X-ray developer toggle.

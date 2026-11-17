@@ -147,6 +147,7 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="Game\UI\InventoryUI.cpp" />
     <ClCompile Include="Game\UI\ItemIcons.cpp" />
     <ClCompile Include="Game\UI\PartIcons.cpp" />
+    <ClCompile Include="Game\UI\PartIconsCar.cpp" />
     <ClCompile Include="Game\UI\ModelPreview.cpp" />
     <ClCompile Include="Game\UI\SplashScreen.cpp" />
     <ClCompile Include="Game\UI\Console.cpp" />
@@ -166,6 +167,7 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="Game\World\ShopAssetsCar.cpp" />
     <ClCompile Include="Game\World\ShopWorldCar.cpp" />
     <ClCompile Include="Game\World\ShopWorldCarTools.cpp" />
+    <ClCompile Include="Game\World\ShopWorldCarWiring.cpp" />
     <ClCompile Include="Game\Audio\GameAudio.cpp" />
     <ClCompile Include="Game\World\ShopLighting.cpp" />
     <ClCompile Include="Game\World\ShopOutdoors.cpp" />

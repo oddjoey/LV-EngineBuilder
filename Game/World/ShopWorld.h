@@ -251,6 +251,11 @@ public:
 	// the driver's turns the key, and it then goes where it's driven, about the lot, down the drive and round the roads,
 	// and stays where it's left. The other seats are for the ride.
 	bool IsSeated() const { return m_seat >= 0; }
+	// Which seat (-1: none), for the other players to see; where the hips of whoever's in one of the car's seats go
+	// (on its cushion); and the way they face there.
+	int GetSeat() const { return m_seat; }
+	glm::vec3 SeatHips(int seat) const;
+	float SeatYaw() const;
 	bool IsDriving() const { return m_drive.active; }
 	// Each frame in a seat, in place of walking: at the wheel the pedals and the wheel and the car moved; in any seat the
 	// player kept in it (turned with the car, free to look about), and put out beside its door when they get out.
@@ -266,10 +271,21 @@ public:
 	bool DevStartDrive(Workshop& workshop);
 	void DevDrive(float seconds, float steer) { m_drive.devSeconds = seconds; m_drive.devSteer = steer; }
 	// Into a seat (0 the driver's, 1 the passenger's, 2 and 3 the back), out of it, and the headlights up or down.
-	void DevSit(int seat, Workshop& workshop, FirstPersonController& player) { LeaveSeat(&player); Sit(seat, workshop); }
+	void DevSit(int seat, Workshop& workshop, FirstPersonController& player);
+	// Clicks whatever of the car's switches is next aimed at.
+	void DevPress() { m_devPress = true; }
+	void DevTakePlug(Workshop& workshop, int plug);
+	void DevLetGoPlug(Workshop& workshop) { DropHeldPlug(workshop); }
+	void DevPlugMenuRow(int row) { if (m_plugMenu) m_plugMenu->selected = row; }
+	void DevLeave(FirstPersonController& player) { LeaveSeat(&player); }
 	void DevHeadlights() { m_headlights.on = !m_headlights.on; }
+	// Turns the key from the driver's seat, and holds the car in a gear (-1 reverse, 0 neutral, 1 to 5) while `car drive` has its foot down.
+	void DevTurnKey(Workshop& workshop) { TurnKey(workshop); }
+	void DevGear(int gear) { m_devGear = gear; }
 	// Puts the car down somewhere else, pointing along a heading (degrees: 0 toward +x, 90 toward -z).
 	void DevPlaceCar(float x, float z, float degrees);
+	// Sets a front seat (0 the driver's, 1 the passenger's): slid (metres), reclined (radians), its back tipped forward or not.
+	void DevSeat(Workshop& workshop, int seat, float slide, float recline, bool folded);
 	// Turns the parked car's front wheels (-1 full right lock to 1 full left), to look at them from outside.
 	void DevSteer(float steer);
 
@@ -332,7 +348,7 @@ public:
 	// Dev: clamps the Valve Spring Compressor over a spring in a loose head, as E with it in hand does.
 	bool DevClampCompressor(Workshop& workshop, const pPart& head, int index);
 	// Dev: every door, the hood, the trunk lid and the fuel flap open (or all shut).
-	void DevOpenCar(bool open) { for (auto& panel : m_carPanels) panel.open = open; }
+	void DevOpenCar(bool open) { for (auto& panel : m_carPanels) panel.open = open; m_hoodLatched = !open; }
 	void DevRollStand(int stand, float radians) { m_engineRolls[std::clamp(stand, 0, Workshop::MAX_ENGINES - 1)] = radians; }
 	// Dev: keeps a stand rolling at this many radians a second (0 stops it), to profile a moving engine.
 	void DevSpinStand(int stand, float radiansPerSecond) { m_devSpin = { std::clamp(stand, 0, Workshop::MAX_ENGINES - 1), radiansPerSecond }; }
@@ -693,6 +709,12 @@ private:
 	bool UpdateCarPanels(const Workshop& workshop, const FirstPersonController& player, const InputManager& input);
 	glm::vec3 CarToWorld(const glm::vec3& offset) const;
 	glm::quat CarRotation() const;
+	// The car's body as three boxes in its own space, for aiming at it and walking into it: the nose from the windshield's
+	// foot, as high as the hood; the cabin, up to the roof; the tail from the rear window's foot, as high as the trunk lid.
+	// (An open hood or lid stands up out of its box: the box goes up with it.)
+	std::array<ShopBox, 3> CarBoxes() const;
+	// How far along the ray it meets one of them, if it does.
+	std::optional<float> RayCarBody(const glm::vec3& origin, const glm::vec3& direction) const;
 	// The middle of the part that goes in a position, where it would sit, in the world.
 	glm::vec3 CarSlotCenter(CarSlot slot, int index) const;
 	void PlaceOnCar(ItemVisual& visual, CarSlot slot, int index) const;
@@ -908,12 +930,117 @@ private:
 	};
 	Headlights								m_headlights = {};
 	std::array<pObject, 2>					m_headlightLenses = {};	// the lamps in their pods, lit when they're on
-	static constexpr int GAUGES = 4;		// the speedo, the tach, the fuel gauge and the temperature gauge
+	static constexpr int GAUGES = 5;		// the speedo, the tach, and the fuel, oil pressure and temperature gauges
 	std::array<pObject, GAUGES>				m_gaugeNeedles = {};
 	std::array<float, GAUGES>				m_gaugeReads = {};		// where each needle is, 0 to 1 of its sweep
 	// Swings the headlights and turns the gauges' needles, each frame.
 	void PoseCarInstruments(const Workshop& workshop, float deltaTime);
 	void ToggleHeadlights(const Workshop& workshop);
+	// What's worked by a click from the seats (or, the first two, reaching in from outside): the headlights' knob and
+	// the hood's release on the dash, the ignition's key, and the doors' inside handles.
+	// And on the front seats: the slide's bar and the recliner's knob (worked from that seat: LMB one way, RMB the
+	// other), and the catch that tips its back forward (worked from anywhere but that seat).
+	enum class CarControl { HEADLIGHTS, HOOD_RELEASE, IGNITION, DOOR_LEFT, DOOR_RIGHT, SEAT_SLIDE, SEAT_RECLINE, SEAT_FOLD_LEFT, SEAT_FOLD_RIGHT };
+	// A front seat as it's been set: slid along its rails (metres, forward positive), its back reclined (radians), and
+	// tipped forward or not (and how far it's got, 0 to 1). The car keeps the setting (CarSeatSetting: saved, and
+	// shared with everyone in the garage); this is that, as it's shown here.
+	struct SeatState
+	{
+		float slide = 0.f;
+		float recline = 0.26f;		// CarBody::SEAT_RECLINE
+		bool folded = false;
+		float fold = 0.f;
+	};
+	std::array<SeatState, 2>				m_seats = {};
+	std::array<pObject, 2>					m_seatBacks = {};	// each front seat's back, a model of its own on the car
+	// Puts the seats' backs where they are (and swings one that's tipping), each frame.
+	void PoseSeatBacks(const Workshop& workshop, float deltaTime);
+	// Where the head of whoever's in a seat is, in the car's space, as that seat is set.
+	glm::vec3 SeatHead(int seat) const;
+	// How far off what's under the crosshair is (see UpdateHover).
+	float									m_hoverDistance = 0.f;
+	// The exhaust's smoke: puffs out of the tailpipe while the engine runs, each drifting back and up, growing and
+	// thinning till it's gone.
+	struct SmokePuff
+	{
+		pObject object = nullptr;
+		float age = 0.f;
+		float life = 0.f;		// seconds it lasts (0: not in the air)
+		glm::vec3 position = {};
+		glm::vec3 velocity = {};
+		float size = 0.f;		// metres across, as it left the pipe
+		float thick = 0.f;		// how much of it there is to see, at first
+	};
+	static constexpr int SMOKE_PUFFS = 36;
+	std::array<SmokePuff, SMOKE_PUFFS>		m_smoke = {};
+	float									m_smokeDue = 0.f;		// seconds till the next puff
+	float									m_smokeRunning = 0.f;	// seconds the engine's been running: it smokes more just started
+	void UpdateExhaustSmoke(const Workshop& workshop, float deltaTime);
+	// The looms' plugs (ShopWorldCarWiring.cpp). Each is a connector on a wire off its loom: pushed onto what it
+	// feeds, hanging loose near it, or in the player's hand on its way from one to the other (LMB takes one, LMB on a
+	// socket pushes it on, RMB lets it go).
+	struct PlugVisual
+	{
+		pObject plug = nullptr;
+		pObject socket = nullptr;
+		std::array<pObject, CAR_WIRE_CLIPS + 3> wires = {};
+		std::array<pObject, CAR_WIRE_CLIPS> clips = {};		// the clips its wire is led through
+	};
+	// Where a plug is when it's on nothing (hanging off its loom, or off the last clip on its wire), in the car's space.
+	glm::vec3 PlugRest(const Workshop& workshop, CarPlug plug) const;
+	// What of the car (its shell, or anything else that can be aimed at) is under the crosshair, by its triangles:
+	// the point in the world, how far off, and whether it's the shell itself.
+	struct CarAim
+	{
+		glm::vec3 point = {};
+		float distance = 0.f;
+		bool shell = false;
+	};
+	std::optional<CarAim> AimAtCar(const FirstPersonController& player, float reach) const;
+	std::optional<CarAim> AimAtCar(const glm::vec3& eye, const glm::vec3& direction, float reach) const;
+	std::array<PlugVisual, CAR_PLUGS>		m_plugVisuals = {};
+	// Where the harness's two branches lie along the bay's side of the firewall, their plugs' wires off them.
+	std::array<pObject, 2>					m_loomTrunks = {};
+	// The brake pipes' junction block, and the fuel line's end under the filter: where each set's pipes are picked from.
+	std::array<pObject, 2>					m_lineFixtures = {};
+	int										m_heldPlug = -1;		// the CarPlug in hand, or -1
+	glm::vec3								m_heldPlugAt = {};		// where it is, in the world
+	// Where a plug's socket is (in the car's space), whether or not what it's on is fitted; where the plug hangs when
+	// it's off; and where its wire leaves the loom.
+	glm::vec3 PlugSocket(const Workshop& workshop, CarPlug plug) const;
+	// Whether the plugs can be got at: the hood up (or off).
+	bool PlugsReachable(const Workshop& workshop) const;
+	void PoseCarPlugs(const Workshop& workshop, const FirstPersonController& player);
+	// Taking, carrying and pushing home the plugs. True when it used the click (or a plug's in hand).
+	bool UpdateCarPlugs(Workshop& workshop, const FirstPersonController& player, const InputManager& input);
+	// Lets go of the plug in hand: back into its loom, its clips off.
+	void DropHeldPlug(Workshop& workshop);
+	// Takes a plug in hand, pulling it off what it's on.
+	void TakePlug(Workshop& workshop, CarPlug plug);
+	// A loom's plugs that are on nothing are tucked away in it, not left hanging: a click on the loom opens a list of
+	// its plugs to take one from (its number, or the wheel and a click). True while it's open.
+	struct PlugMenu
+	{
+		CarSlot harness = CarSlot::MAIN_HARNESS;
+		int selected = 0;
+	};
+	std::optional<PlugMenu>					m_plugMenu;
+	bool UpdatePlugMenu(Workshop& workshop, const FirstPersonController& player, const InputManager& input);
+	void DrawPlugMenu(const Workshop& workshop) const;
+	std::optional<CarControl> AimedCarControl(const Workshop& workshop, const FirstPersonController& player) const;
+	// Prompts for the one aimed at, and works it on a click (true if it did).
+	bool UpdateCarControls(Workshop& workshop, const FirstPersonController& player, const InputManager& input);
+	bool									m_aimedCarControl = false;	// one's under the crosshair
+	bool									m_devPress = false;
+	// The hood is held shut by its latch till the release under the dash is pulled; shut again, it latches.
+	bool									m_hoodLatched = true;
+	// The key turned: the starter (then it runs, if it will), or off again once it's stopped.
+	void TurnKey(Workshop& workshop);
+	// A frame of the engine running with no one at the wheel.
+	void IdleCar(float deltaTime, Workshop& workshop);
+	// Driven now: the engine running, the driver in their seat.
+	bool CarBeingDriven() const { return m_drive.active && m_seat == 0; }
+
 	// Which of the car's seats the player is in (0 the driver's, 1 the front passenger's, 2 and 3 the back seat's two
 	// places), or -1.
 	static constexpr int SEATS = 4;
@@ -921,8 +1048,14 @@ private:
 	bool									m_seatJustIn = false;	// got in this frame: the player is turned to face forward
 	float									m_seatLastYaw = 0.f;	// the car's, last frame: whoever's in it is turned by what it's turned since
 	float									m_bestLap = 0.f;		// seconds round the highway, the best yet (0: none)
-	// The seat [F] would put the player in, aimed at the car from where they stand.
+	float									m_cranking = 0.f;		// seconds of the starter still to go, the key turned
+	int										m_devGear = NO_DEV_GEAR;	// the gear the developer's holding it in
+	static constexpr int NO_DEV_GEAR = -99;
+	// The seat under the crosshair, which [F] (or a click, with empty hands) puts the player in: only a seat that's
+	// itself being looked at.
 	std::optional<int> AimedSeat(const Workshop& workshop, const FirstPersonController& player) const;
+	// The car's body leaning on its springs with how it's driven, a frame on.
+	void LeanCar(float deltaTime, float alongAcceleration, float sideAcceleration);
 	void Sit(int seat, Workshop& workshop);
 	void LeaveSeat(FirstPersonController* player);
 	std::string SeatPrompt() const;
@@ -933,7 +1066,7 @@ private:
 		float steer = 0.f;				// the front wheels' angle, radians, left positive
 		float spin = 0.f;				// how far the wheels have turned, radians
 		float rpm = 0.f;
-		int gear = 1;					// 0 reverse
+		int gear = 1;					// -1 reverse, 0 neutral, 1 to 5
 		float throttle = 0.f;
 		float topSpeed = 40.f;			// m/s
 		float pull = 3.f;				// m/s2 off the line
@@ -942,6 +1075,26 @@ private:
 		float idleRpm = 850.f;
 		float bumped = 0.f;				// seconds since it last hit something, so it doesn't clatter
 		bool offRoad = false;			// in the sand
+		float clutch = 1.f;				// how far the clutch has bitten: 0 with the pedal down, 1 with it up
+		// How it's moving besides along its nose: sideways (m/s, to its left) and turning (radians a second, to the
+		// left), which the tires' grip at each axle decides; and whether either axle has let go.
+		float slide = 0.f;
+		float yawRate = 0.f;
+		bool sliding = false;
+		// How it handles, from how it's set up (see StartDrive): each axle's share of the grip, how sharply the front
+		// tires bite as they're turned, how hard it tugs to one side, how fast the wheel comes back to the middle let
+		// go, and how much its body leans and how well that's damped.
+		float frontGrip = 1.f, rearGrip = 1.f;
+		float frontBite = 11.f;
+		float tug = 0.f;
+		float selfCentre = 2.5f;
+		float lean = 1.f, damping = 0.7f;
+		// The body on its springs: rolled (to its right) and pitched (nose up), radians, and how fast each is going.
+		float roll = 0.f, pitch = 0.f, rollRate = 0.f, pitchRate = 0.f;
+		// A gear change made without the clutch: the gear it's being worked into, and how long that still has to go
+		// (it's out of gear meanwhile).
+		int shiftingTo = 0;
+		float shifting = 0.f;
 		// The lap being timed: which way the line was last crossed (0: not yet), how long ago, and the lap before.
 		int lapWay = 0;
 		float lap = 0.f;
@@ -1066,6 +1219,7 @@ private:
 	{
 		glm::vec3 position = {};
 		bool ready = false;		// everything it needs is already fitted
+		bool line = false;		// one of the car's wiring or plumbing marks: drawn baby blue
 	};
 	struct FitTarget
 	{

@@ -162,7 +162,6 @@ enum class PartType
 	// Electrical
 	BATTERY,
 	MAIN_HARNESS,
-	ENGINE_HARNESS,
 	FUSE_BOX,
 	IGNITION_COIL,
 	STARTER,

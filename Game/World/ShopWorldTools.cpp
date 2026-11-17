@@ -1123,9 +1123,25 @@ void ShopWorld::DrawDebugBounds(const FirstPersonController& player) const
 	}
 	for (const auto& surface : m_surfaces)
 		box(surface, DEBUG_SURFACE_COLOR);
-	for (const auto& station : m_stations)
-		if (station.present && station.object)
-			box(WorldBounds(station.object), DEBUG_STATION_COLOR);
+	for (size_t i = 0; i < m_stations.size(); i++)
+		if (const auto& station = m_stations[i]; station.present && station.object)
+		{
+			if (i != m_carStation)
+			{
+				box(WorldBounds(station.object), DEBUG_STATION_COLOR);
+				continue;
+			}
+			// The car by its three boxes (nose, cabin, tail), square to it as it stands.
+			for (const auto& part : CarBoxes())
+			{
+				glm::vec3 corners[8];
+				for (int c = 0; c < 8; c++)
+					corners[c] = CarToWorld({ c & 1 ? part.max.x : part.min.x, c & 2 ? part.max.y : part.min.y, c & 4 ? part.max.z : part.min.z });
+				constexpr int EDGES[12][2] = { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 }, { 0, 2 }, { 1, 3 }, { 4, 6 }, { 5, 7 }, { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } };
+				for (const auto& edge : EDGES)
+					line(corners[edge[0]], corners[edge[1]], DEBUG_STATION_COLOR);
+			}
+		}
 	for (const auto& [id, package] : m_packages)
 		box(WorldBounds(package.object), DEBUG_PACKAGE_COLOR);
 	for (const auto& [ref, visual] : m_items)
@@ -1164,18 +1180,12 @@ void ShopWorld::DrawHotbar(const Workshop& workshop) const
 		drawList->AddText({ min.x + 4.f, min.y + 2.f }, IM_COL32(220, 220, 220, 220), std::to_string((slot + 1) % 10).c_str());
 	}
 
-	// The item in hand, with what can be done with it beside it, centred over the hotbar.
+	// The item in hand, centred over the hotbar. (What can be done with it is with the other controls, in the corner.)
 	std::string carried = m_carriedPackage && m_packages.contains(m_carriedPackage) ? DescribeItem(ItemRef::Package(m_carriedPackage), workshop).name : "";
 	if (auto held = GetHeld(); held || !carried.empty())
 	{
 		auto name = held ? DescribeItem(held->ref, workshop).name : carried;
-		std::string hint = m_heldHint.empty() ? "" : "     " + Controls::Keys(m_heldHint);
-		float nameWidth = ImGui::CalcTextSize(name.c_str()).x;
-		float lineWidth = nameWidth + ImGui::CalcTextSize(hint.c_str()).x;
-		ImVec2 start = { (display.x - lineWidth) * 0.5f, origin.y - 22.f };
-		ShadowText(drawList, start, IM_COL32(240, 240, 235, 235), name, false);
-		if (!hint.empty())
-			ShadowText(drawList, { start.x + nameWidth, start.y }, IM_COL32(200, 200, 200, 200), hint, false);
+		ShadowText(drawList, { display.x * 0.5f, origin.y - 22.f }, IM_COL32(240, 240, 235, 235), name, true);
 	}
 }
 
@@ -1292,11 +1302,11 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 
 	// In the car: the map, and its gauges from outside it.
 	DrawDriveHud(workshop);
-	// No crosshair while the camera looks back at you: it would be on your face, not what you'd use. Nor in the car.
-	if (!IsLookingBack() && !IsSeated())
+	// No crosshair while the camera looks back at you: it would be on your face, not what you'd use. Nor from behind the car.
+	if (!IsLookingBack() && !(IsSeated() && m_thirdPerson))
 	{
 		drawList->AddCircleFilled(center, 3.5f, IM_COL32(0, 0, 0, 160));
-		drawList->AddCircleFilled(center, 2.f, m_hover || m_measureTarget ? IM_COL32(255, 210, 90, 255) : white);
+		drawList->AddCircleFilled(center, 2.f, (m_hover && !IsSeated()) || m_measureTarget || m_aimedCarControl ? IM_COL32(255, 210, 90, 255) : white);
 	}
 
 	// Paint in hand: a ring on the wall the size it'll go on.
@@ -1345,7 +1355,13 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 	// now, grey when something else has to go first) and a ring on the one being aimed at.
 	for (const auto& point : m_fitPoints)
 		if (auto screen = ProjectToScreen(point.position, player))
-			drawList->AddCircleFilled({ screen->x, screen->y }, 4.f, point.ready ? IM_COL32(120, 255, 150, 150) : IM_COL32(170, 170, 170, 110));
+		{
+			drawList->AddCircleFilled({ screen->x, screen->y }, point.line ? 5.f : 4.f, point.line ? IM_COL32(137, 207, 240, point.ready ? 245 : 215)
+				: point.ready ? IM_COL32(120, 255, 150, 150) : IM_COL32(170, 170, 170, 110));
+			// (The wiring's and plumbing's, baby blue, with a darker rim to show against the white of the bay.)
+			if (point.line)
+				drawList->AddCircle({ screen->x, screen->y }, 5.f, IM_COL32(40, 95, 150, 220), 16, 1.5f);
+		}
 	if (m_boreFitTarget)
 		if (auto screen = ProjectToScreen(*m_boreFitTarget, player))
 		{
@@ -1387,11 +1403,43 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		drawList->PathArcTo(center, RING, start, start + glm::two_pi<float>() * (std::min)(ring, 1.f), 40);
 		drawList->PathStroke(IM_COL32(255, 210, 120, 240), 0, 3.f);
 	}
-	// What can be done with what is aimed at, low on the screen above the toast and hotbar, clear of the crosshair.
-	if (!m_prompt.empty())
-		ShadowText(drawList, { center.x, display.y - 210.f }, white, Controls::Keys(m_prompt), true);
-	if (!m_secondaryPrompt.empty())
-		ShadowText(drawList, { center.x, display.y - 188.f }, grey, Controls::Keys(m_secondaryPrompt), true);
+	// What can be done with what is aimed at and with what's in hand, in the bottom right corner, clear of the crosshair
+	// and the hotbar: a line for each control (the prompts run them together, three spaces apart).
+	{
+		std::vector<std::pair<std::string, ImU32>> hints;
+		auto split = [&](const std::string& prompt, ImU32 color) {
+			size_t start = 0;
+			while (start < prompt.size())
+			{
+				size_t gap = prompt.find("   ", start);
+				std::string piece = prompt.substr(start, gap == std::string::npos ? std::string::npos : gap - start);
+				if (size_t first = piece.find_first_not_of(' '); first != std::string::npos)
+					hints.push_back({ Controls::Keys(piece.substr(first)), color });
+				if (gap == std::string::npos)
+					break;
+				start = gap + 3;
+			}
+		};
+		split(m_prompt, white);
+		split(m_secondaryPrompt, grey);
+		// And what the thing in hand can do, last, in a cooler grey.
+		split(m_heldHint, IM_COL32(185, 200, 215, 220));
+		if (!hints.empty())
+		{
+			const float line = ImGui::GetTextLineHeightWithSpacing();
+			float width = 0.f;
+			for (const auto& [text, color] : hints)
+				width = (std::max)(width, ImGui::CalcTextSize(text.c_str()).x);
+			const ImVec2 max = { display.x - 20.f, display.y - 20.f };
+			const ImVec2 min = { max.x - width - 24.f, max.y - line * hints.size() - 14.f };
+			drawList->AddRectFilled(min, max, IM_COL32(15, 18, 22, 140), 6.f);
+			for (size_t i = 0; i < hints.size(); i++)
+			{
+				float textWidth = ImGui::CalcTextSize(hints[i].first.c_str()).x;
+				ShadowText(drawList, { max.x - 12.f - textWidth, min.y + 8.f + line * i }, hints[i].second, hints[i].first, false);
+			}
+		}
+	}
 
 	if (m_toastTime > 0.f)
 	{
@@ -1400,6 +1448,7 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 	}
 
 	DrawHardwarePanel(workshop);
+	DrawPlugMenu(workshop);
 
 	// The last reading, like the face of the gauge, in the top right.
 	if (m_readout.time > 0.f)

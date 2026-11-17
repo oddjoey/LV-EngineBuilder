@@ -51,11 +51,16 @@ namespace
 	// 40: what each torque wrench is set to (a line after the tool sizes).
 	// 48: the game starts with the LE86 and its worn engine, and there's no quarry, yard or project car to buy: a save from
 	// before it isn't read (a new game starts instead), so the older versions' paths below no longer run.
+	// 49: no engine harness (the main harness has its wiring): one in an older save is gone, and the part types after
+	// it moved down one.
+	// 50: which of the car's doors, hood, trunk lid and fuel flap are open, and whether its hood is latched.
 	constexpr int OLDEST_READ = 48;
-	constexpr int VERSION = 48;
+	constexpr int VERSION = 50;
 	constexpr const char* MAGIC = "LVSAVE";
 
 	constexpr int PART_TYPES = static_cast<int>(PartType::COUNT);
+	// Where the engine harness was before version 49: the fuse box's number now.
+	constexpr long long OLD_ENGINE_HARNESS = static_cast<long long>(PartType::FUSE_BOX);
 
 	// Before version 9 every nut and bolt had a part type (and a slot) of its own job, and the head
 	// bolt sat among the ancillaries. These map the old numbers to the sizes that replaced them.
@@ -187,6 +192,8 @@ namespace
 		std::array<float, Workshop::MAX_ENGINES> crankAngles = {};
 		bool moveIn = false;	// from the old garage into the shack (see Load)
 		bool doorOpen = true;
+		std::vector<bool> carPanelsOpen;	// by ShopWorld::CarPanel: empty in a save from before version 50 (all shut)
+		bool hoodLatched = true;
 		glm::vec3 playerPosition = {};
 		float playerYaw = 0.f;
 		float playerPitch = 0.f;
@@ -455,6 +462,10 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 		out.Num(world.m_engineRolls[engine]).Num(world.m_crankAngles[engine]);
 	out.Line();
 	out.Word("door").Int(world.m_doorOpen).Line();
+	out.Word("car_panels").Int(world.m_carPanels.size());
+	for (const auto& panel : world.m_carPanels)
+		out.Int(panel.open ? 1 : 0);
+	out.Int(world.m_hoodLatched ? 1 : 0).Line();
 	glm::vec3 feet = player.GetFeetPosition();
 	out.Word("player").Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch()).Line();
 	out.Word("end").Line();
@@ -640,8 +651,19 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		PartType type = PartType::BLOCK;
 		bool resized = false;	// an M9 or M11, now another size
 		bool oldHeadBolt = false;
-		if (version >= 16)
+		bool retired = false;	// an engine harness, read through and left out
+		if (version >= 49)
 			type = in.Enumerated<PartType>(PART_TYPES);
+		else if (version >= 16)
+		{
+			long long old = in.Int();
+			retired = old == OLD_ENGINE_HARNESS;
+			old -= old > OLD_ENGINE_HARNESS ? 1 : 0;
+			if (old < 0 || old >= PART_TYPES)
+				in.Fail("a value is out of range");
+			else if (!retired)
+				type = static_cast<PartType>(old);
+		}
 		else
 		{
 			long long old = in.Int();
@@ -854,6 +876,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 
 		if (partsById.contains(id))
 			in.Fail("two parts share an id");
+		if (retired)
+			continue;
 		parts.push_back(part);
 		partsById[id] = part;
 		highestId = (std::max)(highestId, id);
@@ -1300,6 +1324,14 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	}
 	in.Expect("door");
 	saved.doorOpen = in.Int() != 0;
+	if (version >= 50)
+	{
+		in.Expect("car_panels");
+		size_t panels = in.Count();
+		for (size_t p = 0; p < panels && !in.Failed(); p++)
+			saved.carPanelsOpen.push_back(in.Int() != 0);
+		saved.hoodLatched = in.Int() != 0;
+	}
 	in.Expect("player");
 	saved.playerPosition = ReadVec3(in);
 	saved.playerYaw = static_cast<float>(in.Num());
@@ -1610,6 +1642,16 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	world.m_crankAngles = saved.crankAngles;
 	world.m_camCranks = saved.crankAngles;
 	world.SetDoorOpen(saved.doorOpen, true);
+	// The car's doors and lids as they were left: already there, not swinging open as the game starts.
+	for (size_t p = 0; p < world.m_carPanels.size(); p++)
+	{
+		bool open = p < saved.carPanelsOpen.size() && saved.carPanelsOpen[p];
+		world.m_carPanels[p] = { open ? 1.f : 0.f, open };
+	}
+	world.m_hoodLatched = saved.hoodLatched && !(saved.carPanelsOpen.size() > static_cast<size_t>(ShopWorld::CarPanel::HOOD)
+		&& saved.carPanelsOpen[static_cast<size_t>(ShopWorld::CarPanel::HOOD)]);
+	world.m_carPanelsMoving = true;
+	world.m_carLaidOutAt = glm::vec3(-1e9f);
 	world.RebuildCollision();
 
 	player.SetPosition(saved.moveIn ? world.GetSpawnPosition() : saved.playerPosition);

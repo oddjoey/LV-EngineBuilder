@@ -36,6 +36,10 @@ struct RoadTestResult
 	bool stops = false;				// the brakes pull it up
 	bool steers = false;
 	bool failed = false;			// something gave up on the test
+	// Run for driving (see RoadTest::Run): the clutch pedal frees the clutch, and the brake pedal brakes. Its pipe undone,
+	// or its hydraulics empty or full of air, the pedal goes to the floor and does nothing. (Not saved.)
+	bool clutchWorks = true;
+	bool brakesWork = true;
 
 	double zeroToHundred = 0.0;		// s, 0 to 100 km/h (0: never got there)
 	double quarterMile = 0.0;		// s
@@ -58,7 +62,9 @@ class RoadTest
 public:
 	// Drives the car. engine is the pull of the engine that's in it (Dyno::Run), and engineComplete whether
 	// every part of the engine is on; with no engine in, or one that won't run, it goes nowhere.
-	static RoadTestResult Run(const CarAssembly& car, const DynoResult& engine, bool engineComplete);
+	// forDriving: the car's about to be driven by hand, not tested: the clutch's and the brakes' hydraulics undone or
+	// unbled don't stop it going (it's on the driver), they just don't work (see RoadTestResult::clutchWorks, brakesWork).
+	static RoadTestResult Run(const CarAssembly& car, const DynoResult& engine, bool engineComplete, bool forDriving = false);
 	// What the tune does to an engine with this compression ratio, on that fuel.
 	static EngineTuneEffect TuneEffect(const CarTune& tune, const CarSpec& spec, double compressionRatio, FluidProduct fuel);
 };

@@ -275,6 +275,13 @@ bool Workshop::Buy(const PartOrder& order)
 		return false;
 	if (order.condition == PartCondition::USED && !SoldUsed(order.type))
 		return false;
+	// An ignition switch comes with its own key: there has to be room on the tool board for it.
+	const bool withKey = order.type == PartType::IGNITION_SWITCH;
+	if (withKey && ToolCount(CarKeyTool()) + order.quantity > static_cast<int>(MAX_TOOL_COPIES))
+	{
+		Log(std::format("The shop can only keep {} car keys: there's no room for another ignition switch's.", MAX_TOOL_COPIES));
+		return false;
+	}
 
 	if (!Spend(Quote(order), PartTypeName(order.type)))
 		return false;
@@ -285,7 +292,11 @@ bool Workshop::Buy(const PartOrder& order)
 		auto part = PartFactory::Create(order.type, *m_spec, PartQuality::OEM, order.condition, order.sizeOffset);
 		name = part->GetName();
 		AddPart(part);
+		if (withKey)
+			CutKeyFor(*part);
 	}
+	if (withKey)
+		Log(order.quantity == 1 ? "Its key is cut to it: it's on the tool board." : "Their keys are cut to them: they're on the tool board.");
 	m_stats.partsBought += order.quantity;
 
 	Log(std::format("Bought {}x {}.", order.quantity, name));
@@ -667,7 +678,7 @@ bool Workshop::BuyTool(size_t toolIndex)
 {
 	const auto& tools = ToolCatalog::All();
 	// As many as you like: each one is another copy (another set, for a set).
-	if (toolIndex >= tools.size() || tools[toolIndex].partOf >= 0 || m_toolCounts[toolIndex] >= static_cast<int>(MAX_TOOL_COPIES))
+	if (toolIndex >= tools.size() || tools[toolIndex].partOf >= 0 || tools[toolIndex].notSold || m_toolCounts[toolIndex] >= static_cast<int>(MAX_TOOL_COPIES))
 		return false;
 	if (auto locked = ToolLockedBecause(toolIndex))
 	{
@@ -1037,13 +1048,21 @@ int Workshop::EngineOf(const Part& part) const
 
 bool Workshop::BuyEngineStand()
 {
-	if (GetEngineCount() >= MAX_ENGINES)
+	// A car's engine that came without one has its stand first (empty while the engine's in the car): its number's taken already.
+	auto standless = std::find_if(m_engines.begin(), m_engines.end(), [](const auto& engine) { return !engine->stand; });
+	if (standless == m_engines.end() && GetEngineCount() >= MAX_ENGINES)
 	{
 		Log("There's no room for another engine stand.");
 		return false;
 	}
 	if (!Spend(ENGINE_STAND_PRICE, "an engine stand"))
 		return false;
+	if (standless != m_engines.end())
+	{
+		(*standless)->stand = true;
+		Log(std::format("Bought engine stand {}.", standless - m_engines.begin() + 1));
+		return true;
+	}
 
 	m_engines.push_back(std::make_unique<EngineBuild>(*m_spec));
 	Log(std::format("Bought engine stand {}.", GetEngineCount()));
@@ -1095,6 +1114,21 @@ std::optional<std::string> Workshop::CartLineProblem(const CartLine& line, const
 			if (OwnsMachine(line.index))
 				return "Already owned.";
 			break;
+		case CartLine::Kind::PART:
+		{
+			if (line.order.quantity <= 0 || (line.order.condition == PartCondition::USED && !SoldUsed(line.order.type)))
+				return "Not sold like that.";
+			// Each ignition switch brings a key, and there's only room for so many.
+			if (line.order.type != PartType::IGNITION_SWITCH)
+				break;
+			int switches = 0;
+			for (const auto& other : cart)
+				if (other.kind == CartLine::Kind::PART && other.order.type == PartType::IGNITION_SWITCH)
+					switches += other.order.quantity;
+			if (ToolCount(CarKeyTool()) + switches > static_cast<int>(MAX_TOOL_COPIES))
+				return std::format("Each ignition switch comes with a key, and the shop only keeps {} car keys.", MAX_TOOL_COPIES);
+			break;
+		}
 		case CartLine::Kind::DYNO:
 			if (m_ownsDyno)
 				return "Already owned.";
@@ -1113,14 +1147,10 @@ std::optional<std::string> Workshop::CartLineProblem(const CartLine& line, const
 			for (const auto& other : cart)
 				if (other.kind == CartLine::Kind::ENGINE_STAND)
 					stands += other.quantity;
-			if (GetEngineCount() + stands > MAX_ENGINES)
+			if (StandCount() + stands > MAX_ENGINES)
 				return std::format("There's only room for {} engine stands.", MAX_ENGINES);
 			break;
 		}
-		case CartLine::Kind::PART:
-			if (line.order.quantity <= 0 || (line.order.condition == PartCondition::USED && !SoldUsed(line.order.type)))
-				return "Not sold like that.";
-			break;
 		default:
 			break;
 	}
@@ -2044,7 +2074,7 @@ bool Workshop::MoveEngineToDyno(int engine)
 {
 	if (engine < 0 || engine >= GetEngineCount())
 		return false;
-	if (engine == GetEngineInCar())
+	if (CarWithEngine(engine) >= 0)
 	{
 		Log("That engine is in the car: lift it out with the hoist first.");
 		return false;
@@ -2107,8 +2137,11 @@ bool Workshop::HoistEngine(int engine)
 {
 	if (engine < 0 || engine >= GetEngineCount() || !m_ownsHoist)
 		return false;
-	if (engine == GetEngineInCar())
+	if (int car = CarWithEngine(engine); car >= 0)
+	{
+		SetActiveCar(car);
 		return HoistEngineFromCar();
+	}
 	if (m_engineOnHoist >= 0)
 	{
 		Log(std::format("Engine {} is hanging from the hoist already: lower it first.", m_engineOnHoist + 1));
@@ -2130,7 +2163,7 @@ bool Workshop::HoistEngine(int engine)
 
 bool Workshop::IsStandFreeForHoist(int stand) const
 {
-	if (stand < 0 || stand >= GetEngineCount() || stand == m_engineOnDyno)
+	if (stand < 0 || stand >= GetEngineCount() || stand == m_engineOnDyno || !m_engines[stand]->stand)
 		return false;
 	return stand == m_engineOnHoist || m_engines[stand]->assembly.GetAllParts().empty();
 }
@@ -2237,7 +2270,7 @@ const EngineSale& Workshop::GetLastSale() const
 bool Workshop::SellEngine()
 {
 	auto& engine = Active();
-	if (m_activeEngine == GetEngineInCar())
+	if (CarWithEngine(m_activeEngine) >= 0)
 	{
 		Log("That engine is in the car: sell the car, or lift the engine out first.");
 		return false;
@@ -2358,4 +2391,14 @@ void Workshop::DevAddReputation(double amount)
 {
 	Log(std::format("Dev: +{:.0f} reputation.", amount));
 	EarnReputation(amount);
+}
+
+bool Workshop::HasStand(int engine) const
+{
+	return engine >= 0 && engine < GetEngineCount() && m_engines[engine]->stand;
+}
+
+int Workshop::StandCount() const
+{
+	return static_cast<int>(std::count_if(m_engines.begin(), m_engines.end(), [](const auto& engine) { return engine->stand; }));
 }

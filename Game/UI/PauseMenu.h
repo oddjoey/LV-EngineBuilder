@@ -91,7 +91,7 @@ public:
 	// Waiting for the key to put a control on: the game leaves the keys alone meanwhile.
 	bool IsBinding() const { return m_binding >= 0; }
 private:
-	enum class Page { MAIN, SETTINGS, CONTROLS, CONFIRM_QUIT };
+	enum class Page { MAIN, SETTINGS, CONFIRM_QUIT };
 
 	bool BigButton(const char* label);
 	void DrawGameSettings(GameSettings& settings);

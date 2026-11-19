@@ -124,7 +124,9 @@ private:
 		float pitch = 0.f;
 		// NetProtocol's presence: 0 down, 1 the right one out, 2 both; and crouched or not.
 		int arms = 0;
-		int seat = -1;		// which of the car's seats they're in, or -1
+		int seat = -1;		// which of a car's seats they're in, or -1
+		int car = -1;		// and which car (each player has one)
+		float rpm = 0.f;	// the revs of the car they're driving (0: not driving)
 		bool crouching = false;
 		bool lying = false;		// flat on the floor (the lie-down key)
 		MonkeyLook look = {};
@@ -168,6 +170,13 @@ private:
 	std::string									m_ticket = "";
 	std::string									m_ticketSignature = "";
 	int											m_localId = 0;
+	// This player's own car (EnsureOwnCar): made or claimed on joining, and checked on now and then. How many goes it's
+	// had, and the part numbers of the last one made here (thrown away if another player's took its place).
+	static constexpr int MAX_CAR_TRIES = 3;
+	int											m_carTries = 0;
+	uint32_t									m_madeFrom = 0, m_madeTo = 0;
+	float										m_carCheckTimer = 0.f;
+	void EnsureOwnCar(Workshop& workshop, ShopWorld& world);
 	std::string									m_localName = "";
 	std::string									m_localPrefix = "";
 	float										m_connectTime = 0.f;

@@ -23,16 +23,17 @@ namespace
 		{ "drop", "Drop what you're holding", "Working", "G", GLFW_KEY_G },
 		{ "move", "Move equipment, open a delivery, or get into and out of the car", "Working", "F", GLFW_KEY_F },
 		{ "rotate", "Turn the engine over by hand; turn equipment or a backpack item", "Working", "R", GLFW_KEY_R },
-		{ "roll_back", "Roll the engine on its stand one way", "Working", "Z", GLFW_KEY_Z },
-		{ "roll_forward", "Roll the engine on its stand the other way", "Working", "X", GLFW_KEY_X },
+		{ "roll_back", "Roll the engine on its stand one way", "Working", "RollBack", GLFW_KEY_COMMA },
+		{ "roll_forward", "Roll the engine on its stand the other way", "Working", "RollForward", GLFW_KEY_PERIOD },
 		{ "wrench_size", "Take the battery off a cordless tool", "Working", "C", GLFW_KEY_C },
-		{ "turn_held", "Hold and move the mouse to turn what you're holding, to set it down that way", "Working", "Q", GLFW_KEY_Q },
+		{ "turn_held", "Hold and move the mouse to turn the part you're holding (not a tool), to set it down that way", "Working", "Q", GLFW_KEY_Q },
 
 		{ "shift_up", "At the car's wheel: up a gear", "Working", "Up", GLFW_KEY_E },
 		{ "shift_down", "At the car's wheel: down a gear", "Working", "Down", GLFW_KEY_Q },
 		{ "clutch", "At the car's wheel: the clutch pedal (hold it down to change gear)", "Working", "Clutch", GLFW_KEY_C },
 		{ "backpack", "Open or close your backpack", "Screens and view", "Tab", GLFW_KEY_TAB },
 		{ "third_person", "View: first person, from behind, from in front, and back", "Screens and view", "F5", GLFW_KEY_F5 },
+		{ "zoom", "Zoom in (hold); how far is set in Settings, Game", "Screens and view", "Zoom", GLFW_KEY_Z },
 		{ "dev_menu", "Developer menu", "Screens and view", "F3", GLFW_KEY_F3 },
 	};
 

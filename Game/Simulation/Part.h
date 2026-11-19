@@ -1,10 +1,19 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+// A number that's new each time it's asked for: what an assembly takes whenever what's fitted to it changes (and when it's
+// made), so the world can tell at a glance whether anything has (see ShopWorld::SyncStands).
+inline uint64_t NextAssemblyRevision()
+{
+	static uint64_t next = 0;
+	return ++next;
+}
 
 #include "Feature.h"
 #include "Material.h"
@@ -130,6 +139,7 @@ enum class PartType
 	REAR_SHOCK,
 	// Steering
 	STEERING_RACK,
+	TIE_ROD_INNER,		// screwed onto each end of the rack, the tie rod end screwed onto it
 	TIE_ROD_END,
 	STEERING_COLUMN,
 	// Brakes: ventilated discs in front, drums at the back
@@ -152,7 +162,7 @@ enum class PartType
 	TRANSMISSION,
 	TRANSMISSION_MOUNT,
 	CLUTCH_MASTER_CYLINDER,
-	CLUTCH_RELEASE_CYLINDER,
+	CLUTCH_SLAVE_CYLINDER,
 	DRIVESHAFT,
 	// Fuel
 	FUEL_TANK,
@@ -175,6 +185,9 @@ enum class PartType
 	// Wheels
 	WHEEL,
 	TIRE,
+	// The ignition's lock and switch in the dash (and the key that comes with it: a tool). Added after the tires, so the
+	// types after it moved up one (save version 55).
+	IGNITION_SWITCH,
 	// The car's nuts and bolts that the engine's sizes don't cover: the wheels' lug nuts, and the bigger nuts
 	// under the car.
 	LUG_NUT,
@@ -338,6 +351,8 @@ public:
 	Feature* FindFeature(const std::string& name);
 	const Feature* FindFeature(const std::string& name) const;
 
+	// The number the next part made will have (each player makes theirs from a band of their own, see NetState::ClaimIds).
+	static uint32_t NextId() { return s_nextId; }
 	void RecordReading(const std::string& featureName, const FeatureReading& reading);
 	const FeatureReading* GetReading(const std::string& featureName) const;
 	void MarkReadingStale(const std::string& featureName);

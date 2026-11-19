@@ -61,6 +61,8 @@ public:
 	bool IsCrouching() const { return m_crouching; }
 	// Lying flat on the floor (the lie-down key), to get under a car on its jacks.
 	bool IsProne() const { return m_prone; }
+	// Which way on the floor the player's trying to walk this frame (x, z), whether or not anything stops them; zero standing.
+	glm::vec2 GetWishDirection() const { return m_wish; }
 	void SetProne(bool prone) { m_prone = prone; if (prone) m_crouching = false; }
 private:
 	void ResolveCollisions(const std::vector<FloorObstacle>& obstacles, const FloorObstacle& roomBounds);
@@ -80,6 +82,7 @@ private:
 	float			m_crouchSpeed = 1.3f;
 	bool			m_crouching = false;
 	bool			m_prone = false;
+	glm::vec2		m_wish = {};
 	float			m_proneSpeed = 0.7f;
 	float			m_mouseSensitivity = BASE_SENSITIVITY;
 	bool			m_invertY = false;

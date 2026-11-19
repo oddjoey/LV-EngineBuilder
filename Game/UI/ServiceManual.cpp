@@ -215,7 +215,7 @@ void ServiceManual::Build(bool imperial)
 	heading("Hand Tools");
 	for (const auto& tool : ToolCatalog::All())
 	{
-		if (!tool.IsHandTool() || tool.partOf >= 0 || tool.Paints())
+		if (!tool.IsHandTool() || tool.partOf >= 0 || tool.Paints() || tool.notSold)
 			continue;
 		std::vector<std::pair<std::string, std::string>> specs;
 		if (!tool.sizes.empty())

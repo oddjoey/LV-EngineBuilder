@@ -191,6 +191,13 @@ void NetSession::Update(float deltaTime, Workshop& workshop, ShopWorld& world, c
 		m_syncTimer = 0.f;
 		Sync(workshop, world);
 	}
+	// Now and then, that this player still has their own car (one made as someone else joined may have lost out to theirs).
+	m_carCheckTimer += deltaTime;
+	if (m_carCheckTimer >= 2.f)
+	{
+		m_carCheckTimer = 0.f;
+		EnsureOwnCar(workshop, world);
+	}
 	if (m_presenceTimer >= PRESENCE_INTERVAL)
 	{
 		m_presenceTimer = 0.f;
@@ -482,6 +489,11 @@ void NetSession::ApplyWelcome(Workshop& workshop, ShopWorld& world, FirstPersonC
 	// Back with what they had, laid out as they left it, and standing where they were.
 	NetState::RestoreLayout(world, m_welcomeLayout);
 	m_sentLayout = m_welcomeLayout;
+	// Every player has an LE86 of their own (see EnsureOwnCar).
+	m_carTries = 0;
+	m_madeFrom = m_madeTo = 0;
+	m_carCheckTimer = 0.f;
+	EnsureOwnCar(workshop, world);
 	if (m_welcomePlaced)
 	{
 		player.SetPosition(m_welcomeFeet);
@@ -543,9 +555,10 @@ std::string NetSession::PresenceMessage(const FirstPersonController& player, con
 	glm::vec3 feet = player.GetFeetPosition();
 	Writer out;
 	out.Word("presence").Int(m_localId).Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch())
-		.Int(world.IsSeated() ? 10 + world.GetSeat() : world.ArmsOut()).Int(player.IsProne() ? 2 : player.IsCrouching() ? 1 : 0);
+		.Int(world.IsSeated() ? 10 + world.GetSeat() + 4 * world.GetSeatedCar() : world.ArmsOut()).Int(player.IsProne() ? 2 : player.IsCrouching() ? 1 : 0);
 	const auto& look = world.GetPlayerLook();
 	out.Int(look.fur).Int(look.skin).Int(look.cap).Int(look.tail ? 1 : 0);
+	out.Num(world.GetDrivenRpm());	// the car they're driving, for the sound of it
 	return out.Text();
 }
 
@@ -567,6 +580,7 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	look.skin = static_cast<uint32_t>(in.Int()) & 0xFFFFFF;
 	look.cap = static_cast<uint32_t>(in.Int()) & 0xFFFFFF;
 	look.tail = in.Int() != 0;
+	const float rpm = static_cast<float>(in.Num());
 	if (in.Failed() || id == m_localId || id < 1)
 		return;
 
@@ -576,7 +590,9 @@ void NetSession::ReadPresence(const std::string& message, ShopWorld& world)
 	remote.yaw = yaw;
 	remote.pitch = pitch;
 	remote.arms = arms >= 10 ? 0 : std::clamp(arms, 0, 2);
-	remote.seat = arms >= 10 ? std::clamp(arms - 10, 0, 3) : -1;
+	remote.seat = arms >= 10 ? (arms - 10) % 4 : -1;
+	remote.car = arms >= 10 ? (arms - 10) / 4 : -1;
+	remote.rpm = rpm;
 	remote.crouching = crouching;
 	remote.lying = lying;
 	if (!remote.avatar.IsSpawned())
@@ -606,7 +622,14 @@ void NetSession::RemoveRemote(int id, ShopWorld& world)
 
 void NetSession::MoveAvatars(float deltaTime, ShopWorld& world)
 {
+	world.m_othersAt.clear();
 	float ease = 1.f - std::exp(-12.f * deltaTime);
+	// The cars another player in this garage is driving rev as they say (the rest aren't driven by anyone else).
+	for (int car = 0; car < ShopWorld::MAX_CARS; car++)
+		world.SetRemoteCarRpm(car, 0.f);
+	for (const auto& [id, remote] : m_remotes)
+		if (remote.seat == 0 && remote.plot == m_plot)
+			world.SetRemoteCarRpm(remote.car, remote.rpm);
 	for (auto& [id, remote] : m_remotes)
 	{
 		if (!remote.avatar.IsSpawned())
@@ -624,7 +647,7 @@ void NetSession::MoveAvatars(float deltaTime, ShopWorld& world)
 		remote.shownPitch += (remote.pitch - remote.shownPitch) * ease;
 		// In a seat of this garage's car, they're sat in it; in another garage's (which isn't here to be seen), sat where they are.
 		if (remote.seat >= 0 && remote.plot == m_plot)
-			remote.avatar.PoseSeated(world.SeatHips(remote.seat), world.SeatYaw(), remote.shownYaw, remote.shownPitch, remote.seat == 0);
+			remote.avatar.PoseSeated(world.SeatHipsInCar(remote.car, remote.seat), world.SeatYawOfCar(remote.car), remote.shownYaw, remote.shownPitch, remote.seat == 0);
 		else if (remote.seat >= 0)
 			remote.avatar.PoseSeated(remote.shownFeet + PlotOffset(remote.plot) + glm::vec3(0.f, 0.6f, 0.f), remote.shownYaw, remote.shownYaw, remote.shownPitch, remote.seat == 0);
 		else
@@ -632,6 +655,9 @@ void NetSession::MoveAvatars(float deltaTime, ShopWorld& world)
 		// What they hold is in their right hand (in this garage: the others' things are in theirs).
 		if (remote.plot == m_plot)
 			world.m_remoteHands[id] = { remote.avatar.GetHand(), remote.shownYaw };
+		// (And where they are, in this garage: a car they're near is one they may be working on, drawn part by part.)
+		if (remote.plot == m_plot)
+			world.m_othersAt.push_back(remote.seat >= 0 ? world.SeatHipsInCar(remote.car, remote.seat) : remote.shownFeet + PlotOffset(remote.plot));
 	}
 }
 
@@ -714,3 +740,35 @@ void NetSession::PlaceNeighbours(ShopWorld& world) const
 	world.SetNeighbours(offsets);
 }
 
+
+void NetSession::EnsureOwnCar(Workshop& workshop, ShopWorld& world)
+{
+	// Theirs already: nothing to do.
+	if (workshop.CarOwnedBy(m_localId) >= 0 || m_carTries >= MAX_CAR_TRIES)
+		return;
+	// A car made here before and gone since: someone else joined at the same moment, and theirs took its place (the same
+	// car's and engine's numbers). What's left of it goes, and another's made, in the next spot.
+	if (m_madeTo > m_madeFrom)
+	{
+		workshop.DiscardLooseParts(m_madeFrom, m_madeTo);
+		m_madeFrom = m_madeTo = 0;
+	}
+	m_carTries++;
+	// The garage's first if it's nobody's yet (a new garage's, or one from before cars were each player's), else a new one
+	// out on the drive, its key on their hotbar. (Made with this player's own part numbers; the next sync sends it.)
+	const int carsBefore = workshop.GetCarCount();
+	const uint32_t from = Part::NextId();
+	if (!world.ClaimOrSpawnCar(workshop, m_localId))
+	{
+		Notice("There's no room in this garage for a car of your own: it takes one engine stand's number for each car, and they're all in use.");
+		m_carTries = MAX_CAR_TRIES;
+		return;
+	}
+	if (workshop.GetCarCount() == carsBefore)
+		Notice("The LE86 on the drive is yours: its key's on the tool board.");
+	else
+	{
+		m_madeFrom = from;
+		m_madeTo = Part::NextId();
+	}
+}

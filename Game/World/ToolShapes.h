@@ -55,14 +55,29 @@ enum class ToolShape
 	ALIGNMENT_GAUGE,
 	SCREWDRIVER,
 	VALVE_SPRING_COMPRESSOR,	// a C-clamp: a cup over the spring, a foot under the valve
-	FLOOR_JACK,
-	JACK_STAND
+	WIRE_SPOOL,			// a reel of wire with crimpers
+	CAR_KEY				// the car's key on its fob
 };
 
-// A floor jack and a jack stand as they stand on the floor: how high the jack's saddle is let right down and the
+// The floor jack and jack stand (shop fittings: see FurnitureKind) as they stand on the floor: how high the jack's saddle is let right down and the
 // stand's top is with its post right in. (What reaches from there up to the car is a post of its own: see ShopWorld.)
 constexpr float FLOOR_JACK_LOW = 0.13f;
-constexpr float JACK_STAND_LOW = 0.26f;
+// (The stand's post right in comes just over the car's sill as it sits on its wheels: it goes under once the car's up a couple of
+// centimetres there.)
+constexpr float JACK_STAND_LOW = 0.2f;
+
+// The floor jack, in pieces (each its own model, in the jack's own space: the floor under its saddle let right down at
+// the origin, its body and handle out along +x). The lift arm swings up about its pivot in the body, the saddle on its
+// tip kept level; the pump handle rocks up and down in its socket at the back to pump, and twists to let it down.
+namespace JackLayout
+{
+	constexpr float ARM_PIVOT_X = 0.6f, ARM_PIVOT_Y = 0.09f;		// the arm's pivot
+	constexpr float ARM_LENGTH = 0.6f;								// pivot to the saddle's pin
+	constexpr float SADDLE_HEIGHT = 0.025f;							// the saddle's pin up to its top
+	constexpr float HANDLE_X = 0.84f, HANDLE_Y = 0.16f;				// the handle's socket
+	constexpr float HANDLE_LENGTH = 0.92f;							// socket to the end of the grip
+	constexpr float HANDLE_REST = 0.85f;							// how far up it stands at rest, radians
+}
 
 inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 {
@@ -89,8 +104,10 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 		case HandToolKind::ALIGNMENT_GAUGE:	return ToolShape::ALIGNMENT_GAUGE;
 		case HandToolKind::SCREWDRIVER:		return ToolShape::SCREWDRIVER;
 		case HandToolKind::VALVE_SPRING_COMPRESSOR:	return ToolShape::VALVE_SPRING_COMPRESSOR;
-		case HandToolKind::FLOOR_JACK:		return ToolShape::FLOOR_JACK;
-		case HandToolKind::JACK_STAND:		return ToolShape::JACK_STAND;
+		case HandToolKind::HARD_LINE_SPOOL:
+		case HandToolKind::FUEL_HOSE_SPOOL:
+		case HandToolKind::WIRE_SPOOL:		return ToolShape::WIRE_SPOOL;
+		case HandToolKind::CAR_KEY:			return ToolShape::CAR_KEY;
 		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
 		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
 		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
@@ -165,8 +182,8 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::ALIGNMENT_GAUGE:	return { 2, 2 };
 		case ToolShape::SCREWDRIVER:		return { 1, 2 };
 		case ToolShape::VALVE_SPRING_COMPRESSOR:	return { 2, 2 };
-		case ToolShape::FLOOR_JACK:		return { 3, 2 };
-		case ToolShape::JACK_STAND:		return { 2, 2 };
+		case ToolShape::WIRE_SPOOL:		return { 2, 2 };
+		case ToolShape::CAR_KEY:			return { 1, 1 };
 	}
 	return { 1, 1 };
 }

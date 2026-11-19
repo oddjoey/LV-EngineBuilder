@@ -770,13 +770,21 @@ void GameAudio::Loops(float deltaTime, ShopWorld& world, float timeOfDay)
 		}
 	};
 
-	// The dyno engine, its note following the rpm; the door rolling; the lift's motor.
-	// (Or the car's, while it's being driven.)
-	float rpm = world.IsDriving() ? world.GetDriveRpm() : world.GetEngineRpm();
-	glm::vec3 dyno = world.IsDriving() ? world.GetCarPosition() : world.GetDynoPosition(), door = world.GetDoorPosition(), lift = world.GetLiftPosition();
-	// (Dropping away for the moment the rev limiter cuts the ignition.)
-	float firing = world.IsDriving() && !world.IsDriveFiring() ? 0.35f : 1.f;
-	keep(m_engineLoop, m_engineClip, Bus::EFFECTS, rpm > 0.f, &dyno, (0.5f + 0.5f * (std::min)(rpm / 5500.f, 1.f)) * firing, rpm / 2400.f);
+	// The dyno engine, its note following the rpm; each car's that's running (here, or driven by another player) the same
+	// way, from where it is; the door rolling; the lift's motor.
+	const float rpm = world.GetEngineRpm();
+	glm::vec3 dyno = world.GetDynoPosition(), door = world.GetDoorPosition(), lift = world.GetLiftPosition();
+	keep(m_engineLoop, m_engineClip, Bus::EFFECTS, rpm > 0.f, &dyno, 0.5f + 0.5f * (std::min)(rpm / 5500.f, 1.f), rpm / 2400.f);
+	const auto cars = world.GetCarEngineSounds();
+	for (size_t car = 0; car < m_carLoops.size(); car++)
+	{
+		const bool running = car < cars.size() && cars[car].rpm > 0.f;
+		const float carRpm = running ? cars[car].rpm : 0.f;
+		glm::vec3 at = car < cars.size() ? cars[car].position : glm::vec3(0.f);
+		// (Dropping away for the moment the rev limiter cuts the ignition.)
+		const float firing = running && !cars[car].firing ? 0.35f : 1.f;
+		keep(m_carLoops[car], m_engineClip, Bus::EFFECTS, running, &at, (0.5f + 0.5f * (std::min)(carRpm / 5500.f, 1.f)) * firing, carRpm / 2400.f);
+	}
 	keep(m_doorLoop, m_doorClip, Bus::EFFECTS, world.IsDoorMoving(), &door, 0.6f, 1.f);
 	keep(m_liftLoop, m_liftClip, Bus::EFFECTS, world.IsLiftMoving(), &lift, 0.5f, 1.f);
 

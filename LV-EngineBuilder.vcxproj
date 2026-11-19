@@ -167,6 +167,14 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="Game\World\ShopAssetsCar.cpp" />
     <ClCompile Include="Game\World\ShopWorldCar.cpp" />
     <ClCompile Include="Game\World\ShopWorldCarLift.cpp" />
+    <ClCompile Include="Game\World\ShopWorldCarMerge.cpp">
+      <!-- Hot code, optimised even in Debug: the renderer's and objects' per-frame work, and building merged cars. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="Game\World\ShopWorldCarTools.cpp" />
     <ClCompile Include="Game\World\ShopWorldCarWiring.cpp" />
     <ClCompile Include="Game\Audio\GameAudio.cpp" />
@@ -209,13 +217,41 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
     <ClCompile Include="LV\Engine\Graphics\Models\ModelManager.cpp" />
     <ClCompile Include="LV\Engine\Graphics\Models\Texture.cpp" />
     <ClCompile Include="LV\Engine\Graphics\Models\TextureManager.cpp" />
-    <ClCompile Include="LV\Engine\Graphics\Renderer.cpp" />
+    <ClCompile Include="LV\Engine\Graphics\Renderer.cpp">
+      <!-- Hot code, optimised even in Debug: the renderer's and objects' per-frame work, and building merged cars. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="LV\Engine\Lordi.cpp" />
     <ClCompile Include="LV\Engine\Objects\Camera.cpp" />
     <ClCompile Include="LV\Engine\Objects\CameraManager.cpp" />
-    <ClCompile Include="LV\Engine\Objects\Entity.cpp" />
-    <ClCompile Include="LV\Engine\Objects\Object.cpp" />
-    <ClCompile Include="LV\Engine\Objects\ObjectManager.cpp" />
+    <ClCompile Include="LV\Engine\Objects\Entity.cpp">
+      <!-- Hot code, optimised even in Debug: the renderer's and objects' per-frame work, and building merged cars. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Objects\Object.cpp">
+      <!-- Hot code, optimised even in Debug: the renderer's and objects' per-frame work, and building merged cars. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="LV\Engine\Objects\ObjectManager.cpp">
+      <!-- Hot code, optimised even in Debug: the renderer's and objects' per-frame work, and building merged cars. -->
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">MaxSpeed</Optimization>
+      <InlineFunctionExpansion Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AnySuitable</InlineFunctionExpansion>
+      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Default</BasicRuntimeChecks>
+      <SupportJustMyCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</SupportJustMyCode>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="LV\Engine\Utility\InputManager.cpp" />
     <ClCompile Include="LV\Engine\Audio\AudioManager.cpp" />
     <ClCompile Include="LV\Engine\Audio\AudioManagerMac.cpp" />

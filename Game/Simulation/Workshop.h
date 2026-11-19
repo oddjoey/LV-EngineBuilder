@@ -43,6 +43,10 @@ struct CarBuild
 	explicit CarBuild(const CarSpec& spec) : assembly(spec) {}
 
 	CarAssembly assembly;
+	// Whose it is, in a garage on a server: the player's account number (NO_OWNER: nobody's yet, as in a garage from
+	// before cars were each player's, or a game played on its own).
+	static constexpr int NO_OWNER = -1;
+	int owner = NO_OWNER;
 	RoadTestResult lastRoadTest = {};
 	RoadTestResult previousRoadTest = {};	// the drive before it, to compare with (not saved)
 	bool roadTestCurrent = false;
@@ -88,6 +92,8 @@ struct EngineBuild
 	std::set<int> unseated = {};
 	// Cylinders whose ring, sat on its own in the bore to be gapped, has been pushed down square with a piston.
 	std::set<int> squaredRings = {};
+	// Whether it has a stand of its own in the shop: a car's engine that came in it hasn't (one bought gives it one).
+	bool stand = true;
 };
 
 // The last engine sold: the buyer's dyno pull of it, what they paid and the reputation it earned. Only
@@ -277,6 +283,9 @@ public:
 	// Which engine the part is fitted to, or -1 when it's loose.
 	int EngineOf(const Part& part) const;
 	bool BuyEngineStand();
+	// Whether an engine has a stand of its own (EngineBuild::stand), and how many stands the shop has.
+	bool HasStand(int engine) const;
+	int StandCount() const;
 
 	// Engine stand (the active engine)
 	EngineAssembly& GetAssembly();
@@ -388,7 +397,35 @@ public:
 	// The LE86 (WorkshopCar.cpp): the shop's from the start, its LV-16 in it, both worn (see SetUpStartingCar). It's kept,
 	// not sold: worked on and driven.
 	bool OwnsCar() const;
+	// Each player in a garage has an LE86 of their own. One is the active car, the one the car's calls below (GetCar,
+	// InstallCarPart, StartCar...) work on, as the active engine is for the engine's: the world makes the car it's
+	// working with active first.
 	const CarBuild* GetCar() const;
+	int GetCarCount() const { return static_cast<int>(m_cars.size()); }
+	const CarBuild* GetCarAt(int car) const { return car >= 0 && car < GetCarCount() ? m_cars[car].get() : nullptr; }
+	int GetActiveCar() const { return m_activeCar; }
+	// (A view of the shop, not a change to it: so it can be picked from anywhere. One past the last car is no car.)
+	void SetActiveCar(int car) const;
+	// The car a part is fitted to, the one with that engine in its bay, and the one a player owns: -1 for none.
+	int CarOf(const Part& part) const;
+	int CarWithEngine(int engine) const;
+	int CarOwnedBy(int owner) const;
+	// A fingerprint of where every part is: the engines' and cars' revisions, and what's fitted to loose parts (shells, pistons,
+	// pins, rings, the valvetrain in heads, springs and tires). Unchanged, nothing has gone on or come off anything.
+	uint64_t PlacementSignature() const;
+	void SetCarOwner(int car, int owner);
+	// A new LE86 for a player joining the garage, as the shop's first one starts: complete, running and worn, its own LV-16
+	// in it on an engine stand of its own (bought for it, free), and a key cut for its ignition. The new car's number and
+	// its key's tool id, or nothing if there's no engine stand left for its engine (MAX_ENGINES).
+	struct NewCar
+	{
+		int car = -1;
+		std::optional<size_t> key = std::nullopt;
+	};
+	std::optional<NewCar> AddCarFor(int owner);
+	// Throws away the parts numbered in [from, to) that aren't on an engine or a car: what's left of a new car another
+	// player's, made at the same moment, took the place of (see NetSession). How many went.
+	int DiscardLooseParts(uint32_t from, uint32_t to);
 	// Which part a car part is on, off the car: the spring compressed onto a front strut, the tire on its
 	// wheel. And the other way: what a spring or tire is on.
 	pPart CarriedOn(const Part& host) const;
@@ -449,6 +486,9 @@ public:
 		double brakingDistance = 0.0;	// m, 100 to 0 km/h
 		double lateralGrip = 0.0;		// g
 		double idleRpm = 0.0;
+		// Its pedals: the clutch's and the brake's hydraulics undone or unbled, it still goes, but that pedal does nothing.
+		bool clutchWorks = true;
+		bool brakesWork = true;
 	};
 	CarDrive StartCar();
 	// The looms' plugs (CarPlug). Whether what a plug goes onto is there to take it (its loom on, and the part: for
@@ -470,14 +510,22 @@ public:
 	// Why turning the key would do nothing at all (no battery, a lead off it, no starter or nothing feeding it), if
 	// it would: the starter doesn't so much as click.
 	std::optional<std::string> CarStarterDead() const;
+	// The car's keys (tools of HandToolKind::CAR_KEY), each cut for one ignition switch (a part's id), which comes with it.
+	// The ignition switch a key is cut for, if any; and whether it's the one in the car's dash.
+	std::optional<uint32_t> KeyCutFor(size_t keyToolId) const;
+	bool KeyFitsCar(size_t keyToolId) const;
+	// The catalog index of the car's key.
+	static size_t CarKeyTool();
+	// Developer shortcut: a key cut for whatever ignition switch is in the car (so `car key` always turns).
+	void DevCutKeyForCar(size_t keyToolId);
 	// Bolts the battery's ground strap to the body at a point, on a panel facing a way (both in the car's space).
 	bool GroundCarBattery(const CarWirePoint& at, const CarWirePoint& normal);
 	// Developer shortcut: every plug that can be pushed home, or all of them pulled.
 	void DevPlugCar(bool plugged);
 	// Driven for this long, this far: fuel burned, the oil and coolant aged, the engine warmed. False once the tank is dry.
 	bool DriveCar(double seconds, double metres, double throttle);
-	// The engine in the car cooling for this many seconds (a road test warms it right up).
-	void CoolCarEngine(double seconds);
+	// The engines in the cars cooling for this many seconds (a road test warms one right up), but for the one running (-1: none).
+	void CoolCarEngine(double seconds, int runningCar = -1);
 	double CarEngineHeat() const { return m_car ? m_car->engineHeat : 0.0; }
 	// How much tighter the valve lash reads cold than hot.
 	static constexpr double LASH_HOT_GROWTH = 0.05;
@@ -492,6 +540,12 @@ public:
 	// The car, what's fitted to its loose parts and the fluids in stock, as one line of save text (for the save
 	// and the network); and back, once the inventory holds the parts.
 	std::string CarState() const;
+	// And in pieces, for the network (each car a record of its own, so two players working on two cars don't write over each
+	// other): one car (whose it is, then it), what's shared (on loose parts, the stock, the keys), and the pieces put back
+	// together as CarState has them.
+	std::string CarBodyText(int car) const;
+	std::string CarSharedText() const;
+	static std::string JoinCarState(const std::vector<std::string>& bodies, const std::string& shared);
 	bool RestoreCarState(const std::string& text);
 private:
 	void CarChanged();
@@ -515,6 +569,8 @@ private:
 	void FillAndBleedCar();
 	// The shop's start (WorkshopCar.cpp): the LE86, complete and running, its LV-16 in it, both worn.
 	void SetUpStartingCar();
+	// One more of it, as a new car (made the active one), its LV-16 on that engine stand's number. The car's number.
+	int BuildStartingCar(int engine);
 	// The faults the engine starts with, added one at a time till the dyno makes it about health (0 to 100) healthy.
 	void WearStartingEngine(int engine, double health);
 	// And the car's: perished tires, a split engine mount, worn-through front pads and oil that's overdue.
@@ -548,7 +604,13 @@ private:
 	std::map<uint32_t, HeadFitting>			m_headFittings = {};	// a valve, seal, spring or retainer's id: where it is in a loose head
 	std::optional<ValveCompressor>			m_valveCompressor = std::nullopt;
 	EngineSale									m_lastSale = {};
-	std::unique_ptr<CarBuild>					m_car = nullptr;
+	// The cars (each player's), and the active one: m_car is m_cars[m_activeCar] (or none, with no car).
+	std::vector<std::unique_ptr<CarBuild>>		m_cars = {};
+	mutable CarBuild*							m_car = nullptr;
+	mutable int									m_activeCar = 0;
 	std::map<uint32_t, uint32_t>				m_carCarried = {};	// a loose strut's or wheel's id: the spring or tire on it
+	std::map<size_t, uint32_t>					m_keyCuts = {};		// a car key's tool id: the ignition switch's part id it turns
+	// A new ignition switch's key: another copy of the car's key, cut for it. False if the shop has all the keys it can.
+	std::optional<size_t> CutKeyFor(const Part& ignitionSwitch);	// (the key's tool id)
 	std::array<double, FLUID_PRODUCTS>			m_fluidStock = {};	// litres of each
 };

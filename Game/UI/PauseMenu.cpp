@@ -57,6 +57,9 @@ void PauseMenu::DrawGameSettings(GameSettings& settings)
 	ImGui::SliderFloat("Mouse sensitivity", &settings.mouseSensitivity, 0.2f, 3.f, "%.2fx");
 	ImGui::Checkbox("Invert mouse Y", &settings.invertY);
 	ImGui::SliderFloat("Field of view", &settings.fieldOfView, 55.f, 100.f, "%.0f deg");
+	ImGui::SliderFloat("Zoom", &settings.zoomFactor, GameSettings::ZOOM_MIN, GameSettings::ZOOM_MAX, "%.1fx");
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("How much closer things look holding the zoom key (%s).", Controls::NameOf(Control::ZOOM).c_str());
 	ImGui::Checkbox("Imperial units in the workshop", &settings.imperialUnits);
 	ImGui::Checkbox("Dark mode (menus, screens and the service manual)", &settings.darkMode);
 	ImGui::Checkbox("Show FPS", &settings.showFps);
@@ -199,8 +202,6 @@ void PauseMenu::DrawControls(GameSettings& settings, const PauseMenuContext& con
 		}
 	}
 
-	ImGui::TextUnformatted("Controls");
-	ImGui::Separator();
 	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + MENU_WIDTH * 1.6f - 48.f);
 	if (m_binding >= 0)
 		ImGui::TextColored(gold, "Press the key or mouse button for \"%s\" (Esc to cancel).", Controls::InfoOf(static_cast<Control>(m_binding)).name);
@@ -283,13 +284,8 @@ void PauseMenu::DrawControls(GameSettings& settings, const PauseMenuContext& con
 	}
 	ImGui::EndChild();
 
-	if (ImGui::Button("Reset to defaults"))
+	if (ImGui::Button("Reset controls to defaults"))
 		settings.controls = Controls::Defaults();
-	if (BigButton("Back"))
-	{
-		settings.Save();
-		m_page = Page::MAIN;
-	}
 	ImGui::EndDisabled();
 }
 
@@ -453,15 +449,12 @@ PauseMenu::Action PauseMenu::DrawMainMenu(GameSettings& settings, const PauseMen
 			action = Action::PLAY_OFFLINE;
 		ImGui::EndDisabled();
 	}
-	// Settings, controls and quitting side by side along the bottom.
-	float third = (ImGui::GetContentRegionAvail().x - 2.f * ImGui::GetStyle().ItemSpacing.x) / 3.f;
-	if (ImGui::Button("Settings", { third, BUTTON_HEIGHT }))
+	// Settings (the controls among them) and quitting side by side along the bottom.
+	float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.f;
+	if (ImGui::Button("Settings", { half, BUTTON_HEIGHT }))
 		m_page = Page::SETTINGS;
 	ImGui::SameLine();
-	if (ImGui::Button("Controls", { third, BUTTON_HEIGHT }))
-		m_page = Page::CONTROLS;
-	ImGui::SameLine();
-	if (ImGui::Button("Quit to Desktop", { third, BUTTON_HEIGHT }))
+	if (ImGui::Button("Quit to Desktop", { half, BUTTON_HEIGHT }))
 		m_page = Page::CONFIRM_QUIT;
 	ImGui::PopTextWrapPos();
 	return action;
@@ -478,7 +471,7 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 	ImGui::SetNextWindowPos({ io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f }, ImGuiCond_Always, { 0.5f, 0.5f });
 
 	bool mainMenu = m_page == Page::MAIN && !context.online && !context.offline;
-	bool wide = m_page == Page::CONTROLS || m_page == Page::SETTINGS || mainMenu;
+	bool wide = m_page == Page::SETTINGS || mainMenu;
 	ImGui::SetNextWindowSize({ wide ? MENU_WIDTH * 1.6f : MENU_WIDTH, 0.f });
 
 	// Keep the menu in front, but not while one of its dropdowns is open: taking focus every frame
@@ -536,8 +529,6 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 				}
 				if (BigButton("Settings"))
 					m_page = Page::SETTINGS;
-				if (BigButton("Controls"))
-					m_page = Page::CONTROLS;
 				if (BigButton("Quit to Desktop"))
 					m_page = Page::CONFIRM_QUIT;
 				if (!m_status.empty())
@@ -551,19 +542,34 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 			case Page::SETTINGS:
 				ImGui::TextUnformatted("Settings");
 				ImGui::Separator();
+			{
+				// While a control waits for its key, the other tabs and Back are off: the mouse button
+				// pressed for it mustn't also click one of them.
+				bool binding = m_binding >= 0;
 				if (ImGui::BeginTabBar("SettingsTabs"))
 				{
-					if (ImGui::BeginTabItem("Game"))
+					auto tab = [&](const char* name) {
+						ImGui::BeginDisabled(binding);
+						bool open = ImGui::BeginTabItem(name);
+						ImGui::EndDisabled();
+						return open;
+					};
+					if (tab("Game"))
 					{
 						DrawGameSettings(settings);
 						ImGui::EndTabItem();
 					}
-					if (ImGui::BeginTabItem("Video"))
+					if (ImGui::BeginTabItem("Controls"))
+					{
+						DrawControls(settings, context);
+						ImGui::EndTabItem();
+					}
+					if (tab("Video"))
 					{
 						DrawVideoSettings(settings, context);
 						ImGui::EndTabItem();
 					}
-					if (ImGui::BeginTabItem("Audio"))
+					if (tab("Audio"))
 					{
 						DrawAudioSettings(settings);
 						ImGui::EndTabItem();
@@ -571,16 +577,15 @@ PauseMenu::Action PauseMenu::Draw(GameSettings& settings, const PauseMenuContext
 					ImGui::EndTabBar();
 				}
 				ImGui::Spacing();
+				ImGui::BeginDisabled(binding);
 				if (BigButton("Back"))
 				{
 					settings.Save();
 					m_page = Page::MAIN;
 				}
+				ImGui::EndDisabled();
 				break;
-
-			case Page::CONTROLS:
-				DrawControls(settings, context);
-				break;
+			}
 
 			case Page::CONFIRM_QUIT:
 				ImGui::TextUnformatted("Quit to desktop?");

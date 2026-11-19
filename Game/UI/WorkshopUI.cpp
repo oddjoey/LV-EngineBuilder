@@ -133,16 +133,6 @@ namespace
 			case HandToolKind::THINNER:
 				return { "Hold the left button on paint on a wall or the floor to wipe it off (the mouse wheel sets how wide), or on a part or "
 					"tool to strip its coat." };
-			case HandToolKind::FLOOR_JACK:
-				return { "Carry it to the car: the lifting points are marked, two at each corner (the sill's jacking point, and a place for a "
-					"stand beside it under the floor). Click on one to slide the jack under it.",
-					"Aim at the jack and hold the left button to pump that corner up; hold the right button to let it down again.",
-					"E on the jack takes it away. A corner with nothing under it comes down, so put a jack stand under it first." };
-			case HandToolKind::JACK_STAND:
-				return { "Jack a corner of the car up first: a stand only goes under one that's off the ground.",
-					"Carry the stand to that corner and click on its other lifting point: it's set to the height the corner is at.",
-					"Let the jack down (or take it away) and the corner rests on the stand. E on a stand takes it back: with nothing else "
-					"under that corner, it comes down." };
 			// The rest of the car's tools say how they're used in their own descriptions.
 			case HandToolKind::FUNNEL:
 			case HandToolKind::BRAKE_BLEEDER:
@@ -152,8 +142,15 @@ namespace
 			case HandToolKind::TIRE_GAUGE:
 			case HandToolKind::ALIGNMENT_GAUGE:
 			case HandToolKind::SCREWDRIVER:
+			case HandToolKind::WIRE_SPOOL:
+			case HandToolKind::HARD_LINE_SPOOL:
+			case HandToolKind::FUEL_HOSE_SPOOL:
 				return { "Hold it and aim at what it works on at the car: what it can reach is marked.",
 					"The left and right buttons work it (see above); the prompt in the corner says what each does where you're aiming." };
+			case HandToolKind::CAR_KEY:
+				return { "Get in the driver's seat with the key in hand and click the ignition barrel, right of the steering column: it goes in.",
+					"Click it again to switch on, or hold the button to start the engine.",
+					"Switched off, [RMB] on the barrel takes the key out again." };
 			case HandToolKind::NONE:
 				break;
 		}
@@ -1755,21 +1752,9 @@ void WorkshopUI::DrawPartsStore(Workshop& workshop, bool hardware)
 		}
 		else
 			ImGui::TextDisabled("Parts ship to the roll-up door. Budget parts scatter wider; measure everything.");
-		ImGui::Spacing();
-		// The search bar: what's typed narrows the cards to the ones whose name, or section, has it in (any case).
-		ImGui::SetNextItemWidth(-FLT_MIN);
-		ImGui::InputTextWithHint("##search", hardware ? "Search hardware (e.g. M8, nut)" : "Search parts (e.g. gasket, cooling)",
-			m_storeSearch, sizeof(m_storeSearch));
-		auto lower = [](std::string text) {
-			std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-			return text;
-		};
-		std::string search = lower(m_storeSearch);
-		search.erase(0, search.find_first_not_of(' '));
-		search.erase(search.find_last_not_of(' ') + 1);
+		// (What's typed in the search bar at the top of the page narrows the cards to the ones whose name, or section, has it in.)
 		auto matches = [&](PartType type, const std::string& sectionName) {
-			return search.empty() || lower(PartCatalog::StoreName(type)).find(search) != std::string::npos
-				|| lower(PartTypeName(type)).find(search) != std::string::npos || lower(sectionName).find(search) != std::string::npos;
+			return StoreShows(PartCatalog::StoreName(type), sectionName) || StoreShows(PartTypeName(type));
 		};
 		ImGui::Spacing();
 
@@ -2138,6 +2123,35 @@ void WorkshopUI::DrawStoreWindow(Workshop& workshop)
 	drawList->AddText({ balanceX, headerY + 10.f }, Web(190, 205, 225, 255), "Your balance");
 	BigText(drawList, { balanceX, headerY + 12.f + font }, balanceSize, white, balance.c_str());
 
+	// The search bar, across the header between the logo and the balance: it narrows every page of the store (each
+	// link in the menu says how many it has of what's typed). Typed into on a page with none of it, the first page that
+	// has some is opened.
+	{
+		const char* tagline = "Engine parts, tools and machines, delivered to your roll-up door";
+		const float left = origin.x + 24.f + (std::max)(ImGui::CalcTextSize(tagline).x, BigTextWidth(logoSize, "MonkeyKobo")) + 32.f;
+		const float right = balanceX - 32.f;
+		if (right - left > 120.f)
+		{
+			ImGui::SetCursorScreenPos({ left, headerY + (HEADER_HEIGHT - ImGui::GetFrameHeight()) * 0.5f });
+			ImGui::SetNextItemWidth((std::min)(right - left, 460.f));
+			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ImGui::GetFrameHeight() * 0.5f);
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 14.f, ImGui::GetStyle().FramePadding.y });
+			const bool typed = ImGui::InputTextWithHint("##storeSearch", "Search the store (e.g. gasket, torque, M8, coolant)", m_storeSearch, sizeof(m_storeSearch));
+			ImGui::PopStyleVar(2);
+			if (typed && m_storeSearch[0])
+			{
+				m_toolDepartment = 0;
+				if (m_storeCategory == StoreCategory::SKILLS || StoreMatches(m_storeCategory, workshop) == 0)
+					for (const auto& candidate : STORE_PAGES)
+						if (candidate.category != StoreCategory::SKILLS && StoreMatches(candidate.category, workshop) > 0)
+						{
+							m_storeCategory = candidate.category;
+							break;
+						}
+			}
+		}
+	}
+
 	// The menu: a link for each section, the open one underlined.
 	constexpr float MENU_HEIGHT = 38.f;
 	float menuY = headerY + HEADER_HEIGHT;
@@ -2147,7 +2161,10 @@ void WorkshopUI::DrawStoreWindow(Workshop& workshop)
 	for (const auto& link : STORE_PAGES)
 	{
 		// (The shop's own page says how many skill points are waiting to be spent.)
-		const std::string label = link.category == StoreCategory::SKILLS && workshop.SkillPoints() > 0
+		// (Searching, each catalogue page says how many it has of what's typed.)
+		const bool searching = m_storeSearch[0] && link.category != StoreCategory::SKILLS;
+		const std::string label = searching ? std::format("{} ({})", link.link, StoreMatches(link.category, workshop))
+			: link.category == StoreCategory::SKILLS && workshop.SkillPoints() > 0
 			? std::format("{} ({})", link.link, workshop.SkillPoints()) : std::string(link.link);
 		float linkWidth = ImGui::CalcTextSize(label.c_str()).x;
 		ImGui::SetCursorScreenPos({ linkX - 8.f, menuY });
@@ -2556,14 +2573,178 @@ void WorkshopUI::DrawToolCell(Workshop& workshop, const std::function<bool(const
 	}
 }
 
+namespace
+{
+	// The tool store's shelves, grouped by the job the tools do. (The books first: they say what everything else is
+	// for. Then the spanners, which every job needs; what puts an engine together; the measuring tools by what they
+	// measure; and the car's own tools by the job.)
+	enum ToolShelf { MANUALS, WRENCHES, SOCKETS, TORQUE, CORDLESS, ENGINE_ASSEMBLY, MEASURE_OUTSIDE, MEASURE_BORES, MEASURE_FLAT, MEASURE_ENGINE, MEASURE_OTHER,
+		CAR_FLUIDS, CAR_WHEELS, CAR_TUNE, PAINT_MARKERS, PAINT_SPRAY, PAINT_CLEAN };
+	const char* const TOOL_SHELVES[] = {
+		"Service manuals",
+		"Wrenches",
+		"Sockets and what drives them",
+		"Torque wrenches",
+		"Cordless: tools, batteries and chargers",
+		"Engine assembly: pistons, rings and valve springs",
+		"Measuring: outside sizes (journals, stems, lengths)",
+		"Measuring: bores",
+		"Measuring: flatness, runout, squareness and bend",
+		"Measuring: on the assembled engine (clearances, gaps, heights, belts)",
+		"Measuring: springs, volumes and surface finish",
+		"Car: fluids and brakes",
+		"Car: wheels, tires and suspension",
+		"Car: tune-up and wiring",
+		"Paint markers",
+		"Spray paint",
+		"Cleaning up",
+	};
+	int ToolShelfOf(const MeasuringTool& tool)
+	{
+		if (tool.manual)
+			return MANUALS;
+		if (tool.Paints())
+			return tool.handKind == HandToolKind::MARKER ? PAINT_MARKERS : tool.handKind == HandToolKind::SPRAY_CAN ? PAINT_SPRAY : PAINT_CLEAN;
+		if (tool.powered || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
+			return CORDLESS;
+		auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
+		switch (tool.handKind)
+		{
+			case HandToolKind::PIN_PRESS:
+			case HandToolKind::RING_COMPRESSOR:
+			case HandToolKind::VALVE_SPRING_COMPRESSOR:	return ENGINE_ASSEMBLY;
+			case HandToolKind::SOCKETS:
+			case HandToolKind::RATCHET:
+			case HandToolKind::IMPACT:
+			case HandToolKind::BREAKER_BAR:		return SOCKETS;
+			case HandToolKind::WRENCHES:
+			case HandToolKind::COMBINATION_WRENCH:	return WRENCHES;
+			case HandToolKind::TORQUE_WRENCH:	return TORQUE;
+			case HandToolKind::FUNNEL:
+			case HandToolKind::BRAKE_BLEEDER:	return CAR_FLUIDS;
+			case HandToolKind::SPRING_COMPRESSOR:
+			case HandToolKind::TIRE_IRONS:
+			case HandToolKind::TIRE_GAUGE:
+			case HandToolKind::ALIGNMENT_GAUGE:	return CAR_WHEELS;
+			case HandToolKind::WIRE_SPOOL:
+			case HandToolKind::HARD_LINE_SPOOL:
+			case HandToolKind::FUEL_HOSE_SPOOL:
+			case HandToolKind::TIMING_LIGHT:
+			case HandToolKind::SCREWDRIVER:		return CAR_TUNE;
+			default:							break;
+		}
+		if (!tool.assemblyChecks.empty())
+			return MEASURE_ENGINE;
+		if (tool.measuresFinish || measures(FeatureKind::FORCE) || measures(FeatureKind::VOLUME))
+			return MEASURE_OTHER;
+		if (measures(FeatureKind::BORE))
+			return MEASURE_BORES;
+		if (measures(FeatureKind::FLATNESS) || measures(FeatureKind::RUNOUT) || measures(FeatureKind::SQUARENESS) || measures(FeatureKind::ALIGNMENT))
+			return MEASURE_FLAT;
+		return MEASURE_OUTSIDE;
+	}
+	// The Tools page's sub-pages: all of them, then a department for a few shelves each.
+	const char* const TOOL_DEPARTMENTS[] = { "All tools", "Manuals", "Spanners", "Cordless", "Engine assembly", "Measuring", "Car tools" };
+	int ToolDepartmentOf(const MeasuringTool& tool)
+	{
+		switch (ToolShelfOf(tool))
+		{
+			case MANUALS:			return 1;
+			case WRENCHES:
+			case SOCKETS:
+			case TORQUE:			return 2;
+			case CORDLESS:			return 3;
+			case ENGINE_ASSEMBLY:	return 4;
+			case CAR_FLUIDS:
+			case CAR_WHEELS:
+			case CAR_TUNE:			return 6;
+			default:				return 5;
+		}
+	}
+	// Sold on its own (not just in its set, and not the car's key, which isn't sold at all).
+	bool StoreSold(const MeasuringTool& tool) { return tool.partOf < 0 && !tool.notSold; }
+}
+
+bool WorkshopUI::StoreShows(std::string_view name, std::string_view section) const
+{
+	// Any case, the search's ends trimmed: in the name, or the section's name.
+	auto lower = [](std::string_view text) {
+		std::string out(text);
+		std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		return out;
+	};
+	std::string search = lower(m_storeSearch);
+	search.erase(0, search.find_first_not_of(' '));
+	search.erase(search.find_last_not_of(' ') + 1);
+	if (search.empty())
+		return true;
+	return lower(name).find(search) != std::string::npos || (!section.empty() && lower(section).find(search) != std::string::npos);
+}
+
+int WorkshopUI::StoreMatches(StoreCategory category, const Workshop& workshop) const
+{
+	(void)workshop;
+	int count = 0;
+	switch (category)
+	{
+		case StoreCategory::PARTS:
+		case StoreCategory::HARDWARE:
+		{
+			// As DrawPartsStore lists them.
+			const bool hardware = category == StoreCategory::HARDWARE;
+			for (auto type : PartCatalog::All())
+			{
+				const auto& info = PartCatalog::Get(type);
+				const bool fastener = info.system == PartSystem::FASTENERS;
+				if (!info.listed || fastener != hardware || (IsCarPart(type) && !fastener))
+					continue;
+				const bool nut = std::string_view(PartTypeName(type)).find("Nut") != std::string_view::npos;
+				std::string section = hardware ? (nut ? "Nuts" : "Bolts") : PartSystemName(info.system);
+				count += StoreShows(PartCatalog::StoreName(type), section) || StoreShows(PartTypeName(type)) ? 1 : 0;
+			}
+			break;
+		}
+		case StoreCategory::CAR:
+			// As DrawCarStore lists them: the car's parts by system, then the fluids.
+			for (auto type : PartCatalog::All())
+			{
+				const auto& info = PartCatalog::Get(type);
+				if (IsCarPart(type) && info.listed && type != PartType::BODY_SHELL && info.system != PartSystem::FASTENERS)
+					count += StoreShows(PartCatalog::StoreName(type), PartSystemName(info.system)) || StoreShows(PartTypeName(type)) ? 1 : 0;
+			}
+			for (int p = 0; p < FLUID_PRODUCTS; p++)
+				count += StoreShows(FluidProductName(static_cast<FluidProduct>(p)), "Fluids") ? 1 : 0;
+			break;
+		case StoreCategory::TOOLS:
+		case StoreCategory::PAINT:
+			for (const auto& tool : ToolCatalog::All())
+				if (StoreSold(tool) && tool.Paints() == (category == StoreCategory::PAINT))
+					count += StoreShows(tool.name, TOOL_SHELVES[ToolShelfOf(tool)]) ? 1 : 0;
+			break;
+		case StoreCategory::MACHINES:
+			count += (StoreShows("Dyno", "Testing") ? 1 : 0) + (StoreShows("Engine hoist", "Lifting") ? 1 : 0);
+			for (const auto& machine : MachineCatalog::All())
+				count += StoreShows(machine.name) ? 1 : 0;
+			break;
+		case StoreCategory::FURNITURE:
+			count += StoreShows("Engine stand") ? 1 : 0;
+			for (const auto& piece : FurnitureCatalog::All())
+				count += StoreShows(piece.name) ? 1 : 0;
+			break;
+		case StoreCategory::SKILLS:
+			break;
+	}
+	return count;
+}
+
 void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 {
 	const auto& tools = ToolCatalog::All();
 	m_selectedTool = std::clamp(m_selectedTool, 0, static_cast<int>(tools.size()) - 1);
 	// The paint has a tab of its own: keep the selection on this tab's side.
-	if (tools[m_selectedTool].Paints() != paint || tools[m_selectedTool].partOf >= 0)
+	if (tools[m_selectedTool].Paints() != paint || tools[m_selectedTool].partOf >= 0 || tools[m_selectedTool].notSold)
 		for (size_t i = 0; i < tools.size(); i++)
-			if (tools[i].Paints() == paint && tools[i].partOf < 0)
+			if (tools[i].Paints() == paint && tools[i].partOf < 0 && !tools[i].notSold)
 			{
 				m_selectedTool = static_cast<int>(i);
 				break;
@@ -2574,96 +2755,82 @@ void WorkshopUI::DrawToolStore(Workshop& workshop, bool paint)
 		ImGui::TextDisabled("Tools are delivered to the roll-up door. Once unpacked, put them away on the tool board or in your backpack.");
 		ImGui::Spacing();
 
-		// Grouped by the job they do, cheapest first within each: the measuring tools by what they
-		// measure, then the spanners.
-		// (The books first: they say what everything else is for. Then the spanners, which every job needs; what
-		// puts an engine together; the measuring tools by what they measure; and the car's own tools by the job.)
-		enum Shelf { MANUALS, WRENCHES, SOCKETS, TORQUE, CORDLESS, ENGINE_ASSEMBLY, MEASURE_OUTSIDE, MEASURE_BORES, MEASURE_FLAT, MEASURE_ENGINE, MEASURE_OTHER,
-			CAR_LIFTING, CAR_FLUIDS, CAR_WHEELS, CAR_TUNE, PAINT_MARKERS, PAINT_SPRAY, PAINT_CLEAN };
-		static const char* const SHELVES[] = {
-			"Service manuals",
-			"Wrenches",
-			"Sockets and what drives them",
-			"Torque wrenches",
-			"Cordless: tools, batteries and chargers",
-			"Engine assembly: pistons, rings and valve springs",
-			"Measuring: outside sizes (journals, stems, lengths)",
-			"Measuring: bores",
-			"Measuring: flatness, runout, squareness and bend",
-			"Measuring: on the assembled engine (clearances, gaps, heights, belts)",
-			"Measuring: springs, volumes and surface finish",
-			"Car: lifting it",
-			"Car: fluids and brakes",
-			"Car: wheels, tires and suspension",
-			"Car: tune-up",
-			"Paint markers",
-			"Spray paint",
-			"Cleaning up",
+		// The Tools page's departments, a sub-page each (with all of them first), each saying how many it has (of what's
+		// searched for). The paint's page is small enough to be the one.
+		auto onPage = [&](size_t i, int department) {
+			const auto& tool = tools[i];
+			return StoreSold(tool) && tool.Paints() == paint && (paint || department == 0 || ToolDepartmentOf(tool) == department)
+				&& StoreShows(tool.name, TOOL_SHELVES[ToolShelfOf(tool)]);
 		};
-		auto shelfOf = [](const MeasuringTool& tool) -> int {
-			if (tool.manual)
-				return MANUALS;
-			if (tool.Paints())
-				return tool.handKind == HandToolKind::MARKER ? PAINT_MARKERS : tool.handKind == HandToolKind::SPRAY_CAN ? PAINT_SPRAY : PAINT_CLEAN;
-			if (tool.powered || tool.handKind == HandToolKind::BATTERY || tool.handKind == HandToolKind::CHARGER)
-				return CORDLESS;
-			auto measures = [&](FeatureKind kind) { return std::find(tool.kinds.begin(), tool.kinds.end(), kind) != tool.kinds.end(); };
-			switch (tool.handKind)
+		if (!paint)
+		{
+			for (int department = 0; department < static_cast<int>(std::size(TOOL_DEPARTMENTS)); department++)
 			{
-				case HandToolKind::PIN_PRESS:
-				case HandToolKind::RING_COMPRESSOR:
-				case HandToolKind::VALVE_SPRING_COMPRESSOR:	return ENGINE_ASSEMBLY;
-				case HandToolKind::SOCKETS:
-				case HandToolKind::RATCHET:
-				case HandToolKind::IMPACT:
-				case HandToolKind::BREAKER_BAR:		return SOCKETS;
-				case HandToolKind::WRENCHES:
-				case HandToolKind::COMBINATION_WRENCH:	return WRENCHES;
-				case HandToolKind::TORQUE_WRENCH:	return TORQUE;
-				case HandToolKind::FLOOR_JACK:
-				case HandToolKind::JACK_STAND:		return CAR_LIFTING;
-				case HandToolKind::FUNNEL:
-				case HandToolKind::BRAKE_BLEEDER:	return CAR_FLUIDS;
-				case HandToolKind::SPRING_COMPRESSOR:
-				case HandToolKind::TIRE_IRONS:
-				case HandToolKind::TIRE_GAUGE:
-				case HandToolKind::ALIGNMENT_GAUGE:	return CAR_WHEELS;
-				case HandToolKind::TIMING_LIGHT:
-				case HandToolKind::SCREWDRIVER:		return CAR_TUNE;
-				default:							break;
+				int count = 0;
+				for (size_t i = 0; i < tools.size(); i++)
+					count += onPage(i, department) ? 1 : 0;
+				if (department > 0)
+					ImGui::SameLine();
+				std::string label = std::format("{} ({})##department{}", TOOL_DEPARTMENTS[department], count, department);
+				// The one open in the site's orange, the rest plain.
+				const bool active = m_toolDepartment == department;
+				if (!active)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
+				}
+				// (Wrapped onto the next line when the row's full.)
+				float width = ImGui::CalcTextSize(label.c_str(), nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.f;
+				if (department > 0 && ImGui::GetContentRegionAvail().x < width)
+					ImGui::NewLine();
+				if (ImGui::Button(label.c_str()))
+				{
+					m_toolDepartment = department;
+					// The first tool on it picked, if what's picked isn't there.
+					if (!onPage(static_cast<size_t>(m_selectedTool), department))
+						for (size_t i = 0; i < tools.size(); i++)
+							if (onPage(i, department))
+							{
+								m_selectedTool = static_cast<int>(i);
+								break;
+							}
+				}
+				if (!active)
+					ImGui::PopStyleColor(2);
 			}
-			if (!tool.assemblyChecks.empty())
-				return MEASURE_ENGINE;
-			if (tool.measuresFinish || measures(FeatureKind::FORCE) || measures(FeatureKind::VOLUME))
-				return MEASURE_OTHER;
-			if (measures(FeatureKind::BORE))
-				return MEASURE_BORES;
-			if (measures(FeatureKind::FLATNESS) || measures(FeatureKind::RUNOUT) || measures(FeatureKind::SQUARENESS) || measures(FeatureKind::ALIGNMENT))
-				return MEASURE_FLAT;
-			return MEASURE_OUTSIDE;
-		};
+			ImGui::Spacing();
+		}
+		// What's picked stays on the page: one searched or paged away, the first that's there is picked instead.
+		if (!onPage(static_cast<size_t>(m_selectedTool), m_toolDepartment))
+			for (size_t i = 0; i < tools.size(); i++)
+				if (onPage(i, m_toolDepartment))
+				{
+					m_selectedTool = static_cast<int>(i);
+					break;
+				}
+
+		// Grouped by the job they do (see ToolShelfOf), cheapest first within each.
 		std::vector<size_t> order(tools.size());
 		for (size_t i = 0; i < tools.size(); i++)
 			order[i] = i;
 		std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-			int shelfA = shelfOf(tools[a]), shelfB = shelfOf(tools[b]);
+			int shelfA = ToolShelfOf(tools[a]), shelfB = ToolShelfOf(tools[b]);
 			return shelfA != shelfB ? shelfA < shelfB : tools[a].price < tools[b].price;
 		});
 
 		int shelf = -1;
+		if (std::none_of(order.begin(), order.end(), [&](size_t i) { return onPage(i, m_toolDepartment); }))
+			ImGui::TextDisabled(m_storeSearch[0] ? "Nothing here matches \"%s\"." : "Nothing here.", m_storeSearch);
 		for (size_t i : order)
 		{
 			const auto& tool = tools[i];
-			// Sold only in their set.
-			if (tool.partOf >= 0)
+			if (!onPage(i, m_toolDepartment))
 				continue;
-			if (tool.Paints() != paint)
-				continue;
-			if (int thisShelf = shelfOf(tool); thisShelf != shelf)
+			if (int thisShelf = ToolShelfOf(tool); thisShelf != shelf)
 			{
 				if (shelf >= 0)
 					ImGui::NewLine();
-				ImGui::SeparatorText(SHELVES[thisShelf]);
+				ImGui::SeparatorText(TOOL_SHELVES[thisShelf]);
 				shelf = thisShelf;
 			}
 			// One the shop hasn't the rank for yet shows the rank it needs, greyed.
@@ -2799,16 +2966,25 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 	{
 		ImGui::TextDisabled("Machines are delivered in a crate and set up when it's opened. Press F on one to move it.");
 		ImGui::Spacing();
-		ImGui::SeparatorText("Testing");
-		if (StoreCard("Dyno", "Dyno", std::format("${:.0f}", Workshop::DynoPrice()), m_selectedStoreMachine == DYNO, workshop.OwnsDyno(),
-			[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawDyno(drawList, min, size); }, {}))
-			m_selectedStoreMachine = DYNO;
-		if (ImGui::GetCursorPosX() > ImGui::GetStyle().WindowPadding.x + 1.f)
-			ImGui::NewLine();
-		ImGui::SeparatorText("Lifting");
-		if (StoreCard("Engine hoist", "Engine hoist", std::format("${:.0f}", Workshop::HoistPrice()), m_selectedStoreMachine == HOIST, workshop.OwnsHoist(),
-			[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawHoist(drawList, min, size); }, {}))
-			m_selectedStoreMachine = HOIST;
+		// (Narrowed by the store's search bar.)
+		if (StoreMatches(StoreCategory::MACHINES, workshop) == 0)
+			ImGui::TextDisabled("Nothing here matches \"%s\".", m_storeSearch);
+		if (StoreShows("Dyno", "Testing"))
+		{
+			ImGui::SeparatorText("Testing");
+			if (StoreCard("Dyno", "Dyno", std::format("${:.0f}", Workshop::DynoPrice()), m_selectedStoreMachine == DYNO, workshop.OwnsDyno(),
+				[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawDyno(drawList, min, size); }, {}))
+				m_selectedStoreMachine = DYNO;
+		}
+		if (StoreShows("Engine hoist", "Lifting"))
+		{
+			if (ImGui::GetCursorPosX() > ImGui::GetStyle().WindowPadding.x + 1.f)
+				ImGui::NewLine();
+			ImGui::SeparatorText("Lifting");
+			if (StoreCard("Engine hoist", "Engine hoist", std::format("${:.0f}", Workshop::HoistPrice()), m_selectedStoreMachine == HOIST, workshop.OwnsHoist(),
+				[&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawHoist(drawList, min, size); }, {}))
+				m_selectedStoreMachine = HOIST;
+		}
 		// Grouped by the job they do, cheapest first within each, so the budget way and the proper
 		// way to do a job sit side by side.
 		auto group = [](MachineOperation operation) {
@@ -2841,6 +3017,8 @@ void WorkshopUI::DrawMachineStore(Workshop& workshop)
 		for (size_t i : order)
 		{
 			const auto& machine = machines[i];
+			if (!StoreShows(machine.name))
+				continue;
 			if (group(machine.operation) != section)
 			{
 				// The last card may have left the cursor on its row.
@@ -2955,15 +3133,20 @@ void WorkshopUI::DrawFurnitureStore(Workshop& workshop)
 	{
 		ImGui::TextDisabled("Delivered in a crate and set up when it's opened. Press F on a piece to move it.");
 		ImGui::Spacing();
+		// (Narrowed by the store's search bar.)
+		if (StoreMatches(StoreCategory::FURNITURE, workshop) == 0)
+			ImGui::TextDisabled("Nothing here matches \"%s\".", m_storeSearch);
 		for (size_t i = 0; i < furniture.size(); i++)
 		{
 			const auto& piece = furniture[i];
+			if (!StoreShows(piece.name))
+				continue;
 			if (StoreCard(piece.name.c_str(), piece.name.c_str(), std::format("${:.0f}", piece.price), m_selectedStoreFurniture == static_cast<int>(i),
 				false, [&](ImDrawList* drawList, ImVec2 min, float size) { ItemIcons::DrawFurniture(drawList, piece, min, size); }, {}))
 				m_selectedStoreFurniture = static_cast<int>(i);
 		}
-		if (StoreCard("Engine stand", "Engine stand", std::format("${:.0f}", Workshop::ENGINE_STAND_PRICE), m_selectedStoreFurniture == STAND,
-			false, drawStand, {}))
+		if (StoreShows("Engine stand") && StoreCard("Engine stand", "Engine stand", std::format("${:.0f}", Workshop::ENGINE_STAND_PRICE),
+			m_selectedStoreFurniture == STAND, false, drawStand, {}))
 			m_selectedStoreFurniture = STAND;
 	}
 	ImGui::EndChild();
@@ -2973,7 +3156,7 @@ void WorkshopUI::DrawFurnitureStore(Workshop& workshop)
 	{
 		if (m_selectedStoreFurniture == STAND)
 		{
-			int engines = workshop.GetEngineCount();
+			int engines = workshop.StandCount();
 			ImGui::Text("Engine stand");
 			DrawPreview(ShopModels::ENGINE_STAND);
 			ImGui::PushTextWrapPos(0.f);

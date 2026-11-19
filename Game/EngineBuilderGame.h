@@ -74,6 +74,7 @@ private:
 	// The developer start (LV_DEV_START): done once, and a game started that way is never saved.
 	bool							m_devStartDone = false;
 	bool							m_devNoSave = false;
+	bool							m_devAutoVote = false;	// (net vote) yes to everyone who asks to join
 	std::vector<std::string>		m_devScript = {};	// the commands still to run, one a frame
 	float							m_devWait = 0.f;
 	SplashScreen					m_splash = {};
@@ -87,6 +88,7 @@ private:
 	bool							m_offline = false;
 	// How far round the garage the menu's camera has come.
 	float							m_menuAngle = 0.f;
+	float							m_zoom = 0.f;		// how far into the zoom (held Z): 0 none, 1 all the way
 	float							m_devEyeDrop = 0.f;	// developer: the first person camera this far below the eyes (eye <metres>)
 // Debug builds only: playing offline, and the developer menu (F3).
 #ifdef _DEBUG

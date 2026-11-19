@@ -82,6 +82,17 @@ namespace ShopLayout
 	// hoist's hook goes to reach into its engine bay, in its own space.
 	inline const glm::vec3 CAR_HOME = { (GarageLayout::DOOR_MIN_X + GarageLayout::DOOR_MAX_X) * 0.5f, 0.f, GarageLayout::HALF_DEPTH + GarageLayout::WALL + 5.4f };
 	constexpr float CAR_YAW = glm::half_pi<float>();
+	// Each player's car has a spot of its own on the drive: the first car's is CAR_HOME, in the middle by the door; the
+	// others one behind another down the drive's right-hand half, all on the concrete, leaving its left-hand half clear
+	// for any of them to pull out (the first reversing out past them).
+	inline glm::vec3 CarHome(int car)
+	{
+		if (car <= 0)
+			return CAR_HOME;
+		constexpr float RIGHT_LANE_X = GarageLayout::DRIVE_MAX_X - 1.05f;	// its right side 0.2 in from the drive's edge
+		constexpr float GAP = 5.6f;										// nose to nose: a car's length and a metre and a half
+		return { RIGHT_LANE_X, 0.f, CAR_HOME.z + GAP * static_cast<float>((car - 1) % 3 + 1) };
+	}
 	inline const glm::vec3 CAR_ENGINE_BAY = { 1.35f, 0.75f, 0.f };
 	// The underside of the car's floor, in its own space: what can be walked under when it's lifted.
 	constexpr float CAR_FLOOR_Y = 0.17f;

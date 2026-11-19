@@ -18,7 +18,9 @@ enum class FurnitureKind
 	POTTED_PLANT,
 	SHOP_FAN,
 	GAS_PUMP,
-	MONCHU			// a statue for show, its model from Resources/Models/monchu.fbx
+	MONCHU,			// a statue for show, its model from Resources/Models/monchu.fbx
+	FLOOR_JACK,		// a trolley jack, rolled under one of the car's lifting points and pumped up
+	JACK_STAND		// a stand set under the car where it's been jacked up, to hold it there
 };
 
 struct FurnitureInfo

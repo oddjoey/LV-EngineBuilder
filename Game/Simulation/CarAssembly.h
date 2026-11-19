@@ -46,6 +46,7 @@ enum class CarSlot
 	REAR_COIL_SPRING,
 	REAR_SHOCK,
 	STEERING_RACK,
+	TIE_ROD_INNER,		// screwed onto each end of the rack, the tie rod end screwed onto it
 	TIE_ROD_END,
 	STEERING_COLUMN,
 	BRAKE_BOOSTER,
@@ -66,7 +67,7 @@ enum class CarSlot
 	TRANSMISSION,
 	TRANSMISSION_MOUNT,
 	CLUTCH_MASTER_CYLINDER,
-	CLUTCH_RELEASE_CYLINDER,
+	CLUTCH_SLAVE_CYLINDER,
 	DRIVESHAFT,
 	FUEL_TANK,
 	FUEL_SENDER,
@@ -84,6 +85,7 @@ enum class CarSlot
 	MUFFLER,
 	WHEEL,				// 0 front left, 1 front right, 2 rear left, 3 rear right
 	TIRE,				// carried by its wheel: mounted on it off the car
+	IGNITION_SWITCH,	// the ignition's lock in the dash, right of the column (the slots after it moved up one in car text 14)
 	// The engine from a stand. Not a part: CarAssembly::GetEngine says which.
 	ENGINE,
 	// Nuts and bolts: one slot per set of holes (CarAssembly::Holes), taking that set's size.
@@ -118,6 +120,7 @@ enum class CarSlot
 	BUMPER_BOLT,
 	CATALYTIC_CONVERTER_NUT,
 	LUG_NUT,
+	CLUTCH_SLAVE_BOLT,	// (added after the rest in car text version 13, so none of theirs moved)
 	COUNT
 };
 constexpr int CAR_PART_SLOTS = static_cast<int>(CarSlot::ENGINE);
@@ -132,7 +135,7 @@ static_assert(static_cast<int>(PartType::TIRE) - static_cast<int>(FIRST_CAR_PART
 //
 // The car's pipes are done up the same way, each a union on the end of a pipe: the brake line set's five (the master
 // cylinder's two ports, front and rear, and the three flexible hoses), the clutch's one (the pipe off its master
-// cylinder, onto the release cylinder), and the fuel line set's three (the tank, the filter, and the hose on from the
+// cylinder, onto the slave cylinder), and the fuel line set's three (the tank, the filter, and the hose on from the
 // filter to the engine's pump). A brake or clutch union undone lets air in and fluid out; with a fuel one off the
 // engine gets none.
 enum class CarPlug { BATTERY, HEADLIGHT_LEFT, HEADLIGHT_RIGHT, COOLING_FAN, STARTER, IGNITION_COIL, DISTRIBUTOR, ALTERNATOR, COOLANT_SENDER, OIL_SENDER,
@@ -230,6 +233,8 @@ public:
 	pPart Get(CarSlot slot, int index) const;
 	bool Contains(const pPart& part) const;
 	std::optional<std::pair<CarSlot, int>> Find(const Part* part) const;
+	// New whenever a part goes on or comes off (or the engine goes in or out): unchanged, nothing fitted has.
+	uint64_t Revision() const { return m_revision; }
 	std::vector<pPart> GetAllParts() const;
 	bool IsFilled(CarSlot slot, int index) const;
 	// Every position of a slot is filled (and, for a part, its own bolts are in).
@@ -326,6 +331,7 @@ private:
 	std::array<std::vector<Positions>, SLOTS>	m_prerequisites = {};
 	std::array<std::vector<Positions>, SLOTS>	m_dependents = {};
 	std::unordered_map<const Part*, std::pair<CarSlot, int>> m_positions = {};
+	uint64_t m_revision = NextAssemblyRevision();	// new whenever what's fitted changes (Revision)
 	int											m_engine = -1;
 	std::array<FluidLevel, FLUID_CIRCUITS>		m_fluids = {};
 	CarTune										m_tune = {};

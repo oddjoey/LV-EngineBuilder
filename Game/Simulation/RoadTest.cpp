@@ -152,7 +152,7 @@ EngineTuneEffect RoadTest::TuneEffect(const CarTune& tune, const CarSpec& spec, 
 	return effect;
 }
 
-RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, bool engineComplete)
+RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, bool engineComplete, bool forDriving)
 {
 	RoadTestResult result;
 	result.ran = true;
@@ -228,7 +228,7 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 	if (!hasEngine)
 		report(FindingSeverity::FAILURE, "There's no engine in it.");
 	else if (auto missing = firstMissing({ CarSlot::BATTERY, CarSlot::MAIN_HARNESS, CarSlot::FUSE_BOX,
-		CarSlot::STARTER, CarSlot::STEERING_COLUMN }))
+		CarSlot::STARTER, CarSlot::STEERING_COLUMN, CarSlot::IGNITION_SWITCH }))
 		report(FindingSeverity::FAILURE, std::format("Turning the key does nothing: the {} isn't on.", *missing));
 	else if (!car.IsPlugged(CarPlug::BATTERY))
 		report(FindingSeverity::FAILURE, "Turning the key does nothing: the main harness's lead isn't on the battery.");
@@ -331,7 +331,7 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 	if (canDrive)
 	{
 		if (auto missing = firstMissing({ CarSlot::CLUTCH_DISC, CarSlot::PRESSURE_PLATE, CarSlot::RELEASE_BEARING, CarSlot::TRANSMISSION,
-			CarSlot::TRANSMISSION_MOUNT, CarSlot::CLUTCH_MASTER_CYLINDER, CarSlot::CLUTCH_RELEASE_CYLINDER, CarSlot::DRIVESHAFT,
+			CarSlot::TRANSMISSION_MOUNT, CarSlot::CLUTCH_MASTER_CYLINDER, CarSlot::CLUTCH_SLAVE_CYLINDER, CarSlot::DRIVESHAFT,
 			CarSlot::REAR_AXLE, CarSlot::DIFFERENTIAL, CarSlot::LOWER_TRAILING_LINK, CarSlot::UPPER_TRAILING_LINK, CarSlot::LATERAL_ROD,
 			CarSlot::REAR_COIL_SPRING, CarSlot::REAR_SHOCK, CarSlot::FRONT_STRUT, CarSlot::STEERING_KNUCKLE, CarSlot::LOWER_CONTROL_ARM,
 			CarSlot::STRUT_ROD, CarSlot::WHEEL, CarSlot::TIRE }))
@@ -339,19 +339,23 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 			report(FindingSeverity::FAILURE, std::format("It goes nowhere: the {} isn't on.", *missing));
 			canDrive = false;
 		}
-		else if (!car.IsPlugged(CarPlug::CLUTCH_PIPE))
+		else if (!forDriving && !car.IsPlugged(CarPlug::CLUTCH_PIPE))
 		{
-			report(FindingSeverity::FAILURE, "The clutch pedal goes to the floor: the pipe from its master cylinder isn't on the release cylinder.");
+			report(FindingSeverity::FAILURE, "The clutch pedal goes to the floor: the pipe from its master cylinder isn't on the slave cylinder.");
 			canDrive = false;
 		}
-		else if (fluid(FluidCircuit::CLUTCH).Total() < spec.Fluid(FluidCircuit::CLUTCH).level.min * 0.5
-			|| fluid(FluidCircuit::CLUTCH).air[static_cast<size_t>(BleedPoint::CLUTCH)] > 0.3)
+		else if (!forDriving && (fluid(FluidCircuit::CLUTCH).Total() < spec.Fluid(FluidCircuit::CLUTCH).level.min * 0.5
+			|| fluid(FluidCircuit::CLUTCH).air[static_cast<size_t>(BleedPoint::CLUTCH)] > 0.3))
 		{
 			report(FindingSeverity::FAILURE, "The clutch pedal goes to the floor and it grinds going into gear: the clutch hydraulics need filling and bleeding.");
 			canDrive = false;
 		}
 		else
 		{
+			// Driven by hand, a dead clutch pedal doesn't stop it: the clutch just never frees.
+			if (!car.IsPlugged(CarPlug::CLUTCH_PIPE) || fluid(FluidCircuit::CLUTCH).Total() < spec.Fluid(FluidCircuit::CLUTCH).level.min * 0.5
+				|| fluid(FluidCircuit::CLUTCH).air[static_cast<size_t>(BleedPoint::CLUTCH)] > 0.3)
+				result.clutchWorks = false;
 			// What can't wait: a wheel or the axle coming off.
 			bool holding = true;
 			for (auto slot : { CarSlot::LUG_NUT, CarSlot::STRUT_KNUCKLE_BOLT, CarSlot::BALL_JOINT_BOLT, CarSlot::DRIVESHAFT_FLANGE_NUT,
@@ -359,7 +363,7 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 				holding = checkFasteners(slot, true) && holding;
 			for (auto slot : { CarSlot::STRUT_MOUNT_NUT, CarSlot::CONTROL_ARM_BOLT, CarSlot::STRUT_ROD_NUT, CarSlot::SWAY_BAR_BOLT,
 				CarSlot::REAR_SHOCK_BOLT, CarSlot::DIFFERENTIAL_NUT, CarSlot::ENGINE_MOUNT_BOLT, CarSlot::PRESSURE_PLATE_BOLT,
-				CarSlot::TRANSMISSION_MOUNT_BOLT, CarSlot::STARTER_BOLT, CarSlot::SEAT_BOLT })
+				CarSlot::TRANSMISSION_MOUNT_BOLT, CarSlot::STARTER_BOLT, CarSlot::SEAT_BOLT, CarSlot::CLUTCH_SLAVE_BOLT })
 				checkFasteners(slot, false);
 			if (!holding)
 			{
@@ -391,12 +395,14 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 	// ---- Steering ----
 	if (result.drives)
 	{
-		if (auto missing = firstMissing({ CarSlot::STEERING_RACK, CarSlot::TIE_ROD_END, CarSlot::STEERING_COLUMN, CarSlot::STEERING_WHEEL }))
+		if (auto missing = firstMissing({ CarSlot::STEERING_RACK, CarSlot::TIE_ROD_INNER, CarSlot::TIE_ROD_END, CarSlot::STEERING_COLUMN, CarSlot::STEERING_WHEEL }))
 			report(FindingSeverity::FAILURE, std::format("It can't be steered: the {} isn't on.", *missing));
 		else if (checkFasteners(CarSlot::TIE_ROD_END_NUT, true) && checkFasteners(CarSlot::STEERING_RACK_BOLT, true))
 			result.steers = true;
 		if (result.steers && WorstCondition(car, CarSlot::STEERING_RACK) == PartCondition::DAMAGED)
 			report(FindingSeverity::WARNING, "The steering knocks over bumps and has a lot of play: the rack is worn out.");
+		if (result.steers && WorstCondition(car, CarSlot::TIE_ROD_INNER) == PartCondition::DAMAGED)
+			report(FindingSeverity::WARNING, "The steering clunks turning in and the car wanders: an inner tie rod's ball joint is worn out.");
 	}
 
 	// ---- Brakes ----
@@ -411,10 +417,17 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 		if (auto missing = firstMissing({ CarSlot::BRAKE_MASTER_CYLINDER, CarSlot::BRAKE_LINE_SET, CarSlot::BRAKE_HOSE, CarSlot::BRAKE_ROTOR,
 			CarSlot::BRAKE_PAD_SET, CarSlot::BRAKE_CALIPER, CarSlot::WHEEL_CYLINDER, CarSlot::BRAKE_SHOE_SET, CarSlot::BRAKE_DRUM }))
 			report(FindingSeverity::FAILURE, std::format("No brakes: the {} isn't on. It wasn't taken out.", *missing));
-		else if (auto open = car.OpenUnion(FluidCircuit::BRAKES))
+		else if (auto open = !forDriving ? car.OpenUnion(FluidCircuit::BRAKES) : std::nullopt)
 			report(FindingSeverity::FAILURE, std::format("No brakes: the brake pipe isn't on the {}. It wasn't taken out.", CarPlugName(*open)));
-		else if (brakeFluid.Total() < brakeSpec.level.min * 0.5 || air > 0.5)
+		else if (!forDriving && (brakeFluid.Total() < brakeSpec.level.min * 0.5 || air > 0.5))
 			report(FindingSeverity::FAILURE, "The brake pedal goes straight to the floor: the brakes need filling and bleeding. It wasn't taken out.");
+		else if (forDriving && (car.OpenUnion(FluidCircuit::BRAKES) || brakeFluid.Total() < brakeSpec.level.min * 0.5 || air > 0.5))
+		{
+			// Driven by hand: the pedal does nothing, but it goes (the handbrake's cable still pulls the back drums on).
+			result.stops = true;
+			result.brakesWork = false;
+			brakeFactor = 1.0;
+		}
 		else if (!checkFasteners(CarSlot::CALIPER_BOLT, true))
 			report(FindingSeverity::FAILURE, "A caliper came loose on its bracket at the first stop.");
 		else

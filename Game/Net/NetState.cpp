@@ -34,11 +34,14 @@ namespace
 	std::string CoatKey(const ItemRef& ref) { return std::format("o:{}:{}", static_cast<int>(ref.kind), ref.id); }
 	// Which way the shop's stations are numbered ("s:N"), so a garage kept from before a change can be
 	// renumbered. 1: no cot (the station after the lift went). 2: the engine hoist, after the extension's
-	// door. 3: the project car, after the hoist. Garages without it are older.
+	// door. 3: the project car, after the hoist. 4: three more cars (each player's) after the first. Garages without it
+	// are older.
 	constexpr const char* LAYOUT_KEY = "g:layout";
-	constexpr long long STATION_LAYOUT = 3;
+	constexpr long long STATION_LAYOUT = 4;
 	// The project car, what's on its loose struts and wheels, and the fluids in stock (Workshop::CarState).
+	// (Before cars were each a record of their own, in a garage kept from then.)
 	constexpr const char* CAR_KEY = "g:car";
+	constexpr const char* CARS_KEY = "g:cars";
 
 	// "p:12" is part 12: the number after the prefix.
 	std::optional<uint32_t> KeyNumber(const std::string& key, const char* prefix)
@@ -287,6 +290,8 @@ namespace
 		out.Int(dyno.findings.size());
 		for (const auto& finding : dyno.findings)
 			out.Int(static_cast<int>(finding.severity)).Str(finding.message);
+		// (Last, so a record from a game before it still reads: whether it has a stand of its own.)
+		out.Int(engine.stand);
 		return out.Text();
 	}
 
@@ -349,6 +354,8 @@ namespace
 			finding.message = in.Next();
 			dyno.findings.push_back(finding);
 		}
+		if (!in.Failed() && !in.AtEnd())
+			engine->stand = in.Int() != 0;
 		return in.Failed() ? nullptr : std::move(engine);
 	}
 }
@@ -448,7 +455,10 @@ StateRecords NetState::Capture(const Workshop& workshop, const ShopWorld& world,
 		records[PartKey(part->GetId())] = PartText(*part);
 	for (size_t engine = 0; engine < workshop.m_engines.size(); engine++)
 		records[EngineKey(engine)] = EngineText(*workshop.m_engines[engine]);
-	records[CAR_KEY] = workshop.CarState();
+	// The cars, a record each, and what they share (see Apply).
+	records[CARS_KEY] = Writer().Int(workshop.GetCarCount()).Text() + workshop.CarSharedText();
+	for (int car = 0; car < workshop.GetCarCount(); car++)
+		records[std::format("g:car:{}", car)] = workshop.CarBodyText(car);
 
 	for (size_t i = 0; i < world.m_stations.size(); i++)
 	{
@@ -559,7 +569,7 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 	// A garage from before a change to the shop's stations is renumbered. Before the cot went it was the
 	// station after the lift, and those after it move down one; before the hoist, those after the
 	// extension's door move up one to make room for it; before the car, those after the hoist (the furniture) do.
-	const size_t carStation = world.m_fixedStations - 1;
+	const size_t carStation = world.m_fixedStations - ShopWorld::MAX_CARS;	// the first car's
 	const size_t hoistStation = carStation - 1;
 	const size_t cotStation = carStation - 2;
 	long long layout = STATION_LAYOUT;
@@ -580,6 +590,9 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 			index++;
 		if (layout < 3 && index >= carStation)
 			index++;
+		// (Before 4 the furniture came straight after the first car: the other cars come between now.)
+		if (layout < 4 && index > carStation)
+			index += ShopWorld::MAX_CARS - 1;
 		return index;
 	};
 	if (layout < STATION_LAYOUT)
@@ -811,24 +824,73 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		if (workshop.m_engineOnHoist >= workshop.GetEngineCount() || workshop.m_engineOnHoist == workshop.m_engineOnDyno)
 			workshop.m_engineOnHoist = -1;
 	}
-	// The project car, rebuilt from its parts once they and the engines are in place. A part that's gone with no
-	// change to the car still comes off it (rebuilt from its own state, which drops what isn't the shop's).
-	if (auto car = other.find(CAR_KEY); car != other.end())
+	// The cars, rebuilt from their parts once they and the engines are in place: a record each ("g:car:N"), and what they
+	// share ("g:cars": how many there are, what's on loose struts and wheels, the fluids in stock, the keys). Whatever
+	// hasn't changed is taken from the cars as they are here. A garage kept from before has the lot in one ("g:car"). A
+	// part that's gone with no change to a car still comes off it (rebuilt from its own state, which drops what isn't
+	// the shop's).
+	std::optional<std::optional<std::string>> sharedCars;
+	std::map<uint32_t, std::optional<std::string>> carBodies;
+	std::optional<std::optional<std::string>> legacyCars;
+	for (auto it = other.begin(); it != other.end();)
 	{
-		if (car->second)
-			workshop.RestoreCarState(*car->second);
+		if (it->first == CARS_KEY)
+			sharedCars = it->second;
+		else if (it->first == CAR_KEY)
+			legacyCars = it->second;
+		else if (auto number = KeyNumber(it->first, "g:car:"))
+			carBodies[*number] = it->second;
 		else
 		{
-			workshop.m_car.reset();
-			workshop.m_carCarried.clear();
+			++it;
+			continue;
 		}
-		other.erase(car);
+		it = other.erase(it);
+	}
+	auto noCars = [&]() {
+		workshop.m_cars.clear();
+		workshop.SetActiveCar(0);
+		workshop.m_carCarried.clear();
+	};
+	if (sharedCars || !carBodies.empty())
+	{
+		if (sharedCars && !*sharedCars)
+			noCars();
+		else
+		{
+			// ("count rest...": the count, then the shared state as CarSharedText writes it.)
+			int count = workshop.GetCarCount();
+			std::string shared = workshop.CarSharedText();
+			if (sharedCars)
+			{
+				const std::string& text = **sharedCars;
+				const size_t space = text.find(' ');
+				count = space == std::string::npos ? 0 : std::atoi(text.substr(0, space).c_str());
+				shared = space == std::string::npos ? std::string() : text.substr(space + 1);
+			}
+			std::vector<std::string> bodies;
+			for (int car = 0; car < count; car++)
+			{
+				auto changed = carBodies.find(static_cast<uint32_t>(car));
+				if (changed != carBodies.end() && changed->second)
+					bodies.push_back(*changed->second);
+				else if (changed == carBodies.end() && car < workshop.GetCarCount())
+					bodies.push_back(workshop.CarBodyText(car));
+				else
+					break;	// (one that hasn't come yet, or has gone: the cars stop short of it)
+			}
+			workshop.RestoreCarState(Workshop::JoinCarState(bodies, shared));
+		}
+	}
+	else if (legacyCars)
+	{
+		if (*legacyCars)
+			workshop.RestoreCarState(**legacyCars);
+		else if (full)
+			noCars();
 	}
 	else if (full)
-	{
-		workshop.m_car.reset();
-		workshop.m_carCarried.clear();
-	}
+		noCars();
 	else if (!partChanges.empty() && workshop.m_car)
 		workshop.RestoreCarState(workshop.CarState());
 	// Once the engines are what they are: which of their pistons are still in the top of the bore, and which rings
@@ -871,8 +933,8 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		// Not the one being carried about here.
 		if (world.m_move && world.m_move->stationIndex == *index)
 			continue;
-		// Nor the car while it's being driven here.
-		if (world.m_drive.active && *index == world.m_carStation)
+		// Nor a car while it's being driven here.
+		if (const int car = world.CarOfStation(*index); car >= 0 && world.RigOf(car).drive.active)
 			continue;
 		Reader in(*text);
 		glm::vec3 position = ReadVec3(in);

@@ -940,7 +940,7 @@ void ShopWorld::CancelMove()
 	m_move.reset();
 }
 
-bool ShopWorld::StationFits(const Station& station, const glm::vec3& position, float yaw, const FirstPersonController* player) const
+bool ShopWorld::StationFits(const Station& station, const glm::vec3& position, float yaw, const FirstPersonController* player, std::string* why) const
 {
 	auto model = ModelOf(station.object);
 	ShopBox footprint = TransformBox({ model->GetBoundsMin(), model->GetBoundsMax() }, position, Yaw(yaw));
@@ -961,19 +961,31 @@ bool ShopWorld::StationFits(const Station& station, const glm::vec3& position, f
 			&& (over == StationType::ENGINE_STAND || over == StationType::DYNO || over == StationType::CAR); };
 		if (under(station.type, other.type) || under(other.type, station.type))
 			continue;
+		// A jack or stand snapped under one of the car's lifting points goes in under it (and beside the others there).
+		if (m_moveSnap >= 0 && IsCarSupport(station) && (other.type == StationType::CAR || IsCarSupport(other)))
+			continue;
 		auto bounds = WorldBounds(other.object);
 		bool overlaps = footprint.min.x < bounds.max.x - 0.01f && bounds.min.x < footprint.max.x - 0.01f
 			&& footprint.min.z < bounds.max.z - 0.01f && bounds.min.z < footprint.max.z - 0.01f;
 		if (overlaps)
+		{
+			if (why)
+				*why = std::format("the {} is in the way", other.name);
 			return false;
+		}
 	}
 
-	if (player)
+	// (A jack or stand going in under the car can go in under the player too, lying under it.)
+	if (player && !(m_moveSnap >= 0 && IsCarSupport(station)))
 	{
 		glm::vec2 feet = { player->GetFeetPosition().x, player->GetFeetPosition().z };
 		glm::vec2 closest = glm::clamp(feet, glm::vec2(footprint.min.x, footprint.min.z), glm::vec2(footprint.max.x, footprint.max.z));
 		if (glm::length(feet - closest) < player->GetRadius())
+		{
+			if (why)
+				*why = "you're standing in the way";
 			return false;
+		}
 	}
 	return true;
 }
@@ -1018,17 +1030,33 @@ void ShopWorld::UpdateMove(const FirstPersonController& player, const InputManag
 	// Floor-standing equipment stays on the floor; the tool board keeps its height on the wall.
 	target.y = station.homePosition.y;
 
+	// A floor jack or jack stand brought near the floor under one of the car's lifting points snaps in under it.
+	float yaw = m_move->yaw;
+	m_moveSnap = -1;
+	if (auto point = SnapSupport(station, target, yaw))
+		m_moveSnap = *point;
+	bool jack = false;
+	IsCarSupport(station, &jack);
+	const bool fitsUnder = m_moveSnap < 0 || SupportFitsUnder(m_moveSnap, jack);
+
 	station.position = target;
-	station.yaw = m_move->yaw;
+	station.yaw = yaw;
 	station.object->SetPosition(station.position);
 	station.object->SetRotation(station.Rotation());
 	CarryRiders(station);
 
-	m_move->valid = StationFits(station, target, m_move->yaw, &player);
+	std::string blocked;
+	m_move->valid = fitsUnder && StationFits(station, target, yaw, &player, &blocked);
 	station.object->SetTint(m_move->valid ? glm::vec4(0.7f, 1.f, 0.7f, 1.f) : glm::vec4(1.f, 0.45f, 0.45f, 1.f));
 	station.object->SetEmissive(0.25f);
 
-	m_prompt = m_move->valid ? std::format("[LMB] or [F] Set the {} down here", station.name) : std::format("The {} doesn't fit here", station.name);
+	if (m_moveSnap >= 0 && !fitsUnder)
+		m_prompt = std::format("{}: jack the car up there first, for the stand to go under it", LiftPointName(m_moveSnap));
+	else if (m_moveSnap >= 0)
+		m_prompt = m_move->valid ? std::format("[LMB] or [F] Set the {} under {}", station.name, LiftPointName(m_moveSnap))
+			: std::format("The {} doesn't fit under {}{}", station.name, LiftPointName(m_moveSnap), blocked.empty() ? "" : ": " + blocked);
+	else
+		m_prompt = m_move->valid ? std::format("[LMB] or [F] Set the {} down here", station.name) : std::format("The {} doesn't fit here", station.name);
 	m_secondaryPrompt = "[R] Rotate   [RMB] Cancel";
 
 	// Set down with a click, E or F again (where it fits); right-click puts it back where it was.
@@ -1126,7 +1154,7 @@ void ShopWorld::DrawDebugBounds(const FirstPersonController& player) const
 	for (size_t i = 0; i < m_stations.size(); i++)
 		if (const auto& station = m_stations[i]; station.present && station.object)
 		{
-			if (i != m_carStation)
+			if (i != m_rig.carStation)
 			{
 				box(WorldBounds(station.object), DEBUG_STATION_COLOR);
 				continue;
@@ -1513,6 +1541,10 @@ std::string ShopWorld::SpannerLabel(size_t toolIndex) const
 		case HandToolKind::PIN_PRESS:		return "[LMB] Press a pin in   [RMB] Press one out";
 		case HandToolKind::RING_COMPRESSOR:	return "[LMB] Squeeze a piston's ring and push it home";
 		case HandToolKind::VALVE_SPRING_COMPRESSOR:	return "[E]/[LMB] on a valve in a loose head: squeeze its spring down";
+		case HandToolKind::WIRE_SPOOL:		return "Under the hood, aim at the harness's tails to wire it up";
+		case HandToolKind::HARD_LINE_SPOOL:	return "Under the hood, aim at the brake pipes' junction block or the clutch's master cylinder";
+		case HandToolKind::FUEL_HOSE_SPOOL:	return "Under the hood, aim at the end of the fuel line by the filter";
+		case HandToolKind::CAR_KEY:			return "In the driver's seat, click the ignition barrel right of the column to put it in";
 		default:							return "";
 	}
 }

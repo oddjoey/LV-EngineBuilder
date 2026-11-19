@@ -750,13 +750,13 @@ void ServiceManual::DrawFigure(ImDrawList* drawList, Figure figure, const ImVec2
 				Text(drawList, badge, IM_COL32(255, 255, 255, 255), std::to_string(wheel.order), label, 0.5f, 0.5f);
 				Text(drawList, { badge.x + out * 16.f, badge.y }, INK, wheel.name, label * 0.85f, out < 0.f ? 1.f : 0.f, 0.5f);
 			}
-			// The clutch's own line, to its release cylinder on the bellhousing.
+			// The clutch's own line, to its slave cylinder on the bellhousing.
 			ImVec2 release = { centre.x + bodyWidth * 0.08f, frontY + bodyHeight * 0.24f };
 			Dashed(drawList, master, release, ACCENT, 4.f, 1.2f);
 			drawList->AddCircleFilled(release, 9.f, GOOD, 16);
 			Text(drawList, release, IM_COL32(255, 255, 255, 255), "C", label * 0.8f, 0.5f, 0.5f);
 			drawList->AddLine(release, { bodyMax.x + 8.f, release.y }, INK_FAINT, 1.f);
-			Text(drawList, { bodyMax.x + 12.f, release.y }, INK, "Clutch release cylinder", label * 0.85f, 0.f, 0.5f);
+			Text(drawList, { bodyMax.x + 12.f, release.y }, INK, "Clutch slave cylinder", label * 0.85f, 0.f, 0.5f);
 			drawList->AddRectFilled(master - ImVec2(11.f, 7.f), master + ImVec2(11.f, 7.f), METAL, 3.f);
 			drawList->AddRect(master - ImVec2(11.f, 7.f), master + ImVec2(11.f, 7.f), METAL_DARK, 3.f);
 			drawList->AddLine(master, { bodyMin.x - 8.f, master.y }, INK_FAINT, 1.f);

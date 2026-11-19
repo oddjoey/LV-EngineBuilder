@@ -68,7 +68,8 @@ namespace
 		/* REAR_COIL_SPRING */			{ 2, L::REAR,	{ { C::LOWER_TRAILING_LINK } } },
 		/* REAR_SHOCK */				{ 2, L::REAR,	{ { C::REAR_AXLE } } },
 		/* STEERING_RACK */				{ 1, L::SINGLE, { { C::BODY_SHELL } } },
-		/* TIE_ROD_END */				{ 2, L::FRONT,	{ { C::STEERING_RACK }, { C::STEERING_KNUCKLE } } },
+		/* TIE_ROD_INNER */				{ 2, L::FRONT,	{ { C::STEERING_RACK } } },
+		/* TIE_ROD_END */				{ 2, L::FRONT,	{ { C::TIE_ROD_INNER }, { C::STEERING_KNUCKLE } } },
 		/* STEERING_COLUMN */			{ 1, L::SINGLE, { { C::STEERING_RACK }, { C::DASHBOARD } } },
 		/* BRAKE_BOOSTER */				{ 1, L::SINGLE, { { C::BODY_SHELL } } },
 		/* BRAKE_MASTER_CYLINDER */		{ 1, L::SINGLE, { { C::BRAKE_BOOSTER } } },
@@ -88,7 +89,7 @@ namespace
 		/* TRANSMISSION */				{ 1, L::SINGLE, { { C::RELEASE_BEARING } } },
 		/* TRANSMISSION_MOUNT */		{ 1, L::SINGLE, { { C::TRANSMISSION } } },
 		/* CLUTCH_MASTER_CYLINDER */	{ 1, L::SINGLE, { { C::BODY_SHELL } } },
-		/* CLUTCH_RELEASE_CYLINDER */	{ 1, L::SINGLE, { { C::TRANSMISSION }, { C::CLUTCH_MASTER_CYLINDER } } },
+		/* CLUTCH_SLAVE_CYLINDER */		{ 1, L::SINGLE, { { C::TRANSMISSION }, { C::CLUTCH_MASTER_CYLINDER } } },
 		/* DRIVESHAFT */				{ 1, L::SINGLE, { { C::TRANSMISSION }, { C::DIFFERENTIAL } } },
 		/* FUEL_TANK */					{ 1, L::SINGLE, { { C::BODY_SHELL } } },
 		/* FUEL_SENDER */				{ 1, L::SINGLE, { { C::FUEL_TANK } } },
@@ -109,6 +110,8 @@ namespace
 		// A wheel goes on with its tire mounted (fitted first, off the car), over the brake at its corner.
 		/* WHEEL */						{ 4, L::FOUR,	{ { C::TIRE }, { C::BRAKE_CALIPER }, { C::BRAKE_DRUM } } },
 		/* TIRE */						{ 4, L::FOUR,	{ { C::BODY_SHELL } } },
+		// The ignition's lock goes in the dash, from behind its face.
+		/* IGNITION_SWITCH */			{ 1, L::SINGLE, { { C::DASHBOARD } } },
 		/* ENGINE */					{ 1, L::SINGLE, { { C::ENGINE_MOUNT, true } } },
 	};
 	static_assert(std::size(RULES) == static_cast<size_t>(CarSlot::ENGINE) + 1, "Every car part slot needs a rule.");
@@ -148,6 +151,7 @@ namespace
 		{ "Front Bumper Bolt",			PartType::FRONT_BUMPER,			4,	PartType::BOLT_M10,	29.0 },
 		{ "Catalytic Converter Nut",	PartType::CATALYTIC_CONVERTER,	3,	PartType::NUT_M10,	43.0 },
 		{ "Lug Nut",					PartType::WHEEL,				4,	PartType::LUG_NUT,	103.0 },
+		{ "Clutch Slave Cylinder Bolt",	PartType::CLUTCH_SLAVE_CYLINDER, 2,	PartType::BOLT_M8,	19.0 },
 	};
 
 	const SlotRule& Rule(CarSlot slot)
@@ -178,7 +182,7 @@ namespace
 			case FluidCircuit::ENGINE_OIL:		return { C::ENGINE };
 			case FluidCircuit::COOLANT:			return { C::ENGINE, C::RADIATOR, C::RADIATOR_HOSE };
 			case FluidCircuit::BRAKES:			return { C::BRAKE_MASTER_CYLINDER, C::BRAKE_LINE_SET, C::BRAKE_HOSE, C::BRAKE_CALIPER, C::WHEEL_CYLINDER };
-			case FluidCircuit::CLUTCH:			return { C::CLUTCH_MASTER_CYLINDER, C::CLUTCH_RELEASE_CYLINDER };
+			case FluidCircuit::CLUTCH:			return { C::CLUTCH_MASTER_CYLINDER, C::CLUTCH_SLAVE_CYLINDER };
 			case FluidCircuit::TRANSMISSION:	return { C::TRANSMISSION };
 			case FluidCircuit::DIFFERENTIAL:	return { C::REAR_AXLE, C::DIFFERENTIAL };
 			case FluidCircuit::FUEL:			return { C::FUEL_TANK, C::FUEL_SENDER };
@@ -560,6 +564,7 @@ bool CarAssembly::Install(CarSlot slot, int index, const pPart& part, std::strin
 	}
 	position = part;
 	m_positions[part.get()] = { slot, index };
+	m_revision = NextAssemblyRevision();
 	OpenCircuitAt(slot, index);
 	if (slot == CarSlot::DIFFERENTIAL)
 		m_tune.finalDrive = part->GetSizeOffset() > 0.0 ? part->GetSizeOffset() : m_spec->finalDriveNominal;
@@ -577,6 +582,7 @@ pPart CarAssembly::Remove(CarSlot slot, int index)
 	OpenCircuitAt(slot, index);
 	position = nullptr;
 	m_positions.erase(part.get());
+	m_revision = NextAssemblyRevision();
 	// Its plug comes off with it (or all of a loom's, with the loom).
 	for (int p = 0; p < CAR_PLUGS; p++)
 	{
@@ -642,6 +648,7 @@ bool CarAssembly::SetEngine(int engine, std::string& error)
 		return false;
 	}
 	m_engine = engine;
+	m_revision = NextAssemblyRevision();
 	OpenCircuitAt(CarSlot::ENGINE, 0);
 	return true;
 }
@@ -652,6 +659,7 @@ int CarAssembly::TakeEngine()
 	if (engine >= 0)
 		OpenCircuitAt(CarSlot::ENGINE, 0);
 	m_engine = -1;
+	m_revision = NextAssemblyRevision();
 	return engine;
 }
 
@@ -814,7 +822,7 @@ std::vector<BleedPoint> CarAssembly::BleedPointsOf(CarSlot slot, int index)
 		case CarSlot::WHEEL_CYLINDER:
 			return { index == 0 ? BleedPoint::REAR_LEFT : BleedPoint::REAR_RIGHT };
 		case CarSlot::CLUTCH_MASTER_CYLINDER:
-		case CarSlot::CLUTCH_RELEASE_CYLINDER:
+		case CarSlot::CLUTCH_SLAVE_CYLINDER:
 			return { BleedPoint::CLUTCH };
 		default:
 			return {};
@@ -877,7 +885,7 @@ const char* CarPlugName(CarPlug plug)
 	static const char* NAMES[] = { "battery", "left headlight", "right headlight", "cooling fan", "starter", "ignition coil", "distributor",
 		"alternator", "coolant temperature sender", "oil pressure sender", "chassis ground",
 		"master cylinder's front port", "master cylinder's rear port", "front left brake hose", "front right brake hose", "rear brake hose",
-		"clutch release cylinder", "fuel tank", "fuel filter", "fuel pump" };
+		"clutch slave cylinder", "fuel tank", "fuel filter", "fuel pump" };
 	static_assert(std::size(NAMES) == CAR_PLUGS, "Every plug wants a name.");
 	return NAMES[std::clamp(static_cast<int>(plug), 0, CAR_PLUGS - 1)];
 }
@@ -897,7 +905,7 @@ std::optional<std::pair<CarSlot, int>> CarAssembly::PlugTarget(CarPlug plug)
 		case CarPlug::BRAKE_HOSE_LEFT:	return std::pair{ CarSlot::BRAKE_HOSE, 0 };
 		case CarPlug::BRAKE_HOSE_RIGHT:	return std::pair{ CarSlot::BRAKE_HOSE, 1 };
 		case CarPlug::BRAKE_HOSE_REAR:	return std::pair{ CarSlot::BRAKE_HOSE, 2 };
-		case CarPlug::CLUTCH_PIPE:		return std::pair{ CarSlot::CLUTCH_RELEASE_CYLINDER, 0 };
+		case CarPlug::CLUTCH_PIPE:		return std::pair{ CarSlot::CLUTCH_SLAVE_CYLINDER, 0 };
 		case CarPlug::FUEL_TANK:		return std::pair{ CarSlot::FUEL_TANK, 0 };
 		case CarPlug::FUEL_FILTER:		return std::pair{ CarSlot::FUEL_FILTER, 0 };
 		default:						return std::nullopt;

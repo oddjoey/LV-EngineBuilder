@@ -316,6 +316,11 @@ namespace ShopModels
 	inline const std::string CLUSTER_MARKINGS = "Cluster Markings";
 	inline const std::string TRANSMISSION_BODY = "Transmission (Body)";
 	inline const std::string GEAR_LEVER = "Gear Lever";
+	// The floor jack's moving pieces (see JackLayout), and its body.
+	inline const std::string JACK_BODY = "Floor Jack Body";
+	inline const std::string JACK_ARM = "Floor Jack Arm";
+	inline const std::string JACK_SADDLE = "Floor Jack Saddle";
+	inline const std::string JACK_HANDLE = "Floor Jack Handle";
 	inline const std::string HANDBRAKE_LEVER = "Handbrake Lever";
 	inline const std::string HEADLIGHT_BEAM = "Headlight Beam";
 	inline const std::string STOP_LAMP = "Stop Lamp";
@@ -345,6 +350,8 @@ namespace ShopModels
 	inline const std::string HARNESS_WIRE = "Harness Wire";
 	inline const std::string HARNESS_CLIP = "Harness Clip";
 	inline const std::string GROUND_STUD = "Ground Stud";
+	inline const std::string GROUND_LUG = "Ground Strap Lug";
+	inline const std::string BATTERY_CLAMP = "Battery Lead Clamp";
 	// The car's pipes, done up like its plugs: a hard pipe's flare nut and the port it screws into, a hose's clipped
 	// end and the stub it pushes onto; and where each line set's pipes come from in the bay.
 	inline const std::string PIPE_UNION = "Pipe Union";

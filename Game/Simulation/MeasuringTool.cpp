@@ -381,7 +381,7 @@ namespace ToolCatalog
 			// The project car's tools. (Last again, for the same reason.)
 			hand("Fluid Funnel", "A funnel and a jug. At a filler on the car, hold the left button to pour in the fluid picked (R picks another "
 				"from what's in stock), the right button to drain the circuit into the pan.", HandToolKind::FUNNEL, 8.0);
-			hand("Brake Bleeder Kit", "A clear hose and a catch bottle for a bleed nipple. Click on a caliper, wheel cylinder or the clutch release "
+			hand("Brake Bleeder Kit", "A clear hose and a catch bottle for a bleed nipple. Click on a caliper, wheel cylinder or the clutch slave "
 				"cylinder: someone pumps the pedal, the nipple's cracked, and you watch the bubbles. Keep the reservoir topped up.",
 				HandToolKind::BRAKE_BLEEDER, 18.0);
 			hand("Strut Spring Compressor", "Two hooked screws that squeeze a coil spring short. Aimed at a loose front strut, hold the left button to "
@@ -411,19 +411,31 @@ namespace ToolCatalog
 			hand("Valve Spring Compressor", "A C-clamp for the head off the engine: its cup over a valve's spring, its foot under the valve. Aim it "
 				"at a valve with its spring in and press E: it squeezes the spring down so the retainer and keepers go on (or come off). Then E "
 				"on the compressor takes it off, for the next valve.", HandToolKind::VALVE_SPRING_COMPRESSOR, 35.0);
-			// What gets the car off the ground. (Last again.)
-			hand("Floor Jack", "A two-tonne trolley jack. Carry it to the car and click on a lifting point (there are two at each corner, marked "
-				"while it's in hand) to slide it under. Aim at it there and hold the left button to pump that corner up, the right to let it "
-				"down. It only lifts the corner it's under.", HandToolKind::FLOOR_JACK, 85.0);
-			hand("Jack Stand", "A ratcheting stand. With a corner jacked up, click on the other lifting point at that corner to put the stand "
-				"under: it holds the corner at that height once the jack's let down or taken away. Sold singly; a corner with nothing "
-				"under it comes down.", HandToolKind::JACK_STAND, 22.0);
+			// For the car's wiring: held, the harness's plugs are taken off its loom and run to what they plug into.
+			// (Last, so saved tool lists keep their order; every shop has one, saves from before it included.)
+			hand("Wire Spool & Crimpers", "A reel of automotive wire, crimpers and connectors. Hold it under the car's hood and aim at the harness's "
+				"tails to pick a plug, run its wire (E clips it along the way), and push it onto what it feeds. Wires can't be run without it.",
+				HandToolKind::WIRE_SPOOL, 15.0);
+			// And the car's plumbing the same way: the brakes' and the clutch's hard lines, and the fuel hoses. (Last again.)
+			hand("Hard Line Spool & Flaring Tool", "A coil of steel brake line, a tube bender and a flaring tool. Hold it under the car's hood and aim "
+				"at the brake pipes' junction block or the clutch's master cylinder to pick a pipe, lead it (E clips it along the way) and screw its "
+				"union in. The brake and clutch pipes can't be worked without it.", HandToolKind::HARD_LINE_SPOOL, 30.0);
+			hand("Fuel Hose Spool & Clamps", "A reel of fuel hose and a bag of hose clamps. Hold it under the car's hood and aim at the end of the fuel "
+				"line by the filter to pick a hose, lead it (E clips it along the way) and push it on. The fuel hoses can't be worked without it.",
+				HandToolKind::FUEL_HOSE_SPOOL, 20.0);
+			// The car's key: the shop's from the start, hung on the tool board, and never sold. (Last, so saved tool lists keep
+			// their order; a shop from before it gets it too.)
+			hand("LE86 Key", "The car's ignition key, on a red fob. Sat in the driver's seat, hold it and click the ignition barrel right of "
+				"the steering column to put it in: the car won't start without it. [RMB] on the barrel, switched off, takes it out again.",
+				HandToolKind::CAR_KEY, 0.0);
+			list.back().notSold = true;
 
 			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
 			// and the service manual (hung on the tool board with the rest). Everything else is bought, the pin press and
 			// ring compressor included (the starting money covers those).
 			for (auto& tool : list)
-				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual" })
+				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual",
+					"Wire Spool & Crimpers", "Hard Line Spool & Flaring Tool", "Fuel Hose Spool & Clamps", "LE86 Key" })
 					if (tool.name == starter)
 						tool.ownedAtStart = true;
 

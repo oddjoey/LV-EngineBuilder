@@ -44,6 +44,10 @@ void PlayerAvatar::Spawn(ShopWorld& world, const glm::vec3& feet, float yaw, con
 	{
 		pObject object = world.Spawn(model, "", feet, yaw);
 		object->SetPickable(false);
+		// Not in the lamps' shadow maps: they're redrawn one lamp a frame while anything moves (see the renderer), so a
+		// body that moves every frame would have its own lagging shadow flicker over it. (The sun's, redrawn every frame,
+		// it still casts.)
+		object->SetCastsLampShadows(false);
 		return object;
 	};
 	m_torso = spawn(ShopModels::PLAYER);
@@ -95,6 +99,13 @@ void PlayerAvatar::SetVisible(bool visible)
 	for (auto* object : Pieces())
 		if (*object)
 			(*object)->SetVisible(visible && (*object != m_tail || m_look.tail));
+}
+
+void PlayerAvatar::SetShadowOnly(bool shadowOnly)
+{
+	for (auto* object : Pieces())
+		if (*object)
+			(*object)->SetShadowOnly(shadowOnly);
 }
 
 void PlayerAvatar::SetLook(const MonkeyLook& look)

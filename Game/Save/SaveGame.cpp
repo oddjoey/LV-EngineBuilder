@@ -55,12 +55,26 @@ namespace
 	// it moved down one.
 	// 50: which of the car's doors, hood, trunk lid and fuel flap are open, and whether its hood is latched.
 	constexpr int OLDEST_READ = 48;
-	constexpr int VERSION = 50;
+	// 51: what holds the car up: the jack or stand (by station) under each of its lifting points and how far it's up, and
+	// how high each corner of the car is.
+	// 52: inner tie rods (a part type, and a car slot, after the steering rack: the ones after moved up one). A car from
+	// before has them on wherever its tie rod ends are.
+	// 53: the gear the car was left in, and whether its handbrake's on.
+	// 54: the car's key, if it's in the ignition (a tool: its id, or -1). Before, it's on the tool board.
+	// 55: the ignition switch (a part type after the tire: the ones after it moved up one).
+	// 56: a car for each player: three more car stations after the first (the furniture's move up three).
+	// 57: every car's doors, lift, controls and key (how many cars, then each).
+	constexpr int VERSION = 58;
 	constexpr const char* MAGIC = "LVSAVE";
 
 	constexpr int PART_TYPES = static_cast<int>(PartType::COUNT);
-	// Where the engine harness was before version 49: the fuse box's number now.
-	constexpr long long OLD_ENGINE_HARNESS = static_cast<long long>(PartType::FUSE_BOX);
+	// Where the engine harness was before version 49: the fuse box's number before version 52 (the inner tie rod, before it,
+	// moved it up one).
+	constexpr long long OLD_ENGINE_HARNESS = static_cast<long long>(PartType::FUSE_BOX) - 1;
+	// Before version 52, this number and those after it were one less.
+	constexpr long long FIRST_SHIFTED_IN_52 = static_cast<long long>(PartType::TIE_ROD_INNER);
+	// Before version 55, this number and those after it were one less (the ignition switch came in before them).
+	constexpr long long FIRST_SHIFTED_IN_55 = static_cast<long long>(PartType::IGNITION_SWITCH);
 
 	// Before version 9 every nut and bolt had a part type (and a slot) of its own job, and the head
 	// bolt sat among the ancillaries. These map the old numbers to the sizes that replaced them.
@@ -192,8 +206,21 @@ namespace
 		std::array<float, Workshop::MAX_ENGINES> crankAngles = {};
 		bool moveIn = false;	// from the old garage into the shack (see Load)
 		bool doorOpen = true;
-		std::vector<bool> carPanelsOpen;	// by ShopWorld::CarPanel: empty in a save from before version 50 (all shut)
-		bool hoodLatched = true;
+		// Each car's (the one car's, before 57).
+		struct SavedCar
+		{
+			std::vector<bool> carPanelsOpen;	// by ShopWorld::CarPanel: empty in a save from before version 50 (all shut)
+			bool hoodLatched = true;
+			// Under each of the car's lifting points, the jack or stand's station (-1: none) and its height; and each corner's.
+			std::vector<std::pair<long long, float>> carSupports;
+			std::vector<float> cornerHeights;
+			// The gear the car's left in (-1 reverse, 0 neutral, 1 to 5) and its handbrake: in first with it on, before 53.
+			int carGear = 1;
+			bool handbrakeOn = true;
+			// The car's key if it's in the ignition (none before 54).
+			ItemRef ignitionKey = {};
+		};
+		std::vector<SavedCar> cars = std::vector<SavedCar>(1);
 		glm::vec3 playerPosition = {};
 		float playerYaw = 0.f;
 		float playerPitch = 0.f;
@@ -230,6 +257,8 @@ std::string SaveGame::LastSavedText()
 
 bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const FirstPersonController& player, float timeOfDay, std::string& error)
 {
+	// (The car's state here is the first car's: a game played on its own has the one car. Other players' cars are a server's.)
+	ShopWorld::CarScope firstCar(world, 0, &workshop);
 	Writer out;
 	out.Word(MAGIC).Int(VERSION).Line();
 	out.Word("time").Num(timeOfDay).Line();
@@ -362,6 +391,17 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 			out.Int(engine).Int(cylinder);
 		out.Line();
 	}
+	{
+		// The engines with no stand of their own (each that came in a car another player joined with).
+		std::vector<int> standless;
+		for (int engine = 0; engine < workshop.GetEngineCount(); engine++)
+			if (!workshop.m_engines[engine]->stand)
+				standless.push_back(engine);
+		out.Word("nostand").Int(standless.size());
+		for (int engine : standless)
+			out.Int(engine);
+		out.Line();
+	}
 	// Rings set in the bores of blocks off the engine: the ring, the block, the bore, and whether it's squared.
 	out.Word("borerings").Int(workshop.m_boreRings.size());
 	for (const auto& [ring, at] : workshop.m_boreRings)
@@ -462,10 +502,27 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 		out.Num(world.m_engineRolls[engine]).Num(world.m_crankAngles[engine]);
 	out.Line();
 	out.Word("door").Int(world.m_doorOpen).Line();
-	out.Word("car_panels").Int(world.m_carPanels.size());
-	for (const auto& panel : world.m_carPanels)
-		out.Int(panel.open ? 1 : 0);
-	out.Int(world.m_hoodLatched ? 1 : 0).Line();
+	// Each car's doors, lift, controls and key.
+	out.Word("cars").Int(workshop.GetCarCount()).Line();
+	for (int car = 0; car < workshop.GetCarCount(); car++)
+	{
+		ShopWorld::CarScope scope(world, car, &workshop);
+		out.Word("car_panels").Int(world.m_rig.carPanels.size());
+		for (const auto& panel : world.m_rig.carPanels)
+			out.Int(panel.open ? 1 : 0);
+		out.Int(world.m_rig.hoodLatched ? 1 : 0).Line();
+		out.Word("car_lift").Int(world.m_rig.carSupports.size());
+		for (const auto& support : world.m_rig.carSupports)
+			out.Int(support.station == ShopWorld::NO_STATION ? -1 : static_cast<long long>(support.station)).Num(support.height);
+		out.Int(world.m_rig.cornerHeights.size());
+		for (float height : world.m_rig.cornerHeights)
+			out.Num(height);
+		out.Line();
+		out.Word("car_controls").Int(world.m_rig.drive.gear).Int(world.m_rig.handbrakeOn ? 1 : 0).Line();
+		out.Word("car_key");
+		WriteItemRef(out, world.m_rig.ignitionKey);
+		out.Line();
+	}
 	glm::vec3 feet = player.GetFeetPosition();
 	out.Word("player").Num(feet.x).Num(feet.y).Num(feet.z).Num(player.GetYaw()).Num(player.GetPitch()).Line();
 	out.Word("end").Line();
@@ -498,6 +555,7 @@ bool SaveGame::Save(const Workshop& workshop, const ShopWorld& world, const Firs
 
 bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController& player, float& timeOfDay, std::string& error)
 {
+	world.ActivateCar(0, workshop);
 	std::ifstream file(FILE_NAME, std::ios::binary);
 	if (!file)
 	{
@@ -652,13 +710,15 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		bool resized = false;	// an M9 or M11, now another size
 		bool oldHeadBolt = false;
 		bool retired = false;	// an engine harness, read through and left out
-		if (version >= 49)
+		if (version >= 55)
 			type = in.Enumerated<PartType>(PART_TYPES);
 		else if (version >= 16)
 		{
 			long long old = in.Int();
-			retired = old == OLD_ENGINE_HARNESS;
-			old -= old > OLD_ENGINE_HARNESS ? 1 : 0;
+			retired = version < 49 && old == OLD_ENGINE_HARNESS;
+			old -= version < 49 && old > OLD_ENGINE_HARNESS ? 1 : 0;
+			old += version < 52 && old >= FIRST_SHIFTED_IN_52 ? 1 : 0;
+			old += old >= FIRST_SHIFTED_IN_55 ? 1 : 0;
 			if (old < 0 || old >= PART_TYPES)
 				in.Fail("a value is out of range");
 			else if (!retired)
@@ -703,6 +763,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		for (const char* partner : { " (block #", " (head #", " (rod #" })
 			if (auto at = part->m_name.find(partner); at != std::string::npos)
 				part->m_name.erase(at);
+		// The clutch's release cylinder is called its slave cylinder now.
+		if (auto at = part->m_name.find("Release Cylinder"); at != std::string::npos)
+			part->m_name.replace(at, std::string_view("Release Cylinder").size(), "Slave Cylinder");
 		part->m_damageReason = damage;
 		part->m_matchedTo = matchedTo;
 		part->m_matchedPosition = matchedPosition;
@@ -1075,6 +1138,14 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			squaredRings.push_back({ engine, static_cast<int>(in.Int()) });
 		}
 	}
+	std::vector<int> standless;
+	if (version >= 58)
+	{
+		in.Expect("nostand");
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+			standless.push_back(static_cast<int>(in.Int()));
+	}
 	std::map<uint32_t, BoreRing> boreRings;
 	if (version >= 36)
 	{
@@ -1129,6 +1200,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	// come last, so the stations before them keep their places and the new ones their defaults.
 	// The shop's own equipment, then a station for each piece of furniture.
 	size_t expectedStations = world.m_fixedStations + furniture.size();
+	if (version < 56)
+		expectedStations -= ShopWorld::MAX_CARS - 1;	// the other players' cars
 	if (version < 38)
 		expectedStations -= 1;	// the project car
 	if (version < 30)
@@ -1154,7 +1227,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	// moves down one. Before 20 there was no door, and before 30 no hoist: the furniture moves up to make
 	// room for them.
 	// Since version 38 the project car comes after the hoist: the stations before it are numbered as they were.
-	const size_t carStation = world.m_fixedStations - 1;
+	const size_t carStation = world.m_fixedStations - ShopWorld::MAX_CARS;	// the first car's
 	const size_t hoistStation = carStation - 1;
 	const size_t bayDoorStation = carStation - 2;
 	const size_t cotStation = bayDoorStation;	// where the bed was, in those saves
@@ -1166,6 +1239,10 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 		saved.stations.insert(saved.stations.begin() + hoistStation, { world.m_stations[hoistStation].homePosition, world.m_stations[hoistStation].homeYaw, false });
 	if (!in.Failed() && version < 38 && saved.stations.size() >= carStation)
 		saved.stations.insert(saved.stations.begin() + carStation, { world.m_stations[carStation].homePosition, world.m_stations[carStation].homeYaw, false });
+	// Since 56 the other players' cars come after the first, before the furniture.
+	if (!in.Failed() && version < 56 && saved.stations.size() >= carStation + 1)
+		for (int car = 1; car < ShopWorld::MAX_CARS; car++)
+			saved.stations.insert(saved.stations.begin() + carStation + car, { world.m_stations[carStation + car].homePosition, world.m_stations[carStation + car].homeYaw, false });
 	// Before version 27 the shop was a garage twice the size, with the house beside it: everything moves into
 	// the shack, the equipment to its usual spots (furniture to where new furniture goes).
 	saved.moveIn = version < 27;
@@ -1324,13 +1401,48 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	}
 	in.Expect("door");
 	saved.doorOpen = in.Int() != 0;
-	if (version >= 50)
+	// Each car's doors, lift, controls and key (before 57, the one car's).
+	size_t carCount = 1;
+	if (version >= 57)
 	{
-		in.Expect("car_panels");
-		size_t panels = in.Count();
-		for (size_t p = 0; p < panels && !in.Failed(); p++)
-			saved.carPanelsOpen.push_back(in.Int() != 0);
-		saved.hoodLatched = in.Int() != 0;
+		in.Expect("cars");
+		carCount = (std::min)(in.Count(), static_cast<size_t>(ShopWorld::MAX_CARS));
+	}
+	saved.cars.assign(carCount, {});
+	for (auto& car : saved.cars)
+	{
+		if (version >= 50)
+		{
+			in.Expect("car_panels");
+			size_t panels = in.Count();
+			for (size_t p = 0; p < panels && !in.Failed(); p++)
+				car.carPanelsOpen.push_back(in.Int() != 0);
+			car.hoodLatched = in.Int() != 0;
+		}
+		if (version >= 51)
+		{
+			in.Expect("car_lift");
+			size_t points = in.Count();
+			for (size_t p = 0; p < points && !in.Failed(); p++)
+			{
+				long long station = in.Int();
+				car.carSupports.push_back({ station, static_cast<float>(in.Num()) });
+			}
+			size_t corners = in.Count();
+			for (size_t c = 0; c < corners && !in.Failed(); c++)
+				car.cornerHeights.push_back(static_cast<float>(in.Num()));
+		}
+		if (version >= 53)
+		{
+			in.Expect("car_controls");
+			car.carGear = static_cast<int>(std::clamp<long long>(in.Int(), -1, 5));
+			car.handbrakeOn = in.Int() != 0;
+		}
+		if (version >= 54)
+		{
+			in.Expect("car_key");
+			car.ignitionKey = ReadItemRef(in);
+		}
 	}
 	in.Expect("player");
 	saved.playerPosition = ReadVec3(in);
@@ -1460,6 +1572,9 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	for (auto [engine, cylinder] : unseated)
 		if (engine >= 0 && engine < workshop.GetEngineCount() && workshop.GetAssembly(engine).Get(AssemblySlot::CONNECTING_ROD, cylinder))
 			workshop.m_engines[engine]->unseated.insert(cylinder);
+	for (int engine : standless)
+		if (engine >= 0 && engine < workshop.GetEngineCount())
+			workshop.m_engines[engine]->stand = false;
 	// Rings squared in their bores, as long as they're there on their own.
 	for (auto [engine, cylinder] : squaredRings)
 		if (engine >= 0 && engine < workshop.GetEngineCount() && workshop.RingsInBore(engine).contains(cylinder))
@@ -1478,7 +1593,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			&& workshop.EngineOf(*partsById.at(part)) < 0 && workshop.EngineOf(*partsById.at(at.head)) < 0)
 			workshop.m_headFittings[part] = at;
 	// The project car, once its parts and the engines are in place.
-	workshop.m_car.reset();
+	workshop.m_cars.clear();
+	workshop.SetActiveCar(0);
 	workshop.m_carCarried.clear();
 	workshop.m_fluidStock = {};
 	if (!carText.empty() && !workshop.RestoreCarState(carText))
@@ -1517,7 +1633,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 				// Stations the save didn't know about start at home, there only if owned.
 				station.position = station.homePosition;
 				station.yaw = station.homeYaw;
-				station.present = station.type == StationType::ENGINE_STAND ? station.engineIndex < workshop.GetEngineCount()
+				station.present = station.type == StationType::ENGINE_STAND ? workshop.HasStand(station.engineIndex)
 					: station.type == StationType::MACHINE ? workshop.OwnsMachine(static_cast<size_t>(station.machineIndex))
 					: station.type == StationType::LIFT ? workshop.OwnsUpgrade(UpgradeKind::POST_LIFT)
 					: station.type == StationType::DYNO ? workshop.OwnsDyno()
@@ -1626,6 +1742,8 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			visual.place = ItemPlace::INVENTORY;
 	world.m_equipped = {};
 	world.SyncHand();
+	// (Every item's been put somewhere: what's worked out from where they are is worked out again, LayoutItems.)
+	world.m_placeRevision++;
 
 	world.m_toolSizes = saved.toolSizes;
 	world.m_torqueSettings = saved.torqueSettings;
@@ -1642,16 +1760,63 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	world.m_crankAngles = saved.crankAngles;
 	world.m_camCranks = saved.crankAngles;
 	world.SetDoorOpen(saved.doorOpen, true);
-	// The car's doors and lids as they were left: already there, not swinging open as the game starts.
-	for (size_t p = 0; p < world.m_carPanels.size(); p++)
+	// Each car as it was left (its rig made active for it), the first car active after.
+	for (int carNumber = 0; carNumber < static_cast<int>(saved.cars.size()) && carNumber < workshop.GetCarCount(); carNumber++)
 	{
-		bool open = p < saved.carPanelsOpen.size() && saved.carPanelsOpen[p];
-		world.m_carPanels[p] = { open ? 1.f : 0.f, open };
+		const auto& car = saved.cars[carNumber];
+		world.ActivateCar(carNumber, workshop);
+		// The car's doors and lids as they were left: already there, not swinging open as the game starts.
+		for (size_t p = 0; p < world.m_rig.carPanels.size(); p++)
+		{
+			bool open = p < car.carPanelsOpen.size() && car.carPanelsOpen[p];
+			world.m_rig.carPanels[p] = { open ? 1.f : 0.f, open };
+		}
+		world.m_rig.hoodLatched = car.hoodLatched && !(car.carPanelsOpen.size() > static_cast<size_t>(ShopWorld::CarPanel::HOOD)
+			&& car.carPanelsOpen[static_cast<size_t>(ShopWorld::CarPanel::HOOD)]);
+		world.m_rig.carPanelsMoving = true;
+		// What holds the car up, and the car up on it as it was (not let down and pumped back up as the game starts). Only a
+		// jack or stand that's there now goes back under it.
+		for (size_t p = 0; p < world.m_rig.carSupports.size(); p++)
+		{
+			auto& support = world.m_rig.carSupports[p];
+			support.station = ShopWorld::NO_STATION;
+			if (p >= car.carSupports.size())
+				continue;
+			auto [station, height] = car.carSupports[p];
+			if (station >= 0 && static_cast<size_t>(station) < world.m_stations.size() && world.m_stations[station].present
+				&& world.IsCarSupport(world.m_stations[station]))
+			{
+				support.station = static_cast<size_t>(station);
+				support.height = height;
+			}
+		}
+		// The gear lever and the handbrake as they were left: already there, not moving into place as the game starts.
+		world.m_rig.drive.gear = car.carGear;
+		world.m_rig.leverAt = ShopWorld::GearGate(car.carGear);
+		world.m_rig.handbrakeOn = car.handbrakeOn;
+		world.m_rig.handbrakeUp = car.handbrakeOn ? 1.f : 0.f;
+		// The key back in the ignition (it was saved as hung on the tool board), if it's still the car's key.
+		world.m_rig.ignitionKey = {};
+		world.m_rig.keyOn = false;
+		if (car.ignitionKey.IsTool() && ToolCatalog::Of(car.ignitionKey.id).handKind == HandToolKind::CAR_KEY)
+			if (auto* key = world.Find(car.ignitionKey); key && key->place == ItemPlace::STORAGE)
+			{
+				world.m_rig.ignitionKey = car.ignitionKey;
+				world.SetPlace(*key, ItemPlace::CAR);
+			}
+		for (size_t c = 0; c < world.m_rig.cornerHeights.size(); c++)
+		{
+			world.m_rig.cornerHeights[c] = c < car.cornerHeights.size() ? car.cornerHeights[c] : 0.f;
+			world.m_rig.cornerSpeeds[c] = 0.f;
+		}
+		if (world.m_rig.carStation < world.m_stations.size() && world.m_stations[world.m_rig.carStation].present)
+		{
+			world.m_stations[world.m_rig.carStation].object->SetPosition(world.CarOrigin());
+			world.m_stations[world.m_rig.carStation].object->SetRotation(world.CarRotation());
+		}
+		world.m_rig.carLaidOutAt = glm::vec3(-1e9f);
 	}
-	world.m_hoodLatched = saved.hoodLatched && !(saved.carPanelsOpen.size() > static_cast<size_t>(ShopWorld::CarPanel::HOOD)
-		&& saved.carPanelsOpen[static_cast<size_t>(ShopWorld::CarPanel::HOOD)]);
-	world.m_carPanelsMoving = true;
-	world.m_carLaidOutAt = glm::vec3(-1e9f);
+	world.ActivateCar(0, workshop);
 	world.RebuildCollision();
 
 	player.SetPosition(saved.moveIn ? world.GetSpawnPosition() : saved.playerPosition);
@@ -1677,6 +1842,7 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 
 void SaveGame::StartNew(Workshop& workshop, ShopWorld& world, FirstPersonController& player)
 {
+	world.ActivateCar(0, workshop);
 	// Everything back at home before the parts are laid out on the shelves (or they'd land wherever the
 	// shelves stood in the last game), and again after: the furniture's stations are rebuilt in between.
 	auto sendHome = [&]() {
@@ -1687,7 +1853,7 @@ void SaveGame::StartNew(Workshop& workshop, ShopWorld& world, FirstPersonControl
 			if (station.type == StationType::MACHINE)
 				station.present = workshop.OwnsMachine(station.machineIndex);
 			else if (station.type == StationType::ENGINE_STAND)
-				station.present = station.engineIndex < workshop.GetEngineCount();
+				station.present = workshop.HasStand(station.engineIndex);
 			else if (station.type == StationType::LIFT)
 				station.present = workshop.OwnsUpgrade(UpgradeKind::POST_LIFT);
 			else if (station.type == StationType::DYNO)
@@ -1744,6 +1910,18 @@ void SaveGame::ResetWorld(Workshop& workshop, ShopWorld& world)
 	world.m_coats.clear();
 	world.m_lastPaint.reset();
 	world.m_carriedPackage = 0;
+	// Every car's key out, its engine off, nobody sat in it.
+	for (int car = 0; car < static_cast<int>(world.m_rigs.size()); car++)
+	{
+		auto& rig = world.RigAt(car);
+		rig.ignitionKey = {};
+		rig.keyOn = false;
+		rig.drive.active = false;
+		rig.seat = -1;
+		rig.heldPlug = -1;
+	}
+	world.m_seatedCar = -1;
+	world.m_focusCar = 0;
 	world.m_nextPackageId = 1;
 	// Furniture is the workshop's: the pieces it has get stations of their own again.
 	world.RemoveFurniture();

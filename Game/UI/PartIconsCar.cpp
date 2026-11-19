@@ -259,6 +259,13 @@ namespace PartIcons
 					path({ { x, 0.50f }, { x + 0.02f, 0.62f }, { x + 0.04f, 0.50f }, { x + 0.06f, 0.62f } }, 0.6f);
 				stroke(0.38f, 0.49f, 0.30f, 0.22f, 2.2f);
 				break;
+			case PartType::TIE_ROD_INNER:
+				disc(0.14f, 0.5f, 0.09f, 1.4f);
+				stroke(0.22f, 0.5f, 0.92f, 0.5f, 1.8f);
+				for (int i = 0; i < 4; i++)
+					stroke(0.66f + i * 0.07f, 0.44f, 0.69f + i * 0.07f, 0.56f, 0.7f);
+				box(0.56f, 0.45f, 0.62f, 0.55f);
+				break;
 			case PartType::TIE_ROD_END:
 				stroke(0.08f, 0.42f, 0.56f, 0.42f, 2.4f);
 				for (int i = 0; i < 4; i++)
@@ -402,7 +409,7 @@ namespace PartIcons
 			case PartType::CLUTCH_MASTER_CYLINDER:
 				master(0.24f, 0.76f, 0.38f, 0.58f);
 				break;
-			case PartType::CLUTCH_RELEASE_CYLINDER:
+			case PartType::CLUTCH_SLAVE_CYLINDER:
 				box(0.16f, 0.40f, 0.60f, 0.62f);
 				path({ { 0.60f, 0.42f }, { 0.64f, 0.60f }, { 0.68f, 0.42f }, { 0.72f, 0.60f } }, 0.9f);
 				stroke(0.60f, 0.51f, 0.94f, 0.51f, 1.6f);
@@ -468,6 +475,14 @@ namespace PartIcons
 				dot(0.37f, 0.30f, 0.035f);
 				dot(0.63f, 0.30f, 0.035f);
 				stroke(0.32f, 0.52f, 0.68f, 0.52f, 0.8f);
+				break;
+			case PartType::IGNITION_SWITCH:
+				// The lock's face: its bezel, the keyway, and the switch's body behind with its plug.
+				ring(0.38f, 0.42f, 0.24f, 1.4f);
+				ring(0.38f, 0.42f, 0.14f);
+				stroke(0.38f, 0.33f, 0.38f, 0.51f, 1.4f);
+				box(0.56f, 0.62f, 0.86f, 0.86f, 0.04f);
+				stroke(0.86f, 0.74f, 0.94f, 0.74f, 1.2f);
 				break;
 			case PartType::STARTER:
 				box(0.30f, 0.46f, 0.88f, 0.78f, 0.06f);

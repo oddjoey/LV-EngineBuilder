@@ -22,6 +22,8 @@ public:
 	void Remove();
 	bool IsSpawned() const { return m_torso != nullptr; }
 	void SetVisible(bool visible);
+	// Only its shadow drawn, the rest of it unseen (this player's own, in first person).
+	void SetShadowOnly(bool shadowOnly);
 	// Its colours, and whether it has a tail.
 	void SetLook(const MonkeyLook& look);
 

@@ -36,6 +36,7 @@ private:
 	std::array<std::vector<AudioManager::Clip>, static_cast<size_t>(Sound::COUNT)> m_clips = {};
 	AudioManager::Clip					m_engineClip = 0, m_doorClip = 0, m_liftClip = 0, m_windClip = 0, m_humClip = 0;
 	AudioManager::Loop					m_engineLoop = 0, m_doorLoop = 0, m_liftLoop = 0, m_windLoop = 0, m_humLoop = 0;
+	std::array<AudioManager::Loop, 8>		m_carLoops = {};	// each car's engine, while it runs
 
 	glm::vec3							m_listener = {};
 	glm::vec3							m_listenerRight = { 1.f, 0.f, 0.f };

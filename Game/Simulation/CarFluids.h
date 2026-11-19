@@ -30,7 +30,7 @@ enum class FluidCircuit
 	ENGINE_OIL,		// in the engine's pan, poured in at the valve cover cap
 	COOLANT,		// the engine's jackets, the radiator and the hoses
 	BRAKES,			// the master cylinder, the lines and the calipers and wheel cylinders
-	CLUTCH,			// the clutch master and release cylinders
+	CLUTCH,			// the clutch master and slave cylinders
 	TRANSMISSION,	// the gearbox, filled at its side plug till it runs out
 	DIFFERENTIAL,	// the axle, likewise
 	FUEL,			// the tank
@@ -52,7 +52,7 @@ enum class FluidFit
 };
 FluidFit FluidFitFor(FluidCircuit circuit, FluidProduct product);
 
-// A brake or clutch bleed point: a caliper's or wheel cylinder's nipple, or the clutch release cylinder's.
+// A brake or clutch bleed point: a caliper's or wheel cylinder's nipple, or the clutch slave cylinder's.
 enum class BleedPoint
 {
 	REAR_RIGHT,		// farthest from the master cylinder: bled first

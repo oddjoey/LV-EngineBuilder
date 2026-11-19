@@ -46,8 +46,10 @@ enum class HandToolKind
 	ALIGNMENT_GAUGE,	// reads a front wheel's camber, caster and toe
 	SCREWDRIVER,		// the carburettor's idle speed and mixture screws, and the rockers' lash adjusters
 	VALVE_SPRING_COMPRESSOR,	// a C-clamp over a valve in a loose head: squeezes its spring down for the retainer and keepers
-	FLOOR_JACK,			// a trolley jack: slid under one of the car's lifting points and pumped up
-	JACK_STAND			// a stand put under a corner the jack has lifted, to hold it there
+	WIRE_SPOOL,			// a spool of wire and crimpers: held to run the car's harness wires to what they plug into
+	HARD_LINE_SPOOL,	// a coil of hard line and a flaring tool: held to work the brake and clutch pipes
+	FUEL_HOSE_SPOOL,	// a reel of fuel hose and its clamps: held to work the fuel hoses
+	CAR_KEY				// the car's ignition key: it has to be put in its barrel on the dash before the car starts
 };
 
 struct MeasuringTool
@@ -64,6 +66,8 @@ struct MeasuringTool
 	double sigma = 0.0;			// repeatability error, 1 standard deviation
 	double price = 0.0;
 	bool ownedAtStart = false;
+	// Not in the store: the shop has the one it starts with (the car's key).
+	bool notSold = false;
 	// The shop rank (see ShopRank) the store sells it from: the better tools are earned.
 	int rank = 1;
 	// A perk (a SkillKind) the shop needs before the store sells it, or -1.

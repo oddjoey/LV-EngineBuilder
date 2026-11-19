@@ -223,8 +223,9 @@ void ServiceManual::BuildChassis(bool imperial)
 			case HandToolKind::TIRE_GAUGE:
 			case HandToolKind::ALIGNMENT_GAUGE:
 			case HandToolKind::SCREWDRIVER:
-			case HandToolKind::FLOOR_JACK:
-			case HandToolKind::JACK_STAND:
+			case HandToolKind::WIRE_SPOOL:
+			case HandToolKind::HARD_LINE_SPOOL:
+			case HandToolKind::FUEL_HOSE_SPOOL:
 				item(tool.name, tool.description, ToolModelName(tool), { { "Price", std::format("${:.0f}", tool.price) } });
 				break;
 			default:
@@ -302,7 +303,8 @@ void ServiceManual::BuildChassis(bool imperial)
 	heading("Steering");
 	figure("Steering wheel free play", lengths(tune.steeringWheelPlay) + " at the rim");
 	step("Steering rack, across the crossmember.", { PartType::STEERING_RACK });
-	step("Tie rod ends, from the rack to each knuckle: they set the toe.", { PartType::TIE_ROD_END });
+	step("Inner tie rods, screwed onto the ends of the rack under its boots.", { PartType::TIE_ROD_INNER });
+	step("Tie rod ends, from the inner tie rods to each knuckle: they set the toe.", { PartType::TIE_ROD_END });
 	step("Steering column, through the firewall to the rack, once the dashboard is in; then the wheel.", { PartType::STEERING_COLUMN, PartType::STEERING_WHEEL });
 	figure("Steering rack bolts", holeTorque(CarSlot::STEERING_RACK_BOLT));
 	figure("Tie rod end nuts", holeTorque(CarSlot::TIE_ROD_END_NUT));
@@ -351,7 +353,7 @@ void ServiceManual::BuildChassis(bool imperial)
 	step("Rear: wheel cylinder on the backing plate, shoes, then the drum over them.", { PartType::WHEEL_CYLINDER, PartType::BRAKE_SHOE_SET, PartType::BRAKE_DRUM });
 	step("Parking brake cable, once both rear shoe sets are in.", { PartType::PARKING_BRAKE_CABLE });
 	text("Fitting the line set doesn't connect it. Its five pipes come off a junction block on the driver's wheel housing, under the master "
-		"cylinder: with the hood up and nothing in hand, click on the block (it's marked with a dot) for a list of them, and take one by its "
+		"cylinder: with the hood up and the Hard Line Spool & Flaring Tool in hand (every shop has one), click on the block (it's marked with a dot while you hold it) for a list of them, and take one by its "
 		"number. Carry its union to what it goes on and screw it in with the left button: the master cylinder's front and rear ports, a "
 		"bracket on each front wheel housing where the hose comes through, and the front end of the rear axle's hose under the floor. Each "
 		"pipe only fits its own place, and can be clipped along the way like a wire (the use key), anywhere on the car. Undo a union and "
@@ -389,12 +391,14 @@ void ServiceManual::BuildChassis(bool imperial)
 	step("Pressure plate over it, its bolts done up evenly.", { PartType::PRESSURE_PLATE });
 	step("Release bearing, then the gearbox, onto the bellhousing bolts.", { PartType::RELEASE_BEARING, PartType::TRANSMISSION });
 	step("Transmission mount under its tail, and the driveshaft from the gearbox to the differential.", { PartType::TRANSMISSION_MOUNT, PartType::DRIVESHAFT });
-	step("Clutch master cylinder on the firewall, and the release cylinder on the bellhousing.",
-		{ PartType::CLUTCH_MASTER_CYLINDER, PartType::CLUTCH_RELEASE_CYLINDER });
-	step("The pipe hanging off the master cylinder: take it (left button, hood up) and screw its union into the top of the release "
-		"cylinder. Then fill and bleed them (chapter 11). Undone, it lets air in.");
+	step("Clutch master cylinder on the firewall, and the slave cylinder on the bellhousing.",
+		{ PartType::CLUTCH_MASTER_CYLINDER, PartType::CLUTCH_SLAVE_CYLINDER });
+	step("Its two bolts back through its flange into the bosses on the bellhousing.");
+	step("The pipe is tucked against the master cylinder's nose: with the hood up and the Hard Line Spool & Flaring Tool in hand, click there (marked with a dot while you hold it), "
+		"take the pipe from the list and screw its union into the top of the slave cylinder. Then fill and bleed them (chapter 11). Undone, it lets air in.");
 	figure("Pressure plate bolts", holeTorque(CarSlot::PRESSURE_PLATE_BOLT));
 	figure("Bellhousing bolts", holeTorque(CarSlot::BELLHOUSING_BOLT));
+	figure("Clutch slave cylinder bolts", holeTorque(CarSlot::CLUTCH_SLAVE_BOLT));
 	figure("Transmission mount bolts", holeTorque(CarSlot::TRANSMISSION_MOUNT_BOLT));
 	figure("Driveshaft flange nuts", holeTorque(CarSlot::DRIVESHAFT_FLANGE_NUT));
 
@@ -426,8 +430,8 @@ void ServiceManual::BuildChassis(bool imperial)
 	step("Fuel tank under the boot floor, and its sender.", { PartType::FUEL_TANK, PartType::FUEL_SENDER });
 	step("Fuel line set forward along the floor, and the filter on the firewall, in the back corner of the bay on the passenger's side.",
 		{ PartType::FUEL_LINE_SET, PartType::FUEL_FILTER });
-	text("The line's three hoses are pushed on by hand, like the harness's plugs: click on the end of the line where it comes up through "
-		"the wheel housing beside the filter (marked with a dot, hood up) for a list of them. One goes on the tank's outlet, one up into "
+	text("The line's three hoses are pushed on with the Fuel Hose Spool & Clamps in hand (every shop has one): click on the end of the line where it comes up through "
+		"the wheel housing beside the filter (marked with a dot while you hold it, hood up) for a list of them. One goes on the tank's outlet, one up into "
 		"the bottom of the filter, and the third from the top of the filter to the pump on the side of the engine's head. With any of the "
 		"three off, the engine gets no fuel; and the engine can't be lifted out with the pump's hose on it.");
 	figure("Fuel tank bolts", holeTorque(CarSlot::FUEL_TANK_BOLT));
@@ -441,12 +445,14 @@ void ServiceManual::BuildChassis(bool imperial)
 		"firewall to the engine.", { PartType::MAIN_HARNESS, PartType::FUSE_BOX });
 	step("Battery in the engine bay.", { PartType::BATTERY });
 	step("Ignition coil on the inner wing.", { PartType::IGNITION_COIL });
+	step("Ignition switch into the dash, right of the column, from the driver's seat. It comes with its own key, and only that key turns it: a "
+		"new switch is a new key.", { PartType::IGNITION_SWITCH });
 	step("Starter, on the bellhousing once the gearbox is on.", { PartType::STARTER });
 	text("The battery has to be grounded: a strap from its negative post lies loose by it till it's bolted to the body. Take the strap (left button), aim at "
-		"bare bodywork anywhere it reaches (the inner wing, the firewall, a chassis rail) and click again: a stud goes in there to hold it. It has to be "
+		"bare bodywork anywhere (the inner wing, the firewall, a chassis rail) and click again: a stud goes in there to hold it. It has to be "
 		"the body itself, not a part bolted to it. Till it's on, nothing electrical works.");
 	text("Fitting the harness doesn't connect it. Its plugs are tucked away in it where it comes through the firewall, in the bay's back corner "
-		"on the driver's side: with the hood up and nothing in hand, click on it there (it's marked with a dot) for a list of its plugs, and take one by its number, or with the wheel and a click. "
+		"on the driver's side: with the hood up and the Wire Spool & Crimpers in hand (every shop has one), click on it there (it's marked with a dot while you hold it) for a list of its plugs, and take one by its number, or with the wheel and a click. "
 		"Carry it to what it feeds and push it onto its socket (left button again; the right lets it go, and it goes back in the loom). "
 		"A plug that's on something can be pulled straight off it, or picked from the same list. A plug only fits its own socket. It has ten: the battery's positive post, each headlight and the cooling fan "
 		"at the front, and on its engine branch the starter, the ignition coil, the distributor, the alternator, the coolant temperature sender "
@@ -457,7 +463,7 @@ void ServiceManual::BuildChassis(bool imperial)
 	text("To keep the wires tidy, clip them as you go. With a plug in hand, aim at somewhere under the hood and press the use key: the wire "
 		"is clipped there, and runs on from that clip. Each wire takes up to six clips, in the order they're put on, so a wire can be led "
 		"along the firewall or an inner wing and bent round whatever is in its way. A clip uses up wire, and a wire only has so much. With "
-		"nothing in hand, the right button on a clip takes it off. A wire that comes off, pulled or let go, comes out of its clips with it and goes back "
+		"its spool in hand, the right button on a clip takes it off. A wire that comes off, pulled or let go, comes out of its clips with it and goes back "
 		"into the loom. The list's last line pulls every plug off at once (or Backspace, with the list open).");
 	figure("Starter bolts", holeTorque(CarSlot::STARTER_BOLT));
 	heading("Cooling");
@@ -537,7 +543,9 @@ void ServiceManual::BuildChassis(bool imperial)
 	step(std::format("Check every tire with the tire gauge: {} (held) pumps it up, {} lets some out. Set them to {} cold, and the two "
 		"fronts the same.", NameOf(Control::PRIMARY), NameOf(Control::SET_DOWN), pressure(tune.tirePressureNominal)));
 	figure("Lug nuts", holeTorque(CarSlot::LUG_NUT));
-	note("The car comes off its jack stands once all four wheels are on.");
+	note("To get at a wheel, jack the car up first: the floor jack and jack stands are shop fittings (Shop Fittings at the parts computer). "
+		"Roll the jack (F) under a lifting point (one at each corner's sill, a stand's place beside it under the floor, and one under the "
+		"middle of each end), pump it up, and set a stand under the car before letting it down. Wherever nothing's under it, the car comes down.");
 	heading("Alignment");
 	figure("Front camber", std::format("{:.2f} to {:.2f} deg", tune.frontCamber.min, tune.frontCamber.max));
 	figure("Caster", std::format("{:.2f} to {:.2f} deg", tune.caster.min, tune.caster.max));

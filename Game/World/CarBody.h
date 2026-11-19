@@ -14,9 +14,10 @@ namespace CarBody
 	constexpr float ROCKER_TOP = 0.30f;			// the top of the sill: the door shuts down onto it
 	constexpr float BELT_Y = 0.86f;				// the beltline: the doors' and quarters' tops, the cowl and the deck
 	constexpr float ROOF_Y = 1.25f;				// the roof's edge
-	constexpr float NOSE_X = 2.07f;
-	constexpr float TAIL_X = -2.07f;
-	constexpr float NOSE_Y = 0.70f;				// the hood line at the nose: it falls from the cowl to a low wedge
+	// (Shortened 2026-11-18: the nose 0.1 back and the tail 0.08 in, the cabin, wheelbase and engine where they were.)
+	constexpr float NOSE_X = 1.97f;
+	constexpr float TAIL_X = -1.99f;
+	constexpr float NOSE_Y = 0.73f;				// the hood line at the nose: it falls from the cowl to a low wedge (high enough over the battery)
 	// The pop-up headlights' lids, let into the hood's front corners: how far back from the nose, and from where across.
 	constexpr float LAMP_LID_LENGTH = 0.31f;
 	constexpr float LAMP_LID_INNER = 0.37f;
@@ -86,6 +87,10 @@ namespace CarBody
 	constexpr float FUEL_FILTER[3] = { 0.93f, 0.67f, 0.5f };
 	constexpr float FUEL_FILTER_HEIGHT = 0.125f;
 	constexpr float IGNITION_COIL[3] = { 1.63f, 0.55f, 0.61f };	// on the inner wing, ahead of the wheel housing
+	// The battery on its tray off the left inner wing, between the wheel housing and the headlight's well: turned across
+	// the car (its posts in a line across it, the negative one outboard), and up off the tray high enough to clear the
+	// housing's top. (The middle of its base.)
+	constexpr float BATTERY[3] = { 1.585f, 0.565f, -0.52f };
 	constexpr float FUEL_RISER[3] = { 0.905f, 0.585f, 0.43f };
 	constexpr float BRAKE_BLOCK[3] = { 1.15f, 0.52f, -0.385f };
 	// The front wheels' housings in the engine bay: a tub this radius about the axle, walled off from the bay this far out.
@@ -138,15 +143,28 @@ namespace CarBody
 	constexpr float CATALYST[3] = { 0.15f, 0.f, EXHAUST_Z };		// the converter's place (its model is built in the car's height)
 	constexpr float CATALYST_HALF = 0.2f;							// half its length
 	constexpr float MUFFLER_Z = -0.42f, MUFFLER_X = -1.55f, MUFFLER_Y = 0.04f, MUFFLER_RADIUS = 0.06f, MUFFLER_HALF = 0.25f;
-	constexpr float TAILPIPE[3] = { -2.26f, MUFFLER_Y + MUFFLER_RADIUS, MUFFLER_Z };
+	constexpr float TAILPIPE[3] = { TAIL_X - 0.19f, MUFFLER_Y + MUFFLER_RADIUS, MUFFLER_Z };
 	// The handbrake's lever between the seats: its pivot at the back, on the tunnel, and how far it comes up, radians.
 	constexpr float HANDBRAKE_PIVOT[3] = { -0.36f, 0.46f, 0.03f };
+	// Where the handbrake's cables (a part) are placed: they're built in the car's space about this point.
+	constexpr float PARKING_BRAKE_ORIGIN[3] = { -0.7f, 0.15f, 0.f };
+	// The union where the rear brake pipe meets the rear hose, up under the floor's kick-up behind the axle.
+	constexpr float REAR_HOSE_UNION[3] = { -1.39f, 0.425f, -0.41f };
+	// The end of the fuel tank's outlet, down out of its underside through a hole in the boot floor (the tank sits on it).
+	constexpr float FUEL_TANK_OUTLET[3] = { -1.47f, 0.205f, 0.3f };
+	// The tank's middle along the car (it's 0.52 deep, from the kick-up's back wall to just inside the tail).
+	constexpr float FUEL_TANK_X = -1.68f;
 	constexpr float HANDBRAKE_PULL = 0.42f;
 	// Where the car's lifted from, either side at each end: the jacking point on the sill behind the front wheel (or
 	// ahead of the back one), and beside it, further in under the floor, the place a stand goes. (x and z are mirrored
 	// for the other three corners.) And how far a corner with no wheel on it sinks, onto its brake.
 	constexpr float JACK_POINT[3] = { 0.66f, 0.18f, 0.72f };
 	constexpr float STAND_POINT[3] = { 0.42f, 0.18f, 0.56f };
+	// And the middle of each end, out near the bumper so a jack rolled in from there leaves its handle out in the open: a
+	// jacking bar between the chassis rails ahead of the sump and the sway bar, and a reinforced pad under the boot floor
+	// behind the axle.
+	constexpr float FRONT_JACK_POINT[3] = { 1.66f, 0.17f, 0.f };
+	constexpr float REAR_JACK_POINT[3] = { TAIL_X + 0.21f, 0.175f, 0.f };
 	constexpr float NO_WHEEL_DROP = 0.15f;
 	// A tail light's stop and tail lamp: where its middle is on the lamp's own model (toward the car's middle from
 	// the lamp's own, by this), and its size.

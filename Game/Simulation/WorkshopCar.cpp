@@ -25,7 +25,46 @@ bool Workshop::OwnsCar() const
 
 const CarBuild* Workshop::GetCar() const
 {
-	return m_car.get();
+	return m_car;
+}
+
+void Workshop::SetActiveCar(int car) const
+{
+	// (Past the last car, or before the first, there's no car active: the car's calls do nothing.)
+	m_activeCar = (std::max)(car, 0);
+	m_car = m_activeCar < GetCarCount() ? m_cars[m_activeCar].get() : nullptr;
+}
+
+int Workshop::CarOf(const Part& part) const
+{
+	for (int car = 0; car < GetCarCount(); car++)
+		if (m_cars[car]->assembly.Find(&part))
+			return car;
+	return -1;
+}
+
+int Workshop::CarWithEngine(int engine) const
+{
+	if (engine < 0)
+		return -1;
+	for (int car = 0; car < GetCarCount(); car++)
+		if (m_cars[car]->assembly.GetEngine() == engine)
+			return car;
+	return -1;
+}
+
+int Workshop::CarOwnedBy(int owner) const
+{
+	for (int car = 0; car < GetCarCount(); car++)
+		if (m_cars[car]->owner == owner)
+			return car;
+	return -1;
+}
+
+void Workshop::SetCarOwner(int car, int owner)
+{
+	if (car >= 0 && car < GetCarCount())
+		m_cars[car]->owner = owner;
 }
 
 void Workshop::CarChanged()
@@ -34,22 +73,53 @@ void Workshop::CarChanged()
 		m_car->roadTestCurrent = false;
 }
 
-void Workshop::SetUpStartingCar()
+int Workshop::BuildStartingCar(int engine)
 {
-	// The LE86, complete and running, its LV-16 in it under the first stand's number. Everything on both was fitted new
+	// The LE86, complete and running, its LV-16 in it under that stand's number. Everything on both was fitted new
 	// once and has done its miles since: used, and here and there worn past its limit.
-	m_car = std::make_unique<CarBuild>(CarSpec::LE86Coupe());
-	m_activeEngine = 0;
+	const size_t before = m_inventory.size();
+	m_cars.push_back(std::make_unique<CarBuild>(CarSpec::LE86Coupe()));
+	SetActiveCar(GetCarCount() - 1);
+	m_activeEngine = engine;
 	FitNewEngineParts();
-	WearStartingEngine(0, 75.0);
+	WearStartingEngine(engine, 75.0);
 	FitNewCarParts();
 	// (Its plugs and unions first: a circuit with a union undone holds nothing.)
 	DevPlugCar(true);
 	FillAndBleedCar();
 	WearStartingCar();
-	for (const auto& part : m_inventory)
-		part->MarkUsed();
+	for (size_t i = before; i < m_inventory.size(); i++)
+		m_inventory[i]->MarkUsed();
 	CarChanged();
+	return m_activeCar;
+}
+
+void Workshop::SetUpStartingCar()
+{
+	m_cars.clear();
+	BuildStartingCar(0);
+	// The shop's key (on the tool board) is the one cut for its ignition.
+	if (const auto ignition = m_car->assembly.Get(CarSlot::IGNITION_SWITCH, 0))
+		m_keyCuts[CarKeyTool()] = ignition->GetId();
+}
+
+std::optional<Workshop::NewCar> Workshop::AddCarFor(int owner)
+{
+	// Its engine needs a stand's number of its own (the stand stays empty while it's in the car).
+	if (GetEngineCount() >= MAX_ENGINES)
+		return std::nullopt;
+	const int activeEngine = m_activeEngine, activeCar = m_activeCar;
+	m_engines.push_back(std::make_unique<EngineBuild>(*m_spec));
+	// (It comes in the car, with no stand of its own: one can be bought for it.)
+	m_engines.back()->stand = false;
+	NewCar made;
+	made.car = BuildStartingCar(GetEngineCount() - 1);
+	m_cars[made.car]->owner = owner;
+	if (const auto ignition = m_car->assembly.Get(CarSlot::IGNITION_SWITCH, 0))
+		made.key = CutKeyFor(*ignition);
+	m_activeEngine = activeEngine;
+	SetActiveCar(activeCar);
+	return made;
 }
 
 namespace
@@ -132,7 +202,7 @@ void Workshop::WearStartingCar()
 
 bool Workshop::IsOnCar(const Part& part) const
 {
-	return m_car && m_car->assembly.Find(&part).has_value();
+	return CarOf(part) >= 0;	// (any of them)
 }
 
 pPart Workshop::CarriedOn(const Part& host) const
@@ -439,11 +509,11 @@ std::optional<std::string> Workshop::EngineWorkProblem(int engine, AssemblySlot 
 	if (engine == m_engineOnHoist)
 		return flywheel ? std::nullopt
 			: std::optional<std::string>("That engine is hanging from the hoist: lower it onto a stand to work on it (only the flywheel goes on or off there).");
-	if (engine >= 0 && engine == GetEngineInCar())
+	if (int inCar = CarWithEngine(engine); inCar >= 0)
 	{
 		if (flywheel)
 		{
-			const auto& car = m_car->assembly;
+			const auto& car = m_cars[inCar]->assembly;
 			if (car.IsFilled(CarSlot::CLUTCH_DISC, 0) || car.IsFilled(CarSlot::TRANSMISSION, 0))
 				return "The clutch and gearbox are in the way: take them off the car to get at the flywheel.";
 			return std::nullopt;
@@ -694,10 +764,11 @@ void Workshop::SetCarTune(const CarTune& tune)
 	CarChanged();
 }
 
-void Workshop::CoolCarEngine(double seconds)
+void Workshop::CoolCarEngine(double seconds, int runningCar)
 {
-	if (m_car && m_car->engineHeat > 0.0)
-		m_car->engineHeat = (std::max)(0.0, m_car->engineHeat - seconds / CAR_ENGINE_COOL_SECONDS);
+	for (int car = 0; car < GetCarCount(); car++)
+		if (car != runningCar && m_cars[car]->engineHeat > 0.0)
+			m_cars[car]->engineHeat = (std::max)(0.0, m_cars[car]->engineHeat - seconds / CAR_ENGINE_COOL_SECONDS);
 }
 
 const RoadTestResult& Workshop::RoadTestCar()
@@ -738,7 +809,10 @@ const RoadTestResult& Workshop::RoadTestCar()
 void Workshop::DevAssembleCar()
 {
 	if (!m_car)
-		m_car = std::make_unique<CarBuild>(CarSpec::LE86Coupe());
+	{
+		m_cars.push_back(std::make_unique<CarBuild>(CarSpec::LE86Coupe()));
+		SetActiveCar(GetCarCount() - 1);
+	}
 	int fitted = FitNewCarParts();
 	// Every plug and pipe's union done up before it's filled: with one undone the fluid runs straight out, and there's
 	// nothing in the lines to bleed.
@@ -755,7 +829,7 @@ int Workshop::FitNewCarParts()
 	if (car.GetEngine() < 0 && !car.MissingPrerequisite(CarSlot::ENGINE, 0))
 	{
 		int engine = m_activeEngine;
-		if (GetAssembly(engine).IsComplete() && engine != m_engineOnDyno && engine != m_engineOnHoist)
+		if (GetAssembly(engine).IsComplete() && engine != m_engineOnDyno && engine != m_engineOnHoist && CarWithEngine(engine) < 0)
 		{
 			std::string error;
 			car.SetEngine(engine, error);
@@ -950,9 +1024,19 @@ namespace
 	// 9: the engine harness folded into the main one (its lead to the battery, plug 11 in version 8, is gone).
 	// 10: no engine harness slot (the slots after it moved down one).
 	// 11: the pipes' unions (the brake lines', the clutch's and the fuel lines'): a car from before has them all done up.
-	constexpr long long CAR_TEXT_VERSION = 11;
+	// 12: inner tie rods, a slot after the steering rack (the slots after it moved up one): a car from before has them on
+	// wherever its tie rod ends are.
+	// 13: the clutch slave cylinder's two bolts (a slot after the lug nuts, so none moved): a car from before has them in,
+	// done up, wherever its slave cylinder is.
+	// 14: the ignition switch, a slot after the tires (the slots after it moved up one), and which ignition switch each of
+	// the car keys is cut for: a car from before has one in its dash, used, and the shop's first key cut for it.
+	// 15: a car for each player: how many cars, and for each whose it is before the rest of it. One from before is the
+	// one car, nobody's.
+	constexpr long long CAR_TEXT_VERSION = 15;
+	constexpr long long FIRST_SLOT_SHIFTED_IN_14 = static_cast<long long>(CarSlot::IGNITION_SWITCH);
 	constexpr int CAR_PLUGS_BEFORE_PIPES = 11;
-	constexpr long long OLD_ENGINE_HARNESS_SLOT = static_cast<long long>(CarSlot::FUSE_BOX);	// where it was before version 10
+	constexpr long long OLD_ENGINE_HARNESS_SLOT = static_cast<long long>(CarSlot::FUSE_BOX) - 1;	// where it was before version 10
+	constexpr long long FIRST_SLOT_SHIFTED_IN_12 = static_cast<long long>(CarSlot::TIE_ROD_INNER);
 	constexpr int CAR_PLUGS_IN_VERSION_8 = 12;
 	constexpr int CAR_PLUGS_BEFORE_ENGINE_BATTERY = 11;	// and before version 8 gave the engine harness its lead to the battery
 	constexpr int CAR_PLUGS_BEFORE_GROUND = 10;	// how many plugs a car had before version 5 gave it a ground strap
@@ -960,11 +1044,29 @@ namespace
 
 std::string Workshop::CarState() const
 {
+	std::vector<std::string> bodies;
+	for (int car = 0; car < GetCarCount(); car++)
+		bodies.push_back(CarBodyText(car));
+	return JoinCarState(bodies, CarSharedText());
+}
+
+std::string Workshop::JoinCarState(const std::vector<std::string>& bodies, const std::string& shared)
+{
+	// (Each piece ends with the space after its last value, as Writer leaves it: they just go end to end.)
+	std::string text = Writer().Int(CAR_TEXT_VERSION).Int(bodies.size()).Text();
+	for (const auto& body : bodies)
+		text += body;
+	return text + shared;
+}
+
+std::string Workshop::CarBodyText(int carNumber) const
+{
 	Writer out;
-	out.Int(CAR_TEXT_VERSION).Int(m_car ? 1 : 0);
-	if (m_car)
+	if (carNumber >= 0 && carNumber < GetCarCount())
 	{
-		const auto& car = m_car->assembly;
+		const auto& build = m_cars[carNumber];
+		out.Int(build->owner);
+		const auto& car = build->assembly;
 		std::vector<std::array<long long, 3>> installed;
 		for (int slot = 0; slot < static_cast<int>(CarSlot::COUNT); slot++)
 			for (int index = 0; index < car.SlotCount(static_cast<CarSlot>(slot)); index++)
@@ -990,8 +1092,8 @@ std::string Workshop::CarState() const
 		for (double pressure : tune.tirePressure)
 			out.Num(pressure);
 		out.Num(tune.finalDrive);
-		WriteRoadTest(out, m_car->lastRoadTest);
-		out.Int(m_car->roadTestCurrent);
+		WriteRoadTest(out, build->lastRoadTest);
+		out.Int(build->roadTestCurrent);
 		out.Int(car.GetPlugs());
 		for (int p = 0; p < CAR_PLUGS; p++)
 		{
@@ -1008,11 +1110,20 @@ std::string Workshop::CarState() const
 		out.Num(car.GetGroundPoint()[0]).Num(car.GetGroundPoint()[1]).Num(car.GetGroundPoint()[2]);
 		out.Num(car.GetGroundNormal()[0]).Num(car.GetGroundNormal()[1]).Num(car.GetGroundNormal()[2]);
 	}
+	return out.Text();
+}
+
+std::string Workshop::CarSharedText() const
+{
+	Writer out;
 	out.Int(m_carCarried.size());
 	for (const auto& [host, carried] : m_carCarried)
 		out.Int(host).Int(carried);
 	for (double litres : m_fluidStock)
 		out.Num(litres);
+	out.Int(m_keyCuts.size());
+	for (const auto& [key, ignition] : m_keyCuts)
+		out.Int(key).Int(ignition);
 	return out.Text();
 }
 
@@ -1022,10 +1133,15 @@ bool Workshop::RestoreCarState(const std::string& text)
 	long long version = in.Int();
 	if (version < 2 || version > CAR_TEXT_VERSION)
 		return false;
-	std::unique_ptr<CarBuild> build;
-	if (in.Int() != 0)
+	// Each car (before 15 there was one at most, nobody's).
+	std::vector<std::unique_ptr<CarBuild>> builds;
+	const size_t carCount = version >= 15 ? in.Count() : (in.Int() != 0 ? 1 : 0);
+	for (size_t carNumber = 0; carNumber < carCount && !in.Failed(); carNumber++)
 	{
-		build = std::make_unique<CarBuild>(CarSpec::LE86Coupe());
+		builds.push_back(std::make_unique<CarBuild>(CarSpec::LE86Coupe()));
+		auto& build = builds.back();
+		if (version >= 15)
+			build->owner = static_cast<int>(in.Int());
 		auto& car = build->assembly;
 		size_t installed = in.Count();
 		for (size_t i = 0; i < installed && !in.Failed(); i++)
@@ -1035,12 +1151,53 @@ bool Workshop::RestoreCarState(const std::string& text)
 				continue;
 			if (version < 10 && slot > OLD_ENGINE_HARNESS_SLOT)
 				slot--;
+			if (version < 12 && slot >= FIRST_SLOT_SHIFTED_IN_12)
+				slot++;
+			if (version < 14 && slot >= FIRST_SLOT_SHIFTED_IN_14)
+				slot++;
 			auto part = FindPart(static_cast<uint32_t>(id));
 			if (!part || slot < 0 || slot >= static_cast<long long>(CarSlot::COUNT) || EngineOf(*part) >= 0)
 				continue;
 			// Restored as it was, so the fluids it held aren't spilled again: they're read in after.
 			std::string error;
 			car.Install(static_cast<CarSlot>(slot), static_cast<int>(index), part, error);
+		}
+		// A car from before the inner tie rods has them on, used, wherever a tie rod end is.
+		if (version < 12)
+			for (int side = 0; side < car.SlotCount(CarSlot::TIE_ROD_INNER); side++)
+				if (car.Get(CarSlot::TIE_ROD_END, side) && !car.Get(CarSlot::TIE_ROD_INNER, side))
+				{
+					auto inner = PartFactory::Create(PartType::TIE_ROD_INNER, *m_spec, PartQuality::OEM, PartCondition::USED);
+					inner->MarkUsed();
+					m_inventory.push_back(inner);
+					std::string error;
+					car.Install(CarSlot::TIE_ROD_INNER, side, inner, error);
+				}
+		// A car from before the slave cylinder's bolts has them in, torqued, wherever its slave cylinder is.
+		if (version < 13 && car.Get(CarSlot::CLUTCH_SLAVE_CYLINDER, 0))
+			if (const auto* holes = CarAssembly::Holes(CarSlot::CLUTCH_SLAVE_BOLT))
+				for (int hole = 0; hole < car.SlotCount(CarSlot::CLUTCH_SLAVE_BOLT); hole++)
+				{
+					if (car.IsFilled(CarSlot::CLUTCH_SLAVE_BOLT, hole))
+						continue;
+					auto bolt = PartFactory::Create(holes->size, *m_spec, PartQuality::OEM, PartCondition::USED);
+					bolt->MarkUsed();
+					m_inventory.push_back(bolt);
+					std::string error;
+					if (car.Install(CarSlot::CLUTCH_SLAVE_BOLT, hole, bolt, error))
+					{
+						bolt->SetTorque(holes->torqueNm);
+						bolt->SetTightness(FastenerTightness::TORQUED);
+					}
+				}
+		// A car from before the ignition switch has one in its dash (and the shop's first key is cut for it, below).
+		if (version < 14 && car.IsFilled(CarSlot::DASHBOARD, 0) && !car.IsFilled(CarSlot::IGNITION_SWITCH, 0))
+		{
+			auto ignition = PartFactory::Create(PartType::IGNITION_SWITCH, *m_spec, PartQuality::OEM, PartCondition::USED);
+			ignition->MarkUsed();
+			m_inventory.push_back(ignition);
+			std::string error;
+			car.Install(CarSlot::IGNITION_SWITCH, 0, ignition, error);
 		}
 		int engine = static_cast<int>(in.Int());
 		if (engine >= 0 && engine < GetEngineCount() && !GetAssembly(engine).GetAllParts().empty())
@@ -1135,16 +1292,36 @@ bool Workshop::RestoreCarState(const std::string& text)
 	std::array<double, FLUID_PRODUCTS> stock = {};
 	for (double& litres : stock)
 		litres = in.Num();
+	// The keys, each with the ignition switch it's cut for (one that's gone is dropped). From before, the shop's first
+	// key is the car's.
+	std::map<size_t, uint32_t> keyCuts;
+	if (version >= 14)
+	{
+		size_t keys = in.Count();
+		for (size_t k = 0; k < keys && !in.Failed(); k++)
+		{
+			auto key = static_cast<size_t>(in.Int());
+			auto ignition = static_cast<uint32_t>(in.Int());
+			if (FindPart(ignition))
+				keyCuts[key] = ignition;
+		}
+	}
+	else if (const auto ignition = !builds.empty() ? builds.front()->assembly.Get(CarSlot::IGNITION_SWITCH, 0) : nullptr)
+		keyCuts[CarKeyTool()] = ignition->GetId();
 	if (in.Failed())
 		return false;
 
 	// In place where there's a car already, so anything holding on to it keeps working.
-	if (m_car && build)
-		*m_car = std::move(*build);
-	else
-		m_car = std::move(build);
+	for (size_t car = 0; car < builds.size(); car++)
+		if (car < m_cars.size())
+			*m_cars[car] = std::move(*builds[car]);
+		else
+			m_cars.push_back(std::move(builds[car]));
+	m_cars.resize(builds.size());
+	SetActiveCar(m_activeCar);
 	m_carCarried = carried;
 	m_fluidStock = stock;
+	m_keyCuts = keyCuts;
 	SettleCarPlugs();
 	return true;
 }
@@ -1250,7 +1427,7 @@ std::optional<std::string> Workshop::CarStarterDead() const
 	if (!m_car)
 		return "There's no car.";
 	const auto& car = m_car->assembly;
-	for (CarSlot slot : { CarSlot::BATTERY, CarSlot::MAIN_HARNESS, CarSlot::FUSE_BOX, CarSlot::STARTER })
+	for (CarSlot slot : { CarSlot::BATTERY, CarSlot::MAIN_HARNESS, CarSlot::FUSE_BOX, CarSlot::IGNITION_SWITCH, CarSlot::STARTER })
 		if (!car.IsFilled(slot, 0))
 			return std::format("Nothing: the {} isn't on.", car.PositionName(slot, 0));
 	if (!car.IsPlugged(CarPlug::BATTERY))
@@ -1260,6 +1437,48 @@ std::optional<std::string> Workshop::CarStarterDead() const
 	if (!car.IsPlugged(CarPlug::STARTER))
 		return "Nothing: the harness's plug isn't on the starter.";
 	return std::nullopt;
+}
+
+size_t Workshop::CarKeyTool()
+{
+	static const size_t index = [] {
+		const auto& tools = ToolCatalog::All();
+		for (size_t i = 0; i < tools.size(); i++)
+			if (tools[i].handKind == HandToolKind::CAR_KEY)
+				return i;
+		return tools.size();
+	}();
+	return index;
+}
+
+std::optional<uint32_t> Workshop::KeyCutFor(size_t keyToolId) const
+{
+	auto it = m_keyCuts.find(keyToolId);
+	return it == m_keyCuts.end() ? std::nullopt : std::optional(it->second);
+}
+
+bool Workshop::KeyFitsCar(size_t keyToolId) const
+{
+	const auto ignition = m_car ? m_car->assembly.Get(CarSlot::IGNITION_SWITCH, 0) : nullptr;
+	auto cut = KeyCutFor(keyToolId);
+	return ignition && cut && *cut == ignition->GetId();
+}
+
+std::optional<size_t> Workshop::CutKeyFor(const Part& ignitionSwitch)
+{
+	size_t key = CarKeyTool();
+	if (key >= m_toolCounts.size() || m_toolCounts[key] >= static_cast<int>(MAX_TOOL_COPIES))
+		return std::nullopt;
+	size_t id = ToolCatalog::IdOf(key, static_cast<size_t>(m_toolCounts[key]));
+	m_toolCounts[key]++;
+	m_keyCuts[id] = ignitionSwitch.GetId();
+	return id;
+}
+
+void Workshop::DevCutKeyForCar(size_t keyToolId)
+{
+	if (const auto ignition = m_car ? m_car->assembly.Get(CarSlot::IGNITION_SWITCH, 0) : nullptr)
+		m_keyCuts[keyToolId] = ignition->GetId();
 }
 
 bool Workshop::GroundCarBattery(const CarWirePoint& at, const CarWirePoint& normal)
@@ -1309,7 +1528,7 @@ Workshop::CarDrive Workshop::StartCar()
 		if (complete)
 			pull = Dyno::Run(m_engines[engine]->assembly);
 	}
-	RoadTestResult result = RoadTest::Run(build.assembly, pull, complete);
+	RoadTestResult result = RoadTest::Run(build.assembly, pull, complete, true);
 	// (It starts as warm as it was left: stone cold if it's sat, and warms up from there as it runs.)
 	drive.goes = result.starts && result.drives && result.steers && result.stops && result.topSpeed > 1.0;
 	if (!drive.goes)
@@ -1326,6 +1545,8 @@ Workshop::CarDrive Workshop::StartCar()
 	drive.brakingDistance = result.brakingDistance;
 	drive.lateralGrip = result.lateralGrip;
 	drive.idleRpm = result.idleRpm;
+	drive.clutchWorks = result.clutchWorks;
+	drive.brakesWork = result.brakesWork;
 	return drive;
 }
 
@@ -1343,4 +1564,37 @@ bool Workshop::DriveCar(double seconds, double metres, double throttle)
 	double warming = 1.0 / CAR_ENGINE_WARM_SECONDS * (1.0 + 1.2 * std::clamp(pace / 25.0, 0.0, 1.0) + 0.8 * std::clamp(throttle, 0.0, 1.0));
 	build.engineHeat = (std::min)(1.0, build.engineHeat + seconds * warming);
 	return build.assembly.GetFluid(FluidCircuit::FUEL).Total() > 0.01;
+}
+
+int Workshop::DiscardLooseParts(uint32_t from, uint32_t to)
+{
+	const size_t before = m_inventory.size();
+	std::erase_if(m_inventory, [&](const pPart& part) {
+		return part->GetId() >= from && part->GetId() < to && EngineOf(*part) < 0 && CarOf(*part) < 0;
+	});
+	return static_cast<int>(before - m_inventory.size());
+}
+
+uint64_t Workshop::PlacementSignature() const
+{
+	uint64_t hash = 1469598103934665603ull;
+	auto mix = [&](uint64_t value) { hash = (hash ^ value) * 1099511628211ull; };
+	for (const auto& engine : m_engines)
+		mix(engine->assembly.Revision());
+	mix(m_cars.size());
+	for (const auto& car : m_cars)
+		mix(car->assembly.Revision());
+	for (const auto* fittings : { &m_shells, &m_pistons, &m_pins, &m_rings, &m_carCarried })
+	{
+		mix(fittings->size());
+		for (const auto& [host, fitted] : *fittings)
+			mix((static_cast<uint64_t>(host) << 32) | fitted);
+	}
+	mix(m_boreRings.size());
+	for (const auto& [ring, at] : m_boreRings)
+		mix((static_cast<uint64_t>(ring) << 32) | at.block);
+	mix(m_headFittings.size());
+	for (const auto& [part, at] : m_headFittings)
+		mix((static_cast<uint64_t>(part) << 32) | at.head);
+	return hash;
 }

@@ -48,6 +48,7 @@ void FirstPersonController::Update(float deltaTime, const InputManager& input, c
 	if (Controls::Held(input, Control::BACK)) move -= forward;
 	if (Controls::Held(input, Control::RIGHT)) move += right;
 	if (Controls::Held(input, Control::LEFT)) move -= right;
+	m_wish = glm::length(move) > 0.01f ? glm::normalize(glm::vec2(move.x, move.z)) : glm::vec2(0.f);
 
 	// Lying down (the key toggles it): flat on the floor on a creeper's back, slow, to get under a car on its jacks.
 	// Getting up again needs room over the player; under something low they get up as far as there's room.

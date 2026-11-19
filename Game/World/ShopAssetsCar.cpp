@@ -11,8 +11,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "LV/Engine/Graphics/Models/MeshBuilder.h"
+#include "../Simulation/Furniture.h"
 #include "../Simulation/PartCatalog.h"
 #include "CarBody.h"
+#include "ToolShapes.h"
 
 namespace
 {
@@ -290,7 +292,7 @@ void ShopAssets::LoadCarParts()
 			TurnedBox(fender, slope, { fall * 0.5f, -0.04f, in * (shelf + 0.025f) }, { fall, 0.01f, 0.05f }, BODY_WHITE);
 			// The rubbing strip ahead of the arch, in line with the door's, and the side marker lamp.
 			Box(fender, { 0.795f, RUB_STRIP_Y - SILL_Y, side * 0.002f }, { 0.17f, 0.012f, 0.004f }, CREASE);
-			Box(fender, { 1.14f, HoodY(NOSE_X - 0.08f) - SILL_Y - 0.06f, side * 0.004f }, { 0.15f, 0.045f, 0.008f }, { 0.7f, 0.33f, 0.08f });
+			Box(fender, { NOSE_X - 0.08f - DOOR_FRONT_X, HoodY(NOSE_X - 0.08f) - SILL_Y - 0.06f, side * 0.004f }, { 0.15f, 0.045f, 0.008f }, { 0.7f, 0.33f, 0.08f });
 			AddModel(side < 0.f ? std::string(PartTypeName(PartType::FRONT_FENDER)) : ShopModels::FENDER_RIGHT, fender);
 		}
 		{
@@ -594,17 +596,26 @@ void ShopAssets::LoadCarParts()
 		for (float x : { -0.4f, 0.f, 0.4f })
 			Box(dash, { x, 0.3f, 0.12f }, { 0.26f, 0.004f, 0.02f }, { 0.02f, 0.02f, 0.02f });
 		// Under the driver's side: the knee panel, the hood's release hanging below it by the door, and right of the
-		// column the ignition's barrel with the key in it.
+		// column the hole the ignition switch pushes into (the switch is a part of its own, and the key an item).
 		Box(dash, { 0.37f, 0.06f, face + 0.03f }, { 0.4f, 0.12f, 0.03f }, { 0.1f, 0.1f, 0.105f });
 		const glm::vec3 release = fromCar(HOOD_RELEASE), barrel = fromCar(IGNITION_BARREL);
 		Box(dash, { release.x, release.y + 0.03f, release.z + 0.03f }, { 0.03f, 0.05f, 0.07f }, TRIM_BLACK);
 		Box(dash, { release.x, release.y, release.z }, { 0.07f, 0.022f, 0.02f }, TRIM_BLACK);
 		Box(dash, { release.x, release.y, release.z - 0.011f }, { 0.04f, 0.012f, 0.002f }, { 0.9f, 0.85f, 0.2f });
-		Cylinder(dash, AlongZ({ barrel.x, barrel.y, face - 0.012f }), 0.02f, 0.03f, ALLOY, 16);
-		Cylinder(dash, AlongZ({ barrel.x, barrel.y, face - 0.03f }), 0.012f, 0.01f, TRIM_BLACK, 12);
-		Box(dash, { barrel.x, barrel.y, face - 0.046f }, { 0.004f, 0.024f, 0.026f }, ALLOY);
-		Box(dash, { barrel.x, barrel.y - 0.03f, face - 0.05f }, { 0.004f, 0.035f, 0.018f }, { 0.7f, 0.12f, 0.1f });
+		Cylinder(dash, AlongZ({ barrel.x, barrel.y, face - 0.0008f }), 0.021f, 0.002f, { 0.015f, 0.015f, 0.015f }, 16);
 		add(PartType::DASHBOARD, dash);
+	}
+	{
+		// The ignition switch, built facing the driver as it sits in the dash (-z toward the seats), about its barrel's middle:
+		// the alloy bezel round the lock's black face with the key's slot in it, and behind them (inside the dash) the
+		// switch's body and its plug.
+		MeshBuilder ignition;
+		Cylinder(ignition, AlongZ({ 0.f, 0.f, 0.f }), 0.02f, 0.03f, ALLOY, 16);
+		Cylinder(ignition, AlongZ({ 0.f, 0.f, -0.018f }), 0.012f, 0.01f, TRIM_BLACK, 12);
+		Box(ignition, { 0.f, 0.f, -0.0232f }, { 0.0025f, 0.012f, 0.001f }, { 0.02f, 0.02f, 0.02f });		// the key's slot
+		Cylinder(ignition, AlongZ({ 0.f, 0.f, 0.04f }), 0.016f, 0.05f, { 0.22f, 0.22f, 0.23f }, 14);
+		Box(ignition, { 0.f, -0.004f, 0.075f }, { 0.018f, 0.012f, 0.02f }, { 0.1f, 0.1f, 0.1f });
+		add(PartType::IGNITION_SWITCH, ignition);
 	}
 	{
 		// Facing the driver (-z on the dash; +x is their left): a flat black panel, the speedo on the left and the tach
@@ -772,7 +783,35 @@ void ShopAssets::LoadCarParts()
 	}
 	box(PartType::LOWER_CONTROL_ARM, { 0.42f, 0.05f, 0.12f }, ARM_GREY);
 	lying(PartType::STRUT_ROD, 0.012f, 0.5f, ARM_GREY);
-	lying(PartType::FRONT_SWAY_BAR, 0.011f, 0.96f, TRIM_BLACK);	// short of the tires on full lock
+	{
+		// The sway bar, built lying along x (across the car; local +z is toward the nose), its bottom on the floor: the bar
+		// under the nose, its ends bent back toward the lower arms and a drop link from each down to a tab bolted on the
+		// arm's front, and a rubber bushing either side in a steel strap whose flanges bolt up under the chassis rail.
+		// (On the car its middle is 0.196 up, 0.35 ahead of the axle: see ShopWorld's PoseOnCar.)
+		MeshBuilder bar;
+		constexpr float Y = 0.05f, END = 0.455f, BACK = -0.27f, R = 0.011f;
+		Cylinder(bar, AlongX({ 0.f, Y, 0.f }), R, 2.f * END, TRIM_BLACK, 12);
+		for (float side : { -1.f, 1.f })
+		{
+			Cylinder(bar, AlongZ({ side * END, Y, BACK * 0.5f }), R, -BACK, TRIM_BLACK, 12);
+			for (float z : { 0.f, BACK })
+				bar.ResetTransform().SetColor(TRIM_BLACK).AddSphere({ side * END, Y, z }, R, 4, 12);
+			// The drop link down to the arm, and its tab.
+			Cylinder(bar, At({ side * END, 0.025f, BACK }), 0.007f, 0.05f, IRON, 8);
+			Cylinder(bar, At({ side * END, Y, BACK }), 0.014f, 0.012f, RUBBER, 10);
+			Box(bar, { side * END, 0.014f, BACK - 0.02f }, { 0.024f, 0.012f, 0.05f }, IRON);
+			// The bushing in its strap.
+			const float x = side * 0.36f;
+			Box(bar, { x, 0.047f, 0.f }, { 0.04f, 0.034f, 0.045f }, RUBBER);
+			Box(bar, { x, 0.028f, 0.f }, { 0.034f, 0.004f, 0.053f }, IRON);
+			for (float face : { -1.f, 1.f })
+			{
+				Box(bar, { x, 0.046f, face * 0.0245f }, { 0.034f, 0.036f, 0.004f }, IRON);
+				Box(bar, { x, 0.061f, face * 0.045f }, { 0.034f, 0.006f, 0.036f }, IRON);
+			}
+		}
+		add(PartType::FRONT_SWAY_BAR, bar);
+	}
 
 	// Rear suspension: the axle across, the diff in its nose.
 	{
@@ -781,6 +820,19 @@ void ShopAssets::LoadCarParts()
 		Cylinder(axle, AlongZ({ 0.f, 0.15f, 0.f }), 0.13f, 0.12f, ARM_GREY, 20);
 		for (float side : { -1.f, 1.f })
 			Cylinder(axle, AlongX({ side * 0.67f, 0.15f, 0.f }), 0.08f, 0.012f, IRON, 20);
+		// Brackets welded on the tube (on the car its x is across, to the car's left; its z toward the nose): under it
+		// for each lower trailing link, on its top at the front for each upper one, and back to the lateral rod's
+		// right-hand end.
+		for (float side : { -1.f, 1.f })
+			for (float cheek : { -0.022f, 0.022f })
+			{
+				Box(axle, { side * 0.5f + cheek, 0.06f, 0.01f }, { 0.006f, 0.14f, 0.05f }, ARM_GREY);
+				Box(axle, { side * 0.28f + cheek, 0.195f, 0.06f }, { 0.006f, 0.07f, 0.05f }, ARM_GREY);
+			}
+		for (float cheek : { -0.022f, 0.022f })
+			Box(axle, { -0.47f + cheek, 0.176f, -0.09f }, { 0.006f, 0.045f, 0.19f }, ARM_GREY);
+		// The brake pipes' T on top of the tube beside the diff, which the rear hose comes down to.
+		Box(axle, { 0.15f, 0.192f, 0.02f }, { 0.03f, 0.024f, 0.02f }, ALLOY);
 		add(PartType::REAR_AXLE, axle);
 	}
 	{
@@ -804,14 +856,43 @@ void ShopAssets::LoadCarParts()
 	{
 		MeshBuilder rack;
 		// Slim, to pass under the engine's sump: its tube, the boots on its ends, and the pinion's housing standing up
-		// off it on the driver's side.
-		Cylinder(rack, AlongX({ 0.f, 0.026f, 0.f }), 0.026f, 0.62f, ALLOY, 14);
+		// off it on the driver's side. A clamp near each end (a rubber bushing round the tube, in a bracket) has a flange
+		// on top that bolts up under the pad on the chassis rail over it.
+		constexpr float Y = 0.036f;
+		Cylinder(rack, AlongX({ 0.f, Y, 0.f }), 0.026f, 0.68f, ALLOY, 14);
 		for (float side : { -1.f, 1.f })
-			Cylinder(rack, AlongX({ side * 0.37f, 0.026f, 0.f }), 0.022f, 0.12f, RUBBER, 12);
-		Cylinder(rack, At({ -0.18f, 0.1f, 0.f }), 0.02f, 0.1f, ALLOY, 12);
+		{
+			Cylinder(rack, AlongX({ side * 0.38f, Y, 0.f }), 0.022f, 0.08f, RUBBER, 12);	// over the inner tie rods' balls
+			Cylinder(rack, AlongX({ side * 0.32f, Y, 0.f }), 0.03f, 0.04f, RUBBER, 14);
+			Box(rack, { side * 0.32f, 0.033f, 0.f }, { 0.028f, 0.062f, 0.068f }, IRON);
+			Box(rack, { side * 0.32f, 0.063f, 0.f }, { 0.036f, 0.006f, 0.13f }, IRON);
+		}
+		Cylinder(rack, At({ -0.18f, 0.11f, 0.f }), 0.02f, 0.1f, ALLOY, 12);
 		add(PartType::STEERING_RACK, rack);
 	}
-	lying(PartType::TIE_ROD_END, 0.012f, 0.16f, IRON);
+	{
+		// The inner tie rod, along +x from its ball (in the rack's end, under the boot) out to the jam nut and the thread
+		// the tie rod end screws onto. (Its bottom on the floor: the ball's middle is 0.016 up.)
+		MeshBuilder inner;
+		constexpr float UP = 0.016f;
+		inner.SetColor(IRON).AddSphere({ 0.f, UP, 0.f }, 0.016f, 6, 12);
+		Cylinder(inner, AlongX({ 0.06f, UP, 0.f }), 0.009f, 0.12f, IRON, 10);
+		Cylinder(inner, AlongX({ 0.1f, UP, 0.f }), 0.014f, 0.012f, ALLOY, 6);
+		add(PartType::TIE_ROD_INNER, inner);
+	}
+	{
+		// The tie rod end, built about its taper stud (up through the steering arm's eye), along +x inward: the ball's
+		// housing under the arm, the neck up from it, the body, and its threaded shank that the inner rod goes into.
+		// (Its bottom on the floor: the stud's middle, level with the rods, is 0.055 up.)
+		MeshBuilder end;
+		constexpr float UP = 0.055f;
+		Cylinder(end, At({ 0.f, UP, 0.f }), 0.009f, 0.06f, ALLOY, 10);
+		Cylinder(end, At({ 0.f, UP - 0.042f, 0.f }), 0.02f, 0.026f, IRON, 14);
+		Box(end, { 0.032f, UP - 0.034f, 0.f }, { 0.044f, 0.018f, 0.024f }, IRON);
+		Box(end, { 0.064f, UP - 0.014f, 0.f }, { 0.03f, 0.04f, 0.026f }, IRON);
+		Cylinder(end, AlongX({ 0.09f, UP, 0.f }), 0.0095f, 0.03f, IRON, 10);
+		add(PartType::TIE_ROD_END, end);
+	}
 	{
 		// The column, lying along x (its top end, at the wheel, toward -x), with its shroud under the wheel and a
 		// stalk out either side: the indicators', and the wipers'.
@@ -888,7 +969,44 @@ void ShopAssets::LoadCarParts()
 		add(PartType::BRAKE_ROTOR, rotor);
 	}
 	box(PartType::BRAKE_PAD_SET, { 0.1f, 0.03f, 0.05f }, LINING);
-	box(PartType::BRAKE_CALIPER, { 0.12f, 0.1f, 0.08f }, IRON);
+	{
+		// The caliper, as it sits over the front edge of the disc (whose middle is 0.085 behind and 0.05 above its own
+		// origin; the disc runs through the slot between its halves, either side of z = 0): two cast halves following the
+		// disc's edge round, the bridge over the edge joining them, a piston bore bulging out of each half, the two
+		// mounting bosses its bolts go through (at CALIPER_BOLT's places), and the bleed nipple and the hose's banjo on
+		// top. The same both sides, so it's built the same either way out.
+		MeshBuilder caliper;
+		const glm::vec3 CAST = { 0.38f, 0.37f, 0.36f }, BODY = { 0.55f, 0.13f, 0.1f };
+		const glm::vec3 disc = { -0.085f, 0.05f, 0.f };
+		auto round = [&](float angle, float radius) {
+			return glm::rotate(glm::translate(glm::mat4(1.f), disc), angle, glm::vec3(0.f, 0.f, 1.f)) * glm::translate(glm::mat4(1.f), { radius, 0.f, 0.f });
+		};
+		for (float angle : { -0.42f, 0.f, 0.42f })
+		{
+			for (float face : { -1.f, 1.f })
+				caliper.SetTransform(round(angle, 0.104f)).SetColor(BODY).AddBox({ 0.f, 0.f, face * 0.027f }, { 0.052f, 0.054f, 0.026f });
+			caliper.SetTransform(round(angle, 0.137f)).SetColor(BODY).AddBox({}, { 0.018f, 0.056f, 0.08f });
+		}
+		caliper.ResetTransform();
+		for (float face : { -1.f, 1.f })
+			for (float angle : { -0.2f, 0.2f })
+			{
+				const glm::vec3 at = glm::vec3(round(angle, 0.1f) * glm::vec4(0.f, 0.f, 0.f, 1.f));
+				Cylinder(caliper, AlongZ(at + glm::vec3(0.f, 0.f, face * 0.043f)), 0.022f, 0.008f, BODY, 16);
+			}
+		// The mounting bosses, and its slide pins' boots.
+		for (float y : { 0.025f, 0.075f })
+		{
+			Cylinder(caliper, AlongZ({ 0.f, y, 0.f }), 0.013f, 0.08f, CAST, 12);
+			for (float face : { -1.f, 1.f })
+				Cylinder(caliper, AlongZ({ 0.f, y, face * 0.03f }), 0.009f, 0.02f, RUBBER, 10);
+		}
+		// The bleed nipple up out of its top, and the hose's banjo union on it.
+		const glm::vec3 top = glm::vec3(round(0.5f, 0.12f) * glm::vec4(0.f, 0.f, 0.f, 1.f));
+		Cylinder(caliper, At(top + glm::vec3(0.f, 0.02f, -0.012f)), 0.004f, 0.025f, ALLOY, 8);
+		Cylinder(caliper, AlongZ(top + glm::vec3(0.f, 0.01f, 0.014f)), 0.01f, 0.012f, ALLOY, 10);
+		add(PartType::BRAKE_CALIPER, caliper);
+	}
 	lying(PartType::WHEEL_CYLINDER, 0.012f, 0.06f, IRON);
 	box(PartType::BRAKE_SHOE_SET, { 0.2f, 0.05f, 0.04f }, LINING);
 	{
@@ -897,7 +1015,46 @@ void ShopAssets::LoadCarParts()
 		hubAndStuds(drum, 0.06f);
 		add(PartType::BRAKE_DRUM, drum);
 	}
-	lying(PartType::PARKING_BRAKE_CABLE, 0.004f, 1.4f, TRIM_BLACK);
+	{
+		// The handbrake's cables, built in the car's space and moved into their part's (its place is PARKING_BRAKE_ORIGIN):
+		// the front one from the lever's foot down the tunnel beside the driveshaft and out under the floor to the
+		// equalizer, and from that one back out to each rear drum's backing plate, under the floor and over the lower
+		// links, with their guides.
+		MeshBuilder cable;
+		const glm::vec3 origin = { PARKING_BRAKE_ORIGIN[0], PARKING_BRAKE_ORIGIN[1], PARKING_BRAKE_ORIGIN[2] };
+		auto run = [&](glm::vec3 a, glm::vec3 b, float radius, const glm::vec3& color) {
+			a -= origin;
+			b -= origin;
+			const glm::vec3 along = b - a, up = { 0.f, 1.f, 0.f };
+			const float length = glm::length(along);
+			const glm::vec3 dir = along / length, axis = glm::cross(up, dir);
+			glm::mat4 transform = glm::translate(glm::mat4(1.f), (a + b) * 0.5f);
+			if (glm::length(axis) > 1e-5f)
+				transform = glm::rotate(transform, std::acos(glm::clamp(glm::dot(up, dir), -1.f, 1.f)), glm::normalize(axis));
+			else if (dir.y < 0.f)
+				transform = glm::rotate(transform, glm::pi<float>(), glm::vec3(1.f, 0.f, 0.f));
+			Cylinder(cable, transform, radius, length, color, 8);
+			cable.ResetTransform().SetColor(color).AddSphere(b, radius, 3, 8);
+		};
+		constexpr float Y = 0.17f, LANE = 0.075f;
+		const glm::vec3 equalizer = { -0.75f, Y, LANE };
+		run({ -0.33f, 0.41f, LANE }, { -0.33f, Y + 0.02f, LANE }, 0.004f, TRIM_BLACK);
+		run({ -0.33f, Y + 0.02f, LANE }, { -0.36f, Y, LANE }, 0.004f, TRIM_BLACK);
+		run({ -0.36f, Y, LANE }, equalizer, 0.004f, TRIM_BLACK);
+		cable.ResetTransform().SetColor(IRON).AddBox(equalizer - origin, { 0.03f, 0.012f, 0.06f });
+		for (float side : { -1.f, 1.f })
+		{
+			const glm::vec3 from = equalizer + glm::vec3(-0.01f, 0.f, side * 0.025f);
+			const glm::vec3 out = { -0.9f, Y, side * 0.42f }, back = { -1.09f, Y, side * 0.55f }, plate = { -1.13f, 0.24f, side * 0.565f };
+			run(from, out, 0.0035f, TRIM_BLACK);
+			run(out, back, 0.0035f, TRIM_BLACK);
+			run(back, plate, 0.0035f, TRIM_BLACK);
+			// A guide clipped up under the floor, and the cable's end fitting at the backing plate.
+			cable.ResetTransform().SetColor(IRON).AddBox(out - origin + glm::vec3(0.f, 0.006f, 0.f), { 0.02f, 0.012f, 0.012f });
+			run(plate - glm::vec3(0.f, 0.02f, 0.f) * 1.f, plate, 0.007f, IRON);
+		}
+		add(PartType::PARKING_BRAKE_CABLE, cable);
+	}
 
 	// Drivetrain
 	{
@@ -928,11 +1085,38 @@ void ShopAssets::LoadCarParts()
 		// the engine, the gear case, the long tail housing out to the driveshaft, and the lever up off the tail's end
 		// with its boot and knob.
 		Tube(gearbox, AlongX({ -0.2f, 0.15f, 0.f }), 0.16f, 0.15f, 0.2f, ALLOY, 28);
-		Tube(gearbox, AlongX({ -0.294f, 0.15f, 0.f }), 0.176f, 0.15f, 0.012f, ALLOY, 28);
+		// (Its flange in pieces, so as to leave the notch the starter's motor runs forward through, on the car's left.)
+		for (int piece = 0; piece < 40; piece++)
+		{
+			const float angle = glm::two_pi<float>() * (piece + 0.5f) / 40.f;	// from straight up, toward +z (the car's left)
+			if (std::abs(angle - glm::radians(97.f)) < glm::radians(16.f))
+				continue;
+			gearbox.SetTransform(glm::rotate(glm::translate(glm::mat4(1.f), { -0.294f, 0.15f, 0.f }), angle, glm::vec3(1.f, 0.f, 0.f)))
+				.SetColor(ALLOY).AddBox({ 0.f, 0.163f, 0.f }, { 0.012f, 0.026f, glm::two_pi<float>() * 0.176f / 40.f * 1.08f });
+		}
+		gearbox.ResetTransform();
 		Cylinder(gearbox, AlongX({ -0.105f, 0.15f, 0.f }), 0.16f, 0.01f, ALLOY, 28);
 		Box(gearbox, { 0.07f, 0.15f, 0.f }, { 0.34f, 0.2f, 0.18f }, ALLOY);
 		for (float x : { -0.03f, 0.07f, 0.17f })
 			Box(gearbox, { x, 0.15f, 0.f }, { 0.012f, 0.22f, 0.2f }, ALLOY);			// the case's ribs
+		// The slave cylinder's two bosses cast out of the bellhousing's (car's) right side, low down, its flange's ears
+		// against their front faces and its bolts into them (here the car's right is -z, its nose -x: see the slave's
+		// pose and CLUTCH_SLAVE_BOLT), the cylinder's body between them; and a web under them back onto the housing.
+		for (float dy : { -0.124f, -0.056f })
+		{
+			const float surface = std::sqrt(0.16f * 0.16f - dy * dy) - 0.012f, outer = 0.184f;
+			Box(gearbox, { -0.162f, 0.15f + dy, -(surface + outer) * 0.5f }, { 0.018f, 0.024f, outer - surface }, ALLOY);
+			Cylinder(gearbox, AlongX({ -0.162f, 0.15f + dy, -0.169f }), 0.013f, 0.018f, ALLOY, 14);
+		}
+		Box(gearbox, { -0.157f, 0.012f, -0.12f }, { 0.01f, 0.012f, 0.08f }, ALLOY);
+		// And the starter's two on its left (+z here), just ahead of the starter's flange: STARTER_BOLT comes forward
+		// through the flange's ears into them, the motor running on forward between them.
+		for (float dy : { -0.085f, 0.035f })
+		{
+			const float surface = std::sqrt(0.16f * 0.16f - dy * dy) - 0.012f, outer = 0.214f;
+			Box(gearbox, { -0.186f, 0.15f + dy, (surface + outer) * 0.5f }, { 0.018f, 0.026f, outer - surface }, ALLOY);
+			Cylinder(gearbox, AlongX({ -0.186f, 0.15f + dy, 0.2f }), 0.015f, 0.018f, ALLOY, 14);
+		}
 		Cylinder(gearbox, AlongX({ 0.44f, 0.15f, 0.f }), 0.055f, 0.4f, ALLOY, 18);
 		Cylinder(gearbox, AlongX({ 0.632f, 0.15f, 0.f }), 0.045f, 0.016f, IRON, 18);	// the output flange
 		Box(gearbox, { 0.59f, 0.215f, 0.f }, { 0.07f, 0.03f, 0.07f }, ALLOY);
@@ -978,7 +1162,7 @@ void ShopAssets::LoadCarParts()
 		Cylinder(master, At({ 0.f, 0.091f, 0.f }), 0.021f, 0.011f, TRIM_BLACK, 12);		// the cap, its edge fluted
 		Box(master, { 0.f, 0.099f, 0.f }, { 0.03f, 0.006f, 0.005f }, TRIM_BLACK);			// and the grip across its top
 		Box(master, { 0.f, 0.099f, 0.f }, { 0.005f, 0.006f, 0.03f }, TRIM_BLACK);
-		// The outlet: a union out of the front end's underside, the pipe to the release cylinder off it.
+		// The outlet: a union out of the front end's underside, the pipe to the slave cylinder off it.
 		Cylinder(master, At({ 0.05f, -0.021f, 0.f }), 0.008f, 0.01f, ALLOY, 14);
 		Cylinder(master, At({ 0.05f, -0.029f, 0.f }), 0.0072f, 0.008f, IRON, 6);
 		add(PartType::CLUTCH_MASTER_CYLINDER, master);
@@ -998,8 +1182,7 @@ void ShopAssets::LoadCarParts()
 		for (float y : { -0.034f, 0.034f })
 		{
 			Cylinder(slave, AlongX({ 0.026f, y, -0.006f }), 0.011f, 0.01f, ALLOY, 14);		// the ear's round end
-			Cylinder(slave, AlongX({ 0.035f, y, -0.006f }), 0.0075f, 0.008f, IRON, 6);		// the bolt's head
-			Cylinder(slave, AlongX({ 0.0315f, y, -0.006f }), 0.0095f, 0.002f, IRON, 14);		// its washer
+			Cylinder(slave, AlongX({ 0.026f, y, -0.006f }), 0.0045f, 0.0104f, { 0.08f, 0.08f, 0.09f }, 10);	// its bolt hole (the bolts are CLUTCH_SLAVE_BOLT)
 		}
 		// The boot, stepped down from the bore to round the rod, and the rod with its rounded end in the fork.
 		Cylinder(slave, AlongX({ 0.05f, 0.f, 0.f }), 0.0145f, 0.012f, RUBBER, 16);
@@ -1015,12 +1198,99 @@ void ShopAssets::LoadCarParts()
 		Cylinder(slave, bleed, 0.0055f, 0.01f, ALLOY, 10);
 		Cylinder(slave, bleed * At({ 0.f, 0.009f, 0.f }), 0.004f, 0.008f, IRON, 6);
 		Cylinder(slave, bleed * At({ 0.f, 0.017f, 0.f }), 0.0042f, 0.007f, RUBBER, 10);
-		add(PartType::CLUTCH_RELEASE_CYLINDER, slave);
+		add(PartType::CLUTCH_SLAVE_CYLINDER, slave);
 	}
 	lying(PartType::DRIVESHAFT, 0.035f, CarBody::ENGINE_X - 0.19f, TRIM_BLACK);		// from the gearbox's tail to the diff's nose
 
 	// Fuel
-	box(PartType::FUEL_TANK, { 0.8f, 0.25f, 0.6f }, TRIM_BLACK);
+	{
+		// The tank (across the car, so its x is the car's -z and its z the car's x, about its middle at -1.72), and its
+		// outlet stub down out of its underside near the front, through the boot floor (CarBody's FUEL_TANK_OUTLET).
+		// A pressed steel shell with rounded edges, its two halves' welded seam flange standing out round its middle, swages
+		// pressed across its top, a boss at each corner for its bolts (FUEL_TANK_BOLT), the sender's ring and locking screws
+		// (FUEL_SENDER sits in it), a drain plug underneath at the back, and the filler neck out of its right-hand side (its
+		// -x) up to the cap in the quarter (FLAP_X, FLAP_Y), with its breather beside it.
+		MeshBuilder tank;
+		const glm::vec3 SHELL = { 0.1f, 0.1f, 0.11f }, SEAM = { 0.14f, 0.14f, 0.15f };
+		constexpr float HX = 0.4f, H = 0.25f, HZ = 0.26f, R = 0.03f;
+		Box(tank, { 0.f, H * 0.5f, 0.f }, { 2.f * HX, H - 2.f * R, 2.f * HZ - 2.f * R }, SHELL);
+		Box(tank, { 0.f, H * 0.5f, 0.f }, { 2.f * HX - 2.f * R, H - 2.f * R, 2.f * HZ }, SHELL);
+		Box(tank, { 0.f, H * 0.5f, 0.f }, { 2.f * HX - 2.f * R, H, 2.f * HZ - 2.f * R }, SHELL);
+		for (float sx : { -1.f, 1.f })
+			for (float sz : { -1.f, 1.f })
+			{
+				Cylinder(tank, At({ sx * (HX - R), H * 0.5f, sz * (HZ - R) }), R, H - 2.f * R, SHELL, 12);
+				for (float y : { R, H - R })
+					tank.ResetTransform().SetColor(SHELL).AddSphere({ sx * (HX - R), y, sz * (HZ - R) }, R, 4, 12);
+			}
+		for (float y : { R, H - R })
+			for (float s : { -1.f, 1.f })
+			{
+				Cylinder(tank, AlongX({ 0.f, y, s * (HZ - R) }), R, 2.f * HX - 2.f * R, SHELL, 12);
+				Cylinder(tank, AlongZ({ s * (HX - R), y, 0.f }), R, 2.f * HZ - 2.f * R, SHELL, 12);
+			}
+		// The seam flange.
+		constexpr float SEAM_Y = 0.15f, LIP = 0.018f;
+		for (float s : { -1.f, 1.f })
+		{
+			Box(tank, { 0.f, SEAM_Y, s * (HZ + LIP * 0.5f - 0.004f) }, { 2.f * HX + 2.f * LIP, 0.005f, LIP + 0.008f }, SEAM);
+			Box(tank, { s * (HX + LIP * 0.5f - 0.004f), SEAM_Y, 0.f }, { LIP + 0.008f, 0.005f, 2.f * HZ }, SEAM);
+		}
+		// Swages across the top (clear of the sender's ring and the bolts).
+		for (float z : { -0.2f, -0.07f })
+			Box(tank, { 0.f, H + 0.002f, z }, { 2.f * HX - 0.14f, 0.006f, 0.035f }, SHELL);
+		// The bolts' bosses, with a washer face each.
+		for (float sx : { -1.f, 1.f })
+			for (float sz : { -1.f, 1.f })
+			{
+				Cylinder(tank, At({ sx * 0.37f, H + 0.004f, sz * 0.23f }), 0.022f, 0.008f, SEAM, 14);
+				Cylinder(tank, At({ sx * 0.37f, H + 0.009f, sz * 0.23f }), 0.014f, 0.002f, ALLOY, 12);
+			}
+		// The sender's ring (the sender's at the car's -1.6, z 0.18: here x -0.18, z 0.08) and its screws round it.
+		{
+			const glm::vec3 sender = { -0.18f, H, -1.6f - FUEL_TANK_X };
+			Tube(tank, At(sender + glm::vec3(0.f, 0.005f, 0.f)), 0.062f, 0.04f, 0.01f, SEAM, 24);
+			for (int i = 0; i < 6; ++i)
+			{
+				const float a = glm::two_pi<float>() * (i + 0.5f) / 6.f;
+				Cylinder(tank, At(sender + glm::vec3(std::cos(a) * 0.052f, 0.012f, std::sin(a) * 0.052f)), 0.005f, 0.004f, ALLOY, 8);
+			}
+		}
+		// The outlet stub down through the boot floor, with its hose clamp's band where the hose goes on.
+		{
+			const glm::vec3 outlet = { -FUEL_TANK_OUTLET[2], 0.f, FUEL_TANK_OUTLET[0] - FUEL_TANK_X };
+			const float drop = 0.24f - FUEL_TANK_OUTLET[1];
+			Cylinder(tank, At(outlet + glm::vec3(0.f, -drop * 0.5f, 0.f)), 0.011f, drop, ALLOY, 10);
+			Cylinder(tank, At(outlet + glm::vec3(0.f, -0.003f, 0.f)), 0.022f, 0.006f, SEAM, 14);	// its welded collar
+		}
+		// The drain plug, under the back on the left.
+		Cylinder(tank, At({ 0.22f, -0.006f, -0.2f }), 0.018f, 0.012f, SEAM, 14);
+		Cylinder(tank, At({ 0.22f, -0.016f, -0.2f }), 0.011f, 0.01f, ALLOY, 6);
+		// The filler neck: a steel spout out of the side near the top, the rubber hose angled up and out to the steel pipe
+		// in the pocket behind the cap, a clamp at each joint. And the breather's thin pipe up beside it.
+		{
+			const glm::vec3 up = { 0.f, 1.f, 0.f };
+			auto segment = [&](glm::vec3 a, glm::vec3 b, float radius, const glm::vec3& color, int segments) {
+				const glm::vec3 along = b - a, dir = glm::normalize(along), axis = glm::cross(up, dir);
+				glm::mat4 transform = glm::translate(glm::mat4(1.f), (a + b) * 0.5f);
+				if (glm::length(axis) > 1e-5f)
+					transform = glm::rotate(transform, std::acos(glm::clamp(glm::dot(up, dir), -1.f, 1.f)), glm::normalize(axis));
+				Cylinder(tank, transform, radius, glm::length(along), color, segments);
+			};
+			const float neckZ = FLAP_X - FUEL_TANK_X;
+			const glm::vec3 spout = { -HX + 0.01f, 0.19f, neckZ }, spoutEnd = { -HX - 0.06f, 0.215f, neckZ };
+			const glm::vec3 pipeEnd = { -(SIDE - SKIN) + 0.005f, FLAP_Y - 0.24f, neckZ }, pipe = pipeEnd + glm::vec3(0.1f, -0.03f, 0.f);
+			segment(spout, spoutEnd, 0.03f, SHELL, 16);
+			segment(spoutEnd - glm::vec3(0.02f, 0.007f, 0.f), pipe + glm::vec3(0.02f, -0.006f, 0.f), 0.036f, RUBBER, 18);
+			segment(pipe, pipeEnd, 0.03f, SHELL, 16);
+			for (const glm::vec3& at : { spoutEnd - glm::vec3(0.008f, 0.003f, 0.f), pipe + glm::vec3(0.008f, -0.002f, 0.f) })
+				segment(at - glm::vec3(0.006f, 0.002f, 0.f), at + glm::vec3(0.006f, 0.002f, 0.f), 0.039f, ALLOY, 18);
+			const glm::vec3 vent = { -HX + 0.05f, H, neckZ + 0.07f }, ventTop = { -HX + 0.05f, H + 0.06f, neckZ + 0.07f };
+			segment(vent, ventTop, 0.006f, ALLOY, 8);
+			segment(ventTop, pipe + glm::vec3(0.f, 0.04f, 0.045f), 0.006f, RUBBER, 8);
+		}
+		add(PartType::FUEL_TANK, tank);
+	}
 	upright(PartType::FUEL_SENDER, 0.04f, 0.25f, ALLOY);
 	box(PartType::FUEL_LINE_SET, { 1.2f, 0.02f, 0.08f }, ALLOY);
 	{
@@ -1058,11 +1328,85 @@ void ShopAssets::LoadCarParts()
 
 	// Electrical
 	{
+		// The battery, along x (on the car its +x the nose, +z in toward the engine): a moulded case with rounded corners,
+		// ribbed down its long sides, the ledge round its foot the tray's hold-down catches, and its lid over the top's
+		// edge. On the lid, its six cells' vent caps in two strips, the charge eye, and the two lead posts on their pads
+		// (positive at the back with its red ring and +, negative at the front with the ground strap's clamp on it: the
+		// strap goes off its top, see ShopWorldCarWiring's Anchor). The maker's label on the side toward the engine.
 		MeshBuilder battery;
-		Box(battery, { 0.f, 0.09f, 0.f }, { 0.23f, 0.18f, 0.17f }, TRIM_BLACK);
-		Cylinder(battery, At({ -0.08f, 0.19f, 0.f }), 0.01f, 0.02f, LENS_RED, 10);
-		Cylinder(battery, At({ 0.08f, 0.19f, 0.f }), 0.01f, 0.02f, ALLOY, 10);
+		const glm::vec3 CASE = { 0.12f, 0.12f, 0.13f }, LID = { 0.17f, 0.17f, 0.18f }, LEAD = { 0.55f, 0.56f, 0.58f };
+		const glm::vec3 RED = { 0.75f, 0.12f, 0.1f }, LABEL = { 0.13f, 0.32f, 0.62f }, LIGHT = { 0.9f, 0.9f, 0.88f };
+		constexpr float HX = 0.115f, HZ = 0.085f, R = 0.01f, TOP = 0.165f;
+		Box(battery, { 0.f, TOP * 0.5f, 0.f }, { 2.f * HX, TOP, 2.f * HZ - 2.f * R }, CASE);
+		Box(battery, { 0.f, TOP * 0.5f, 0.f }, { 2.f * HX - 2.f * R, TOP, 2.f * HZ }, CASE);
+		for (float sx : { -1.f, 1.f })
+			for (float sz : { -1.f, 1.f })
+				Cylinder(battery, At({ sx * (HX - R), TOP * 0.5f, sz * (HZ - R) }), R, TOP, CASE, 10);
+		// The foot's ledge, and the ribs.
+		for (float side : { -1.f, 1.f })
+		{
+			Box(battery, { 0.f, 0.006f, side * (HZ + 0.004f) }, { 2.f * HX - 0.01f, 0.012f, 0.008f }, CASE);
+			for (float x : { -0.075f, -0.025f, 0.025f, 0.075f })
+				Box(battery, { x, 0.085f, side * (HZ + 0.0012f) }, { 0.006f, 0.13f, 0.0024f }, CASE);
+		}
+		// The lid, its lip over the case's top edge.
+		Box(battery, { 0.f, TOP + 0.0075f, 0.f }, { 2.f * HX + 0.004f, 0.015f, 2.f * HZ + 0.004f }, LID);
+		Box(battery, { 0.f, TOP + 0.016f, 0.f }, { 2.f * HX - 0.03f, 0.002f, 2.f * HZ - 0.02f }, LID);
+		// The vent caps: two strips of three, along its middle between the posts.
+		for (float z : { -0.035f, 0.035f })
+		{
+			Box(battery, { 0.f, TOP + 0.019f, z }, { 0.11f, 0.004f, 0.03f }, CASE);
+			for (float x : { -0.035f, 0.f, 0.035f })
+			{
+				Cylinder(battery, At({ x, TOP + 0.022f, z }), 0.0085f, 0.003f, CASE, 12);
+				Box(battery, { x, TOP + 0.0237f, z }, { 0.012f, 0.0006f, 0.0015f }, { 0.06f, 0.06f, 0.06f });
+			}
+		}
+		Cylinder(battery, At({ 0.f, TOP + 0.0175f, 0.f }), 0.0065f, 0.003f, CASE, 12);
+		Cylinder(battery, At({ 0.f, TOP + 0.0192f, 0.f }), 0.004f, 0.0006f, { 0.2f, 0.7f, 0.25f }, 12);	// the charge eye, green
+		// The posts, each on its pad: tapered lead, a coloured ring round the foot of each, and its sign by it.
+		for (float sx : { -1.f, 1.f })
+		{
+			const float x = sx * 0.08f;
+			const bool positive = sx < 0.f;
+			Cylinder(battery, At({ x, TOP + 0.019f, 0.f }), 0.015f, 0.008f, LID, 14);
+			Cylinder(battery, At({ x, TOP + 0.0235f, 0.f }), 0.0125f, 0.0012f, positive ? RED : TRIM_BLACK, 14);
+			Cylinder(battery, At({ x, TOP + 0.03f, 0.f }), 0.0088f, 0.012f, LEAD, 12);
+			Cylinder(battery, At({ x, TOP + 0.039f, 0.f }), 0.0078f, 0.006f, LEAD, 12);
+			Box(battery, { x + sx * 0.022f, TOP + 0.0172f, 0.05f }, { 0.012f, 0.0006f, 0.0028f }, positive ? RED : LIGHT);
+			if (positive)
+				Box(battery, { x + sx * 0.022f, TOP + 0.0172f, 0.05f }, { 0.0028f, 0.0006f, 0.012f }, RED);
+		}
+		// The ground strap's clamp on the negative post: its ring, the pinch bolt through its ears, and the barrel up off
+		// it the strap's crimped into.
+		{
+			const glm::vec3 post = { 0.08f, TOP + 0.03f, 0.f };
+			Tube(battery, At(post), 0.012f, 0.0089f, 0.014f, LEAD, 14);
+			Box(battery, { post.x - 0.0155f, post.y, 0.f }, { 0.008f, 0.012f, 0.012f }, LEAD);
+			Cylinder(battery, AlongZ({ post.x - 0.0165f, post.y, 0.f }), 0.0025f, 0.022f, IRON, 6);
+			Cylinder(battery, AlongZ({ post.x - 0.0165f, post.y, 0.0095f }), 0.0045f, 0.004f, IRON, 6);
+			Cylinder(battery, At({ post.x, post.y + 0.0135f, 0.f }), 0.0055f, 0.013f, LEAD, 10);
+		}
+		// The label.
+		Box(battery, { 0.f, 0.09f, HZ + 0.0026f }, { 0.14f, 0.08f, 0.0008f }, LABEL);
+		Box(battery, { 0.f, 0.1f, HZ + 0.003f }, { 0.12f, 0.012f, 0.0008f }, LIGHT);
+		Box(battery, { -0.03f, 0.075f, HZ + 0.003f }, { 0.06f, 0.006f, 0.0008f }, LIGHT);
 		add(PartType::BATTERY, battery);
+	}
+	{
+		// The harness's battery lead's end: the clamp that goes round the positive post (its axis up, round the origin),
+		// pinched by its bolt, the lead coming into its barrel along +x, a red rubber boot over the barrel.
+		MeshBuilder clamp;
+		const glm::vec3 LEAD = { 0.55f, 0.56f, 0.58f }, RED = { 0.75f, 0.12f, 0.1f };
+		Tube(clamp, At({ 0.f, 0.f, 0.f }), 0.012f, 0.0089f, 0.014f, LEAD, 14);
+		Box(clamp, { 0.0155f, 0.f, 0.f }, { 0.008f, 0.012f, 0.012f }, LEAD);
+		Cylinder(clamp, AlongZ({ 0.0165f, 0.f, 0.f }), 0.0025f, 0.022f, IRON, 6);
+		Cylinder(clamp, AlongZ({ 0.0165f, 0.f, 0.0095f }), 0.0045f, 0.004f, IRON, 6);
+		Box(clamp, { -0.017f, 0.f, 0.f }, { 0.012f, 0.008f, 0.01f }, LEAD);
+		Cylinder(clamp, AlongX({ -0.028f, 0.f, 0.f }), 0.0058f, 0.014f, LEAD, 10);
+		Cylinder(clamp, AlongX({ -0.03f, 0.f, 0.f }), 0.0085f, 0.018f, RED, 12);
+		Cylinder(clamp, AlongX({ -0.042f, 0.f, 0.f }), 0.0065f, 0.008f, RED, 12);
+		AddModel(ShopModels::BATTERY_CLAMP, clamp, true);
 	}
 	// The looms: a taped trunk with a plug at each end and branches off it.
 	auto loom = [&](PartType type, float length, int branches) {
@@ -1121,9 +1465,56 @@ void ShopAssets::LoadCarParts()
 		add(PartType::IGNITION_COIL, coil);
 	}
 	{
+		// The starter, along x beside the bellhousing on the car's left (its +x the nose), its axis 0.045 up: the cast drive
+		// end at the back with the pinion out of its nose, the flange behind the motor with its two bolt ears (STARTER_BOLT's
+		// heads sit on their backs, the bolts going forward into the bosses on the bellhousing), the painted motor yoke with
+		// its two long through bolts, the brush end cap at the front with its bearing boss, and the solenoid riding on top:
+		// its can, its end cap with the battery cable's stud and the small switch terminal (the harness's plug goes on top,
+		// see ShopWorldCarWiring), and the copper strap down into the motor.
 		MeshBuilder starter;
-		Cylinder(starter, AlongX({ 0.f, 0.045f, 0.f }), 0.045f, 0.18f, TRIM_BLACK, 16);
-		Cylinder(starter, AlongX({ 0.f, 0.095f, 0.f }), 0.02f, 0.1f, ALLOY, 12);
+		constexpr float AXIS = 0.045f, YOKE = 0.04f;
+		const glm::vec3 CAST = { 0.62f, 0.63f, 0.65f }, COPPER = { 0.72f, 0.42f, 0.24f }, HOLE = { 0.08f, 0.08f, 0.09f };
+		// The drive end and its nose, stepped down toward the pinion.
+		Cylinder(starter, AlongX({ -0.105f, AXIS, 0.f }), 0.034f, 0.03f, CAST, 18);
+		Cylinder(starter, AlongX({ -0.13f, AXIS, 0.f }), 0.026f, 0.02f, CAST, 16);
+		Cylinder(starter, AlongX({ -0.143f, AXIS, 0.f }), 0.02f, 0.006f, CAST, 16);
+		Cylinder(starter, AlongX({ -0.152f, AXIS, 0.f }), 0.006f, 0.014f, IRON, 10);					// the shaft
+		Cylinder(starter, AlongX({ -0.155f, AXIS, 0.f }), 0.0115f, 0.01f, IRON, 9);					// the pinion (nine teeth)
+		for (int tooth = 0; tooth < 9; tooth++)
+		{
+			const float a = glm::two_pi<float>() * tooth / 9.f;
+			Box(starter, { -0.155f, AXIS + std::sin(a) * 0.0125f, std::cos(a) * 0.0125f }, { 0.01f, 0.004f, 0.004f }, IRON);
+		}
+		// The flange and its ears.
+		Box(starter, { -0.084f, AXIS, 0.f }, { 0.012f, 0.12f, 0.05f }, CAST);
+		for (float side : { -1.f, 1.f })
+		{
+			Cylinder(starter, AlongX({ -0.084f, AXIS + side * 0.06f, 0.f }), 0.014f, 0.012f, CAST, 14);
+			Cylinder(starter, AlongX({ -0.084f, AXIS + side * 0.06f, 0.f }), 0.0055f, 0.0124f, HOLE, 10);
+		}
+		// The yoke, its band where the drive end meets it, and the brush end cap.
+		Cylinder(starter, AlongX({ 0.01f, AXIS, 0.f }), YOKE, 0.176f, TRIM_BLACK, 20);
+		Cylinder(starter, AlongX({ -0.074f, AXIS, 0.f }), YOKE + 0.002f, 0.008f, CAST, 20);
+		Cylinder(starter, AlongX({ 0.106f, AXIS, 0.f }), YOKE - 0.002f, 0.016f, CAST, 20);
+		Cylinder(starter, AlongX({ 0.12f, AXIS, 0.f }), 0.016f, 0.012f, CAST, 14);
+		Cylinder(starter, AlongX({ 0.127f, AXIS, 0.f }), 0.008f, 0.003f, IRON, 10);
+		// The through bolts down its sides, from the end cap back to the drive end, with their heads on the cap.
+		for (float side : { -1.f, 1.f })
+		{
+			Cylinder(starter, AlongX({ 0.01f, AXIS - 0.012f, side * (YOKE + 0.002f) }), 0.003f, 0.19f, IRON, 6);
+			Cylinder(starter, AlongX({ 0.116f, AXIS - 0.012f, side * (YOKE - 0.006f) }), 0.005f, 0.006f, IRON, 6);
+		}
+		// The solenoid on top, on a saddle off the drive end.
+		constexpr float SOL = AXIS + YOKE + 0.022f;
+		Box(starter, { -0.03f, AXIS + YOKE + 0.004f, 0.f }, { 0.03f, 0.016f, 0.03f }, CAST);
+		Cylinder(starter, AlongX({ -0.005f, SOL, 0.f }), 0.022f, 0.1f, ALLOY, 18);
+		Cylinder(starter, AlongX({ 0.05f, SOL, 0.f }), 0.02f, 0.01f, TRIM_BLACK, 16);				// its end cap
+		Cylinder(starter, AlongX({ 0.061f, SOL + 0.008f, 0.f }), 0.004f, 0.014f, COPPER, 8);			// the battery stud
+		Cylinder(starter, AlongX({ 0.058f, SOL + 0.008f, 0.f }), 0.0065f, 0.004f, IRON, 6);			// its nut
+		Cylinder(starter, AlongX({ 0.059f, SOL - 0.01f, 0.f }), 0.003f, 0.01f, COPPER, 8);			// the motor's stud
+		Box(starter, { 0.064f, (SOL - 0.01f + AXIS + YOKE) * 0.5f, 0.f }, { 0.003f, SOL - 0.01f - AXIS - YOKE + 0.004f, 0.01f }, COPPER);
+		Cylinder(starter, At({ 0.f, SOL + 0.024f, 0.f }), 0.006f, 0.006f, TRIM_BLACK, 10);			// the switch terminal
+		Cylinder(starter, At({ 0.f, SOL + 0.03f, 0.f }), 0.0025f, 0.008f, COPPER, 8);
 		add(PartType::STARTER, starter);
 	}
 
@@ -1162,10 +1553,11 @@ void ShopAssets::LoadCarParts()
 		add(PartType::RADIATOR, radiator);
 	}
 	{
-		// A radiator hose: moulded rubber, bowed between its two ends (0.48 m apart along X, either side of the middle),
-		// a clip round each. Both hoses are this one: PoseOnCar turns it to run from the radiator's outlet to the engine's.
+		// A radiator hose: moulded rubber, bowed between its two ends (0.386 m apart along X, either side of the middle: what
+		// both of the car's are between their outlets, see PoseOnCar), a clip round each. Both hoses are this one: PoseOnCar
+		// turns it to run from the radiator's outlet to the engine's.
 		MeshBuilder hose;
-		constexpr float RADIUS = 0.021f, HALF = 0.18f, BOW = 0.04f;
+		constexpr float RADIUS = 0.021f, HALF = 0.193f, BOW = 0.035f;
 		constexpr int PIECES = 12;
 		auto along = [&](float t) { float u = 2.f * t - 1.f; return glm::vec3(u * HALF, RADIUS + BOW * (1.f - u * u), 0.f); };
 		for (int piece = 0; piece < PIECES; piece++)
@@ -1186,6 +1578,18 @@ void ShopAssets::LoadCarParts()
 		{
 			fan.SetTransform(glm::rotate(At({ 0.f, 0.03f, 0.f }), blade * glm::half_pi<float>(), glm::vec3(0.f, 1.f, 0.f))).SetColor(TRIM_BLACK);
 			fan.AddBox({ 0.08f, 0.f, 0.f }, { 0.15f, 0.01f, 0.05f });
+			fan.ResetTransform();
+		}
+		// Its motor behind the blades (+y here, toward the engine on the car), held in the shroud's ring by four struts
+		// between the blades: the hub the blades are on, the motor's can and its end cap, the harness's socket on the
+		// cap's face (ShopWorldCarWiring's PlugSocket puts the plug there).
+		Cylinder(fan, At({ 0.f, 0.03f, 0.f }), 0.032f, 0.022f, TRIM_BLACK, 16);
+		Cylinder(fan, At({ 0.f, 0.07f, 0.f }), 0.045f, 0.056f, { 0.3f, 0.3f, 0.32f }, 18);
+		Cylinder(fan, At({ 0.f, 0.1f, 0.f }), 0.04f, 0.008f, { 0.6f, 0.61f, 0.63f }, 18);
+		for (int strut = 0; strut < 4; strut++)
+		{
+			fan.SetTransform(glm::rotate(At({ 0.f, 0.07f, 0.f }), (strut + 0.5f) * glm::half_pi<float>(), glm::vec3(0.f, 1.f, 0.f))).SetColor(TRIM_BLACK);
+			fan.AddBox({ 0.104f, 0.f, 0.f }, { 0.12f, 0.008f, 0.014f });
 			fan.ResetTransform();
 		}
 		add(PartType::COOLING_FAN, fan);
@@ -1297,43 +1701,176 @@ void ShopAssets::LoadCarParts()
 		// -x. A socket: the half that's on whatever it plugs into, open toward -x. And a metre of wire along x, which
 		// ShopWorld stretches from point to point.
 		MeshBuilder plug, socket, wire;
-		Box(plug, { 0.f, 0.f, 0.f }, { 0.034f, 0.022f, 0.028f }, OFF_WHITE);
-		Box(plug, { 0.004f, 0.013f, 0.f }, { 0.016f, 0.005f, 0.012f }, { 0.6f, 0.6f, 0.56f });
-		Cylinder(plug, AlongX({ -0.024f, 0.f, 0.f }), 0.007f, 0.016f, TRIM_BLACK, 8);
-		AddModel(ShopModels::HARNESS_PLUG, plug, true);
-		Box(socket, { 0.f, 0.f, 0.f }, { 0.024f, 0.028f, 0.034f }, { 0.25f, 0.25f, 0.27f });
-		Box(socket, { -0.0125f, 0.f, 0.f }, { 0.002f, 0.018f, 0.024f }, { 0.05f, 0.05f, 0.05f });
-		for (float z : { -0.006f, 0.006f })
-			Box(socket, { -0.014f, 0.f, z }, { 0.002f, 0.01f, 0.004f }, COPPER);
-		AddModel(ShopModels::HARNESS_SOCKET, socket, true);
+		{
+			// The plug (the male half's housing, its blades inside it): its moulded body, the nose that goes into the
+			// socket with its seal ring and two terminal blades standing out of its face, grip ribs down its sides, the
+			// latch arm along its top (hooked at the front, a thumb pad at the back to press it off), and the rubber boot
+			// at the back the wire comes out of, stepped down to the wire.
+			const glm::vec3 BODY = OFF_WHITE, LATCH = { 0.62f, 0.62f, 0.58f }, SEAL = { 0.85f, 0.45f, 0.12f }, BRASS = { 0.78f, 0.62f, 0.28f };
+			Box(plug, { -0.003f, 0.f, 0.f }, { 0.024f, 0.022f, 0.028f }, BODY);
+			Box(plug, { 0.012f, 0.f, 0.f }, { 0.008f, 0.017f, 0.023f }, BODY);						// the nose
+			Box(plug, { 0.0085f, 0.f, 0.f }, { 0.0025f, 0.0185f, 0.0245f }, SEAL);					// its seal
+			for (float z : { -0.006f, 0.006f })
+			{
+				Box(plug, { 0.0162f, 0.f, z }, { 0.0005f, 0.008f, 0.005f }, { 0.08f, 0.08f, 0.09f });	// the blade's slot
+				Box(plug, { 0.0185f, 0.f, z }, { 0.006f, 0.0055f, 0.0012f }, BRASS);				// the blade
+			}
+			for (float side : { -1.f, 1.f })
+				for (float x : { -0.011f, -0.006f, -0.001f })
+					Box(plug, { x, 0.f, side * 0.0145f }, { 0.002f, 0.018f, 0.0012f }, BODY);
+			// The latch: its arm on two posts, the hook at its front, the pad at its back.
+			Box(plug, { 0.001f, 0.0125f, 0.f }, { 0.004f, 0.003f, 0.01f }, LATCH);
+			Box(plug, { 0.003f, 0.0148f, 0.f }, { 0.024f, 0.0018f, 0.009f }, LATCH);
+			Box(plug, { 0.0145f, 0.0135f, 0.f }, { 0.002f, 0.0045f, 0.009f }, LATCH);
+			Box(plug, { -0.0085f, 0.0163f, 0.f }, { 0.006f, 0.0022f, 0.011f }, LATCH);
+			for (float x : { -0.01f, -0.0075f })
+				Box(plug, { x, 0.0177f, 0.f }, { 0.0008f, 0.0008f, 0.011f }, BODY);				// its grip lines
+			// The boot.
+			Cylinder(plug, AlongX({ -0.0175f, 0.f, 0.f }), 0.0095f, 0.005f, RUBBER, 12);
+			Cylinder(plug, AlongX({ -0.0225f, 0.f, 0.f }), 0.0075f, 0.005f, RUBBER, 12);
+			Cylinder(plug, AlongX({ -0.028f, 0.f, 0.f }), 0.0058f, 0.006f, RUBBER, 10);
+			AddModel(ShopModels::HARNESS_PLUG, plug, true);
+		}
+		{
+			// The socket (the female half, on what it plugs into), open toward -x: a shroud the plug's nose goes into, its
+			// four walls round the dark cavity with the two terminals' receptacles at the back, the lock's ramp on top the
+			// plug's latch hooks over, a polarising key down one side, and the flange it's fixed by at the back, with its
+			// two screws.
+			const glm::vec3 SHELL = { 0.25f, 0.25f, 0.27f }, DARK_IN = { 0.04f, 0.04f, 0.045f };
+			constexpr float DEPTH = 0.018f, H = 0.024f, W = 0.03f, WALL = 0.0025f, FRONT = -0.012f;
+			const float middle = FRONT + DEPTH * 0.5f;
+			Box(socket, { middle, (H - WALL) * 0.5f, 0.f }, { DEPTH, WALL, W }, SHELL);
+			Box(socket, { middle, -(H - WALL) * 0.5f, 0.f }, { DEPTH, WALL, W }, SHELL);
+			for (float side : { -1.f, 1.f })
+				Box(socket, { middle, 0.f, side * (W - WALL) * 0.5f }, { DEPTH, H - 2.f * WALL, WALL }, SHELL);
+			Box(socket, { FRONT + DEPTH - 0.002f, 0.f, 0.f }, { 0.004f, H - 2.f * WALL, W - 2.f * WALL }, DARK_IN);	// the cavity's back
+			for (float z : { -0.006f, 0.006f })
+			{
+				Box(socket, { FRONT + DEPTH - 0.0045f, 0.f, z }, { 0.002f, 0.0075f, 0.004f }, COPPER);
+				Box(socket, { FRONT + DEPTH - 0.0052f, 0.f, z }, { 0.0006f, 0.0045f, 0.0016f }, DARK_IN);
+			}
+			Box(socket, { FRONT + DEPTH * 0.5f, -0.004f, W * 0.5f - WALL - 0.001f }, { DEPTH, 0.004f, 0.002f }, SHELL);	// the key
+			// The lock's ramp on the top wall's front, and the flange at the back.
+			Box(socket, { FRONT + 0.003f, H * 0.5f + 0.0012f, 0.f }, { 0.004f, 0.0024f, 0.008f }, SHELL);
+			Box(socket, { FRONT + DEPTH + 0.002f, 0.f, 0.f }, { 0.004f, H + 0.004f, W + 0.016f }, SHELL);
+			for (float side : { -1.f, 1.f })
+			{
+				Cylinder(socket, AlongX({ FRONT + DEPTH + 0.0005f, 0.f, side * (W * 0.5f + 0.0045f) }), 0.0032f, 0.0012f, ALLOY, 10);
+				Box(socket, { FRONT + DEPTH - 0.0002f, 0.f, side * (W * 0.5f + 0.0045f) }, { 0.0004f, 0.0045f, 0.0008f }, DARK_IN);
+			}
+			AddModel(ShopModels::HARNESS_SOCKET, socket, true);
+		}
 		Cylinder(wire, AlongX({ 0.5f, 0.f, 0.f }), 0.0045f, 1.f, { 1.f, 1.f, 1.f }, 6);
 		AddModel(ShopModels::HARNESS_WIRE, wire, true);
-		// A clip that holds a wire where the player has led it: a little yellow saddle round it.
-		MeshBuilder clip;
-		clip.ResetTransform().SetColor({ 0.85f, 0.68f, 0.12f }).AddSphere({}, 0.011f, 6, 8);
-		AddModel(ShopModels::HARNESS_CLIP, clip, true);
-		// The bolt that holds the battery's ground strap to the body, wherever it's put: a washer on the panel, a small
-		// brass stud standing out of it along +x with its nut. (ShopWorld turns +x to face out of the panel.)
-		MeshBuilder stud;
-		Cylinder(stud, AlongX({ 0.0015f, 0.f, 0.f }), 0.015f, 0.003f, { 0.78f, 0.78f, 0.8f }, 12);
-		Cylinder(stud, AlongX({ 0.0225f, 0.f, 0.f }), 0.005f, 0.045f, { 0.85f, 0.62f, 0.2f }, 10);
-		Cylinder(stud, AlongX({ 0.03f, 0.f, 0.f }), 0.01f, 0.008f, { 0.85f, 0.62f, 0.2f }, 6);
-		AddModel(ShopModels::GROUND_STUD, stud, true);
+		{
+			// A clip that holds a wire where the player has led it, the wire through it along x (ShopWorld turns it along
+			// the wire and sizes it to a pipe or hose): a nylon strap round the wire with its buckle on the side, on a
+			// saddle base under it, and the fir tree pin down out of the base that pushes into a hole in the panel.
+			MeshBuilder clip;
+			const glm::vec3 NYLON = { 0.85f, 0.68f, 0.12f }, NYLON_DARK = { 0.7f, 0.55f, 0.08f };
+			Tube(clip, AlongX({ 0.f, 0.f, 0.f }), 0.0064f, 0.0046f, 0.006f, NYLON, 14);
+			Box(clip, { 0.f, 0.f, 0.0072f }, { 0.007f, 0.0055f, 0.003f }, NYLON_DARK);				// the buckle
+			Box(clip, { 0.f, 0.0028f, 0.0088f }, { 0.004f, 0.0012f, 0.0035f }, NYLON);				// the strap's tail out of it
+			Box(clip, { 0.f, -0.0068f, 0.f }, { 0.012f, 0.0024f, 0.013f }, NYLON);					// the saddle
+			for (float z : { -0.005f, 0.005f })
+				Box(clip, { 0.f, -0.0052f, z }, { 0.012f, 0.0012f, 0.003f }, NYLON);				// its cheeks up the wire's sides
+			Cylinder(clip, At({ 0.f, -0.0105f, 0.f }), 0.0016f, 0.005f, NYLON, 8);
+			for (float y : { -0.0095f, -0.0115f })
+				Cylinder(clip, At({ 0.f, y, 0.f }), 0.0028f, 0.0007f, NYLON_DARK, 10);				// the pin's fins
+			AddModel(ShopModels::HARNESS_CLIP, clip, true);
+		}
+		{
+			// The stud that holds the battery's ground strap to the body, wherever it's put, standing out of the panel along
+			// +x (ShopWorld turns +x to face out of the panel): the bright ring where the paint's scraped off for a good
+			// contact, the stud's welded base, a serrated washer under the strap's lug (GROUND_LUG, on it at x 0.0055), the
+			// flanged nut on top of that, and the stud's threaded end out past it.
+			MeshBuilder stud;
+			const glm::vec3 BARE = { 0.78f, 0.78f, 0.8f }, PLATED = { 0.7f, 0.68f, 0.55f };
+			Cylinder(stud, AlongX({ 0.0003f, 0.f, 0.f }), 0.0165f, 0.0006f, BARE, 18);
+			Cylinder(stud, AlongX({ 0.0012f, 0.f, 0.f }), 0.0075f, 0.0024f, BARE, 14);
+			Tube(stud, AlongX({ 0.0031f, 0.f, 0.f }), 0.0105f, 0.0048f, 0.0014f, PLATED, 16);
+			for (int tooth = 0; tooth < 10; tooth++)
+			{
+				const float a = glm::two_pi<float>() * tooth / 10.f;
+				Box(stud, { 0.0039f, std::sin(a) * 0.0092f, std::cos(a) * 0.0092f }, { 0.0006f, 0.0018f, 0.0018f }, PLATED);
+			}
+			Cylinder(stud, AlongX({ 0.0118f, 0.f, 0.f }), 0.004f, 0.019f, PLATED, 10);
+			for (float x : { 0.0165f, 0.0185f, 0.0205f })
+				Cylinder(stud, AlongX({ x, 0.f, 0.f }), 0.0044f, 0.0007f, PLATED, 10);				// its thread
+			Cylinder(stud, AlongX({ 0.0078f, 0.f, 0.f }), 0.0098f, 0.0016f, PLATED, 16);			// the nut's flange
+			Cylinder(stud, AlongX({ 0.0114f, 0.f, 0.f }), 0.0085f, 0.0056f, PLATED, 6);
+			AddModel(ShopModels::GROUND_STUD, stud, true);
+		}
+		{
+			// The ground strap's end: a ring lug, the strap coming in along +x to it. Its ring lies flat, its hole's axis
+			// up (on the stud, ShopWorld turns its up out of the panel and puts it so the ring sits on the washer), the
+			// tongue back from it to the barrel crimped on the strap's end, and the black sleeve over the crimp.
+			MeshBuilder lug;
+			const glm::vec3 TINNED = { 0.76f, 0.74f, 0.68f };
+			Tube(lug, At({ 0.f, -0.0035f, 0.f }), 0.0105f, 0.0046f, 0.0016f, TINNED, 18);
+			Box(lug, { -0.0115f, -0.0035f, 0.f }, { 0.01f, 0.0016f, 0.011f }, TINNED);
+			Cylinder(lug, AlongX({ -0.022f, 0.f, 0.f }), 0.0055f, 0.013f, TINNED, 12);
+			for (float x : { -0.025f, -0.019f })
+				Cylinder(lug, AlongX({ x, 0.f, 0.f }), 0.0052f, 0.002f, { 0.55f, 0.53f, 0.48f }, 12);	// the crimp's dents
+			Cylinder(lug, AlongX({ -0.033f, 0.f, 0.f }), 0.0064f, 0.012f, TRIM_BLACK, 12);
+			AddModel(ShopModels::GROUND_LUG, lug, true);
+		}
 		// The pipes' ends, each going in along +x. A hard pipe's union: the flare nut on the pipe's end, its sleeve
 		// behind it. The port it screws into: a seat round the hole. A hose's end, a clip round it; and the stub it
 		// pushes onto.
+		// (Fitted, the union's hex sits against the port's face at x 0.004, its thread in the port; the hose's end runs
+		// over the stub's barbs up to its base at x 0.008.)
 		MeshBuilder unionNut, port, hoseEnd, stub;
-		Cylinder(unionNut, AlongX({ 0.f, 0.f, 0.f }), 0.0075f, 0.012f, IRON, 6);
-		Cylinder(unionNut, AlongX({ -0.009f, 0.f, 0.f }), 0.0045f, 0.006f, IRON, 10);
-		AddModel(ShopModels::PIPE_UNION, unionNut, true);
-		Cylinder(port, AlongX({ 0.002f, 0.f, 0.f }), 0.0098f, 0.006f, { 0.6f, 0.61f, 0.63f }, 14);
-		AddModel(ShopModels::PIPE_PORT, port, true);
-		Cylinder(hoseEnd, AlongX({ -0.004f, 0.f, 0.f }), 0.0088f, 0.03f, RUBBER, 12);
-		Cylinder(hoseEnd, AlongX({ 0.002f, 0.f, 0.f }), 0.0104f, 0.007f, { 0.7f, 0.71f, 0.73f }, 12);
-		Box(hoseEnd, { 0.002f, 0.012f, 0.f }, { 0.007f, 0.006f, 0.008f }, { 0.7f, 0.71f, 0.73f });	// the clip's screw
-		AddModel(ShopModels::HOSE_END, hoseEnd, true);
-		Cylinder(stub, AlongX({ -0.006f, 0.f, 0.f }), 0.0058f, 0.016f, { 0.78f, 0.62f, 0.28f }, 10);
-		AddModel(ShopModels::HOSE_STUB, stub, true);
+		const glm::vec3 ZINC = { 0.68f, 0.66f, 0.56f }, STEEL = { 0.62f, 0.63f, 0.66f }, BRASS = { 0.78f, 0.62f, 0.28f }, HOLE = { 0.05f, 0.05f, 0.055f };
+		{
+			// The flare nut: its hex, the chamfer down to the thread, the thread's turns, and the collar at its back
+			// where the pipe comes out, with a stub of the pipe and its flare's lip showing in the nose.
+			Cylinder(unionNut, AlongX({ -0.001f, 0.f, 0.f }), 0.0075f, 0.01f, ZINC, 6);
+			Cylinder(unionNut, AlongX({ 0.0045f, 0.f, 0.f }), 0.0066f, 0.001f, ZINC, 12);
+			for (float x : { 0.0055f, 0.0067f, 0.0079f })
+				Cylinder(unionNut, AlongX({ x, 0.f, 0.f }), 0.0062f, 0.0008f, ZINC, 12);
+			Cylinder(unionNut, AlongX({ 0.0067f, 0.f, 0.f }), 0.0057f, 0.0034f, ZINC, 12);
+			Cylinder(unionNut, AlongX({ 0.0086f, 0.f, 0.f }), 0.0042f, 0.0006f, STEEL, 10);			// the flare
+			Cylinder(unionNut, AlongX({ -0.0072f, 0.f, 0.f }), 0.0055f, 0.0025f, ZINC, 12);
+			Cylinder(unionNut, AlongX({ -0.014f, 0.f, 0.f }), 0.0032f, 0.012f, STEEL, 10);
+			AddModel(ShopModels::PIPE_UNION, unionNut, true);
+		}
+		{
+			// The port: a boss standing out of what it's in, its face with the threaded hole (dark), a chamfer round it,
+			// and a hex where it's a screwed-in fitting.
+			Cylinder(port, AlongX({ 0.0115f, 0.f, 0.f }), 0.0105f, 0.009f, { 0.6f, 0.61f, 0.63f }, 6);
+			Cylinder(port, AlongX({ 0.0055f, 0.f, 0.f }), 0.0098f, 0.003f, { 0.6f, 0.61f, 0.63f }, 16);
+			Cylinder(port, AlongX({ 0.0039f, 0.f, 0.f }), 0.0082f, 0.0004f, { 0.7f, 0.71f, 0.73f }, 16);
+			Cylinder(port, AlongX({ 0.0036f, 0.f, 0.f }), 0.0063f, 0.0004f, HOLE, 12);
+			AddModel(ShopModels::PIPE_PORT, port, true);
+		}
+		{
+			// The hose's end: the rubber, a moulded lip at its very end, and a worm drive clip round it: the band, the
+			// screw's housing on top and the screw across it with its hex head.
+			Cylinder(hoseEnd, AlongX({ -0.011f, 0.f, 0.f }), 0.0088f, 0.038f, RUBBER, 14);
+			Cylinder(hoseEnd, AlongX({ 0.007f, 0.f, 0.f }), 0.0093f, 0.002f, RUBBER, 14);
+			Cylinder(hoseEnd, AlongX({ 0.002f, 0.f, 0.f }), 0.0098f, 0.007f, STEEL, 16);
+			for (float x : { -0.0005f, 0.0015f, 0.0035f })
+				Box(hoseEnd, { x, 0.0099f, 0.f }, { 0.0008f, 0.0003f, 0.004f }, HOLE);				// the band's slots
+			Box(hoseEnd, { 0.002f, 0.0108f, 0.f }, { 0.0085f, 0.004f, 0.01f }, STEEL);
+			Cylinder(hoseEnd, AlongZ({ 0.002f, 0.0115f, 0.f }), 0.0022f, 0.016f, STEEL, 8);
+			Cylinder(hoseEnd, AlongZ({ 0.002f, 0.0115f, 0.0085f }), 0.0034f, 0.003f, STEEL, 6);
+			Box(hoseEnd, { 0.002f, 0.0115f, 0.0101f }, { 0.0006f, 0.0045f, 0.0003f }, HOLE);			// its slot
+			AddModel(ShopModels::HOSE_END, hoseEnd, true);
+		}
+		{
+			// The stub: a brass spigot out of a hex base on what it's in, two barbs along it and a bead at its tip.
+			Cylinder(stub, AlongX({ 0.012f, 0.f, 0.f }), 0.0095f, 0.008f, BRASS, 6);
+			Cylinder(stub, AlongX({ -0.004f, 0.f, 0.f }), 0.0058f, 0.024f, BRASS, 12);
+			for (float x : { -0.007f, -0.001f })
+			{
+				Cylinder(stub, AlongX({ x, 0.f, 0.f }), 0.0068f, 0.0015f, BRASS, 12);
+				Cylinder(stub, AlongX({ x - 0.0015f, 0.f, 0.f }), 0.0063f, 0.0015f, BRASS, 12);
+			}
+			Cylinder(stub, AlongX({ -0.0145f, 0.f, 0.f }), 0.0066f, 0.002f, BRASS, 12);
+			Cylinder(stub, AlongX({ -0.0158f, 0.f, 0.f }), 0.0042f, 0.0004f, HOLE, 10);
+			AddModel(ShopModels::HOSE_STUB, stub, true);
+		}
 		// The brake pipes' junction block, on its bracket against the wheel housing's wall (its -z): the five unions
 		// along its top, where the pipes come off it.
 		MeshBuilder block;
@@ -1390,6 +1927,70 @@ void ShopAssets::LoadCarParts()
 	}
 
 	BuildProjectCarShell();
+
+	// The floor jack (a shop fitting), in pieces so it can work: see JackLayout.
+	{
+		using namespace JackLayout;
+		const glm::vec3 RED = { 0.72f, 0.1f, 0.08f }, STEEL = { 0.62f, 0.63f, 0.65f }, DARK = { 0.12f, 0.12f, 0.13f };
+		// The body: two pressed side plates, low at the front where the saddle tucks in, rising to the pump at the back;
+		// cross tubes between them; steel wheels at the front and swivelling castors at the back; the pump's barrel and
+		// its reservoir, the ram from it up to the arm, the release valve's knob, and the socket the handle goes in.
+		MeshBuilder body;
+		body.SetUVScale(3.f);
+		const std::vector<glm::vec2> plate = { { -0.04f, 0.03f }, { 0.86f, 0.03f }, { 0.86f, 0.17f }, { 0.64f, 0.19f }, { 0.08f, 0.115f }, { -0.04f, 0.095f } };
+		for (float side : { -1.f, 1.f })
+		{
+			Prism(body, plate, side * 0.085f - 0.006f, side * 0.085f + 0.006f, RED);
+			// The plate's rolled lip along its top.
+			Box(body, { 0.36f, 0.153f, side * 0.085f }, { 0.56f, 0.012f, 0.02f }, RED * 0.85f);
+			// Front wheels, on an axle through the plates.
+			Cylinder(body, AlongZ({ 0.02f, 0.042f, side * 0.112f }), 0.042f, 0.026f, STEEL, 18);
+			Cylinder(body, AlongZ({ 0.02f, 0.042f, side * 0.126f }), 0.016f, 0.004f, DARK, 12);
+			// Castors at the back: a fork, and the wheel in it.
+			Box(body, { 0.78f, 0.06f, side * 0.07f }, { 0.05f, 0.02f, 0.05f }, DARK);
+			Cylinder(body, AlongZ({ 0.8f, 0.028f, side * 0.07f }), 0.028f, 0.02f, DARK, 14);
+		}
+		Cylinder(body, AlongZ({ 0.02f, 0.042f, 0.f }), 0.009f, 0.24f, STEEL, 10);		// the front axle
+		for (float x : { 0.18f, 0.5f })
+			Cylinder(body, AlongZ({ x, 0.06f, 0.f }), 0.012f, 0.17f, RED * 0.85f, 10);		// cross tubes
+		Cylinder(body, AlongZ({ ARM_PIVOT_X, ARM_PIVOT_Y, 0.f }), 0.014f, 0.2f, STEEL, 12);	// the arm's pivot pin
+		// The pump: its barrel standing at the back between the plates, the reservoir beside it, and the ram angled up
+		// from it toward the arm.
+		Cylinder(body, At({ 0.76f, 0.11f, 0.f }), 0.032f, 0.14f, DARK, 16);
+		Cylinder(body, At({ 0.76f, 0.185f, 0.f }), 0.024f, 0.012f, STEEL, 14);
+		Cylinder(body, glm::rotate(At({ 0.68f, 0.115f, 0.f }), 1.25f, glm::vec3(0.f, 0.f, 1.f)), 0.02f, 0.12f, STEEL, 12);
+		// The handle's socket, a yoke on top of the pump, and the release valve's knob on its side.
+		Box(body, { HANDLE_X, HANDLE_Y - 0.012f, 0.f }, { 0.05f, 0.024f, 0.06f }, DARK);
+		Cylinder(body, AlongZ({ HANDLE_X, HANDLE_Y, 0.f }), 0.01f, 0.07f, STEEL, 10);
+		Cylinder(body, AlongZ({ 0.8f, 0.12f, 0.055f }), 0.012f, 0.02f, { 0.85f, 0.65f, 0.1f }, 10);
+		AddModel(ShopModels::JACK_BODY, body);
+
+		// The lift arm, about its pivot (the origin), out along -x to the saddle's pin: two flat bars and a web between.
+		MeshBuilder arm;
+		for (float side : { -1.f, 1.f })
+			Box(arm, { -ARM_LENGTH * 0.5f, 0.f, side * 0.058f }, { ARM_LENGTH + 0.03f, 0.045f, 0.014f }, RED);
+		Box(arm, { -ARM_LENGTH * 0.45f, -0.012f, 0.f }, { ARM_LENGTH * 0.7f, 0.012f, 0.1f }, RED * 0.85f);
+		Cylinder(arm, AlongZ({ -ARM_LENGTH, 0.f, 0.f }), 0.012f, 0.14f, STEEL, 10);		// the saddle's pin
+		AddModel(ShopModels::JACK_ARM, arm);
+
+		// The saddle, its bottom on the arm's pin: a round cup with a ridged top.
+		MeshBuilder saddle;
+		Cylinder(saddle, At({ 0.f, 0.008f, 0.f }), 0.022f, 0.016f, STEEL, 14);
+		Cylinder(saddle, At({ 0.f, SADDLE_HEIGHT - 0.005f, 0.f }), 0.055f, 0.01f, DARK, 20);
+		for (int ridge = -1; ridge <= 1; ridge++)
+			Box(saddle, { 0.f, SADDLE_HEIGHT, ridge * 0.022f }, { 0.09f, 0.004f, 0.006f }, STEEL);
+		AddModel(ShopModels::JACK_SADDLE, saddle);
+
+		// The pump handle, from its socket (the origin) out along +x: a steel tube with a rubber grip on the end.
+		MeshBuilder handle;
+		Cylinder(handle, AlongX({ HANDLE_LENGTH * 0.5f, 0.f, 0.f }), 0.013f, HANDLE_LENGTH, STEEL, 12);
+		Cylinder(handle, AlongX({ HANDLE_LENGTH - 0.07f, 0.f, 0.f }), 0.019f, 0.14f, DARK, 12);
+		AddModel(ShopModels::JACK_HANDLE, handle);
+		// (Its furniture model is the body: what's moved about, and what's crated.)
+		for (const auto& furniture : FurnitureCatalog::All())
+			if (furniture.kind == FurnitureKind::FLOOR_JACK)
+				AddModel(FurnitureModel(furniture), body);
+	}
 }
 
 void ShopAssets::BuildProjectCarShell()
@@ -1408,11 +2009,80 @@ void ShopAssets::BuildProjectCarShell()
 	constexpr float REAR_TUB = 0.335f;				// the rear wheel housings' radius, about the axle
 	constexpr float REAR_TUB_WALL_Z = 0.5885f;		// and their inner walls, just inside the tires
 	const float tubFront = REAR_AXLE_X + REAR_TUB + 0.02f, tubBack = REAR_AXLE_X - REAR_TUB - 0.02f;
-	Box(car, { (tubFront + FOOTWELL_X) * 0.5f, 0.2f, 0.f }, { FOOTWELL_X - tubFront, 0.04f, 1.5f }, UNDERSEAL);
+	// The floor either side of the transmission tunnel, which is open underneath (the driveshaft's seen up in it): wide
+	// behind the firewall over the gearbox, narrow back from the step; and either side of the low hump the shaft runs
+	// back in under the back seat to the diff.
+	constexpr float TUNNEL_STEP = 0.47f, TUNNEL_HALF = 0.1f, TUNNEL_MOUTH_HALF = 0.19f;
+	auto floorBeside = [&](float x0, float x1, float inner, float outer, float y = 0.2f) {
+		for (float side : { -1.f, 1.f })
+			Box(car, { (x0 + x1) * 0.5f, y, side * (inner + outer) * 0.5f }, { x1 - x0, 0.04f, outer - inner }, UNDERSEAL);
+	};
+	// (Under the back seat, a channel each side for the upper trailing link, from the axle forward to its bracket:
+	// inside the seat's plinth, so it isn't seen in the cabin.)
+	constexpr float LINK_IN = 0.21f, LINK_OUT = 0.35f, LINK_FRONT = -0.8f, LINK_TOP = 0.37f;
+	floorBeside(LINK_FRONT, TUNNEL_STEP, TUNNEL_HALF, 0.75f);
+	floorBeside(tubFront, LINK_FRONT, TUNNEL_HALF, LINK_IN);
+	floorBeside(tubFront, LINK_FRONT, LINK_OUT, 0.75f);
+	floorBeside(TUNNEL_STEP, FOOTWELL_X, TUNNEL_MOUTH_HALF, 0.75f);
 	// (Under the engine there's no floor: the pan stops at the firewall.)
-	Box(car, { (FOOTWELL_X + FIREWALL_X + 0.015f) * 0.5f, 0.2f, 0.f }, { FIREWALL_X + 0.015f - FOOTWELL_X, 0.04f, 0.82f }, UNDERSEAL);
-	Box(car, { REAR_AXLE_X, 0.2f, 0.f }, { tubFront - tubBack, 0.04f, 2.f * REAR_TUB_WALL_Z }, UNDERSEAL);
-	Box(car, { (tubBack - 1.95f) * 0.5f, 0.2f, 0.f }, { tubBack + 1.95f, 0.04f, 1.5f }, UNDERSEAL);
+	floorBeside(FOOTWELL_X, FIREWALL_X + 0.015f, TUNNEL_MOUTH_HALF, 0.41f);
+	// Over the back axle the floor kicks up, so the axle, the diff and the end of the shaft hang under the body: its
+	// front wall (open below for the shaft, behind the back seat's back), its top, and its back wall ahead of the tank.
+	constexpr float KICK_FRONT = -1.105f, KICK_BACK = -1.4125f, KICK_Y = 0.47f, HUMP_TOP = 0.36f;
+	floorBeside(KICK_FRONT, tubFront, TUNNEL_HALF, LINK_IN);
+	floorBeside(KICK_FRONT, tubFront, LINK_OUT, REAR_TUB_WALL_Z);
+	for (float side : { -1.f, 1.f })
+	{
+		for (float z : { LINK_IN, LINK_OUT })
+			Box(car, { (KICK_FRONT + LINK_FRONT) * 0.5f, (0.18f + LINK_TOP) * 0.5f, side * z }, { LINK_FRONT - KICK_FRONT, LINK_TOP - 0.18f, 0.012f }, UNDERSEAL);
+		Box(car, { (KICK_FRONT + LINK_FRONT) * 0.5f, LINK_TOP, side * (LINK_IN + LINK_OUT) * 0.5f }, { LINK_FRONT - KICK_FRONT, 0.012f, LINK_OUT - LINK_IN + 0.012f }, UNDERSEAL);
+		Box(car, { LINK_FRONT, (0.18f + LINK_TOP) * 0.5f, side * (LINK_IN + LINK_OUT) * 0.5f }, { 0.012f, LINK_TOP - 0.18f, LINK_OUT - LINK_IN }, UNDERSEAL);
+	}
+	// The kick-up's top. Over the springs, out by the wheel housings, it goes up again to a shelf they seat under (the
+	// shocks' tops come up through it into their towers).
+	constexpr float PERCH_FRONT = -1.14f, PERCH_IN = 0.42f, PERCH_Y = 0.62f;
+	Box(car, { (KICK_FRONT + PERCH_FRONT) * 0.5f, KICK_Y, 0.f }, { KICK_FRONT - PERCH_FRONT, 0.04f, 2.f * REAR_TUB_WALL_Z }, UNDERSEAL);
+	Box(car, { (PERCH_FRONT + KICK_BACK) * 0.5f, KICK_Y, 0.f }, { PERCH_FRONT - KICK_BACK, 0.04f, 2.f * PERCH_IN }, UNDERSEAL);
+	for (float side : { -1.f, 1.f })
+	{
+		const float middle = side * (PERCH_IN + REAR_TUB_WALL_Z) * 0.5f, wide = REAR_TUB_WALL_Z - PERCH_IN;
+		Box(car, { (PERCH_FRONT + KICK_BACK) * 0.5f, PERCH_Y, middle }, { PERCH_FRONT - KICK_BACK, 0.04f, wide }, UNDERSEAL);
+		Box(car, { (PERCH_FRONT + KICK_BACK) * 0.5f, (KICK_Y + PERCH_Y) * 0.5f, side * PERCH_IN }, { PERCH_FRONT - KICK_BACK, PERCH_Y - KICK_Y, 0.012f }, UNDERSEAL);
+		Box(car, { PERCH_FRONT, (KICK_Y + PERCH_Y) * 0.5f, middle }, { 0.012f, PERCH_Y - KICK_Y, wide }, UNDERSEAL);
+		Box(car, { KICK_BACK, (KICK_Y + PERCH_Y) * 0.5f, middle }, { 0.015f, PERCH_Y - KICK_Y, wide }, UNDERSEAL);
+	}
+	// Its front wall: solid above the hump and the links' channels, open below for them and the shaft.
+	Box(car, { KICK_FRONT, (LINK_TOP + KICK_Y) * 0.5f, 0.f }, { 0.015f, KICK_Y - LINK_TOP + 0.02f, 2.f * REAR_TUB_WALL_Z }, UNDERSEAL);
+	Box(car, { KICK_FRONT, (HUMP_TOP + LINK_TOP) * 0.5f, 0.f }, { 0.015f, LINK_TOP - HUMP_TOP, 2.f * TUNNEL_HALF }, UNDERSEAL);
+	for (float side : { -1.f, 1.f })
+	{
+		Box(car, { KICK_FRONT, (0.22f + LINK_TOP) * 0.5f, side * (TUNNEL_HALF + LINK_IN) * 0.5f }, { 0.015f, LINK_TOP - 0.22f, LINK_IN - TUNNEL_HALF }, UNDERSEAL);
+		Box(car, { KICK_FRONT, (0.22f + LINK_TOP) * 0.5f, side * (LINK_OUT + REAR_TUB_WALL_Z) * 0.5f }, { 0.015f, LINK_TOP - 0.22f, REAR_TUB_WALL_Z - LINK_OUT }, UNDERSEAL);
+	}
+	Box(car, { KICK_BACK, (0.18f + KICK_Y) * 0.5f, 0.f }, { 0.015f, KICK_Y - 0.18f, 2.f * REAR_TUB_WALL_Z }, UNDERSEAL);
+	// The lower trailing links' brackets, hanging under the floor ahead of the axle, and the lateral rod's, down from
+	// the shelf on the left.
+	for (float side : { -1.f, 1.f })
+		for (float cheek : { -0.022f, 0.022f })
+			Box(car, { REAR_AXLE_X + 0.59f, 0.155f, side * 0.5f + cheek }, { 0.05f, 0.05f, 0.006f }, UNDERSEAL);
+	for (float cheek : { -0.022f, 0.022f })
+		Box(car, { REAR_AXLE_X - 0.166f, (0.3f + PERCH_Y) * 0.5f, -0.47f + cheek }, { 0.05f, PERCH_Y - 0.3f, 0.006f }, UNDERSEAL);
+	// The boot floor under the tank, with a hole where the tank's outlet comes down through it.
+	{
+		const float holeX = FUEL_TANK_OUTLET[0], holeZ = FUEL_TANK_OUTLET[2], HOLE = 0.025f;
+		Box(car, { (holeX - HOLE + TAIL_X + 0.12f) * 0.5f, 0.2f, 0.f }, { holeX - HOLE - TAIL_X - 0.12f, 0.04f, 1.5f }, UNDERSEAL);
+		Box(car, { (KICK_BACK + holeX + HOLE) * 0.5f, 0.2f, 0.f }, { KICK_BACK - holeX - HOLE, 0.04f, 1.5f }, UNDERSEAL);
+		Box(car, { holeX, 0.2f, (holeZ - HOLE - 0.75f) * 0.5f }, { 2.f * HOLE, 0.04f, holeZ - HOLE + 0.75f }, UNDERSEAL);
+		Box(car, { holeX, 0.2f, (holeZ + HOLE + 0.75f) * 0.5f }, { 2.f * HOLE, 0.04f, 0.75f - holeZ - HOLE }, UNDERSEAL);
+		Tube(car, At({ holeX, 0.2f, holeZ }), HOLE + 0.004f, 0.012f, 0.044f, RUBBER, 14);	// its grommet
+	}
+	// The hump: from the tunnel's end back to the kick-up, low enough to pass under the back seat's cushion.
+	{
+		const float x0 = KICK_FRONT, x1 = -0.65f;
+		for (float side : { -1.f, 1.f })
+			Box(car, { (x0 + x1) * 0.5f, (0.18f + HUMP_TOP) * 0.5f, side * TUNNEL_HALF }, { x1 - x0, HUMP_TOP - 0.18f, 0.015f }, UNDERSEAL);
+		Box(car, { (x0 + x1) * 0.5f, HUMP_TOP, 0.f }, { x1 - x0, 0.015f, 2.f * TUNNEL_HALF + 0.015f }, UNDERSEAL);
+	}
 	const float roofMiddle = (WINDSHIELD_TOP_X + REAR_WINDOW_TOP_X) * 0.5f, roofLength = WINDSHIELD_TOP_X - REAR_WINDOW_TOP_X;
 	// The fixed quarter windows are a model of their own, so they can be seen through.
 	MeshBuilder quarterGlass;
@@ -1460,7 +2130,7 @@ void ShopAssets::BuildProjectCarShell()
 		}
 		// The rubbing strip along the quarter, in line with the door's, either side of the arch.
 		Box(car, { -0.655f, RUB_STRIP_Y, side * (SIDE + 0.002f) }, { 0.4f, 0.012f, 0.004f }, CREASE);
-		Box(car, { -1.8f, RUB_STRIP_Y, side * (SIDE + 0.002f) }, { 0.5f, 0.012f, 0.004f }, CREASE);
+		Box(car, { (TAIL_X + 0.02f + REAR_AXLE_X - ARCH_RADIUS - 0.01f) * 0.5f, RUB_STRIP_Y, side * (SIDE + 0.002f) }, { REAR_AXLE_X - ARCH_RADIUS - 0.01f - TAIL_X - 0.02f, 0.012f, 0.004f }, CREASE);
 		// The side skirt under the door, between the arches.
 		Box(car, { 0.f, 0.195f, side * (SIDE + 0.004f) }, { 1.7f, 0.09f, 0.03f }, BODY_WHITE);
 		Box(car, { 0.f, 0.243f, side * (SIDE + 0.012f) }, { 1.7f, 0.008f, 0.02f }, CREASE);
@@ -1512,13 +2182,13 @@ void ShopAssets::BuildProjectCarShell()
 			Box(car, { FRONT_AXLE_X, 0.745f, side * 0.55f }, { 0.21f, 0.02f, 0.21f }, PRIMER);
 		}
 		// The inner wing, from the tub up to the fender's bolt lip.
-		SidePanel(car, 0.92f, 2.03f, Arched(0.27f, FRONT_AXLE_X, AXLE_Y, FRONT_TUB + 0.01f), [](float x) { return HoodY(x) - 0.045f; }, side * 0.655f, 0.03f, PRIMER, 44);
+		SidePanel(car, 0.92f, NOSE_X - 0.04f, Arched(0.27f, FRONT_AXLE_X, AXLE_Y, FRONT_TUB + 0.01f), [](float x) { return HoodY(x) - 0.045f; }, side * 0.655f, 0.03f, PRIMER, 44);
 		// The engine's mount sits on a perch off the chassis rail, braced under it.
 		Box(car, { ENGINE_X, ENGINE_MOUNT_Y - 0.015f, side * (ENGINE_MOUNT_Z + 0.025f) }, { 0.15f, 0.03f, 0.17f }, PRIMER);
 		Prism(car, { { ENGINE_MOUNT_Z - 0.05f, ENGINE_MOUNT_Y - 0.03f }, { 0.32f, ENGINE_MOUNT_Y - 0.03f }, { 0.32f, 0.215f } }, -0.006f, 0.006f, PRIMER,
 			glm::rotate(At({ ENGINE_X, 0.f, 0.f }), side * -glm::half_pi<float>(), glm::vec3(0.f, 1.f, 0.f)));
 		// The chassis rail, inboard of where the tire's front swings in on full lock.
-		Box(car, { 1.55f, 0.25f, side * 0.36f }, { 1.3f, 0.08f, 0.08f }, PRIMER);
+		Box(car, { (0.9f + NOSE_X + 0.13f) * 0.5f, 0.25f, side * 0.36f }, { NOSE_X + 0.13f - 0.9f, 0.08f, 0.08f }, PRIMER);
 		// The front wheel's housing where it comes back into the footwell: the tire's back swings in here on full lock.
 		Box(car, { FOOTWELL_X, 0.36f, side * 0.595f }, { 0.02f, 0.32f, 0.31f }, UNDERSEAL);
 		Box(car, { (FOOTWELL_X + 0.88f) * 0.5f, 0.36f, side * 0.44f }, { 0.88f - FOOTWELL_X + 0.02f, 0.32f, 0.02f }, UNDERSEAL);
@@ -1527,8 +2197,15 @@ void ShopAssets::BuildProjectCarShell()
 		Box(car, { -1.27f, 0.66f, side * 0.52f }, { 0.2f, 0.08f, 0.2f }, UNDERSEAL);
 	}
 	// The battery's tray, on a bracket off the left inner wing.
-	Box(car, { 1.66f, 0.51f, -0.5f }, { 0.27f, 0.02f, 0.21f }, PRIMER);
-	Box(car, { 1.7f, 0.46f, -0.62f }, { 0.14f, 0.1f, 0.04f }, PRIMER);
+	Box(car, { BATTERY[0], BATTERY[1] - 0.01f, BATTERY[2] }, { 0.21f, 0.02f, 0.27f }, PRIMER);
+	Box(car, { BATTERY[0], BATTERY[1] - 0.06f, -0.625f }, { 0.14f, 0.1f, 0.03f }, PRIMER);
+	// The jacking bar under the nose, between the chassis rails, and the jacking pad under the boot floor (CarBody's
+	// FRONT_JACK_POINT and REAR_JACK_POINT).
+	Box(car, { FRONT_JACK_POINT[0], FRONT_JACK_POINT[1] + 0.02f, 0.f }, { 0.06f, 0.04f, 0.76f }, UNDERSEAL);
+	Box(car, { REAR_JACK_POINT[0], REAR_JACK_POINT[1] + 0.003f, 0.f }, { 0.14f, 0.006f, 0.3f }, PRIMER);
+	// The pads under the chassis rails' inner edges that the steering rack's clamps bolt up to.
+	for (float side : { -1.f, 1.f })
+		Box(car, { 1.4f, 0.2025f, side * 0.315f }, { 0.1f, 0.015f, 0.05f }, UNDERSEAL);
 	// The front crossmember under the back of the engine, between the chassis rails, the lower arms pivoting on its ears.
 	Box(car, { 1.1f, 0.16f, 0.f }, { 0.07f, 0.05f, 0.8f }, UNDERSEAL);
 	for (float side : { -1.f, 1.f })
@@ -1556,7 +2233,7 @@ void ShopAssets::BuildProjectCarShell()
 	// sit in with the strip over it the hood shuts onto, and the slatted grille with its badge.
 	// (A low wedge: the panel behind the bumper, and over it the dark slot between the headlights' lids that the hood
 	// shuts down to.)
-	Box(car, { 2.03f, 0.46f, 0.f }, { 0.04f, 0.38f, 0.72f }, PRIMER);		// (between the headlights' pods, which drop down either side of it)
+	Box(car, { NOSE_X - 0.04f, 0.46f, 0.f }, { 0.04f, 0.38f, 0.72f }, PRIMER);		// (between the headlights' pods, which drop down either side of it)
 	Box(car, { NOSE_X - 0.02f, 0.43f, 0.f }, { 0.04f, 0.46f, 1.53f }, TRIM_BLACK);
 	Box(car, { NOSE_X - 0.02f, 0.66f, 0.f }, { 0.04f, 0.05f, 2.f * LAMP_LID_INNER }, TRIM_BLACK);
 	// The tail panel, the black garnish between the tail lights with the number plate on it, the deck under the
@@ -1600,7 +2277,11 @@ void ShopAssets::BuildProjectCarShell()
 		Box(car, { mouthMiddle, TUNNEL_MOUTH_TOP, 0.f }, { mouthLength, 0.015f, 2.f * TUNNEL_MOUTH + 0.015f }, UNDERSEAL);
 		Box(car, { tailMiddle, TUNNEL_TOP, 0.f }, { tailLength, 0.015f, 2.f * TUNNEL + 0.015f }, UNDERSEAL);
 		Box(car, { TUNNEL_STEP_X, (TUNNEL_TOP + TUNNEL_MOUTH_TOP) * 0.5f, 0.f }, { 0.015f, TUNNEL_MOUTH_TOP - TUNNEL_TOP, 2.f * TUNNEL }, UNDERSEAL);
-		Box(car, { -0.65f, (0.22f + TUNNEL_TOP) * 0.5f, 0.f }, { 0.015f, TUNNEL_TOP - 0.22f, 2.f * TUNNEL }, UNDERSEAL);
+		// (Stepping down at its back end to the hump under the back seat.)
+		Box(car, { -0.65f, (0.36f + TUNNEL_TOP) * 0.5f, 0.f }, { 0.015f, TUNNEL_TOP - 0.36f, 2.f * TUNNEL }, UNDERSEAL);
+		// And open underneath: its walls come down past the floor's edges.
+		for (float side : { -1.f, 1.f })
+			Box(car, { tailMiddle, 0.2f, side * TUNNEL }, { tailLength, 0.04f, 0.015f }, UNDERSEAL);
 	}
 	// The back seat: a bench for two between the wheel housings, in the front seats' grey tweed. A vinyl plinth, a
 	// ribbed cushion for each place between darker bolsters with a roll along the front, and a back leant against the

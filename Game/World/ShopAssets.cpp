@@ -819,48 +819,32 @@ void ShopAssets::LoadTools()
 				Cylinder(builder, At({ 0.f, FOOT + 0.009f, 0.f }), 0.012f, 0.006f, steel, 16);
 				break;
 			}
-			case ToolShape::FLOOR_JACK:
+			case ToolShape::WIRE_SPOOL:
 			{
-				// A trolley jack, standing on the floor with its saddle (let right down) over the origin: the side plates
-				// back along +x to the pump and its handle, steel wheels in front and castors behind. (What it lifts with
-				// is a ram of its own, up out of the saddle: see ShopWorld's car supports.)
-				const glm::vec3 red = { 0.72f, 0.1f, 0.08f };
-				for (float z : { -0.07f, 0.07f })
-				{
-					Box(builder, { 0.2f, 0.06f, z }, { 0.56f, 0.08f, 0.012f }, red);
-					Cylinder(builder, AlongZ({ -0.05f, 0.03f, z * 1.25f }), 0.03f, 0.024f, steel, 14);
-					Cylinder(builder, AlongZ({ 0.44f, 0.022f, z * 1.4f }), 0.022f, 0.02f, dark, 12);
-				}
-				Box(builder, { 0.2f, 0.025f, 0.f }, { 0.5f, 0.012f, 0.14f }, red);
-				Box(builder, { 0.33f, 0.07f, 0.f }, { 0.2f, 0.07f, 0.11f }, red * 0.8f);			// the pump's body
-				Cylinder(builder, At({ 0.f, 0.075f, 0.f }), 0.03f, 0.09f, dark, 14);				// the ram's sleeve
-				Cylinder(builder, At({ 0.f, FLOOR_JACK_LOW - 0.006f, 0.f }), 0.05f, 0.012f, steel, 18);	// the saddle
-				Cylinder(builder, glm::rotate(At({ 0.52f, 0.2f, 0.f }), -0.9f, glm::vec3(0.f, 0.f, 1.f)), 0.013f, 0.36f, steel, 10);
-				Cylinder(builder, glm::rotate(At({ 0.645f, 0.3f, 0.f }), -0.9f, glm::vec3(0.f, 0.f, 1.f)), 0.017f, 0.09f, dark, 10);	// its grip
+				// A plastic reel lying flat, what it holds wound on it and a tail of it off the side; the crimpers (or the flaring
+				// tool, or the clamps' driver) beside it. Red wire, a coil of copper-coloured hard line, or fat black fuel hose.
+				const bool line = tool.handKind == HandToolKind::HARD_LINE_SPOOL, hose = tool.handKind == HandToolKind::FUEL_HOSE_SPOOL;
+				const glm::vec3 reel = { 0.12f, 0.12f, 0.13f }, grip = { 0.85f, 0.65f, 0.1f };
+				const glm::vec3 wire = line ? glm::vec3(0.72f, 0.45f, 0.25f) : hose ? glm::vec3(0.06f, 0.06f, 0.065f) : glm::vec3(0.75f, 0.12f, 0.1f);
+				const float tail = line ? 0.0025f : hose ? 0.006f : 0.0025f;
+				Cylinder(builder, At({ 0.f, 0.003f, 0.f }), 0.055f, 0.006f, reel, 24);
+				Cylinder(builder, At({ 0.f, 0.025f, 0.f }), hose ? 0.05f : 0.045f, 0.038f, wire, 24);
+				Cylinder(builder, At({ 0.f, 0.047f, 0.f }), 0.055f, 0.006f, reel, 24);
+				Cylinder(builder, At({ 0.f, 0.051f, 0.f }), 0.012f, 0.003f, dark, 12);
+				Cylinder(builder, AlongX({ 0.07f, 0.03f, 0.04f }), tail, 0.06f, wire, 6);
+				Box(builder, { 0.02f, 0.006f, -0.085f }, { 0.11f, 0.008f, 0.012f }, grip);
+				Box(builder, { 0.095f, 0.006f, -0.085f }, { 0.04f, 0.01f, 0.016f }, steel);
 				break;
 			}
-			case ToolShape::JACK_STAND:
+			case ToolShape::CAR_KEY:
 			{
-				// A jack stand: four splayed legs on a square foot, and the tube its ratcheting post comes up out of
-				// (the post itself is ShopWorld's, as long as it's set).
-				const glm::vec3 red = { 0.72f, 0.1f, 0.08f };
-				constexpr float FOOT = 0.11f, TUBE_TOP = JACK_STAND_LOW - 0.02f;
-				for (float x : { -1.f, 1.f })
-					for (float z : { -1.f, 1.f })
-					{
-						const glm::vec3 foot = { x * FOOT, 0.006f, z * FOOT }, top = { x * 0.025f, TUBE_TOP - 0.02f, z * 0.025f };
-						const glm::vec3 run = top - foot, up = { 0.f, 1.f, 0.f };
-						const float length = glm::length(run);
-						const glm::mat4 lean = glm::rotate(At((foot + top) * 0.5f), std::acos(glm::dot(up, run / length)), glm::normalize(glm::cross(up, run)));
-						Cylinder(builder, lean, 0.011f, length, red, 8);
-					}
-				for (float side : { -1.f, 1.f })
-				{
-					Box(builder, { side * FOOT, 0.006f, 0.f }, { 0.02f, 0.012f, 2.f * FOOT + 0.02f }, red);
-					Box(builder, { 0.f, 0.006f, side * FOOT }, { 2.f * FOOT + 0.02f, 0.012f, 0.02f }, red);
-				}
-				Tube(builder, At({ 0.f, TUBE_TOP - 0.06f, 0.f }), 0.03f, 0.021f, 0.12f, red, 0.f, glm::two_pi<float>(), 14);
-				Box(builder, { 0.04f, TUBE_TOP - 0.05f, 0.f }, { 0.03f, 0.014f, 0.012f }, steel);		// the ratchet's handle
+				// Lying flat: the blade out along +x from its black head, a split ring through the head and the red fob on it.
+				const glm::vec3 fob = { 0.7f, 0.12f, 0.1f };
+				Cylinder(builder, At({ 0.f, 0.0025f, 0.f }), 0.013f, 0.005f, dark, 16);
+				Box(builder, { 0.029f, 0.0015f, 0.f }, { 0.032f, 0.003f, 0.008f }, steel);
+				Box(builder, { 0.047f, 0.0015f, 0.f }, { 0.006f, 0.003f, 0.005f }, steel);
+				Tube(builder, At({ -0.019f, 0.0015f, 0.f }), 0.009f, 0.0072f, 0.003f, steel, 0.f, glm::two_pi<float>(), 16);
+				Box(builder, { -0.044f, 0.004f, 0.f }, { 0.03f, 0.008f, 0.019f }, fob);
 				break;
 			}
 		}
@@ -1309,17 +1293,67 @@ void ShopAssets::LoadEnvironment()
 	}
 	{
 		// Mount point at (0, 1.05, 0): the centre of the block deck when an engine is bolted on.
+		// A four-wheeled stand: a square-tube spine with a cross bar at the back and splayed legs at the front, a castor
+		// under each end; the column up from the back, braced; its arm forward to the head, a sleeve the mounting shaft
+		// turns in (a locking pin on top, a crank on its side); and the four slotted arms on its flange that bolt to the
+		// back of the block.
 		MeshBuilder stand;
 		stand.SetUVScale(3.f);
-		const glm::vec3 red = { 0.70f, 0.12f, 0.10f };
-		Box(stand, { -0.55f, 0.06f, 0.f }, { 0.08f, 0.06f, 0.9f }, red);
-		Box(stand, { -0.15f, 0.06f, 0.f }, { 0.8f, 0.06f, 0.08f }, red);
-		Box(stand, { -0.55f, 0.55f, 0.f }, { 0.08f, 1.0f, 0.08f }, red);
-		Box(stand, { -0.40f, 0.93f, 0.f }, { 0.24f, 0.06f, 0.06f }, red);
-		Box(stand, { -0.235f, 0.93f, 0.f }, { 0.02f, 0.26f, 0.26f }, { 0.35f, 0.35f, 0.38f });
-		for (float z : { -0.42f, 0.42f })
-			Cylinder(stand, AlongZ({ -0.55f, 0.04f, z }), 0.04f, 0.04f, RUBBER_BLACK);
-		Cylinder(stand, AlongZ({ 0.23f, 0.04f, 0.f }), 0.04f, 0.04f, RUBBER_BLACK);
+		const glm::vec3 red = { 0.70f, 0.12f, 0.10f }, dark = { 0.2f, 0.2f, 0.22f };
+		constexpr float HEAD_Y = 0.93f, FACE_X = -0.235f;
+		// A square tube from a to b.
+		auto beam = [&](const glm::vec3& a, const glm::vec3& b, float width, const glm::vec3& color) {
+			const glm::vec3 run = b - a, x = { 1.f, 0.f, 0.f };
+			const float length = glm::length(run);
+			const glm::vec3 dir = run / length, axis = glm::cross(x, dir);
+			glm::mat4 transform = glm::translate(glm::mat4(1.f), (a + b) * 0.5f);
+			if (glm::length(axis) > 1e-5f)
+				transform = glm::rotate(transform, std::acos(glm::clamp(glm::dot(x, dir), -1.f, 1.f)), glm::normalize(axis));
+			stand.SetTransform(transform).SetColor(color).AddBox({}, { length, width, width });
+			stand.ResetTransform();
+		};
+		// The base.
+		constexpr float BASE_Y = 0.075f;
+		beam({ -0.6f, BASE_Y, 0.f }, { 0.1f, BASE_Y, 0.f }, 0.06f, red);
+		beam({ -0.55f, BASE_Y, -0.42f }, { -0.55f, BASE_Y, 0.42f }, 0.06f, red);
+		for (float side : { -1.f, 1.f })
+			beam({ 0.05f, BASE_Y, 0.f }, { 0.25f, BASE_Y, side * 0.32f }, 0.05f, red);
+		// A swivelling castor under each end: its plate, fork and wheel.
+		for (glm::vec2 at : { glm::vec2(-0.55f, -0.4f), glm::vec2(-0.55f, 0.4f), glm::vec2(0.24f, -0.31f), glm::vec2(0.24f, 0.31f) })
+		{
+			Box(stand, { at.x, 0.047f, at.y }, { 0.06f, 0.006f, 0.06f }, dark);
+			for (float face : { -1.f, 1.f })
+				Box(stand, { at.x + 0.008f, 0.034f, at.y + face * 0.016f }, { 0.03f, 0.022f, 0.004f }, dark);
+			Cylinder(stand, AlongZ({ at.x + 0.015f, 0.032f, at.y }), 0.032f, 0.022f, RUBBER_BLACK, 16);
+			Cylinder(stand, AlongZ({ at.x + 0.015f, 0.032f, at.y }), 0.01f, 0.036f, STEEL_GREY, 8);
+		}
+		// The column, its foot plate, and the brace from the spine.
+		Box(stand, { -0.55f, 0.11f, 0.f }, { 0.12f, 0.012f, 0.12f }, red);
+		beam({ -0.55f, 0.1f, 0.f }, { -0.55f, HEAD_Y + 0.04f, 0.f }, 0.075f, red);
+		beam({ -0.22f, 0.09f, 0.f }, { -0.55f, 0.48f, 0.f }, 0.04f, red);
+		// The arm out to the head, its sleeve, the shaft turning in it, and the flange on the shaft.
+		beam({ -0.55f, HEAD_Y, 0.f }, { -0.37f, HEAD_Y, 0.f }, 0.07f, red);
+		Cylinder(stand, AlongX({ -0.33f, HEAD_Y, 0.f }), 0.045f, 0.1f, red, 20);
+		Cylinder(stand, AlongX({ -0.27f, HEAD_Y, 0.f }), 0.026f, 0.04f, STEEL_GREY, 16);
+		Cylinder(stand, AlongX({ FACE_X - 0.012f, HEAD_Y, 0.f }), 0.055f, 0.012f, dark, 20);
+		// The locking pin down through the sleeve, with its T-handle; the crank on the sleeve's side.
+		Cylinder(stand, At({ -0.33f, HEAD_Y + 0.06f, 0.f }), 0.008f, 0.05f, STEEL_GREY, 8);
+		Box(stand, { -0.33f, HEAD_Y + 0.088f, 0.f }, { 0.01f, 0.01f, 0.07f }, STEEL_GREY);
+		Cylinder(stand, AlongZ({ -0.33f, HEAD_Y, 0.08f }), 0.008f, 0.08f, STEEL_GREY, 8);
+		Box(stand, { -0.33f, HEAD_Y + 0.025f, 0.12f }, { 0.012f, 0.06f, 0.012f }, STEEL_GREY);
+		Cylinder(stand, At({ -0.33f, HEAD_Y + 0.07f, 0.12f }), 0.012f, 0.05f, RUBBER_BLACK, 10);
+		// The four arms, out on the diagonals, each with a slot and a bolt through its end into the block.
+		for (int arm = 0; arm < 4; arm++)
+		{
+			const float angle = glm::quarter_pi<float>() + arm * glm::half_pi<float>();
+			const glm::mat4 turn = glm::rotate(glm::translate(glm::mat4(1.f), { FACE_X - 0.004f, HEAD_Y, 0.f }), angle, glm::vec3(1.f, 0.f, 0.f));
+			stand.SetTransform(turn).SetColor(dark).AddBox({ 0.f, 0.085f, 0.f }, { 0.012f, 0.17f, 0.032f });
+			stand.SetTransform(turn).SetColor(RUBBER_BLACK).AddBox({ 0.0005f, 0.11f, 0.f }, { 0.0125f, 0.08f, 0.012f });
+			stand.ResetTransform();
+			const glm::vec3 tip = glm::vec3(turn * glm::vec4(0.f, 0.15f, 0.f, 1.f));
+			Cylinder(stand, AlongX(tip + glm::vec3(0.012f, 0.f, 0.f)), 0.011f, 0.014f, STEEL_GREY, 6);
+			Cylinder(stand, AlongX(tip - glm::vec3(0.012f, 0.f, 0.f)), 0.014f, 0.01f, STEEL_GREY, 6);
+		}
 		add(ShopModels::ENGINE_STAND, stand);
 	}
 	{
@@ -1778,6 +1812,41 @@ void ShopAssets::LoadParts()
 				Cylinder(block, AlongX({ FRONT_X - 0.0003f, WATER_PUMP_Y + std::sin(angle) * WATER_PUMP_BOLT_RING,
 					WATER_PUMP_Z + std::cos(angle) * WATER_PUMP_BOLT_RING }), 0.0035f, 0.0008f, DARK, 10);
 			}
+		}
+		// The bellhousing's face at the flywheel end: a flange cast round the crank's axis out to the gearbox's bellhousing
+		// outline (its own flange's 0.176), standing just proud of the block's back, its four bolt bosses tapped where the
+		// bellhousing bolts go in (on a ring of 0.168 at the diagonals, as the car has them) and a dowel hole each side.
+		// Its outer band runs right round but for the bottom, under the sump; its inner one, between that and the block,
+		// stops further up each side to clear the sump's walls. The flywheel turns just behind it.
+		{
+			constexpr float BACK = -FRONT_X, FACE = 0.0145f, PROUD = 0.0015f;
+			constexpr float INNER = 0.1f, MIDDLE = 0.142f, OUTER = 0.178f, BOLT_RING = 0.168f;
+			constexpr int PIECES = 48;
+			auto band = [&](float from, float to, float clearOfBottom) {
+				for (int piece = 0; piece < PIECES; piece++)
+				{
+					const float angle = glm::two_pi<float>() * (piece + 0.5f) / PIECES;	// from straight up, toward +z
+					if (std::abs(angle - glm::pi<float>()) < clearOfBottom)
+						continue;
+					// (And a notch in its outer edge for the starter's motor, on the car's left: this side's +z in the car.)
+					if (to > 0.15f && std::abs(angle - glm::radians(97.f)) < glm::radians(16.f))
+						continue;
+					block.SetTransform(glm::rotate(glm::translate(glm::mat4(1.f), { BACK + PROUD - FACE * 0.5f, CRANK_Y, 0.f }), angle, glm::vec3(1.f, 0.f, 0.f)))
+						.SetColor(WHITE).AddBox({ 0.f, (from + to) * 0.5f, 0.f }, { FACE, to - from, glm::two_pi<float>() * to / PIECES * 1.08f });
+				}
+				block.ResetTransform();
+			};
+			band(MIDDLE, OUTER, glm::radians(38.f));
+			band(INNER, MIDDLE, glm::radians(66.f));
+			for (int bolt = 0; bolt < 4; bolt++)
+			{
+				const float turn = glm::half_pi<float>() * (bolt + 0.5f);
+				const glm::vec3 at = { BACK, CRANK_Y + std::sin(turn) * BOLT_RING, std::cos(turn) * BOLT_RING };
+				Cylinder(block, AlongX(at + glm::vec3(PROUD - 0.012f, 0.f, 0.f)), 0.014f, 0.024f, WHITE, 16);
+				Cylinder(block, AlongX(at + glm::vec3(PROUD + 0.0003f, 0.f, 0.f)), 0.0065f, 0.0008f, DARK, 12);
+			}
+			for (float side : { -1.f, 1.f })
+				Cylinder(block, AlongX({ BACK + PROUD + 0.0003f, CRANK_Y, side * 0.155f }), 0.005f, 0.0008f, DARK, 10);
 		}
 		add(PartType::BLOCK, block);
 	}
@@ -3301,6 +3370,32 @@ void ShopAssets::LoadFurniture()
 				Box(builder, { 0.f, 0.8f, -0.125f }, { 0.18f, 0.16f, 0.02f }, face);
 				for (float side : { -1.f, 1.f })
 					Box(builder, { side * 0.15f, 0.84f, 0.f }, { 0.05f, 0.08f, 0.05f }, face);
+				break;
+			}
+			case FurnitureKind::FLOOR_JACK:
+				continue;	// (built in pieces with the car's parts, which it works on: see LoadCarParts)
+			case FurnitureKind::JACK_STAND:
+			{
+				// A jack stand: four splayed legs on a square foot, and the tube its ratcheting post comes up out of
+				// (the post itself is ShopWorld's, as long as it's set).
+				const glm::vec3 red = { 0.72f, 0.1f, 0.08f };
+				constexpr float FOOT = 0.11f, TUBE_TOP = JACK_STAND_LOW - 0.02f;
+				for (float x : { -1.f, 1.f })
+					for (float z : { -1.f, 1.f })
+					{
+						const glm::vec3 foot = { x * FOOT, 0.006f, z * FOOT }, top = { x * 0.025f, TUBE_TOP - 0.02f, z * 0.025f };
+						const glm::vec3 run = top - foot, up = { 0.f, 1.f, 0.f };
+						const float length = glm::length(run);
+						const glm::mat4 lean = glm::rotate(At((foot + top) * 0.5f), std::acos(glm::dot(up, run / length)), glm::normalize(glm::cross(up, run)));
+						Cylinder(builder, lean, 0.011f, length, red, 8);
+					}
+				for (float side : { -1.f, 1.f })
+				{
+					Box(builder, { side * FOOT, 0.006f, 0.f }, { 0.02f, 0.012f, 2.f * FOOT + 0.02f }, red);
+					Box(builder, { 0.f, 0.006f, side * FOOT }, { 2.f * FOOT + 0.02f, 0.012f, 0.02f }, red);
+				}
+				Tube(builder, At({ 0.f, TUBE_TOP - 0.06f, 0.f }), 0.03f, 0.021f, 0.12f, red, 0.f, glm::two_pi<float>(), 14);
+				Box(builder, { 0.04f, TUBE_TOP - 0.05f, 0.f }, { 0.03f, 0.014f, 0.012f }, chrome);		// the ratchet's handle
 				break;
 			}
 		}

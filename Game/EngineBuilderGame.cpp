@@ -155,18 +155,22 @@ void EngineBuilderGame::ApplySettings()
 		ApplyTheme(m_settings.darkMode);
 		m_appliedDarkMode = m_settings.darkMode;
 	}
-	m_player.SetMouseSensitivity(m_settings.mouseSensitivity);
+	// Zoomed in, the view narrows by the zoom factor (in its tangent, so it really is that many times
+	// closer), and the mouse slows to match.
+	float magnification = 1.f + (m_settings.zoomFactor - 1.f) * m_zoom;
+	float fieldOfView = glm::degrees(2.f * std::atan(std::tan(glm::radians(m_settings.fieldOfView) * 0.5f) / magnification));
+	m_player.SetMouseSensitivity(m_settings.mouseSensitivity / magnification);
 	m_player.SetInvertY(m_settings.invertY);
 	if (m_camera)
 	{
-		m_camera->SetFov(m_settings.fieldOfView);
+		m_camera->SetFov(fieldOfView);
 		m_camera->SetFarPlane(m_settings.renderDistance);
 	}
 	auto units = m_settings.imperialUnits ? Units::System::IMPERIAL : Units::System::METRIC;
 	m_ui.SetUnits(units);
 	m_world.SetUnits(units);
 	m_inventoryUI.SetUnits(units);
-	m_world.SetFieldOfView(m_settings.fieldOfView);
+	m_world.SetFieldOfView(fieldOfView, m_settings.fieldOfView);
 	m_world.SetViewModelSettings({ m_settings.viewArm, m_settings.viewBody,
 		{ m_settings.viewHandRight, m_settings.viewHandUp, m_settings.viewHandForward }, m_settings.viewBodyBack });
 }
@@ -263,7 +267,11 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		if (!script.empty())
 		{
 			m_devNoSave = true;
-			PlayOffline();
+			// (One that starts "online" stays out of the offline game: it logs in and joins a server itself, see net.)
+			if (script.starts_with("online"))
+				script = script.substr(script.find(';') == std::string::npos ? script.size() : script.find(';') + 1);
+			else
+				PlayOffline();
 			size_t start = 0;
 			while (start <= script.size())
 			{
@@ -277,6 +285,11 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 			}
 		}
 	}
+	// (net vote: yes to everyone who asks to join.)
+	if (m_devAutoVote)
+		for (const auto& vote : m_net.GetVotes())
+			if (!vote.voted)
+				m_net.CastVote(vote.requester, true);
 	// The script runs a command a frame (things bought turn up the frame after), and "wait <seconds>" pauses it.
 	if (!m_devScript.empty())
 	{
@@ -343,6 +356,13 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 
 	if (!m_ui.IsOpen())
 		m_inventoryUI.CancelDrag();
+
+	// Zoom while it's held and nothing's in the way, easing in and out.
+	bool zooming = !typing && !InMenu() && !m_ui.IsOpen() && !m_manual.IsOpen() && !m_pauseMenu.IsOpen()
+		&& !m_devMenu.IsOpen() && !m_console.IsOpen() && Controls::Held(*m_input, Control::ZOOM);
+	m_zoom += ((zooming ? 1.f : 0.f) - m_zoom) * (1.f - std::exp(-deltaTime * 14.f));
+	if (std::abs(m_zoom - (zooming ? 1.f : 0.f)) < 0.001f)
+		m_zoom = zooming ? 1.f : 0.f;
 
 	ApplySettings();
 	ApplyVideoSettings(false);
@@ -433,9 +453,9 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 		m_audio.PlayInterface(Sound::PAGE_TURN, 0.8f);
 	}
 
-	// The car's engine cools once it's switched off.
-	if (m_workshop && !m_world.IsDriving())
-		m_workshop->CoolCarEngine((std::min)(deltaTime, 0.25f));
+	// The cars' engines cool once they're switched off (the one being driven here doesn't).
+	if (m_workshop)
+		m_workshop->CoolCarEngine((std::min)(deltaTime, 0.25f), m_world.IsDriving() ? m_workshop->GetActiveCar() : -1);
 
 	// The sun keeps moving, even with the menus open.
 	// The dev menu can speed it up, or stop it. In a garage on a server it goes at the server's pace,

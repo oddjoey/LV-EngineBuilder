@@ -18,6 +18,10 @@ namespace FurnitureCatalog
 			{ FurnitureKind::SHOP_FAN,		"Pedestal Fan",			"Keeps the air moving on a hot day.", 55.0 },
 			{ FurnitureKind::GAS_PUMP,		"Vintage Gas Pump",		"A restored pump from a long-gone filling station. Purely for show.", 350.0 },
 			{ FurnitureKind::MONCHU,		"Monchu",				"The shop's mascot, about a metre tall. Purely for show.", 120.0 },
+			{ FurnitureKind::FLOOR_JACK,	"Floor Jack",			"A two-tonne trolley jack. Roll it (F) under one of the car's lifting points: at each corner, and under the middle of each "
+				"end. It snaps under the point; aim at it and hold the left button to pump the car up, the right to let it down.", 85.0 },
+			{ FurnitureKind::JACK_STAND,	"Jack Stand",			"A ratcheting stand. Jack the car up, then move the stand (F) under a lifting point there: it holds the car at that "
+				"height once the jack's let down or taken away. Wherever nothing's under it, the car comes down.", 22.0 },
 		};
 		return furniture;
 	}

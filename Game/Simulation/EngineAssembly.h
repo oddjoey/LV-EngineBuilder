@@ -169,6 +169,8 @@ public:
 	const std::vector<std::pair<AssemblySlot, int>>& Prerequisites(AssemblySlot slot, int index) const;
 	// Where a part is fitted, if it is (a lookup, not a search).
 	std::optional<std::pair<AssemblySlot, int>> Find(const Part* part) const;
+	// New whenever a part goes on or comes off (or the engine goes in or out): unchanged, nothing fitted has.
+	uint64_t Revision() const { return m_revision; }
 	// "Main Bearing 3", "Exhaust Valve Spring 2", "Crankshaft".
 	std::string PositionName(AssemblySlot slot, int index) const;
 	// What has to be fitted before this position can be, or nothing if it's ready.
@@ -220,4 +222,5 @@ private:
 	std::array<std::vector<Positions>, SLOTS>			m_prerequisites = {};	// per position: what has to be fitted first
 	std::array<std::vector<Positions>, SLOTS>			m_dependents = {};		// per position: what's fitted on top of it
 	std::unordered_map<const Part*, std::pair<AssemblySlot, int>> m_positions = {};
+	uint64_t m_revision = NextAssemblyRevision();	// new whenever what's fitted changes (Revision)
 };

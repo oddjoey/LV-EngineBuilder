@@ -51,7 +51,7 @@ const char* BleedPointName(BleedPoint point)
 		case BleedPoint::REAR_LEFT:		return "Rear left wheel cylinder";
 		case BleedPoint::FRONT_RIGHT:	return "Front right caliper";
 		case BleedPoint::FRONT_LEFT:	return "Front left caliper";
-		case BleedPoint::CLUTCH:		return "Clutch release cylinder";
+		case BleedPoint::CLUTCH:		return "Clutch slave cylinder";
 		case BleedPoint::COUNT:			break;
 	}
 	return "";
@@ -196,7 +196,7 @@ const CarSpec& CarSpec::LE86Coupe()
 			{ C::BRAKES,		0.55,	{ 0.50, 0.55 },	P::DOT3,				"DOT 3 (SAE J1703)",
 				"Reservoir between MIN and MAX. Bleed farthest first: rear right, rear left, front right, front left, until no bubbles come out.", 0.0 },
 			{ C::CLUTCH,		0.15,	{ 0.12, 0.15 },	P::DOT3,				"DOT 3 (SAE J1703)",
-				"Its own reservoir on the firewall. Bleed at the release cylinder on the bellhousing.", 0.0 },
+				"Its own reservoir on the firewall. Bleed at the slave cylinder on the bellhousing.", 0.0 },
 			{ C::TRANSMISSION,	1.6,	{ 1.5, 1.6 },	P::GEAR_OIL_75W90_GL4,	"API GL-4 75W-90 gear oil",
 				"Fill at the side plug until it runs out of the hole. Never GL-5: its additives attack the synchro rings.", 0.0 },
 			{ C::DIFFERENTIAL,	1.1,	{ 1.0, 1.1 },	P::GEAR_OIL_80W90_GL5,	"API GL-5 80W-90 hypoid gear oil",

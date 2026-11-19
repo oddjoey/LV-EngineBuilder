@@ -928,6 +928,9 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 			// Its nuts are on the Nuts & Bolts page with the rest of the hardware.
 			if (!IsCarPart(type) || !info.listed || type == PartType::BODY_SHELL || info.system == PartSystem::FASTENERS)
 				continue;
+			// (Narrowed by the store's search bar.)
+			if (!StoreShows(PartCatalog::StoreName(type), PartSystemName(info.system)) && !StoreShows(PartTypeName(type)))
+				continue;
 			if (info.system != section)
 			{
 				if (section)
@@ -943,11 +946,22 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 					[type](ImDrawList* drawList, ImVec2 min, float size) { PartIcons::Draw(drawList, type, min, size); }))
 				pickPart(type);
 		}
-		ImGui::NewLine();
-		ImGui::SeparatorText("Fluids");
+		bool anyFluid = false;
+		for (int p = 0; p < FLUID_PRODUCTS; p++)
+			anyFluid = anyFluid || StoreShows(FluidProductName(static_cast<FluidProduct>(p)), "Fluids");
+		if (!section && !anyFluid)
+			ImGui::TextDisabled("Nothing here matches \"%s\".", m_storeSearch);
+		if (anyFluid)
+		{
+			if (section)
+				ImGui::NewLine();
+			ImGui::SeparatorText("Fluids");
+		}
 		for (int p = 0; p < FLUID_PRODUCTS; p++)
 		{
 			auto product = static_cast<FluidProduct>(p);
+			if (!StoreShows(FluidProductName(product), "Fluids"))
+				continue;
 			std::string label = std::format("{} ({:g} l)", FluidProductName(product), Workshop::FluidUnitLitres(product));
 			if (StoreCard(FluidProductName(product), label.c_str(), price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor()),
 					m_carStoreKind == 2 && m_carStoreFluid == p, false, [product](ImDrawList* drawList, ImVec2 min, float size) {

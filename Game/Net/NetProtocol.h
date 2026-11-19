@@ -43,9 +43,9 @@
 //   game -> server   query                                  what the server is, for the server list (in the clear)
 //                    hello <version> "ticket" "signature"
 //                    ops <author> <sequence> <count> (<kind> "key" "text")...
-//                    presence <id> <x> <y> <z> <yaw> <pitch> <arms> <posture: 0 standing, 1 crouching, 2 lying> <fur> <skin> <cap> <tail>
+//                    presence <id> <x> <y> <z> <yaw> <pitch> <arms> <posture: 0 standing, 1 crouching, 2 lying> <fur> <skin> <cap> <tail> <rpm: the car they're driving, 0 if none>
 //                                                           arms: 0 down, 1 the right one out (holding something), 2 both (carrying a delivery);
-//                                                           10 and up, sat in the car: 10 its driver's seat, 11 the passenger's, 12 and 13 the back
+//                                                           10 and up, sat in a car: 10 + seat + 4 x car (seat 0 the driver's, 1 the passenger's, 2 and 3 the back)
 //                    profile "layout"                       how their backpack and hotbar are laid out
 //                    create                                 not in a garage yet: makes a new one, theirs
 //                    request <garage>                       asks to join one
@@ -73,7 +73,7 @@
 namespace NetProtocol
 {
 	// Both ends have to be the same game: the records are its save text.
-	constexpr long long VERSION = 31;
+	constexpr long long VERSION = 33;
 	constexpr uint16_t DEFAULT_PORT = 33333;
 	constexpr uint16_t ACCOUNT_PORT = 44444;
 	constexpr const char* ACCOUNT_IP = "localhost";

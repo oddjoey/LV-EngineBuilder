@@ -21,7 +21,7 @@ namespace
 		switch (circuit)
 		{
 			case FluidCircuit::ENGINE_OIL:		return { CAR_ENGINE_MOUNT.x, CAR_ENGINE_MOUNT.y + 0.19f, 0.05f };
-			case FluidCircuit::COOLANT:			return { 1.98f, 0.67f, 0.2f };
+			case FluidCircuit::COOLANT:			return { CarBody::NOSE_X - 0.09f, 0.67f, 0.2f };	// the radiator's cap
 			case FluidCircuit::BRAKES:			return { 1.15f, 0.78f, -0.33f };
 			case FluidCircuit::CLUTCH:			return { 0.93f, 0.82f, -0.56f };
 			case FluidCircuit::TRANSMISSION:	return { 0.68f, 0.3f, 0.1f };
@@ -55,7 +55,7 @@ namespace
 			case BleedPoint::REAR_LEFT:		index = 0; return CarSlot::WHEEL_CYLINDER;
 			case BleedPoint::FRONT_RIGHT:	index = 1; return CarSlot::BRAKE_CALIPER;
 			case BleedPoint::FRONT_LEFT:	index = 0; return CarSlot::BRAKE_CALIPER;
-			default:						index = 0; return CarSlot::CLUTCH_RELEASE_CYLINDER;
+			default:						index = 0; return CarSlot::CLUTCH_SLAVE_CYLINDER;
 		}
 	}
 
@@ -68,7 +68,7 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 {
 	const auto& tool = ToolCatalog::Of(toolIndex);
 	auto kind = tool.handKind;
-	if (kind < HandToolKind::FUNNEL)
+	if (kind < HandToolKind::FUNNEL || kind == HandToolKind::CAR_KEY)
 		return false;
 	m_carToolPause = (std::max)(0.f, m_carToolPause - deltaTime);
 	glm::vec3 eye = player.GetEyePosition();
@@ -175,7 +175,7 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 
 	// Everything else works on the car itself.
 	const auto* build = workshop.GetCar();
-	if (!build || m_carStation >= m_stations.size() || !m_stations[m_carStation].present)
+	if (!build || m_rig.carStation >= m_stations.size() || !m_stations[m_rig.carStation].present)
 		return false;
 	const auto& car = build->assembly;
 	const auto& spec = car.GetSpec();

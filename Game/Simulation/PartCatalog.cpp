@@ -261,6 +261,8 @@ namespace
 
 		{ PartType::STEERING_RACK,			"Steering Rack",			S::STEERING,		210.0,	0,		true,	false,	false,	true,	0, 0,
 			"Manual rack and pinion, bolted across the front crossmember. Worn racks knock and wander." },
+		{ PartType::TIE_ROD_INNER,			"Inner Tie Rod",			S::STEERING,		30.0,	0,		true,	false,	false,	false,	2, 1,
+			"The rod screwed onto each end of the rack, its ball joint in there under the boot; the tie rod end screws onto its other end. Worn, the steering clunks and the toe wanders." },
 		{ PartType::TIE_ROD_END,			"Tie Rod End",				S::STEERING,		25.0,	0,		true,	false,	false,	false,	2, 1,
 			"Ball joint on the end of each track rod. Screwing it in or out sets the toe; count the turns when you swap one." },
 		{ PartType::STEERING_COLUMN,		"Steering Column",			S::STEERING,		140.0,	0,		true,	false,	false,	true,	0, 0,
@@ -303,7 +305,7 @@ namespace
 			"Rubber mount and crossmember under the gearbox's tail." },
 		{ PartType::CLUTCH_MASTER_CYLINDER,	"Clutch Master Cylinder",	S::DRIVETRAIN,		55.0,	0,		true,	false,	false,	false,	1, 2,
 			"Pedal-worked cylinder on the firewall, with its own small reservoir of brake fluid." },
-		{ PartType::CLUTCH_RELEASE_CYLINDER, "Clutch Release Cylinder",	S::DRIVETRAIN,		35.0,	0,		true,	false,	false,	false,	1, 1,
+		{ PartType::CLUTCH_SLAVE_CYLINDER,	"Clutch Slave Cylinder",		S::DRIVETRAIN,		35.0,	0,		true,	false,	false,	false,	1, 1,
 			"The slave cylinder on the bellhousing that pushes the release fork. Bled at its own nipple." },
 		{ PartType::DRIVESHAFT,				"Driveshaft",				S::DRIVETRAIN,		180.0,	0,		true,	false,	false,	true,	0, 0,
 			"Two-piece propshaft with its centre bearing, from the gearbox to the differential's flange." },
@@ -346,6 +348,10 @@ namespace
 			"13 x 5.5 inch steel wheel. Its tire is fitted to it off the car." },
 		{ PartType::TIRE,					"Tire",						S::WHEELS,			65.0,	0,		true,	false,	false,	false,	3, 3,
 			"185/70 R13 radial. Check the tread depth and the date code: old rubber hardens and stops gripping." },
+
+		{ PartType::IGNITION_SWITCH,		"Ignition Switch",			S::ELECTRICAL,		75.0,	0,		false,	false,	false,	false,	1, 1,
+			"The ignition's lock barrel and switch, pushed into the dash right of the column, with a new key cut to it. Only its own key "
+			"turns it: swap one in to change the car's key.", "Ignition Switch & Key" },
 
 		{ PartType::LUG_NUT,				"Lug Nut",					S::FASTENERS,		1.0,	0,		false,	false,	false,	false,	1, 1,
 			"M12 x 1.5 conical-seat wheel nut, 21 mm. Four on each wheel, done up across in a star.",

@@ -1,10 +1,12 @@
 #pragma once
 
+#include <cstdio>
 #include <functional>
 
 #include <imgui.h>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "../Simulation/Units.h"
 #include "../Simulation/Workshop.h"
@@ -42,6 +44,8 @@ public:
 	void OpenCarPage(int page);
 	// The parts computer: a window of its own, separate from the workshop screens.
 	void OpenStore(StoreCategory category);
+	// Developer shortcut: types this into the store's search bar (empty clears it).
+	void DevSearchStore(const std::string& text) { std::snprintf(m_storeSearch, sizeof(m_storeSearch), "%s", text.c_str()); m_toolDepartment = 0; }
 	// The tab for one machine: the part set up in it and only what that machine can do to it.
 	void OpenMachine(int machineIndex);
 	void Close();
@@ -113,6 +117,10 @@ private:
 	// One clickable catalogue card; draws its icon with drawIcon(drawList, min, size).
 	bool StoreCard(const char* id, const char* name, const std::string& price, bool selected, bool owned,
 		const std::function<void(ImDrawList*, ImVec2, float)>& drawIcon, const std::vector<float>& ratings = {});
+	// The store's search (the bar at the top of every page): whether a card with this name, in this section, is shown
+	// (always, with nothing typed); and how many cards a page of the store shows for what's typed.
+	bool StoreShows(std::string_view name, std::string_view section = {}) const;
+	int StoreMatches(StoreCategory category, const Workshop& workshop) const;
 	std::string ToolPrecision(const MeasuringTool& tool, double value) const;
 	// Which tool to go and get for a measurement, for the hints that replaced the measure buttons.
 	std::string ToolHint(Workshop& workshop, int toolIndex) const;
@@ -167,8 +175,11 @@ private:
 	double				m_machineParameter = 0.0;	// in display units
 	std::string			m_lastMachiningMessage = "";
 	PartOrder			m_order = {};
-	// What's typed in the parts store's search bar: only the parts whose names (or sections) have it in them are shown.
+	// What's typed in the store's search bar (at the top of every page): only what has it in its name (or its section's)
+	// is shown, on whichever page is open.
 	char				m_storeSearch[64] = {};
+	// The Tools page's sub-page: 0 all of them, or one of its departments (see WorkshopUI.cpp's TOOL_DEPARTMENTS).
+	int					m_toolDepartment = 0;
 	std::vector<CartLine>	m_cart = {};
 	int				m_carSystem = 0;			// the car system the build page shows (from FIRST_CAR_SYSTEM)
 	std::optional<CarTune>	m_tuneDraft = std::nullopt;	// the tune being set, till it's applied

@@ -456,10 +456,26 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_world.DevPress();
 			m_console.Print("Clicks the next of the car's switches aimed at.");
 		}
+		else if (what == "add")
+		{
+			// car add: another player's LE86 in the next spot on the drive (made as a joining player's is), its key to you.
+			if (auto car = m_world.DevSpawnCar(*m_workshop, 1000 + m_workshop->GetCarCount()))
+				m_console.Print(std::format("Car {} is out on the drive; its key's on your hotbar.", *car + 1));
+			else
+				m_console.Error("No room for another car.");
+		}
 		else if (what == "key")
 		{
-			m_world.DevTurnKey(*m_workshop);
-			m_console.Print("The key, turned.");
+			// car key [in|out]: puts the key in the ignition or takes it out onto the tool board; bare, turns it (putting it in first).
+			std::string how = args.size() > 1 ? args[1] : "";
+			if (how == "in" || how == "out")
+				m_console.Print(m_world.DevIgnitionKey(*m_workshop, how == "in") ? (how == "in" ? "The key's in the ignition." : "The key's out, on the tool board.")
+					: "Couldn't: no key or no ignition switch, or the engine's running.");
+			else
+			{
+				m_world.DevTurnKey(*m_workshop);
+				m_console.Print("The key, turned.");
+			}
 		}
 		else if (what == "gear")
 		{
@@ -472,15 +488,26 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_world.DevHandbrake();
 			m_console.Print("The handbrake, pulled or let down.");
 		}
+		else if (what == "fits")
+		{
+			// car fits jack|stand <point>: whether the shop's first free one would go under that point, moved there.
+			auto point = args.size() > 2 ? Number(args[2]) : std::nullopt;
+			if (!point)
+				return m_console.Error("Usage: car fits jack|stand <point 0-9>");
+			std::string result = m_world.DevCheckSupport(static_cast<int>(*point), args[1] == "stand");
+			m_console.Print(result);
+			// (And on screen, for a scripted run with the console shut.)
+			m_world.Notify(result);
+		}
 		else if (what == "jack" || what == "stand")
 		{
-			// car jack|stand <point 0-7> [height]: puts the shop's floor jack (or a stand) under that lifting point, holding it that high.
+			// car jack|stand <point 0-9> [height]: puts the shop's floor jack (or a stand) under that lifting point (0-7 the corners', 8 the front's middle, 9 the rear's), holding it that high.
 			auto point = args.size() > 1 ? Number(args[1]) : std::nullopt;
 			auto height = args.size() > 2 ? Number(args[2]) : std::nullopt;
 			if (!point)
-				return m_console.Error("Usage: car jack|stand <point 0-7> [height]");
+				return m_console.Error("Usage: car jack|stand <point 0-9> [height]");
 			if (!m_world.DevSupport(*m_workshop, static_cast<int>(*point), static_cast<float>(height.value_or(0.2)), what == "stand"))
-				return m_console.Error("No free one delivered: tool floor jack (or jack stand), then wait 1.");
+				return m_console.Error("No free one: furniture floor jack (or jack stand), then wait 2.");
 			m_console.Print("It's under the car.");
 		}
 		else if (what == "lights")
@@ -523,7 +550,7 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_console.Error("Usage: car build|test|open|shut|steer|drive|sit|lights|strip <part>");
 	});
 
-	m_console.AddCommand("screen", "screen car [build|fluids|tune|test] | screen store", "Opens the parts computer's Car tab on one of its pages, or the store's LE86 Parts page.",
+	m_console.AddCommand("screen", "screen car [build|fluids|tune|test] | screen store [page] [search]", "Opens the parts computer's Car tab on one of its pages, or the store's LE86 Parts page.",
 		[this](const Console::Arguments& args) {
 		const char* pages[] = { "build", "fluids", "tune", "test" };
 		if (!args.empty() && (args[0] == "backpack" || args[0] == "bench"))
@@ -533,13 +560,24 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		}
 		if (!args.empty() && args[0] == "store")
 		{
-			if (args.size() > 1 && args[1] == "skills")
-			{
-				m_ui.OpenStore(StoreCategory::SKILLS);
-				return m_console.Print("The parts computer's Rank & Skills page.");
-			}
-			m_ui.OpenStore(args.size() > 1 && args[1] == "hardware" ? StoreCategory::HARDWARE : args.size() > 1 && args[1] == "parts" ? StoreCategory::PARTS : StoreCategory::CAR);
-			return m_console.Print("The store's LE86 Parts page.");
+			// screen store [page] [search words...]: a page of the store (the LE86's unless named), with that typed in its search bar.
+			const std::pair<const char*, StoreCategory> PAGES[] = { { "parts", StoreCategory::PARTS }, { "hardware", StoreCategory::HARDWARE },
+				{ "tools", StoreCategory::TOOLS }, { "machines", StoreCategory::MACHINES }, { "furniture", StoreCategory::FURNITURE },
+				{ "paint", StoreCategory::PAINT }, { "car", StoreCategory::CAR }, { "skills", StoreCategory::SKILLS } };
+			StoreCategory category = StoreCategory::CAR;
+			size_t first = 1;
+			for (const auto& [name, page] : PAGES)
+				if (args.size() > 1 && args[1] == name)
+				{
+					category = page;
+					first = 2;
+				}
+			std::string search;
+			for (size_t a = first; a < args.size(); a++)
+				search += (search.empty() ? "" : " ") + args[a];
+			m_ui.OpenStore(category);
+			m_ui.DevSearchStore(search);
+			return m_console.Print(search.empty() ? "The store's open." : std::format("The store's open, searching for \"{}\".", search));
 		}
 		std::string which = args.size() > 1 ? args[1] : "build";
 		for (int page = 0; page < 4; page++)
@@ -632,6 +670,46 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			return m_console.Error("Usage: eye <metres>");
 		m_devEyeDrop = static_cast<float>(*drop);
 		m_console.Print(std::format("Camera {:.2f} m below the eyes.", *drop));
+	});
+
+	// Developer shortcuts for trying a garage on a server without the menus (a dev script that starts with "online" stays
+	// out of the offline game): net login <user> <password> [new], net join <address> <port>, net create, net request
+	// [garage id: the first listed if left out], net vote (says yes to everyone who asks to join, from now on), net status.
+	m_console.AddCommand("net", "net login|join|create|request|vote|status", "Logs in, joins a server and a garage, without the menus.",
+		[this](const Console::Arguments& args) {
+		std::string what = args.empty() ? "status" : args[0];
+		if (what == "login" && args.size() >= 3)
+		{
+			m_servers.LoadList();
+			m_login.Begin(m_servers.GetAccountAddress(), m_servers.GetAccountPort(), args[1], args[2], args.size() > 3 && args[3] == "new");
+			return m_console.Print(std::format("Logging in as {}.", args[1]));
+		}
+		if (what == "join" && args.size() >= 3)
+		{
+			JoinGarage(args[1], static_cast<int>(Number(args[2]).value_or(0.0)));
+			return m_console.Print(std::format("Joining {}:{}.", args[1], args[2]));
+		}
+		if (what == "create")
+		{
+			m_net.CreateGarage();
+			return m_console.Print("Making a new garage.");
+		}
+		if (what == "request")
+		{
+			const auto& choices = m_net.GetGarageChoices();
+			int garage = args.size() > 1 ? static_cast<int>(Number(args[1]).value_or(0.0)) : choices.empty() ? -1 : choices.front().id;
+			if (garage < 0)
+				return m_console.Error("No garages listed yet.");
+			m_net.RequestGarage(garage);
+			return m_console.Print(std::format("Asking to join garage {}.", garage));
+		}
+		if (what == "vote")
+		{
+			m_devAutoVote = true;
+			return m_console.Print("Saying yes to everyone who asks to join.");
+		}
+		m_console.Print(std::format("Logged in: {}. Online: {}, playing: {}, choosing: {}. Id {}, cars {}.", m_login.IsLoggedIn(), m_net.IsOnline(),
+			m_net.IsPlaying(), m_net.IsChoosing(), m_net.GetLocalId(), m_workshop->GetCarCount()));
 	});
 
 	m_console.AddCommand("tp","tp <x> <z> [y]", "Moves you to a spot on the floor (pos shows where you are).", [this](const Console::Arguments& args) {

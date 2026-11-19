@@ -12,6 +12,7 @@ GameSettings GameSettings::Load()
 	GameSettings settings;
 	std::ifstream file(FILE_NAME);
 	std::string line;
+	bool hasZoom = false;
 	while (std::getline(file, line))
 	{
 		auto equals = line.find('=');
@@ -23,6 +24,7 @@ GameSettings GameSettings::Load()
 		if (key == "mouse_sensitivity") value >> settings.mouseSensitivity;
 		else if (key == "invert_y") value >> settings.invertY;
 		else if (key == "field_of_view") value >> settings.fieldOfView;
+		else if (key == "zoom_factor") value >> settings.zoomFactor;
 		else if (key == "show_fps") value >> settings.showFps;
 		else if (key == "imperial_units") value >> settings.imperialUnits;
 		else if (key == "dark_mode") value >> settings.darkMode;
@@ -54,6 +56,7 @@ GameSettings GameSettings::Load()
 		else if (key == "username") settings.username = line.substr(equals + 1);
 		else if (key.starts_with("control_"))
 		{
+			hasZoom = hasZoom || key == "control_zoom";
 			for (size_t i = 0; i < Controls::COUNT; i++)
 				if (key.substr(8) == Controls::InfoOf(static_cast<Control>(i)).id)
 					value >> settings.controls[i];
@@ -63,6 +66,7 @@ GameSettings GameSettings::Load()
 	// A hand-edited file shouldn't be able to break the camera or the window.
 	settings.mouseSensitivity = std::clamp(settings.mouseSensitivity, 0.1f, 5.f);
 	settings.fieldOfView = std::clamp(settings.fieldOfView, 50.f, 110.f);
+	settings.zoomFactor = std::clamp(settings.zoomFactor, ZOOM_MIN, ZOOM_MAX);
 	settings.displayMode = std::clamp(settings.displayMode, 0, 2);
 	settings.resolutionWidth = std::clamp(settings.resolutionWidth, 800, 7680);
 	settings.resolutionHeight = std::clamp(settings.resolutionHeight, 600, 4320);
@@ -78,6 +82,17 @@ GameSettings GameSettings::Load()
 	settings.viewHandForward = std::clamp(settings.viewHandForward, -VIEW_HAND_REACH, VIEW_HAND_REACH);
 	settings.viewBodyBack = std::clamp(settings.viewBodyBack, VIEW_BODY_BACK_MIN, VIEW_BODY_BACK_MAX);
 	settings.username = settings.username.substr(0, NetProtocol::USERNAME_MAX);
+	// Saved before there was a zoom key: rolling the engine on its stand was on Z and X, and Z is the
+	// zoom now, so the rolls left on their old keys go to their new ones.
+	if (!hasZoom)
+	{
+		for (Control roll : { Control::ROLL_BACK, Control::ROLL_FORWARD })
+		{
+			int& binding = settings.controls[static_cast<size_t>(roll)];
+			if (binding == GLFW_KEY_Z || binding == GLFW_KEY_X)
+				binding = Controls::InfoOf(roll).binding;
+		}
+	}
 	// Something that isn't a key or a mouse button (or is kept for something else) goes back to its default.
 	for (size_t i = 0; i < Controls::COUNT; i++)
 	{
@@ -98,6 +113,7 @@ void GameSettings::Save() const
 	file << "mouse_sensitivity=" << mouseSensitivity << "\n";
 	file << "invert_y=" << invertY << "\n";
 	file << "field_of_view=" << fieldOfView << "\n";
+	file << "zoom_factor=" << zoomFactor << "\n";
 	file << "show_fps=" << showFps << "\n";
 	file << "imperial_units=" << imperialUnits << "\n";
 	file << "dark_mode=" << darkMode << "\n";

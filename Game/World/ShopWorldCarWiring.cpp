@@ -31,7 +31,7 @@ namespace
 		int index = static_cast<int>(plug);
 		// The ground strap: off the battery's negative post (the one toward the nose).
 		if (plug == CarPlug::GROUND)
-			return { 1.74f, 0.735f, -0.5f };
+			return { CarBody::BATTERY[0], CarBody::BATTERY[1] + 0.215f, CarBody::BATTERY[2] - 0.08f };	// (the battery's turned across the car, this post outboard)
 		const glm::vec3 block = { CarBody::BRAKE_BLOCK[0], CarBody::BRAKE_BLOCK[1], CarBody::BRAKE_BLOCK[2] };
 		const glm::vec3 filter = { CarBody::FUEL_FILTER[0], CarBody::FUEL_FILTER[1], CarBody::FUEL_FILTER[2] };
 		switch (plug)
@@ -86,12 +86,18 @@ namespace
 		}
 	}
 
+	// Whether a part's plugs are picked from a list at a marked point on it: a loom, a line set, or the clutch's master
+	// cylinder (its one pipe picked off it the same way as the brakes').
+	bool PickedFromMenu(CarSlot harness)
+	{
+		return CarAssembly::HasPlugMenu(harness) || harness == CarSlot::CLUTCH_MASTER_CYLINDER;
+	}
+
 	// A loom's plug that's on nothing and led nowhere is tucked away in its loom: it isn't seen, and is picked from the
-	// loom's menu. The same for a line set's pipes. (The ground strap is no loom's: it lies by the battery; and the
-	// clutch's one pipe hangs off its master cylinder.)
+	// loom's menu. The same for a line set's pipes, and the clutch's. (The ground strap is no loom's: it lies by the battery.)
 	bool Tucked(const CarAssembly& car, CarPlug plug)
 	{
-		return CarAssembly::HasPlugMenu(CarAssembly::PlugHarness(plug)) && !car.IsPlugged(plug) && car.GetWireClips(plug).empty();
+		return PickedFromMenu(CarAssembly::PlugHarness(plug)) && !car.IsPlugged(plug) && car.GetWireClips(plug).empty();
 	}
 
 	// Where the harness's plugs are picked from: the middle of its tails, in the bay's back corner on the driver's side.
@@ -102,9 +108,12 @@ namespace
 			return { CarBody::BRAKE_BLOCK[0], CarBody::BRAKE_BLOCK[1], CarBody::BRAKE_BLOCK[2] };
 		if (harness == CarSlot::FUEL_LINE_SET)
 			return { CarBody::FUEL_RISER[0], CarBody::FUEL_RISER[1], CarBody::FUEL_RISER[2] };
+		// (The clutch's pipe from where it comes out of its master cylinder's nose.)
+		if (harness == CarSlot::CLUTCH_MASTER_CYLINDER)
+			return Anchor(CarPlug::CLUTCH_PIPE);
 		return (Anchor(CarPlug::BATTERY) + Anchor(CarPlug::OIL_SENDER)) * 0.5f;
 	}
-	const CarSlot MENU_HARNESSES[] = { CarSlot::MAIN_HARNESS, CarSlot::BRAKE_LINE_SET, CarSlot::FUEL_LINE_SET };
+	const CarSlot MENU_HARNESSES[] = { CarSlot::MAIN_HARNESS, CarSlot::BRAKE_LINE_SET, CarSlot::CLUTCH_MASTER_CYLINDER, CarSlot::FUEL_LINE_SET };
 
 	// Which way a pipe or a hose is going as it goes into what it's done up on, in the car's space (a wire's plug
 	// goes on whichever way it comes).
@@ -117,7 +126,7 @@ namespace
 			case CarPlug::BRAKE_HOSE_LEFT:	return { 0.f, 0.f, -1.f };
 			case CarPlug::BRAKE_HOSE_RIGHT:	return { 0.f, 0.f, 1.f };
 			case CarPlug::BRAKE_HOSE_REAR:
-			case CarPlug::FUEL_TANK:		return { -1.f, 0.f, 0.f };
+			case CarPlug::FUEL_TANK:		return { 0.f, 1.f, 0.f };
 			case CarPlug::FUEL_FILTER:		return { 0.f, 1.f, 0.f };
 			case CarPlug::FUEL_PUMP:		return { 1.f, 0.f, 0.f };
 			default:						return { 0.f, -1.f, 0.f };
@@ -137,10 +146,12 @@ namespace
 			// Back to the firewall, across it, and forward along the far wheel housing.
 			case CarPlug::BRAKE_HOSE_RIGHT:	return { { 0.905f, 0.5f, -0.36f }, { 0.905f, 0.5f, 0.33f }, { socket.x, 0.56f, 0.33f } };
 			// Down the firewall and back along the floor.
-			case CarPlug::BRAKE_HOSE_REAR:	return { { 0.905f, 0.45f, -0.36f }, { 0.87f, 0.17f, -0.3f }, { -0.85f, 0.17f, -0.3f } };
+			// (Then back under the kick-up, and up into the rear hose's union.)
+			case CarPlug::BRAKE_HOSE_REAR:	return { { 0.905f, 0.45f, -0.36f }, { 0.87f, 0.17f, -0.3f }, { -0.85f, 0.17f, -0.3f }, { socket.x, 0.17f, socket.z } };
 			// Back to the firewall and across it, over the gearbox.
 			case CarPlug::CLUTCH_PIPE:		return { { 0.905f, 0.56f, -0.5f }, { 0.905f, 0.56f, socket.z } };
-			case CarPlug::FUEL_TANK:		return { { -1.3f, 0.17f, 0.35f } };
+			// Back under the floor, under the kick-up's back wall, and up through the boot floor to the tank's outlet.
+			case CarPlug::FUEL_TANK:		return { { -1.3f, 0.17f, 0.35f }, { socket.x, 0.17f, socket.z } };
 			case CarPlug::FUEL_FILTER:		return {};
 			// Up off the filter, across the firewall, and forward to the pump on the side of the head.
 			default:						return { { from.x, from.y + 0.035f, from.z - 0.03f }, { 0.925f, from.y + 0.035f, socket.z }, { 0.95f, socket.y, socket.z } };
@@ -191,10 +202,10 @@ namespace
 			: std::format("the {}'s socket", CarPlugName(plug));
 	}
 	// What a part's plugs are, in its list: "plug", "pipe" or "hose".
-	const char* MenuNoun(CarSlot harness) { return harness == CarSlot::BRAKE_LINE_SET ? "pipe" : harness == CarSlot::FUEL_LINE_SET ? "hose" : "plug"; }
+	const char* MenuNoun(CarSlot harness) { return harness == CarSlot::BRAKE_LINE_SET || harness == CarSlot::CLUTCH_MASTER_CYLINDER ? "pipe" : harness == CarSlot::FUEL_LINE_SET ? "hose" : "plug"; }
 	const char* MenuPullAll(CarSlot harness)
 	{
-		return harness == CarSlot::BRAKE_LINE_SET ? "Undo every union" : harness == CarSlot::FUEL_LINE_SET ? "Pull every hose off" : "Pull every plug off";
+		return harness == CarSlot::BRAKE_LINE_SET ? "Undo every union" : harness == CarSlot::CLUTCH_MASTER_CYLINDER ? "Undo its union" : harness == CarSlot::FUEL_LINE_SET ? "Pull every hose off" : "Pull every plug off";
 	}
 
 	glm::vec3 ToVec(const CarWirePoint& point) { return { point[0], point[1], point[2] }; }
@@ -213,7 +224,7 @@ namespace
 bool ShopWorld::PlugsReachable(const Workshop& workshop) const
 {
 	const auto* build = workshop.GetCar();
-	if (!build || m_carStation >= m_stations.size() || !m_stations[m_carStation].present || IsSeated())
+	if (!build || m_rig.carStation >= m_stations.size() || !m_stations[m_rig.carStation].present || IsSeated())
 		return false;
 	// They're all under the hood.
 	return !build->assembly.IsFilled(CarSlot::HOOD, 0) || CarPanelOpen(CarPanel::HOOD) > 0.6f;
@@ -232,45 +243,56 @@ glm::vec3 ShopWorld::PlugSocket(const Workshop& workshop, CarPlug plug) const
 	// where it would be).
 	auto onEngine = [&](AssemblySlot slot, const glm::vec3& from, const glm::vec3& otherwise) {
 		int engine = workshop.GetEngineInCar();
-		if (engine < 0 || m_carStation >= m_stations.size() || !workshop.GetAssembly(engine).Get(slot, 0))
+		if (engine < 0 || m_rig.carStation >= m_stations.size() || !workshop.GetAssembly(engine).Get(slot, 0))
 			return otherwise;
-		return glm::inverse(CarRotation()) * (SlotWorldCenter(engine, slot, 0) - m_stations[m_carStation].position) + from;
+		return glm::inverse(CarRotation()) * (SlotWorldCenter(engine, slot, 0) - CarOrigin()) + from;
 	};
-	const glm::vec3 master = PoseOnCar(CarSlot::BRAKE_MASTER_CYLINDER, 0).offset, slave = PoseOnCar(CarSlot::CLUTCH_RELEASE_CYLINDER, 0).offset;
+	const glm::vec3 master = PoseOnCar(CarSlot::BRAKE_MASTER_CYLINDER, 0).offset, slave = PoseOnCar(CarSlot::CLUTCH_SLAVE_CYLINDER, 0).offset;
 	switch (plug)
 	{
 		// The master cylinder's two outlets on its inboard side; a bracket on each front wheel housing's wall, where the
 		// hose comes through from the wheel; the front end of the hose down to the back axle; the union on top of the
-		// clutch's release cylinder; the tank's outlet on its front; the filter's stub underneath; and the pump's inlet.
+		// clutch's slave cylinder; the tank's outlet on its front; the filter's stub underneath; and the pump's inlet.
 		case CarPlug::BRAKE_FRONT_PORT:	return master + glm::vec3(0.035f, 0.017f, 0.038f);
 		case CarPlug::BRAKE_REAR_PORT:	return master + glm::vec3(-0.035f, 0.017f, 0.038f);
 		case CarPlug::BRAKE_HOSE_LEFT:	return { FRONT_AXLE_X + 0.1f, 0.6f, -0.395f };
 		case CarPlug::BRAKE_HOSE_RIGHT:	return { FRONT_AXLE_X + 0.1f, 0.6f, 0.395f };
-		case CarPlug::BRAKE_HOSE_REAR:	return { REAR_AXLE_X + 0.17f, 0.33f, 0.12f };
+		case CarPlug::BRAKE_HOSE_REAR:	return { REAR_HOSE_UNION[0], REAR_HOSE_UNION[1], REAR_HOSE_UNION[2] };
 		case CarPlug::CLUTCH_PIPE:		return slave + glm::vec3(-0.012f, 0.029f, 0.f);
-		case CarPlug::FUEL_TANK:		return { -1.42f, 0.42f, 0.3f };
+		case CarPlug::FUEL_TANK:		return { FUEL_TANK_OUTLET[0], FUEL_TANK_OUTLET[1], FUEL_TANK_OUTLET[2] };
 		case CarPlug::FUEL_FILTER:		return { FUEL_FILTER[0], FUEL_FILTER[1], FUEL_FILTER[2] };
 		case CarPlug::FUEL_PUMP:
 		{
 			// The back end of the pipe across the pump's top, on the side of the head.
 			int engine = workshop.GetEngineInCar();
-			if (engine < 0 || m_carStation >= m_stations.size() || !workshop.GetAssembly(engine).Get(AssemblySlot::FUEL_PUMP, 0))
+			if (engine < 0 || m_rig.carStation >= m_stations.size() || !workshop.GetAssembly(engine).Get(AssemblySlot::FUEL_PUMP, 0))
 				return { ENGINE_X - 0.2f, ENGINE_DECK_Y + 0.1f, -0.13f };
 			auto pose = PoseOnStand(engine, AssemblySlot::FUEL_PUMP, 0);
 			glm::vec3 inlet = StandToWorld(engine, pose.offset + pose.rotation * (glm::vec3(0.036f, 0.022f, 0.f) * pose.scale));
-			return glm::inverse(CarRotation()) * (inlet - m_stations[m_carStation].position);
+			return glm::inverse(CarRotation()) * (inlet - CarOrigin());
 		}
 		// The battery's positive post; the back of each headlight's well; the fan's motor.
 		// (Both looms' leads go on the positive post: the main one's on its outer side, the engine's on the side toward the engine.)
-		case CarPlug::BATTERY:			return onCar(CarSlot::BATTERY, 0, { -0.08f, 0.115f, 0.f });
+		case CarPlug::BATTERY:
+		{
+			// Round its positive post (in the battery's own space, not off its middle as the others are).
+			const auto pose = PoseOnCar(CarSlot::BATTERY, 0);
+			return pose.offset + pose.rotation * glm::vec3(-0.08f, 0.195f, 0.f);
+		}
 		case CarPlug::HEADLIGHT_LEFT:	return { NOSE_X - LAMP_LID_LENGTH - 0.012f, 0.6f, -0.53f };
 		case CarPlug::HEADLIGHT_RIGHT:	return { NOSE_X - LAMP_LID_LENGTH - 0.012f, 0.6f, 0.53f };
-		case CarPlug::COOLING_FAN:		return { 1.885f, 0.635f, 0.12f };
+		case CarPlug::COOLING_FAN:
+		{
+			// On the face of its motor's end cap, in the middle of the fan (its model's +y toward the engine; the socket's
+			// back against the cap).
+			const auto pose = PoseOnCar(CarSlot::COOLING_FAN, 0);
+			return pose.offset + pose.rotation * glm::vec3(0.f, 0.114f, 0.f);
+		}
 		// The ground strap: wherever on the body it's been bolted.
 		case CarPlug::GROUND:			return workshop.GetCar() ? ToVec(workshop.GetCar()->assembly.GetGroundPoint()) : ToVec(CarAssembly::DEFAULT_GROUND_POINT);
 		// The starter's solenoid, the top of the coil, and on the engine the distributor's body, the back of the
 		// alternator, the sender in the water outlet and the one in the block over the oil filter.
-		case CarPlug::STARTER:			return onCar(CarSlot::STARTER, 0, { 0.f, 0.075f, 0.f });
+		case CarPlug::STARTER:			return onCar(CarSlot::STARTER, 0, { 0.f, 0.145f, 0.f });	// on the solenoid's switch terminal
 		case CarPlug::IGNITION_COIL:	return onCar(CarSlot::IGNITION_COIL, 0, { 0.042f, 0.052f, 0.f });	// by its + terminal, toward the nose
 		case CarPlug::DISTRIBUTOR:		return onEngine(AssemblySlot::DISTRIBUTOR, { 0.f, 0.045f, 0.f }, { ENGINE_X - 0.24f, ENGINE_DECK_Y + 0.12f, 0.06f });
 		case CarPlug::ALTERNATOR:		return onEngine(AssemblySlot::ALTERNATOR, { 0.f, 0.075f, 0.f }, { ENGINE_X + 0.2f, ENGINE_DECK_Y - 0.05f, -0.2f });
@@ -295,20 +317,67 @@ std::optional<ShopWorld::CarAim> ShopWorld::AimAtCar(const FirstPersonController
 
 std::optional<ShopWorld::CarAim> ShopWorld::AimAtCar(const glm::vec3& eye, const glm::vec3& direction, float reach) const
 {
-	if (m_carStation >= m_stations.size() || !m_stations[m_carStation].present)
+	if (m_rig.carStation >= m_stations.size() || !m_stations[m_rig.carStation].present)
 		return std::nullopt;
 	auto hit = ObjectManager::Get()->Raycast(eye, direction, reach, [&](const pObject& object) { return m_targets.contains(object.get()); }, true);
 	if (!hit)
 		return std::nullopt;
-	return CarAim{ eye + direction * hit->distance, hit->distance, hit->object == m_stations[m_carStation].object };
+	return CarAim{ eye + direction * hit->distance, hit->distance, hit->object == m_stations[m_rig.carStation].object };
+}
+
+namespace
+{
+	// The spool each kind of run is worked with: the harness's wires, the brake and clutch pipes, the fuel hoses. (The
+	// ground strap, with an empty hand.)
+	HandToolKind SpoolFor(CarPlug plug)
+	{
+		switch (CarPlugKindOf(plug))
+		{
+			case CarPlugKind::WIRE:	return HandToolKind::WIRE_SPOOL;
+			case CarPlugKind::PIPE:	return HandToolKind::HARD_LINE_SPOOL;
+			case CarPlugKind::HOSE:	return HandToolKind::FUEL_HOSE_SPOOL;
+			default:				return HandToolKind::NONE;
+		}
+	}
+	bool IsSpool(HandToolKind kind)
+	{
+		return kind == HandToolKind::WIRE_SPOOL || kind == HandToolKind::HARD_LINE_SPOOL || kind == HandToolKind::FUEL_HOSE_SPOOL;
+	}
+
+	// What to say when the hand isn't right for a plug.
+	std::string HandsHint(CarPlug plug)
+	{
+		switch (CarPlugKindOf(plug))
+		{
+			case CarPlugKind::WIRE:	return "Hold the Wire Spool & Crimpers to run the harness's wires";
+			case CarPlugKind::PIPE:	return "Hold the Hard Line Spool & Flaring Tool to work the brake and clutch pipes";
+			case CarPlugKind::HOSE:	return "Hold the Fuel Hose Spool & Clamps to work the fuel hoses";
+			default:				return "Empty your hand to take the ground strap";
+		}
+	}
+}
+
+bool ShopWorld::SpoolInHand() const
+{
+	const ItemVisual* held = GetHeld();
+	return held && held->ref.IsTool() && IsSpool(ToolCatalog::Of(held->ref.id).handKind);
+}
+
+bool ShopWorld::HandsFreeFor(CarPlug plug) const
+{
+	const HandToolKind spool = SpoolFor(plug);
+	if (spool == HandToolKind::NONE)
+		return !GetHeld();
+	const ItemVisual* held = GetHeld();
+	return held && held->ref.IsTool() && ToolCatalog::Of(held->ref.id).handKind == spool;
 }
 
 void ShopWorld::DropHeldPlug(Workshop& workshop)
 {
-	if (m_heldPlug < 0)
+	if (m_rig.heldPlug < 0)
 		return;
-	workshop.UnclipLooseCarWire(static_cast<CarPlug>(m_heldPlug));
-	m_heldPlug = -1;
+	workshop.UnclipLooseCarWire(static_cast<CarPlug>(m_rig.heldPlug));
+	m_rig.heldPlug = -1;
 	Cue(Sound::SET_DOWN, GetCarPosition(), 0.5f);
 }
 
@@ -321,36 +390,37 @@ void ShopWorld::TakePlug(Workshop& workshop, CarPlug plug)
 	{
 		workshop.DisconnectCarPlug(plug);
 		// Pulled off with the engine running: without its spark, or its fuel, it stops.
-		if (m_drive.active && (plug == CarPlug::IGNITION_COIL || plug == CarPlug::DISTRIBUTOR || CarPlugKindOf(plug) == CarPlugKind::HOSE))
+		if (m_rig.drive.active && (plug == CarPlug::IGNITION_COIL || plug == CarPlug::DISTRIBUTOR || CarPlugKindOf(plug) == CarPlugKind::HOSE))
 		{
 			Toast(CarPlugKindOf(plug) == CarPlugKind::HOSE ? "It dies: no fuel." : "It dies: no spark.");
 			EndDrive();
 		}
 	}
-	m_plugMenu.reset();
-	m_heldPlug = static_cast<int>(plug);
+	m_rig.plugMenu.reset();
+	m_rig.heldPlug = static_cast<int>(plug);
 	Cue(Sound::PICK_UP, CarToWorld(Anchor(plug)), 0.6f);
 }
 
 bool ShopWorld::UpdatePlugMenu(Workshop& workshop, const FirstPersonController& player, const InputManager& input)
 {
-	if (!m_plugMenu)
+	if (!m_rig.plugMenu)
 		return false;
 	const auto* build = workshop.GetCar();
-	// Walked off, the hood shut, the loom gone or something taken in hand: it shuts.
-	if (!build || !PlugsReachable(workshop) || GetHeld() || !build->assembly.IsFilled(m_plugMenu->harness, 0)
-		|| glm::distance(player.GetEyePosition(), CarToWorld(LoomPoint(m_plugMenu->harness))) > INTERACT_DISTANCE + 0.5f)
+	// Walked off, the hood shut, the loom gone or something else taken in hand (or the spool put away, for the
+	// harness): it shuts.
+	if (!build || !PlugsReachable(workshop) || !HandsFreeFor(PlugsOn(m_rig.plugMenu->harness).front()) || !build->assembly.IsFilled(m_rig.plugMenu->harness, 0)
+		|| glm::distance(player.GetEyePosition(), CarToWorld(LoomPoint(m_rig.plugMenu->harness))) > INTERACT_DISTANCE + 0.5f)
 	{
-		m_plugMenu.reset();
+		m_rig.plugMenu.reset();
 		return false;
 	}
-	const auto plugs = PlugsOn(m_plugMenu->harness);
+	const auto plugs = PlugsOn(m_rig.plugMenu->harness);
 	const int count = static_cast<int>(plugs.size());
 	// Its last row, after the plugs, pulls every one of them off.
 	const int rows = count + 1;
-	m_fitPoints.push_back({ CarToWorld(LoomPoint(m_plugMenu->harness)), true, true });
+	m_fitPoints.push_back({ CarToWorld(LoomPoint(m_rig.plugMenu->harness)), true, true });
 	m_prompt = std::format("[1]-[{}] Take that {}   [Backspace] {}   [Wheel] then [LMB] Pick   [RMB] Never mind", count >= 10 ? 0 : count,
-		MenuNoun(m_plugMenu->harness), MenuPullAll(m_plugMenu->harness));
+		MenuNoun(m_rig.plugMenu->harness), MenuPullAll(m_rig.plugMenu->harness));
 	// Its number takes a plug straight off; the wheel steps through the rows and a click does the one it's on.
 	std::optional<int> chosen;
 	for (int i = 0; i < count; i++)
@@ -359,14 +429,14 @@ bool ShopWorld::UpdatePlugMenu(Workshop& workshop, const FirstPersonController& 
 	if (input.WasKeyPressed(GLFW_KEY_BACKSPACE))
 		chosen = count;
 	if (float scroll = input.GetScrollDelta(); std::abs(scroll) >= 0.5f)
-		m_plugMenu->selected = (m_plugMenu->selected + (scroll > 0.f ? rows - 1 : 1)) % rows;
+		m_rig.plugMenu->selected = (m_rig.plugMenu->selected + (scroll > 0.f ? rows - 1 : 1)) % rows;
 	if (!chosen && (Controls::Pressed(input, Control::PRIMARY) || Controls::Pressed(input, Control::USE) || std::exchange(m_devPress, false)))
-		chosen = m_plugMenu->selected;
+		chosen = m_rig.plugMenu->selected;
 	if (chosen && *chosen == count)
 	{
 		// Every one pulled, its wire unclipped and back in the loom; the list stays open on them.
-		const CarSlot harness = m_plugMenu->harness;
-		bool dies = m_drive.active && harness != CarSlot::BRAKE_LINE_SET;
+		const CarSlot harness = m_rig.plugMenu->harness;
+		bool dies = m_rig.drive.active && (harness == CarSlot::MAIN_HARNESS || harness == CarSlot::FUEL_LINE_SET);
 		int pulled = workshop.DisconnectCarPlugs(harness);
 		if (pulled > 0)
 		{
@@ -385,22 +455,23 @@ bool ShopWorld::UpdatePlugMenu(Workshop& workshop, const FirstPersonController& 
 	else if (chosen)
 		TakePlug(workshop, plugs[*chosen]);
 	else if (Controls::Pressed(input, Control::SET_DOWN) || Controls::Pressed(input, Control::DROP) || Controls::Pressed(input, Control::MOVE))
-		m_plugMenu.reset();
+		m_rig.plugMenu.reset();
 	return true;
 }
 
 void ShopWorld::DrawPlugMenu(const Workshop& workshop) const
 {
 	const auto* build = workshop.GetCar();
-	if (!m_plugMenu || !build)
+	if (!m_rig.plugMenu || !build)
 		return;
 	const auto& car = build->assembly;
-	const auto plugs = PlugsOn(m_plugMenu->harness);
+	const auto plugs = PlugsOn(m_rig.plugMenu->harness);
 	ImDrawList* drawList = ImGui::GetForegroundDrawList();
 	ImVec2 display = ImGui::GetIO().DisplaySize;
 	const float line = ImGui::GetTextLineHeightWithSpacing() + 4.f;
-	const std::string title = m_plugMenu->harness == CarSlot::BRAKE_LINE_SET ? "Brake lines: which pipe?"
-		: m_plugMenu->harness == CarSlot::FUEL_LINE_SET ? "Fuel lines: which hose?" : "Harness: which plug?";
+	const std::string title = m_rig.plugMenu->harness == CarSlot::BRAKE_LINE_SET ? "Brake lines: which pipe?"
+		: m_rig.plugMenu->harness == CarSlot::FUEL_LINE_SET ? "Fuel lines: which hose?" : m_rig.plugMenu->harness == CarSlot::CLUTCH_MASTER_CYLINDER
+		? "Clutch line: which pipe?" : "Harness: which plug?";
 	std::vector<std::pair<std::string, std::string>> rows;
 	float nameWidth = 0.f, stateWidth = 0.f;
 	int connected = 0;
@@ -418,7 +489,7 @@ void ShopWorld::DrawPlugMenu(const Workshop& workshop) const
 		stateWidth = (std::max)(stateWidth, ImGui::CalcTextSize(state.c_str()).x);
 	}
 	// And the button that pulls them all.
-	rows.push_back({ std::format("Bksp  {}", MenuPullAll(m_plugMenu->harness)), connected > 0 ? std::format("{} connected", connected) : "none connected" });
+	rows.push_back({ std::format("Bksp  {}", MenuPullAll(m_rig.plugMenu->harness)), connected > 0 ? std::format("{} connected", connected) : "none connected" });
 	nameWidth = (std::max)(nameWidth, ImGui::CalcTextSize(rows.back().first.c_str()).x);
 	stateWidth = (std::max)(stateWidth, ImGui::CalcTextSize(rows.back().second.c_str()).x);
 	const float width = (std::max)(nameWidth + stateWidth + 60.f, ImGui::CalcTextSize(title.c_str()).x + 32.f);
@@ -434,7 +505,7 @@ void ShopWorld::DrawPlugMenu(const Workshop& workshop) const
 		// (The pull-all row, last, set off a little from the plugs, in red.)
 		const bool all = i == static_cast<int>(plugs.size());
 		float y = min.y + 14.f + line * (i + 1) + (all ? 8.f : 0.f);
-		bool picked = i == m_plugMenu->selected;
+		bool picked = i == m_rig.plugMenu->selected;
 		if (all)
 			drawList->AddLine({ min.x + 10.f, y - 6.f }, { max.x - 10.f, y - 6.f }, IM_COL32(255, 210, 120, 90));
 		if (picked)
@@ -460,15 +531,15 @@ void ShopWorld::DevTakePlug(Workshop& workshop, int plug)
 void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonController& player)
 {
 	const auto* build = workshop.GetCar();
-	bool present = build && m_carStation < m_stations.size() && m_stations[m_carStation].present;
+	bool present = build && m_rig.carStation < m_stations.size() && m_stations[m_rig.carStation].present;
 	// The harness in the bay, taped thick, along the firewall where its tails come off. (One trunk: the second isn't used.)
 	bool harness = present && build->assembly.IsFilled(CarSlot::MAIN_HARNESS, 0);
 	const glm::vec3 TRUNKS[1][2] = { { { 0.905f, 0.79f, -0.70f }, { 0.905f, 0.79f, -0.28f } } };
-	if (m_loomTrunks[1])
-		m_loomTrunks[1]->SetVisible(false);
+	if (m_rig.loomTrunks[1])
+		m_rig.loomTrunks[1]->SetVisible(false);
 	for (int t = 0; t < 1; t++)
 	{
-		const auto& trunk = m_loomTrunks[t];
+		const auto& trunk = m_rig.loomTrunks[t];
 		if (!trunk)
 			continue;
 		trunk->SetVisible(harness);
@@ -482,7 +553,7 @@ void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonControll
 	// The brake pipes' junction block on the wheel housing, and the fuel line's end up out of the other: each there
 	// with its line set.
 	for (int f = 0; f < 2; f++)
-		if (const auto& fixture = m_lineFixtures[f])
+		if (const auto& fixture = m_rig.lineFixtures[f])
 		{
 			bool there = present && build->assembly.IsFilled(f == 0 ? CarSlot::BRAKE_LINE_SET : CarSlot::FUEL_LINE_SET, 0);
 			fixture->SetVisible(there);
@@ -495,7 +566,7 @@ void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonControll
 	for (int p = 0; p < CAR_PLUGS; p++)
 	{
 		auto plug = static_cast<CarPlug>(p);
-		auto& visual = m_plugVisuals[p];
+		auto& visual = m_rig.plugVisuals[p];
 		if (!visual.plug)
 			continue;
 		bool loom = present && build->assembly.IsFilled(CarAssembly::PlugHarness(plug), 0);
@@ -503,7 +574,8 @@ void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonControll
 		// (The ground strap's is the bolt that holds it to the body, wherever that's been put: there once it's on.)
 		bool socket = present && (plug == CarPlug::GROUND ? build->assembly.IsPlugged(plug) : workshop.CarPlugSocketFitted(plug));
 		glm::vec3 socketAt = present ? PlugSocket(workshop, plug) : glm::vec3(0.f);
-		visual.socket->SetVisible(socket);
+		// (The battery's lead clamps straight onto its post: it has no socket of its own to show.)
+		visual.socket->SetVisible(socket && plug != CarPlug::BATTERY);
 		if (socket)
 		{
 			visual.socket->SetPosition(CarToWorld(socketAt));
@@ -529,12 +601,12 @@ void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonControll
 		{
 			for (const auto& wire : visual.wires)
 				wire->SetVisible(false);
-			if (m_heldPlug == p)
-				m_heldPlug = -1;
+			if (m_rig.heldPlug == p)
+				m_rig.heldPlug = -1;
 			continue;
 		}
 		// Tucked away in its loom, there's nothing of it to see.
-		if (m_heldPlug != p && Tucked(build->assembly, plug))
+		if (m_rig.heldPlug != p && Tucked(build->assembly, plug))
 		{
 			visual.plug->SetVisible(false);
 			for (const auto& wire : visual.wires)
@@ -549,14 +621,14 @@ void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonControll
 		points[count++] = CarToWorld(Anchor(plug));
 		for (const auto& clip : clips)
 			points[count++] = CarToWorld(ToVec(clip));
-		if (m_heldPlug == p)
+		if (m_rig.heldPlug == p)
 		{
-			m_heldPlugAt = player.GetEyePosition() + player.GetRotation() * glm::vec3(0.11f, -0.1f, -0.42f);
+			m_rig.heldPlugAt = player.GetEyePosition() + player.GetRotation() * glm::vec3(0.11f, -0.1f, -0.42f);
 			const glm::vec3 last = points[count - 1];
-			glm::vec3 middle = (last + m_heldPlugAt) * 0.5f;
-			middle.y -= 0.12f * (std::max)(0.f, 1.f - glm::distance(last, m_heldPlugAt) / Reach(plug));
+			glm::vec3 middle = (last + m_rig.heldPlugAt) * 0.5f;
+			middle.y -= 0.12f * (std::max)(0.f, 1.f - glm::distance(last, m_rig.heldPlugAt) / Reach(plug));
 			points[count++] = middle;
-			points[count++] = m_heldPlugAt;
+			points[count++] = m_rig.heldPlugAt;
 		}
 		else if (build->assembly.IsPlugged(plug))
 		{
@@ -589,9 +661,9 @@ void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonControll
 				over.y = (std::max)(from.y, socketAt.y) + 0.03f;
 				points[count++] = CarToWorld(over);
 			}
-			// (The strap's end sits on its stud, a little out from the panel.)
-			points[count++] = CarToWorld(socketAt + (plug == CarPlug::GROUND ? ToVec(build->assembly.GetGroundNormal()) * 0.014f
-				: Plumbing(plug) ? Entry(plug) * -0.012f : glm::vec3(-0.02f, 0.f, 0.f)));
+			// (The strap's lug sits on its stud, on the washer a little out from the panel.)
+			points[count++] = CarToWorld(socketAt + (plug == CarPlug::GROUND ? ToVec(build->assembly.GetGroundNormal()) * 0.009f
+				: Plumbing(plug) ? Entry(plug) * -0.012f : plug == CarPlug::BATTERY ? glm::vec3(0.f) : glm::vec3(-0.02f, 0.f, 0.f)));
 		}
 		else
 			points[count++] = CarToWorld(PlugRest(workshop, plug));
@@ -613,8 +685,36 @@ void ShopWorld::PoseCarPlugs(const Workshop& workshop, const FirstPersonControll
 		glm::vec3 last = points[count - 1] - points[count - 2];
 		visual.plug->SetPosition(points[count - 1]);
 		visual.plug->SetRotation(glm::length(last) > 1e-4f ? Along(last) : CarRotation());
+		// The strap's lug, on its stud, lies flat on the panel round it: its up out of the panel, the strap coming in
+		// along the panel the way its last run comes.
+		if (plug == CarPlug::GROUND && build->assembly.IsPlugged(plug) && m_rig.heldPlug != p)
+		{
+			const glm::vec3 up = glm::normalize(CarRotation() * ToVec(build->assembly.GetGroundNormal()));
+			glm::vec3 along = last - up * glm::dot(last, up);
+			if (glm::length(along) < 1e-4f)
+				along = glm::abs(up.y) > 0.9f ? glm::vec3(1.f, 0.f, 0.f) - up * up.x : glm::vec3(0.f, 1.f, 0.f) - up * up.y;
+			along = glm::normalize(along);
+			visual.plug->SetRotation(glm::quat_cast(glm::mat3(along, up, glm::cross(along, up))));
+		}
+		// The battery lead's clamp, on its post, stands upright round it, its lead off the way it comes.
+		if (plug == CarPlug::BATTERY && build->assembly.IsPlugged(plug) && m_rig.heldPlug != p)
+		{
+			const glm::vec3 up = CarRotation() * glm::vec3(0.f, 1.f, 0.f);
+			glm::vec3 along = last - up * glm::dot(last, up);
+			along = glm::length(along) > 1e-4f ? glm::normalize(along) : CarRotation() * glm::vec3(1.f, 0.f, 0.f);
+			visual.plug->SetRotation(glm::quat_cast(glm::mat3(along, up, glm::cross(along, up))));
+		}
+		// Each clip turned along the wire through it (from the point before it to the one after), and sized to it.
+		const float clipThick = CarPlugKindOf(plug) == CarPlugKind::PIPE ? 0.75f : CarPlugKindOf(plug) == CarPlugKind::HOSE ? 1.7f : 1.f;
+		for (int c = 0; c < static_cast<int>(clips.size()) && c < CAR_WIRE_CLIPS && c + 2 < count; c++)
+		{
+			const glm::vec3 through = points[c + 2] - points[c];
+			if (glm::length(through) > 1e-4f)
+				visual.clips[c]->SetRotation(Along(through));
+			visual.clips[c]->SetScale({ 1.f, clipThick, clipThick });
+		}
 		// The one in hand stands out.
-		visual.plug->SetEmissive(m_heldPlug == p ? 0.35f : 0.f);
+		visual.plug->SetEmissive(m_rig.heldPlug == p ? 0.35f : 0.f);
 	}
 }
 
@@ -624,10 +724,10 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 	if (!build || !PlugsReachable(workshop))
 	{
 		// (One in hand when the hood comes down, or on getting in, goes back into its loom.)
-		if (m_heldPlug >= 0)
-			workshop.UnclipLooseCarWire(static_cast<CarPlug>(m_heldPlug));
-		m_heldPlug = -1;
-		m_plugMenu.reset();
+		if (m_rig.heldPlug >= 0)
+			workshop.UnclipLooseCarWire(static_cast<CarPlug>(m_rig.heldPlug));
+		m_rig.heldPlug = -1;
+		m_rig.plugMenu.reset();
 		return false;
 	}
 	workshop.SettleCarPlugs();
@@ -641,38 +741,26 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 		return glm::length(point - (eye + forward * along));
 	};
 
-	if (m_heldPlug >= 0)
+	if (m_rig.heldPlug >= 0)
 	{
-		auto held = static_cast<CarPlug>(m_heldPlug);
-		// Something else taken in hand, or carried further than its wire goes: it's let go.
-		if (GetHeld() || !car.IsFilled(CarAssembly::PlugHarness(held), 0))
+		auto held = static_cast<CarPlug>(m_rig.heldPlug);
+		// Something else taken in hand (or a wire's spool put away), or its harness gone: it's let go.
+		if (!HandsFreeFor(held) || !car.IsFilled(CarAssembly::PlugHarness(held), 0))
 		{
 			DropHeldPlug(workshop);
 			return false;
 		}
-		// How much of its wire is taken up, from the loom round its clips to the hand.
+		// (However far it's carried and wherever it's clipped, its wire reaches: there's no limit on its length.)
 		const auto& clips = car.GetWireClips(held);
-		glm::vec3 last = Anchor(held);
-		float taken = 0.f;
-		for (const auto& clip : clips)
-		{
-			taken += glm::distance(last, ToVec(clip));
-			last = ToVec(clip);
-		}
-		if (taken + glm::distance(CarToWorld(last), m_heldPlugAt) > Reach(held))
-		{
-			Toast(std::format("The {} won't reach that far.", RunName(held)));
-			DropHeldPlug(workshop);
-			return true;
-		}
 		// Every socket with nothing on it, marked; and the one aimed at.
 		std::optional<CarPlug> aimed;
 		float aimedOff = AIM_SIZE;
 		for (int p = 0; p < CAR_PLUGS; p++)
 		{
 			auto other = static_cast<CarPlug>(p);
-			// (The ground strap has no socket: it bolts to the body anywhere.)
-			if (other == CarPlug::GROUND || car.IsPlugged(other) || !workshop.CarPlugSocketFitted(other))
+			// (The ground strap has no socket: it bolts to the body anywhere. And only the system in hand's are marked: a
+			// wire's sockets with a wire, a pipe's unions with a pipe, a hose's stubs with a hose.)
+			if (other == CarPlug::GROUND || CarPlugKindOf(other) != CarPlugKindOf(held) || car.IsPlugged(other) || !workshop.CarPlugSocketFitted(other))
 				continue;
 			glm::vec3 at = CarToWorld(PlugSocket(workshop, other));
 			m_fitPoints.push_back({ at, true, true });
@@ -694,11 +782,11 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 			if (auto surface = AimAtCar(player, INTERACT_DISTANCE))
 			{
 				// Stood a little off what it's on, toward the eye; and only under the hood.
-				glm::vec3 at = glm::inverse(CarRotation()) * (surface->point - forward * 0.012f - m_stations[m_carStation].position);
+				glm::vec3 at = glm::inverse(CarRotation()) * (surface->point - forward * 0.012f - CarOrigin());
 				if (strap && surface->shell)
 				{
 					// Right on the panel; and which way the panel faces, from two more points on it just beside this one.
-					groundAt = glm::inverse(CarRotation()) * (surface->point - m_stations[m_carStation].position);
+					groundAt = glm::inverse(CarRotation()) * (surface->point - CarOrigin());
 					glm::vec3 normal = -forward;
 					const glm::vec3 right = player.GetRotation() * glm::vec3(1.f, 0.f, 0.f), up = player.GetRotation() * glm::vec3(0.f, 1.f, 0.f);
 					auto beside = AimAtCar(eye, glm::normalize(forward + right * 0.012f), INTERACT_DISTANCE);
@@ -733,7 +821,7 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 		}
 		else if (!aimed && strap)
 			m_prompt = std::format("The battery's ground strap in hand: {}{}   [RMB] Let it go",
-				offBody ? "that isn't the body. Aim at bare bodywork to bolt it down" : "aim at the car's body, anywhere it reaches, to bolt it down ([LMB])", clipHint);
+				offBody ? "that isn't the body. Aim at bare bodywork to bolt it down" : "aim at the car's body, anywhere, to bolt it down ([LMB])", clipHint);
 		else if (!aimed)
 			m_prompt = kind == CarPlugKind::PIPE ? std::format("The {} in hand   [LMB] Screw its union in{}   [RMB] Let it go", PlugLabel(held), clipHint)
 				: kind == CarPlugKind::HOSE ? std::format("The {} in hand   [LMB] Push it on{}   [RMB] Let it go", PlugLabel(held), clipHint)
@@ -747,19 +835,15 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 			m_prompt = std::format("That's {}: this is the {}   [RMB] Let it go", SocketLabel(*aimed), PlugLabel(held));
 		if (clipAt && (Controls::Pressed(input, Control::USE) || (!groundAt && std::exchange(m_devPress, false))))
 		{
-			if (taken + glm::distance(last, *clipAt) > Reach(held) - 0.15f)
-				Toast(std::format("There isn't the {} left to reach there.", RunName(held)));
-			else if (workshop.ClipCarWire(held, { clipAt->x, clipAt->y, clipAt->z }))
+			if (workshop.ClipCarWire(held, { clipAt->x, clipAt->y, clipAt->z }))
 				Cue(Sound::CLICK, CarToWorld(*clipAt), 0.6f);
 			return true;
 		}
 		if (groundAt && (Controls::Pressed(input, Control::PRIMARY) || std::exchange(m_devPress, false)))
 		{
-			if (taken + glm::distance(last, *groundAt) > Reach(held))
-				Toast("The strap won't reach there.");
-			else if (workshop.GroundCarBattery({ groundAt->x, groundAt->y, groundAt->z }, { groundNormal.x, groundNormal.y, groundNormal.z }))
+			if (workshop.GroundCarBattery({ groundAt->x, groundAt->y, groundAt->z }, { groundNormal.x, groundNormal.y, groundNormal.z }))
 			{
-				m_heldPlug = -1;
+				m_rig.heldPlug = -1;
 				Cue(Sound::CLICK, CarToWorld(*groundAt));
 				Toast("The battery is grounded to the body.");
 			}
@@ -773,7 +857,7 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 			}
 			else if (workshop.ConnectCarPlug(held))
 			{
-				m_heldPlug = -1;
+				m_rig.heldPlug = -1;
 				Cue(Sound::CLICK, CarToWorld(PlugSocket(workshop, held)));
 				Toast(kind == CarPlugKind::PIPE ? std::format("The pipe is done up on the {}.", name)
 					: kind == CarPlugKind::HOSE ? std::format("The hose is on the {}.", name) : std::format("The {} is plugged in.", name));
@@ -784,8 +868,9 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 		return true;
 	}
 
-	// With empty hands: the plug under the crosshair, wherever it is, is taken (pulled off what it's on, if it's on).
-	if (GetHeld())
+	// With the right spool in hand (or, for the ground strap, an empty hand): the plug under the crosshair, wherever it
+	// is, is taken (pulled off what it's on, if it's on).
+	if (GetHeld() && !SpoolInHand())
 		return false;
 	std::optional<CarPlug> aimed;
 	float aimedOff = AIM_SIZE;
@@ -802,18 +887,16 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 			aimedOff = *off;
 		}
 	}
-	// Where things are picked from is marked, baby blue, only from close by the engine: stood back from the car there's
-	// nothing over it. (The clutch's pipe, hanging loose off its master cylinder, is marked too.)
+	// Where things are picked from is marked, baby blue, only from close by the engine (stood back from the car there's
+	// nothing over it), and only with that system's spool in hand.
 	const bool marked = glm::distance(eye, CarToWorld(CAR_ENGINE_MOUNT)) < MARKS_WITHIN;
-	if (marked && car.IsFilled(CarSlot::CLUTCH_MASTER_CYLINDER, 0) && !car.IsPlugged(CarPlug::CLUTCH_PIPE))
-		m_fitPoints.push_back({ CarToWorld(PlugRest(workshop, CarPlug::CLUTCH_PIPE)), false, true });
 	// Or a loom, where its tails leave it: its plugs are picked from a menu.
 	if (!aimed)
 		for (CarSlot harness : MENU_HARNESSES)
 		{
 			if (!car.IsFilled(harness, 0))
 				continue;
-			if (marked)
+			if (marked && HandsFreeFor(PlugsOn(harness).front()))
 				m_fitPoints.push_back({ CarToWorld(LoomPoint(harness)), false, true });
 			// (The harness's anywhere along its tails; a line set's at the one place its pipes are picked from.)
 			bool onIt = false;
@@ -828,18 +911,25 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 						onIt = true;
 			if (!onIt)
 				continue;
+			if (!HandsFreeFor(PlugsOn(harness).front()))
+			{
+				const std::string hint = HandsHint(PlugsOn(harness).front());
+				m_prompt = m_prompt.empty() ? hint : hint + "   " + m_prompt;
+				return false;
+			}
 			std::string hint = harness == CarSlot::BRAKE_LINE_SET ? "[LMB] Pick one of the brake pipes"
-				: harness == CarSlot::FUEL_LINE_SET ? "[LMB] Pick one of the fuel hoses" : "[LMB] Pick one of the harness's plugs";
+				: harness == CarSlot::FUEL_LINE_SET ? "[LMB] Pick one of the fuel hoses" : harness == CarSlot::CLUTCH_MASTER_CYLINDER
+				? "[LMB] Pick the clutch's pipe" : "[LMB] Pick one of the harness's plugs";
 			m_prompt = m_prompt.empty() ? hint : hint + "   " + m_prompt;
 			if (!Controls::Pressed(input, Control::PRIMARY) && !std::exchange(m_devPress, false))
 				return false;
 			// It opens on the first that isn't on anything.
-			m_plugMenu = PlugMenu{ harness, 0 };
+			m_rig.plugMenu = PlugMenu{ harness, 0 };
 			const auto plugs = PlugsOn(harness);
 			for (int i = 0; i < static_cast<int>(plugs.size()); i++)
 				if (!car.IsPlugged(plugs[i]))
 				{
-					m_plugMenu->selected = i;
+					m_rig.plugMenu->selected = i;
 					break;
 				}
 			Cue(Sound::CLICK, CarToWorld(LoomPoint(harness)), 0.4f);
@@ -852,6 +942,8 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 		float clipOff = 0.035f;
 		for (int p = 0; p < CAR_PLUGS; p++)
 		{
+			if (!HandsFreeFor(static_cast<CarPlug>(p)))
+				continue;
 			const auto& clips = car.GetWireClips(static_cast<CarPlug>(p));
 			for (int c = 0; c < static_cast<int>(clips.size()); c++)
 				if (auto off = offAim(CarToWorld(ToVec(clips[c]))); off && *off < clipOff)
@@ -871,6 +963,12 @@ bool ShopWorld::UpdateCarPlugs(Workshop& workshop, const FirstPersonController& 
 		workshop.UnclipCarWire(clip->first, clip->second);
 		Cue(Sound::CLICK, at, 0.5f);
 		return true;
+	}
+	if (!HandsFreeFor(*aimed))
+	{
+		const std::string hint = HandsHint(*aimed);
+		m_prompt = m_prompt.empty() ? hint : hint + "   " + m_prompt;
+		return false;
 	}
 	bool on = car.IsPlugged(*aimed);
 	std::string hint = *aimed == CarPlug::GROUND ? (on ? "[LMB] Take the battery's ground strap off the body" : "[LMB] Take the battery's ground strap")

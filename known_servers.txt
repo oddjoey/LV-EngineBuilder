@@ -1,0 +1,4 @@
+# Servers joined before, and the identity each one proved it had. A server that turns up
+# with a different one is refused: delete its line only if you know why it changed.
+localhost:44444 2:efe9a3c907b18cd4c4595fe2334a684f19bc4894a3bd05810d332f42b7d513a6
+localhost:33333 2:193cbe0163d99beb049011b70c3f37dd1e408aa41efebc73a45186300785f265

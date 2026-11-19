@@ -245,6 +245,7 @@ bool EngineAssembly::Install(AssemblySlot slot, int index, const pPart& part, st
 
 	m_slots[static_cast<size_t>(slot)][index] = part;
 	m_positions[part.get()] = { slot, index };
+	m_revision = NextAssemblyRevision();
 
 	return true;
 }
@@ -695,6 +696,7 @@ pPart EngineAssembly::Remove(AssemblySlot slot, int index)
 	auto removed = entry;
 	if (removed)
 		m_positions.erase(removed.get());
+		m_revision = NextAssemblyRevision();
 	entry = nullptr;
 	return removed;
 }
@@ -729,6 +731,7 @@ void EngineAssembly::Clear()
 		for (auto& installed : slot)
 			installed = nullptr;
 	m_positions.clear();
+	m_revision = NextAssemblyRevision();
 }
 
 bool EngineAssembly::IsComplete() const

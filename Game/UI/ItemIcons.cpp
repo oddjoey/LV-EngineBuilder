@@ -277,24 +277,20 @@ namespace ItemIcons
 				drawList->AddRect(p(0.22f, 0.5f), p(0.42f, 0.6f), color, 0.f, 0, line);
 				drawList->AddRectFilled(p(0.24f, 0.78f), p(0.4f, 0.84f), color);
 				break;
-			case ToolShape::FLOOR_JACK:
-				// A trolley jack side on: the body on its wheels, the arm up to its saddle, the handle out behind.
-				drawList->AddQuad(p(0.12f, 0.72f), p(0.7f, 0.72f), p(0.7f, 0.6f), p(0.2f, 0.6f), color, line * 1.4f);
-				drawList->AddCircleFilled(p(0.2f, 0.8f), size * 0.07f, color);
-				drawList->AddCircleFilled(p(0.64f, 0.8f), size * 0.055f, color);
-				drawList->AddLine(p(0.55f, 0.62f), p(0.26f, 0.38f), color, line * 1.8f);
-				drawList->AddLine(p(0.16f, 0.36f), p(0.36f, 0.36f), color, line * 2.f);
-				drawList->AddLine(p(0.66f, 0.6f), p(0.9f, 0.18f), color, line * 1.4f);
+			case ToolShape::WIRE_SPOOL:
+				// A reel side on: its two flanges, the wire wound between them, and a tail of it off the bottom.
+				drawList->AddCircle(p(0.45f, 0.45f), size * 0.32f, color, 24, line * 1.4f);
+				drawList->AddCircleFilled(p(0.45f, 0.45f), size * 0.22f, (color & 0x00FFFFFF) | (150u << IM_COL32_A_SHIFT), 24);
+				drawList->AddCircleFilled(p(0.45f, 0.45f), size * 0.07f, color, 12);
+				drawList->AddBezierCubic(p(0.45f, 0.77f), p(0.65f, 0.8f), p(0.7f, 0.6f), p(0.88f, 0.86f), color, line);
 				break;
-			case ToolShape::JACK_STAND:
-				// A jack stand: splayed legs, the post up out of them and its saddle.
-				drawList->AddLine(p(0.5f, 0.42f), p(0.2f, 0.86f), color, line * 1.8f);
-				drawList->AddLine(p(0.5f, 0.42f), p(0.8f, 0.86f), color, line * 1.8f);
-				drawList->AddLine(p(0.16f, 0.86f), p(0.84f, 0.86f), color, line * 1.4f);
-				drawList->AddLine(p(0.5f, 0.6f), p(0.5f, 0.2f), color, line * 2.2f);
-				drawList->AddLine(p(0.36f, 0.16f), p(0.36f, 0.24f), color, line * 1.4f);
-				drawList->AddLine(p(0.64f, 0.16f), p(0.64f, 0.24f), color, line * 1.4f);
-				drawList->AddLine(p(0.36f, 0.24f), p(0.64f, 0.24f), color, line * 1.4f);
+			case ToolShape::CAR_KEY:
+				// A key on the slant: its round head with the ring through it, the blade's teeth cut along one edge.
+				drawList->AddCircleFilled(p(0.32f, 0.32f), size * 0.16f, color, 20);
+				drawList->AddCircle(p(0.18f, 0.18f), size * 0.09f, color, 16, line);
+				drawList->AddLine(p(0.4f, 0.4f), p(0.84f, 0.84f), color, line * 2.2f);
+				for (float t : { 0.55f, 0.65f, 0.75f })
+					drawList->AddLine(p(t, t), p(t + 0.07f, t - 0.07f), color, line * 1.4f);
 				break;
 		}
 	}
@@ -520,6 +516,25 @@ namespace ItemIcons
 				drawList->AddCircleFilled(p(0.76f, 0.44f), size * 0.08f, color);
 				drawList->AddCircleFilled(p(0.5f, 0.46f), size * 0.25f, color);
 				drawList->AddCircleFilled(p(0.5f, 0.52f), size * 0.15f, dim);
+				break;
+			case FurnitureKind::FLOOR_JACK:
+				// A trolley jack side on: the body on its wheels, the arm up to its saddle, the handle out behind.
+				drawList->AddQuad(p(0.12f, 0.72f), p(0.7f, 0.72f), p(0.7f, 0.6f), p(0.2f, 0.6f), color, line * 1.4f);
+				drawList->AddCircleFilled(p(0.2f, 0.8f), size * 0.07f, color);
+				drawList->AddCircleFilled(p(0.64f, 0.8f), size * 0.055f, color);
+				drawList->AddLine(p(0.55f, 0.62f), p(0.26f, 0.38f), color, line * 1.8f);
+				drawList->AddLine(p(0.16f, 0.36f), p(0.36f, 0.36f), color, line * 2.f);
+				drawList->AddLine(p(0.66f, 0.6f), p(0.9f, 0.18f), color, line * 1.4f);
+				break;
+			case FurnitureKind::JACK_STAND:
+				// A jack stand: splayed legs, the post up out of them and its saddle.
+				drawList->AddLine(p(0.5f, 0.42f), p(0.2f, 0.86f), color, line * 1.8f);
+				drawList->AddLine(p(0.5f, 0.42f), p(0.8f, 0.86f), color, line * 1.8f);
+				drawList->AddLine(p(0.16f, 0.86f), p(0.84f, 0.86f), color, line * 1.4f);
+				drawList->AddLine(p(0.5f, 0.6f), p(0.5f, 0.2f), color, line * 2.2f);
+				drawList->AddLine(p(0.36f, 0.16f), p(0.36f, 0.24f), color, line * 1.4f);
+				drawList->AddLine(p(0.64f, 0.16f), p(0.64f, 0.24f), color, line * 1.4f);
+				drawList->AddLine(p(0.36f, 0.24f), p(0.64f, 0.24f), color, line * 1.4f);
 				break;
 		}
 	}

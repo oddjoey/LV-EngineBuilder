@@ -11,6 +11,7 @@ struct GameSettings
 	float mouseSensitivity = 1.f;	// multiplier on the base look speed
 	bool invertY = false;
 	float fieldOfView = 70.f;		// degrees, vertical
+	float zoomFactor = 3.f;			// how much closer the zoom key brings things: field of view narrowed this many times
 	bool showFps = false;
 	bool imperialUnits = false;
 	bool darkMode = false;			// the menus, screens and the service manual in dark colours
@@ -56,6 +57,8 @@ struct GameSettings
 	static constexpr float VIEW_HAND_REACH = 0.15f;
 	static constexpr float VIEW_BODY_BACK_MIN = 0.1f;
 	static constexpr float VIEW_BODY_BACK_MAX = 0.6f;
+	static constexpr float ZOOM_MIN = 1.5f;
+	static constexpr float ZOOM_MAX = 8.f;
 
 	static GameSettings Load();
 	void Save() const;

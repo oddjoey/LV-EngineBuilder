@@ -146,7 +146,7 @@ namespace
 			case HandToolKind::HARD_LINE_SPOOL:
 			case HandToolKind::FUEL_HOSE_SPOOL:
 				return { "Hold it and aim at what it works on at the car: what it can reach is marked.",
-					"The left and right buttons work it (see above); the prompt in the corner says what each does where you're aiming." };
+					"The left and right buttons work it (see above); what it can reach is marked where you're aiming." };
 			case HandToolKind::CAR_KEY:
 				return { "Get in the driver's seat with the key in hand and click the ignition barrel, right of the steering column: it goes in.",
 					"Click it again to switch on, or hold the button to start the engine.",

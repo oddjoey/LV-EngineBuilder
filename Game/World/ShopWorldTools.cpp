@@ -964,6 +964,11 @@ bool ShopWorld::StationFits(const Station& station, const glm::vec3& position, f
 		// A jack or stand snapped under one of the car's lifting points goes in under it (and beside the others there).
 		if (m_moveSnap >= 0 && IsCarSupport(station) && (other.type == StationType::CAR || IsCarSupport(other)))
 			continue;
+		// The drain pan's low enough to go in under the car, and under it the jacks, the stands and the lift's arms.
+		auto underCar = [&](const Station& low, const Station& over) { return IsDrainPan(low)
+			&& (over.type == StationType::CAR || over.type == StationType::LIFT || IsCarSupport(over)); };
+		if (underCar(station, other) || underCar(other, station))
+			continue;
 		auto bounds = WorldBounds(other.object);
 		bool overlaps = footprint.min.x < bounds.max.x - 0.01f && bounds.min.x < footprint.max.x - 0.01f
 			&& footprint.min.z < bounds.max.z - 0.01f && bounds.min.z < footprint.max.z - 0.01f;
@@ -1326,7 +1331,6 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 	ImVec2 display = ImGui::GetIO().DisplaySize;
 	ImVec2 center = { display.x * 0.5f, display.y * 0.5f };
 	const ImU32 white = IM_COL32(240, 240, 235, 230);
-	const ImU32 grey = IM_COL32(200, 200, 200, 200);
 
 	// In the car: the map, and its gauges from outside it.
 	DrawDriveHud(workshop);
@@ -1430,43 +1434,6 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		drawList->AddCircle(center, RING, IM_COL32(0, 0, 0, 120), 40, 5.f);
 		drawList->PathArcTo(center, RING, start, start + glm::two_pi<float>() * (std::min)(ring, 1.f), 40);
 		drawList->PathStroke(IM_COL32(255, 210, 120, 240), 0, 3.f);
-	}
-	// What can be done with what is aimed at and with what's in hand, in the bottom right corner, clear of the crosshair
-	// and the hotbar: a line for each control (the prompts run them together, three spaces apart).
-	{
-		std::vector<std::pair<std::string, ImU32>> hints;
-		auto split = [&](const std::string& prompt, ImU32 color) {
-			size_t start = 0;
-			while (start < prompt.size())
-			{
-				size_t gap = prompt.find("   ", start);
-				std::string piece = prompt.substr(start, gap == std::string::npos ? std::string::npos : gap - start);
-				if (size_t first = piece.find_first_not_of(' '); first != std::string::npos)
-					hints.push_back({ Controls::Keys(piece.substr(first)), color });
-				if (gap == std::string::npos)
-					break;
-				start = gap + 3;
-			}
-		};
-		split(m_prompt, white);
-		split(m_secondaryPrompt, grey);
-		// And what the thing in hand can do, last, in a cooler grey.
-		split(m_heldHint, IM_COL32(185, 200, 215, 220));
-		if (!hints.empty())
-		{
-			const float line = ImGui::GetTextLineHeightWithSpacing();
-			float width = 0.f;
-			for (const auto& [text, color] : hints)
-				width = (std::max)(width, ImGui::CalcTextSize(text.c_str()).x);
-			const ImVec2 max = { display.x - 20.f, display.y - 20.f };
-			const ImVec2 min = { max.x - width - 24.f, max.y - line * hints.size() - 14.f };
-			drawList->AddRectFilled(min, max, IM_COL32(15, 18, 22, 140), 6.f);
-			for (size_t i = 0; i < hints.size(); i++)
-			{
-				float textWidth = ImGui::CalcTextSize(hints[i].first.c_str()).x;
-				ShadowText(drawList, { max.x - 12.f - textWidth, min.y + 8.f + line * i }, hints[i].second, hints[i].first, false);
-			}
-		}
 	}
 
 	if (m_toastTime > 0.f)

@@ -20,7 +20,8 @@ enum class FurnitureKind
 	GAS_PUMP,
 	MONCHU,			// a statue for show, its model from Resources/Models/monchu.fbx
 	FLOOR_JACK,		// a trolley jack, rolled under one of the car's lifting points and pumped up
-	JACK_STAND		// a stand set under the car where it's been jacked up, to hold it there
+	JACK_STAND,		// a stand set under the car where it's been jacked up, to hold it there
+	DRAIN_PAN		// a wide, shallow pan, slid under a drain plug or bleed nipple to catch what comes out
 };
 
 struct FurnitureInfo
@@ -35,4 +36,6 @@ namespace FurnitureCatalog
 {
 	// In store order; the index is what the shop saves.
 	const std::vector<FurnitureInfo>& All();
+	// Where that kind is in the catalog.
+	size_t IndexOf(FurnitureKind kind);
 }

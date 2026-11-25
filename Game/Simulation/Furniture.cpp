@@ -22,7 +22,19 @@ namespace FurnitureCatalog
 				"end. It snaps under the point; aim at it and hold the left button to pump the car up, the right to let it down.", 85.0 },
 			{ FurnitureKind::JACK_STAND,	"Jack Stand",			"A ratcheting stand. Jack the car up, then move the stand (F) under a lifting point there: it holds the car at that "
 				"height once the jack's let down or taken away. Wherever nothing's under it, the car comes down.", 22.0 },
+			{ FurnitureKind::DRAIN_PAN,		"Drain Pan",			"A wide, shallow pan. Slide it (F) along the floor under a drain plug (or a bleed nipple) before it's undone: "
+				"what comes out goes in it. Without it, it's all over the floor, and has to be wiped up with paint thinner and a rag. "
+				"Every shop has one.", 15.0 },
 		};
 		return furniture;
+	}
+
+	size_t IndexOf(FurnitureKind kind)
+	{
+		const auto& all = All();
+		for (size_t i = 0; i < all.size(); i++)
+			if (all[i].kind == kind)
+				return i;
+		return 0;
 	}
 }

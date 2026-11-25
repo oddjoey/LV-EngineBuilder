@@ -462,17 +462,17 @@ namespace ToolCatalog
 				list.back().notSold = true;
 				list.back().capCircuit = static_cast<int>(circuit);
 			}
-			// What catches a drain: every shop has one from the start (an older shop gets one too: Workshop::UpgradeCarKit). (Last.)
-			hand("Drain Pan", "A wide, shallow pan. Set it down on the floor under a drain plug (or a bleed nipple) before it's undone: "
-				"what comes out goes in it. Without it, it's all over the floor, and has to be wiped up with paint thinner and a rag.",
-				HandToolKind::DRAIN_PAN, 15.0);
+			// The drain pan that was a tool, kept so saved tools keep their numbers: it's floor equipment now (FurnitureKind::
+			// DRAIN_PAN), and a shop that had this one has that instead (Workshop::UpgradeCarKit). Never sold or owned. (Last.)
+			hand("Drain Pan", "Retired: the drain pan is floor equipment now.", HandToolKind::DRAIN_PAN, 15.0);
+			list.back().notSold = true;
 
 			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
 			// and the service manual (hung on the tool board with the rest). Everything else is bought, the pin press and
 			// ring compressor included (the starting money covers those).
 			for (auto& tool : list)
 				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual",
-					"Wire Spool & Crimpers", "Hard Line Spool & Flaring Tool", "Fuel Hose Spool & Clamps", "LE86 Key", "Drain Pan" })
+					"Wire Spool & Crimpers", "Hard Line Spool & Flaring Tool", "Fuel Hose Spool & Clamps", "LE86 Key" })
 					if (tool.name == starter)
 						tool.ownedAtStart = true;
 

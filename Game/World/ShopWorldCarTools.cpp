@@ -593,12 +593,14 @@ bool ShopWorld::DrainPanUnder(const glm::vec3& at) const
 {
 	// Lying on the floor (or anything under the car), below the point and close enough under it to catch it: its rim's
 	// 0.24 across, and a stream wanders.
+	// (Set down: not while it's being slid somewhere.)
 	constexpr float CATCHES = 0.26f;
-	for (const auto& [ref, visual] : m_items)
+	for (size_t s = m_fixedStations; s < m_stations.size(); s++)
 	{
-		if (!ref.IsTool() || ToolCatalog::Of(ref.id).handKind != HandToolKind::DRAIN_PAN || visual.place != ItemPlace::WORLD)
+		const auto& station = m_stations[s];
+		if (!IsDrainPan(station) || !station.present || (m_move && m_move->stationIndex == s))
 			continue;
-		const glm::vec3 pan = visual.object->GetPosition();
+		const glm::vec3 pan = station.position;
 		const glm::vec2 off = { pan.x - at.x, pan.z - at.z };
 		if (pan.y < at.y && glm::dot(off, off) <= CATCHES * CATCHES)
 			return true;
@@ -688,12 +690,23 @@ bool ShopWorld::DevPanUnder(const Workshop& workshop, FluidCircuit circuit)
 {
 	for (const auto& drain : CarDrainPoints(workshop))
 		if (drain.circuit == circuit)
-			for (auto& [ref, visual] : m_items)
-				if (ref.IsTool() && ToolCatalog::Of(ref.id).handKind == HandToolKind::DRAIN_PAN)
+			for (size_t s = m_fixedStations; s < m_stations.size(); s++)
+				if (IsDrainPan(m_stations[s]))
 				{
-					m_inventory.Remove(ref);
-					PlaceInWorld(visual, { drain.at.x, 0.05f, drain.at.z }, glm::vec3(0.f));
-					SyncHand();
+					// (Out of its crate, if it's still in it.)
+					for (auto& [id, package] : m_packages)
+						if (std::find(package.stations.begin(), package.stations.end(), s) != package.stations.end())
+						{
+							OpenPackage(package);
+							break;
+						}
+					auto& station = m_stations[s];
+					station.present = true;
+					station.object->SetVisible(true);
+					station.object->SetPickable(true);
+					station.position = { drain.at.x, 0.f, drain.at.z };
+					station.object->SetPosition(station.position);
+					RebuildCollision();
 					return true;
 				}
 	return false;

@@ -23,6 +23,8 @@ Workshop::Workshop(const EngineSpec& spec, double startingMoney) : m_spec(&spec)
 	for (const auto& machine : machines)
 		m_ownedMachines.push_back(machine.ownedAtStart);
 	m_upgrades.assign(UpgradeCatalog::All().size(), false);
+	// But for a drain pan on the floor, to catch the car's fluids.
+	m_furniture.push_back(FurnitureCatalog::IndexOf(FurnitureKind::DRAIN_PAN));
 
 	// One engine stand, standing empty: the shop's LV-16 is in the LE86 out on the drive (it keeps the stand's number,
 	// and comes out onto it on the hoist).

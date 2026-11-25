@@ -559,6 +559,12 @@ namespace ItemIcons
 				drawList->AddLine(p(0.64f, 0.16f), p(0.64f, 0.24f), color, line * 1.4f);
 				drawList->AddLine(p(0.36f, 0.24f), p(0.64f, 0.24f), color, line * 1.4f);
 				break;
+			case FurnitureKind::DRAIN_PAN:
+				// A pan seen from a little above: its rim, the dark well inside, and the pouring lip.
+				drawList->AddEllipseFilled(p(0.5f, 0.55f), ImVec2(size * 0.42f, size * 0.2f), color, 0.f, 28);
+				drawList->AddEllipseFilled(p(0.5f, 0.52f), ImVec2(size * 0.34f, size * 0.14f), dim, 0.f, 28);
+				drawList->AddTriangleFilled(p(0.88f, 0.52f), p(0.97f, 0.48f), p(0.9f, 0.6f), color);
+				break;
 		}
 	}
 }

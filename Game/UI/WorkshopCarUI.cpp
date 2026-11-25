@@ -368,7 +368,7 @@ void WorkshopUI::DrawCarFluids(Workshop& workshop)
 	const auto& spec = car.GetSpec();
 
 	ImGui::TextDisabled("Each is filled at the car by hand: take its filler's cap off (E on it), hold a jug of the right fluid, aim at the filler "
-		"and hold the left button. Then put the cap back on. It's drained under the car, with the drain pan held at its drain plug (the oil's "
+		"and hold the left button. Then put the cap back on. It's drained under the car, with the drain pan slid under its drain plug (F) and the funnel aimed at it (the oil's "
 		"plug undone and out with a spanner first) or, for the brakes and the clutch, a bleed nipple: hold the right button.");
 	if (ImGui::BeginTable("Fluids", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp))
 	{

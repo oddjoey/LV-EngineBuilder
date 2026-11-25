@@ -2239,8 +2239,8 @@ void ShopWorld::SteerStanding(float deltaTime, const InputManager& input)
 void ShopWorld::SpinOffGround(float deltaTime, const InputManager& input, bool playerHasControl)
 {
 	// Up on the lift, a jack or stands, it goes nowhere: the engine revs with the throttle, and in gear with the clutch
-	// up the back wheels turn in the air (unless the handbrake holds them, or the brakes do). The lever and the wheel work
-	// as they do on the road.
+	// up the back wheels turn in the air (or, if the handbrake or the brakes hold them, it stalls). The lever and the
+	// wheel work as they do on the road.
 	auto& drive = m_rig.drive;
 	drive.speed = drive.slide = drive.yawRate = 0.f;
 	const bool clutchDown = drive.clutchWorks && playerHasControl && Controls::Held(input, Control::CLUTCH);
@@ -2275,7 +2275,20 @@ void ShopWorld::SpinOffGround(float deltaTime, const InputManager& input, bool p
 			drive.bangDue = 0.12f;
 		}
 	}
-	if (drive.gear != 0 && drive.clutch > 0.5f && !(drive.footBrake && drive.brakesWork) && !drive.handbrake)
+	// In gear with the clutch let up, the engine's tied to the back wheels. If they can't turn (the handbrake on them,
+	// the brakes on, or neither of them up off the ground) the engine's dragged down and it stalls, up in the air or not.
+	const bool rearUp = m_rig.cornerHeights[2] > 0.01f || m_rig.cornerHeights[3] > 0.01f;
+	const bool braked = drive.footBrake && drive.brakesWork;
+	if (drive.gear != 0 && drive.clutch > 0.6f && (drive.handbrake || braked || !rearUp))
+	{
+		Cue(Sound::DROP, GetCarPosition(), 0.35f);
+		Toast(drive.handbrake ? "Stalled: the handbrake's holding the back wheels. Clutch down ([Clutch]) first, or let it off."
+			: braked ? "Stalled: the brakes are holding the wheels. Clutch down ([Clutch]) before letting it up."
+			: "Stalled: the back wheels are on the ground and the car's held up. Clutch down ([Clutch]), or put it in neutral.");
+		EndDrive();
+		return;
+	}
+	if (drive.gear != 0 && drive.clutch > 0.5f)
 	{
 		float wheelSpeed = drive.rpm / REDLINE * GearTop(drive.gear) * drive.topSpeed * (drive.gear < 0 ? -1.f : 1.f);
 		TurnRearWheels(wheelSpeed * deltaTime / WHEEL_Y);

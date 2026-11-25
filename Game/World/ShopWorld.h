@@ -849,6 +849,8 @@ private:
 	int SupportPointOf(size_t station) const;
 	// Whether a station is a floor jack or a jack stand (and which).
 	bool IsCarSupport(const Station& station, bool* jack = nullptr) const;
+	// The drain pan: floor equipment slid in under the car (and the jacks and stands there) to catch a drain.
+	bool IsDrainPan(const Station& station) const;
 	// The floor under a lifting point, in the world, as the car stands; and which way a jack or stand faces there.
 	glm::vec3 LiftPointFloor(int point) const;
 	float SupportYaw(int point, bool jack) const;

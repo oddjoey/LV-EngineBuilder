@@ -1,5 +1,6 @@
 // The LE86's side of the workshop: the car the shop starts with, working on it, its fluids and the road test.
 #include "Workshop.h"
+#include "Furniture.h"
 
 #include <algorithm>
 #include <cmath>
@@ -805,15 +806,15 @@ std::optional<std::pair<int, FluidCircuit>> Workshop::FindCap(size_t cap) const
 
 void Workshop::UpgradeCarKit()
 {
-	// A drain pan, for a shop from before it had one.
+	// A drain pan on the floor, for a shop from before it had one; the one that was a tool (held, and hung on the tool
+	// board) is that now.
 	const auto& tools = ToolCatalog::All();
-	for (size_t i = 0; i < tools.size(); i++)
-		if (tools[i].handKind == HandToolKind::DRAIN_PAN && ToolCount(i) == 0)
-		{
-			if (m_toolCounts.size() <= i)
-				m_toolCounts.resize(tools.size(), 0);
-			m_toolCounts[i] = 1;
-		}
+	for (size_t i = 0; i < tools.size() && i < m_toolCounts.size(); i++)
+		if (tools[i].handKind == HandToolKind::DRAIN_PAN)
+			m_toolCounts[i] = 0;
+	const size_t pan = FurnitureCatalog::IndexOf(FurnitureKind::DRAIN_PAN);
+	if (std::find(m_furniture.begin(), m_furniture.end(), pan) == m_furniture.end())
+		m_furniture.push_back(pan);
 	for (auto& car : m_cars)
 		if (!car->capsIssued)
 			IssueCarCaps(*car);

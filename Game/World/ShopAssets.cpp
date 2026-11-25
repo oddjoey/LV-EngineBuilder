@@ -3464,6 +3464,21 @@ void ShopAssets::LoadFurniture()
 				Box(builder, { 0.04f, TUBE_TOP - 0.05f, 0.f }, { 0.03f, 0.014f, 0.012f }, chrome);		// the ratchet's handle
 				break;
 			}
+			case FurnitureKind::DRAIN_PAN:
+			{
+				// A wide, shallow round pan in black plastic on the floor: its floor, its sloping wall as a ring of narrowing
+				// tubes, a rolled rim and a pouring lip. Low enough to go in under the car.
+				const glm::vec3 plastic = { 0.08f, 0.08f, 0.09f };
+				Cylinder(builder, At({ 0.f, 0.004f, 0.f }), 0.17f, 0.008f, plastic, 28);
+				for (int step = 0; step < 4; step++)
+				{
+					const float r = 0.17f + step * 0.015f;
+					Tube(builder, At({ 0.f, 0.012f + step * 0.015f, 0.f }), r + 0.008f, r, 0.016f, plastic, 0.f, glm::two_pi<float>(), 28);
+				}
+				Tube(builder, At({ 0.f, 0.075f, 0.f }), 0.24f, 0.22f, 0.008f, plastic, 0.f, glm::two_pi<float>(), 28);
+				Box(builder, { 0.25f, 0.072f, 0.f }, { 0.04f, 0.006f, 0.05f }, plastic);
+				break;
+			}
 		}
 		AddModel(FurnitureModel(furniture), builder);
 	}

@@ -42,6 +42,12 @@ bool ShopWorld::IsCarSupport(const Station& station, bool* jack) const
 	return kind == FurnitureKind::FLOOR_JACK || kind == FurnitureKind::JACK_STAND;
 }
 
+bool ShopWorld::IsDrainPan(const Station& station) const
+{
+	return station.type == StationType::FURNITURE && station.furnitureIndex >= 0
+		&& FurnitureCatalog::All()[station.furnitureIndex].kind == FurnitureKind::DRAIN_PAN;
+}
+
 glm::vec3 ShopWorld::CarLiftPoint(int point)
 {
 	using namespace CarBody;

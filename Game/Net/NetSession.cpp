@@ -196,6 +196,8 @@ void NetSession::Update(float deltaTime, Workshop& workshop, ShopWorld& world, c
 	if (m_carCheckTimer >= 2.f)
 	{
 		m_carCheckTimer = 0.f;
+		// (A garage kept from before: its cars' caps made, its fluid stock in containers. Whoever's first does it; the next sync sends it.)
+		workshop.UpgradeCarKit();
 		EnsureOwnCar(workshop, world);
 	}
 	if (m_presenceTimer >= PRESENCE_INTERVAL)
@@ -493,6 +495,7 @@ void NetSession::ApplyWelcome(Workshop& workshop, ShopWorld& world, FirstPersonC
 	m_carTries = 0;
 	m_madeFrom = m_madeTo = 0;
 	m_carCheckTimer = 0.f;
+	workshop.UpgradeCarKit();
 	EnsureOwnCar(workshop, world);
 	if (m_welcomePlaced)
 	{

@@ -26,6 +26,7 @@ namespace ShopLayout
 	constexpr float PLACE_DISTANCE = 3.5f;
 	constexpr float MEASURE_DISTANCE = 2.5f;
 	constexpr float PART_GLOW = 0.35f;
+	constexpr float BLEEDER_OUT = 0.62f;	// a bleeder's catch bottle, out from the nipple it's on: past the tire, where it's seen
 	constexpr float STATION_GLOW = 0.12f;
 	constexpr float TOAST_SECONDS = 3.5f;
 	constexpr float READOUT_SECONDS = 8.f;

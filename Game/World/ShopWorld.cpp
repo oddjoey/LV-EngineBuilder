@@ -928,6 +928,8 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 	}
 	else if (workshop.GetValveCompressor())
 		workshop.ReleaseValveSpring();
+	// Each bleeder sits on the nipple the car says it's on, and each cap on its filler (put there here, or by another player), or not.
+	UpdateCarFittings(workshop);
 	m_aimedHeadPart.reset();
 	m_measurePoints.clear();
 	m_fitPoints.clear();
@@ -960,6 +962,18 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		}
 		// (And what's in reach of the seat to click: the switches, the key, the doors' handles.)
 		m_prompt = SeatPrompt();
+		// At the wheel with a bleeder on a nipple: the pedal to pump for it.
+		if (const auto* build = workshop.GetCar(); build && m_rig.seat == 0)
+		{
+			std::string brakes;
+			for (int p = 0; p < static_cast<int>(BleedPoint::CLUTCH); p++)
+				if (build->assembly.BleederOn(static_cast<BleedPoint>(p)))
+					brakes += std::string(brakes.empty() ? "" : ", ") + BleedPointLower(static_cast<BleedPoint>(p));
+			if (!brakes.empty())
+				m_secondaryPrompt = std::format("Bleeder on the {} nipple: press and let up [S] to pump the brake pedal", brakes);
+			if (build->assembly.BleederOn(BleedPoint::CLUTCH))
+				m_secondaryPrompt += std::string(m_secondaryPrompt.empty() ? "" : "   ") + "Bleeder on the clutch slave: press and let up [Clutch] to pump the clutch pedal";
+		}
 		if (!m_thirdPerson)
 			UpdateCarControls(workshop, player, input);
 		return std::nullopt;
@@ -1264,13 +1278,15 @@ void ShopWorld::SyncItems(Workshop& workshop)
 			Toast(std::format("A delivery at the door: {} boxes.", boxes.size()));
 	}
 
-	// Parts sold, or gone with a sold engine.
+	// Parts sold, or gone with a sold engine; and a fluid's container thrown away once it's empty.
 	std::vector<ItemRef> gone;
 	for (const auto& [ref, visual] : m_items)
-		if (ref.IsPart() && !owned.contains(ref.id))
+		if ((ref.IsPart() && !owned.contains(ref.id)) || (ref.IsTool() && !workshop.OwnsTool(ref.id)))
 			gone.push_back(ref);
 	for (const auto& ref : gone)
 		RemoveItem(ref);
+	if (!gone.empty())
+		SyncHand();
 
 	auto objectManager = ObjectManager::Get();
 	for (auto it = m_packages.begin(); it != m_packages.end();)
@@ -2962,6 +2978,12 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 			if (visual.part->GetCondition() == PartCondition::DAMAGED)
 				tint *= DAMAGED_TINT;
 		}
+		// A fluid's jug or can, coloured like what's in it.
+		else if (visual.ref.IsTool() && ToolCatalog::Of(visual.ref.id).handKind == HandToolKind::FLUID_CONTAINER)
+		{
+			const auto colour = FluidColour(static_cast<FluidProduct>(ToolCatalog::Of(visual.ref.id).fluidProduct));
+			tint = glm::vec4(colour[0], colour[1], colour[2], 1.f);
+		}
 		// Sprayed: the paint over it, as thick as it's gone on.
 		if (auto coat = m_coats.find(visual.ref); coat != m_coats.end())
 		{
@@ -3077,7 +3099,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 					{
 						bool raised = CarAssembly::IsFastenerSlot(at->first) && visual.part->GetTightness() == FastenerTightness::LOOSE
 							&& !PartWayDoneUp(*visual.part);
-						if (carMoved || m_rig.carPanelsMoving || m_rig.drive.active || visual.carSlot != static_cast<int>(at->first) || visual.carIndex != at->second || visual.carRaised != raised)
+						if (carMoved || m_rig.carPanelsMoving || m_rig.drive.active || EngineShaking() || visual.carSlot != static_cast<int>(at->first) || visual.carIndex != at->second || visual.carRaised != raised)
 						{
 							PlaceOnCar(visual, at->first, at->second);
 							visual.carSlot = static_cast<int>(at->first);
@@ -3164,7 +3186,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 			uint64_t key = layoutKey;
 			for (float height : m_rig.cornerHeights)
 				key = (key ^ std::bit_cast<uint32_t>(height)) * 1099511628211ull;
-			if (!carMoved && !m_rig.carPanelsMoving && !m_rig.drive.active && key == m_rig.laidOutKey && m_time - m_rig.laidOutAt < 0.5f
+			if (!carMoved && !m_rig.carPanelsMoving && !m_rig.drive.active && !EngineShaking() && key == m_rig.laidOutKey && m_time - m_rig.laidOutAt < 0.5f
 				&& std::none_of(onOtherCars[car].begin(), onOtherCars[car].end(), [](const ItemVisual* visual) { return visual->object->GetEmissive() != 0.f; }))
 				continue;
 			m_rig.laidOutKey = key;
@@ -3180,6 +3202,26 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 	{
 		if (visual.place != ItemPlace::ATTACHED)
 			continue;
+		// A cap on its car's filler (a fill plug in its hole), turned with the car. Taken off by hand: it can be aimed at,
+		// unless a part's in hand (the fuel cap only with its flap open).
+		if (!visual.part && visual.ref.IsTool() && ToolCatalog::Of(visual.ref.id).handKind == HandToolKind::FILLER_CAP)
+		{
+			const auto on = pass == 0 ? workshop.FindCap(visual.ref.id) : std::nullopt;
+			if (on && on->first < static_cast<int>(m_rigs.size()) && RigOf(on->first).carStation < m_stations.size()
+				&& m_stations[RigOf(on->first).carStation].present)
+			{
+				CarScope scope(*this, on->first, &workshop);
+				const auto seat = FillerSeat(workshop, on->second);
+				visual.object->SetPosition(seat.at);
+				visual.object->SetRotation(seat.turn);
+				visual.object->SetScale({ 1.f, 1.f, 1.f });
+				visual.object->SetVisible(true);
+				visual.object->SetCastsShadows(true);
+				const ItemVisual* inHand = GetHeld();
+				visual.object->SetPickable(!(inHand && inHand->part) && (on->second != FluidCircuit::FUEL || IsCarPanelOpen(CarPanel::FUEL_FLAP)));
+			}
+			continue;
+		}
 		const ItemVisual* host = Find(ItemRef::Part(visual.hostPart));
 		visual.object->SetVisible(host && host->object->IsVisible());
 		visual.object->SetPickable(false);
@@ -3190,6 +3232,28 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 		PartType type = visual.part ? visual.part->GetType() : PartType::BLOCK;
 		// How far the Valve Spring Compressor squeezes a spring down.
 		constexpr float SQUEEZE = 0.009f;
+		// A bleeder on a nipple of a car: its hose on the nipple, its catch bottle hanging out past the wheel, where it's seen and
+		// can be aimed at to take it off (unless a part's in hand).
+		if (!visual.part && visual.ref.IsTool() && ToolCatalog::Of(visual.ref.id).handKind == HandToolKind::BRAKE_BLEEDER)
+		{
+			if (const int car = host->part ? workshop.CarOf(*host->part) : -1; car >= 0 && RigOf(car).carStation < m_stations.size())
+			{
+				const Station& station = m_stations[RigOf(car).carStation];
+				const glm::quat carTurn = station.Rotation();
+				const glm::vec3 across = carTurn * glm::vec3(0.f, 0.f, 1.f);
+				const glm::vec3 nipple = host->object->GetPosition();
+				const float side = glm::dot(nipple - station.position, across) >= 0.f ? 1.f : -1.f;
+				visual.object->SetRotation(carTurn);
+				visual.object->SetScale({ 1.f, 1.f, 1.f });
+				visual.object->SetPosition(nipple + across * (side * BLEEDER_OUT) + glm::vec3(0.f, -0.06f, 0.f));
+				// (Seen even with the part it's on hidden inside its drum or behind the wheel: the bottle hangs outside.)
+				visual.object->SetVisible(true);
+				visual.object->SetCastsShadows(true);
+				const ItemVisual* inHand = GetHeld();
+				visual.object->SetPickable(!(inHand && inHand->part));
+			}
+			continue;
+		}
 		// The compressor clamped over a valve in a loose head: its cup on the spring's top, its frame out over the side
 		// the valve's on and its foot under the valve. It can be aimed at (to take it off) unless a part's in hand.
 		if (!visual.part && visual.ref.IsTool() && ToolCatalog::Of(visual.ref.id).handKind == HandToolKind::VALVE_SPRING_COMPRESSOR)
@@ -3696,6 +3760,10 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 					ringVisual->object->SetEmissive(PART_GLOW * 2.f);
 				}
 			}
+			else if (visual.place == ItemPlace::ATTACHED && visual.ref.IsTool() && workshop.FindCap(visual.ref.id))
+				m_prompt = std::format("[E] Take the {} off", name);
+			else if (const auto on = visual.place == ItemPlace::ATTACHED && visual.ref.IsTool() ? workshop.FindBleeder(visual.ref.id) : std::nullopt)
+				m_prompt = std::format("[E] Take the bleeder off (closes the {} nipple)", BleedPointLower(on->second));
 			else
 				m_prompt = std::format("[E] Pick up {}", name);
 			auto piston = visual.part ? workshop.PistonOn(*visual.part) : nullptr;
@@ -4639,7 +4707,33 @@ void ShopWorld::PickUp(Workshop& workshop, ItemVisual& visual)
 	{
 		workshop.SetActiveEngine(visual.engineIndex);
 		if (auto installed = FindInstalledSlot(workshop.GetAssembly(), visual.part))
+		{
 			workshop.RemovePart(installed->first, installed->second);
+			// The oil drain plug out of the engine in the car: the oil comes straight out, into the drain pan under it or onto the
+			// floor.
+			const auto* build = workshop.GetCar();
+			if (installed->first == AssemblySlot::DRAIN_PLUG && visual.engineIndex == workshop.GetEngineInCar() && build
+				&& build->assembly.GetFluid(FluidCircuit::ENGINE_OIL).Total() > 0.0)
+			{
+				DrainInto(workshop, FluidCircuit::ENGINE_OIL, visual.object->GetPosition());
+				Toast(workshop.GetLog().back());
+			}
+		}
+	}
+	// A cap taken off its filler: the filler's open, to be filled.
+	if (visual.place == ItemPlace::ATTACHED && visual.ref.IsTool() && workshop.FindCap(visual.ref.id))
+	{
+		workshop.TakeCapOff(visual.ref.id);
+		Cue(Sound::CLICK, visual.object->GetPosition(), 0.5f);
+		Toast(std::format("Took the {} off.", ToolCatalog::Of(visual.ref.id).name));
+	}
+	// A bleeder taken off its nipple closes it.
+	if (visual.place == ItemPlace::ATTACHED && visual.ref.IsTool() && ToolCatalog::Of(visual.ref.id).handKind == HandToolKind::BRAKE_BLEEDER)
+	{
+		workshop.DetachBleeder(visual.ref.id);
+		Cue(Sound::WRENCH, visual.object->GetPosition(), 0.5f);
+		if (!workshop.GetLog().empty())
+			Toast(workshop.GetLog().back());
 	}
 	// The Valve Spring Compressor taken off its valve lets the spring back up.
 	if (visual.place == ItemPlace::ATTACHED && visual.ref.IsTool() && ToolCatalog::Of(visual.ref.id).handKind == HandToolKind::VALVE_SPRING_COMPRESSOR)
@@ -5076,4 +5170,136 @@ void ShopWorld::UnpackFittedParts(const Workshop& workshop)
 		objectManager->RemoveObject(it->second.object);
 		it = m_packages.erase(it);
 	}
+}
+
+void ShopWorld::UpdateCarFittings(const Workshop& workshop)
+{
+	const auto& tools = ToolCatalog::All();
+	for (size_t i = 0; i < tools.size(); i++)
+	{
+		if (tools[i].handKind == HandToolKind::FILLER_CAP)
+		{
+			// A cap on a filler: ATTACHED, with no part to hang on (it's posed at its car's filler).
+			for (size_t copy = 0; copy < static_cast<size_t>(Workshop::MAX_TOOL_COPIES); copy++)
+			{
+				const size_t id = ToolCatalog::IdOf(i, copy);
+				ItemVisual* visual = Find(ItemRef::Tool(static_cast<uint32_t>(id)));
+				if (!visual)
+					continue;
+				const bool on = workshop.FindCap(id).has_value();
+				if (on && visual->place != ItemPlace::ATTACHED)
+				{
+					for (auto& [packageId, package] : m_packages)
+						std::erase(package.items, visual->ref);
+					m_inventory.Remove(visual->ref);
+					visual->hostPart = 0;
+					SetPlace(*visual, ItemPlace::ATTACHED);
+					SyncHand();
+				}
+				else if (!on && visual->place == ItemPlace::ATTACHED)
+					SetPlace(*visual, ItemPlace::STORAGE);
+			}
+			continue;
+		}
+		if (tools[i].handKind != HandToolKind::BRAKE_BLEEDER)
+			continue;
+		for (size_t copy = 0; copy < static_cast<size_t>(Workshop::MAX_TOOL_COPIES); copy++)
+		{
+			const size_t id = ToolCatalog::IdOf(i, copy);
+			ItemVisual* visual = Find(ItemRef::Tool(static_cast<uint32_t>(id)));
+			if (!visual)
+				continue;
+			pPart host;
+			if (const auto on = workshop.FindBleeder(id))
+			{
+				int index = 0;
+				const CarSlot slot = CarAssembly::BleedNipplePart(on->second, index);
+				host = workshop.GetCarAt(on->first)->assembly.Get(slot, index);
+			}
+			if (host && (visual->place != ItemPlace::ATTACHED || visual->hostPart != host->GetId()))
+			{
+				// (Put on by another player, or as the game was loaded: out of wherever it was, onto the nipple.)
+				for (auto& [packageId, package] : m_packages)
+					std::erase(package.items, visual->ref);
+				m_inventory.Remove(visual->ref);
+				visual->hostPart = host->GetId();
+				SetPlace(*visual, ItemPlace::ATTACHED);
+				SyncHand();
+			}
+			else if (!host && visual->place == ItemPlace::ATTACHED)
+				SetPlace(*visual, ItemPlace::STORAGE);
+		}
+	}
+}
+
+bool ShopWorld::DevAttachBleeder(Workshop& workshop, BleedPoint point)
+{
+	ItemVisual* held = GetHeld();
+	const auto* build = workshop.GetCar();
+	if (!held || !held->ref.IsTool() || ToolCatalog::Of(held->ref.id).handKind != HandToolKind::BRAKE_BLEEDER || !build
+		|| !workshop.AttachBleeder(point, held->ref.id))
+		return false;
+	int index = 0;
+	if (auto host = build->assembly.Get(CarAssembly::BleedNipplePart(point, index), index))
+		held->hostPart = host->GetId();
+	SetPlace(*held, ItemPlace::ATTACHED);
+	SyncHand();
+	return true;
+}
+
+bool ShopWorld::DevDetachBleeder(Workshop& workshop)
+{
+	for (auto& [ref, visual] : m_items)
+		if (ref.IsTool() && visual.place == ItemPlace::ATTACHED && workshop.FindBleeder(ref.id))
+		{
+			PickUp(workshop, visual);
+			return true;
+		}
+	return false;
+}
+
+bool ShopWorld::DevTakeCap(Workshop& workshop, FluidCircuit circuit)
+{
+	const auto* build = workshop.GetCar();
+	const auto cap = build ? build->assembly.CapOn(circuit) : std::nullopt;
+	ItemVisual* visual = cap ? Find(ItemRef::Tool(static_cast<uint32_t>(*cap))) : nullptr;
+	if (!visual || visual->place != ItemPlace::ATTACHED)
+		return false;
+	PickUp(workshop, *visual);
+	return !workshop.FindCap(*cap);
+}
+
+bool ShopWorld::DevPutCap(Workshop& workshop, FluidCircuit circuit)
+{
+	ItemVisual* held = GetHeld();
+	if (!held || !held->ref.IsTool() || !workshop.PutCarCap(circuit, held->ref.id))
+		return false;
+	SetPlace(*held, ItemPlace::ATTACHED);
+	SyncHand();
+	return true;
+}
+
+double ShopWorld::DevPour(Workshop& workshop, FluidCircuit circuit, double litres)
+{
+	ItemVisual* held = GetHeld();
+	if (!held || !held->ref.IsTool())
+		return 0.0;
+	return workshop.PourFromContainer(circuit, held->ref.id, litres);
+}
+
+std::string ShopWorld::DevCapReport(const Workshop& workshop) const
+{
+	const auto* build = workshop.GetCar();
+	if (!build)
+		return "No car.";
+	std::string out;
+	for (int c = 0; c < FLUID_CIRCUITS; c++)
+	{
+		const auto circuit = static_cast<FluidCircuit>(c);
+		const auto cap = build->assembly.CapOn(circuit);
+		const ItemVisual* visual = cap ? Find(ItemRef::Tool(static_cast<uint32_t>(*cap))) : nullptr;
+		out += std::format("{}{} {:.2f} l, cap {}", out.empty() ? "" : "; ", FluidCircuitName(circuit), build->assembly.GetFluid(circuit).Total(),
+			!cap ? "off" : visual && visual->place == ItemPlace::ATTACHED ? "on" : "on (item not on it!)");
+	}
+	return out;
 }

@@ -198,6 +198,26 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Added the {}.", tools[*index].name));
 	});
 
+	m_console.AddCommand("fluid", "fluid <name> [count]", "Delivers that many full jugs (or cans) of a fluid, for free.", [this](const Console::Arguments& args) {
+		std::vector<std::string> names;
+		for (int p = 0; p < FLUID_PRODUCTS; p++)
+			names.push_back(FluidProductName(static_cast<FluidProduct>(p)));
+		int count = 1;
+		Console::Arguments words = args;
+		if (words.size() > 1)
+			if (auto number = Number(words.back()))
+			{
+				count = static_cast<int>(*number);
+				words.pop_back();
+			}
+		std::string error;
+		auto index = FindName(names, Joined(words), error);
+		if (!index)
+			return m_console.Error(error);
+		const int added = m_workshop->DevAddFluid(static_cast<FluidProduct>(*index), count);
+		m_console.Print(std::format("{} of {} delivered (room for no more than {} on hand).", added, names[*index], Workshop::MAX_TOOL_COPIES));
+	});
+
 	m_console.AddCommand("machine", "machine <name>|all", "Gives you a machine (or every machine), crated at the door.",
 		[this, machineNames](const Console::Arguments& args) {
 		const auto& machines = MachineCatalog::All();
@@ -376,7 +396,7 @@ void EngineBuilderGame::RegisterConsoleCommands()
 		m_console.Print(std::format("Looking at {:.0f}, {:.0f} degrees.", *yaw, pitch.value_or(0.0)));
 	});
 
-	m_console.AddCommand("car", "car build|test|drive [seconds] [steer]|steer [amount]|open|shut|strip <part>",
+	m_console.AddCommand("car", "car build|test|drive [seconds] [steer]|steer [amount]|open|shut|strip <part>|bleed [air|on <point>|pump brake|clutch [n]|off]",
 		"The LE86: build (new OEM parts wherever one's missing, the active engine in if it's finished, filled and bled), "
 		"test (a road test), or strip a kind of part off it, bolts and all (car strip hood).", [this, partNames](const Console::Arguments& args) {
 		std::string what = args.empty() ? "" : args[0];
@@ -515,6 +535,106 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			m_world.DevHeadlights();
 			m_console.Print("The headlights, switched.");
 		}
+		else if (what == "pan")
+		{
+			// car pan <circuit 0-6>: the drain pan set down right under where that circuit drains.
+			auto circuit = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			if (!circuit || *circuit < 0 || *circuit >= FLUID_CIRCUITS)
+				return m_console.Error("Usage: car pan <circuit 0-6>");
+			m_console.Print(m_world.DevPanUnder(*m_workshop, static_cast<FluidCircuit>(static_cast<int>(*circuit))) ? "The drain pan's under it." : "Couldn't: no drain pan, or no such drain.");
+		}
+		else if (what == "oilplug")
+		{
+			// car oilplug: the oil drain plug taken out of the engine in the car (as undone with a spanner from underneath).
+			const int engine = m_workshop->GetEngineInCar();
+			if (engine < 0)
+				return m_console.Error("There's no engine in the car.");
+			const int was = m_workshop->GetActiveEngine();
+			m_workshop->SetActiveEngine(engine);
+			const int removed = m_workshop->DevStrip(AssemblySlot::DRAIN_PLUG);
+			m_workshop->SetActiveEngine(was);
+			m_console.Print(removed > 0 ? "The oil drain plug is out." : "It was out already.");
+		}
+		else if (what == "drain")
+		{
+			// car drain <circuit 0-6>: that circuit drained into the pan (as the funnel held at its filler).
+			auto circuit = args.size() > 1 ? Number(args[1]) : std::nullopt;
+			if (!circuit || *circuit < 0 || *circuit >= FLUID_CIRCUITS)
+				return m_console.Error("Usage: car drain <circuit 0-6>");
+			m_world.DevDrain(*m_workshop, static_cast<FluidCircuit>(static_cast<int>(*circuit)));
+			m_console.Print(m_workshop->GetLog().back());
+		}
+		else if (what == "cap" || what == "pour")
+		{
+			// car cap [off|on <circuit 0-6>]: a filler's cap taken off into your hands, or the one in hand put on (0 oil, 1 coolant, 2 brakes,
+			// 3 clutch, 4 gearbox, 5 diff, 6 fuel); bare, each filler's level and cap. car pour <circuit> [litres]: from the container in hand.
+			const size_t at = what == "pour" ? 1 : 2;
+			auto circuit = args.size() > at ? Number(args[at]) : std::nullopt;
+			if (circuit && (*circuit < 0 || *circuit >= FLUID_CIRCUITS))
+				return m_console.Error("The circuit is 0-6: oil, coolant, brakes, clutch, gearbox, diff, fuel.");
+			const auto chosen = static_cast<FluidCircuit>(static_cast<int>(circuit.value_or(0.0)));
+			if (what == "pour")
+			{
+				if (!circuit)
+					return m_console.Error("Usage: car pour <circuit 0-6> [litres] (hold a fluid's jug or can)");
+				const double litres = (args.size() > 2 ? Number(args[2]) : std::nullopt).value_or(1.0);
+				const double poured = m_world.DevPour(*m_workshop, chosen, litres);
+				m_console.Print(std::format("Poured {:.2f} l. {}", poured, m_workshop->GetLog().empty() ? "" : m_workshop->GetLog().back()));
+			}
+			else if (args.size() > 1 && args[1] == "off")
+				m_console.Print(circuit && m_world.DevTakeCap(*m_workshop, chosen) ? "The cap's off, in your hands." : "Couldn't: no cap on that filler.");
+			else if (args.size() > 1 && args[1] == "on")
+				m_console.Print(circuit && m_world.DevPutCap(*m_workshop, chosen) ? "The cap's on." : m_workshop->GetLog().empty() ? "Couldn't." : m_workshop->GetLog().back());
+			else
+				m_console.Print(m_world.DevCapReport(*m_workshop));
+		}
+		else if (what == "bleed")
+		{
+			// car bleed [air | on <point 0-4> | pump brake|clutch [strokes] | off]: air into the lines, the bleeder in hand onto a nipple
+			// (0 rear right, 1 rear left, 2 front right, 3 front left, 4 the clutch slave), strokes of a pedal (as from the driver's
+			// seat), the bleeder taken off; bare, the air left in each line.
+			std::string how = args.size() > 1 ? args[1] : "";
+			if (how == "air")
+			{
+				m_workshop->DevAirInCarLines();
+				m_console.Print("Air right through the brake and clutch lines.");
+			}
+			else if (how == "on")
+			{
+				auto point = args.size() > 2 ? Number(args[2]) : std::nullopt;
+				if (!point || *point < 0 || *point >= BLEED_POINTS)
+					return m_console.Error("Usage: car bleed on <point 0-4> (hold the Brake Bleeder Kit first)");
+				if (!m_world.DevAttachBleeder(*m_workshop, static_cast<BleedPoint>(static_cast<int>(*point))))
+					return m_console.Error("Couldn't: hold the Brake Bleeder Kit, with that part on and no bleeder on it yet.");
+				m_console.Print(m_workshop->GetLog().back());
+			}
+			else if (how == "pump")
+			{
+				const auto circuit = args.size() > 2 && args[2] == "clutch" ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES;
+				const int strokes = static_cast<int>((args.size() > 3 ? Number(args[3]) : std::nullopt).value_or(1.0));
+				for (int stroke = 0; stroke < strokes; stroke++)
+				{
+					if (!m_workshop->PumpCarPedal(circuit))
+						return m_console.Error("No bleeder on that circuit's nipples: the pedal just firms up.");
+					m_console.Print(m_workshop->GetLog().back());
+				}
+			}
+			else if (how == "off")
+				m_console.Print(m_world.DevDetachBleeder(*m_workshop) ? m_workshop->GetLog().back() : "No bleeder is on a nipple.");
+			else if (const auto* build = m_workshop->GetCar())
+			{
+				std::string lines;
+				for (int p = 0; p < BLEED_POINTS; p++)
+				{
+					const auto point = static_cast<BleedPoint>(p);
+					const auto circuit = point == BleedPoint::CLUTCH ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES;
+					lines += std::format("{}{}: air {:.2f}{}", lines.empty() ? "" : "; ", BleedPointName(point),
+						build->assembly.GetFluid(circuit).air[p], build->assembly.BleederOn(point) ? " (bleeder on)" : "");
+				}
+				m_console.Print(lines);
+				m_world.Notify(lines);
+			}
+		}
 		else if (what == "sit")
 		{
 			// car sit [seat]: 0 the driver's (which turns the key), 1 the passenger's, 2 and 3 the back.
@@ -563,7 +683,7 @@ void EngineBuilderGame::RegisterConsoleCommands()
 			// screen store [page] [search words...]: a page of the store (the LE86's unless named), with that typed in its search bar.
 			const std::pair<const char*, StoreCategory> PAGES[] = { { "parts", StoreCategory::PARTS }, { "hardware", StoreCategory::HARDWARE },
 				{ "tools", StoreCategory::TOOLS }, { "machines", StoreCategory::MACHINES }, { "furniture", StoreCategory::FURNITURE },
-				{ "paint", StoreCategory::PAINT }, { "car", StoreCategory::CAR }, { "skills", StoreCategory::SKILLS } };
+				{ "paint", StoreCategory::PAINT }, { "car", StoreCategory::CAR }, { "fluids", StoreCategory::FLUIDS }, { "skills", StoreCategory::SKILLS } };
 			StoreCategory category = StoreCategory::CAR;
 			size_t first = 1;
 			for (const auto& [name, page] : PAGES)

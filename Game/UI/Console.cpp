@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <cstdlib>
 #include <format>
+#include <iostream>
 #include <sstream>
 
 namespace
@@ -78,8 +80,24 @@ void Console::Add(const std::string& text, ImU32 color)
 	// One entry per line of the text.
 	std::istringstream lines(text);
 	std::string line;
+	// (Debug builds with LV_CONSOLE_ECHO=1 copy it to stdout too, so a scripted run, LV_DEV_START, can be read back.)
+	static const bool echo = []() {
+#if defined(_DEBUG) && defined(_WIN32)
+		char* value = nullptr;
+		size_t length = 0;
+		const bool on = _dupenv_s(&value, &length, "LV_CONSOLE_ECHO") == 0 && value && value[0] == '1';
+		free(value);
+		return on;
+#else
+		return false;
+#endif
+	}();
 	while (std::getline(lines, line))
+	{
+		if (echo)
+			std::cout << "[console] " << line << std::endl;
 		m_lines.push_back({ line, color });
+	}
 	if (m_lines.size() > MAX_LINES)
 		m_lines.erase(m_lines.begin(), m_lines.begin() + (m_lines.size() - MAX_LINES));
 	m_scrollToBottom = true;

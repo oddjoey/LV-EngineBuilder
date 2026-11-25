@@ -292,6 +292,29 @@ namespace ItemIcons
 				for (float t : { 0.55f, 0.65f, 0.75f })
 					drawList->AddLine(p(t, t), p(t + 0.07f, t - 0.07f), color, line * 1.4f);
 				break;
+			case ToolShape::FLUID_CONTAINER:
+				// A jug side on: its body, the neck and cap on top, and the handle.
+				drawList->AddRectFilled(p(0.22f, 0.3f), p(0.72f, 0.88f), (color & 0x00FFFFFF) | (170u << IM_COL32_A_SHIFT), size * 0.05f);
+				drawList->AddRect(p(0.22f, 0.3f), p(0.72f, 0.88f), color, size * 0.05f, 0, line);
+				drawList->AddRectFilled(p(0.28f, 0.14f), p(0.44f, 0.3f), color);
+				drawList->AddBezierCubic(p(0.56f, 0.3f), p(0.92f, 0.3f), p(0.92f, 0.62f), p(0.72f, 0.6f), color, line * 1.4f);
+				break;
+			case ToolShape::DRAIN_PAN:
+				// A pan seen from a little above: its rim, the dark well inside, and the pouring lip.
+				drawList->AddEllipseFilled(p(0.5f, 0.55f), ImVec2(size * 0.42f, size * 0.2f), color, 0.f, 28);
+				drawList->AddEllipseFilled(p(0.5f, 0.52f), ImVec2(size * 0.34f, size * 0.14f), (color & 0x00FFFFFF) | (90u << IM_COL32_A_SHIFT), 0.f, 28);
+				drawList->AddTriangleFilled(p(0.88f, 0.52f), p(0.97f, 0.48f), p(0.9f, 0.6f), color);
+				break;
+			case ToolShape::FILLER_CAP:
+				// A cap from above: round, with its grip's ribs round the edge.
+				drawList->AddCircleFilled(p(0.5f, 0.5f), size * 0.3f, (color & 0x00FFFFFF) | (170u << IM_COL32_A_SHIFT), 24);
+				drawList->AddCircle(p(0.5f, 0.5f), size * 0.3f, color, 24, line * 1.4f);
+				for (int rib = 0; rib < 12; rib++)
+				{
+					const float a = rib * 0.5236f;
+					drawList->AddLine(p(0.5f + 0.24f * std::cos(a), 0.5f + 0.24f * std::sin(a)), p(0.5f + 0.32f * std::cos(a), 0.5f + 0.32f * std::sin(a)), color, line);
+				}
+				break;
 		}
 	}
 

@@ -73,7 +73,7 @@
 namespace NetProtocol
 {
 	// Both ends have to be the same game: the records are its save text.
-	constexpr long long VERSION = 33;
+	constexpr long long VERSION = 35;
 	constexpr uint16_t DEFAULT_PORT = 33333;
 	constexpr uint16_t ACCOUNT_PORT = 44444;
 	constexpr const char* ACCOUNT_IP = "localhost";

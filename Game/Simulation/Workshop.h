@@ -53,6 +53,8 @@ struct CarBuild
 	// How hot the engine in it is: 1 just after a road test, cooling to 0 (cold) over a while (not saved: a loaded game's
 	// engine has cooled). The valve lash reads tighter cold than hot.
 	double engineHeat = 0.0;
+	// Its fillers' caps made (Workshop::IssueCarCaps): a car from before they were things of their own hasn't had them.
+	bool capsIssued = false;
 };
 
 struct AssemblyReading
@@ -456,20 +458,55 @@ public:
 	static bool AtFlywheel(AssemblySlot slot) { return slot == AssemblySlot::FLYWHEEL || slot == AssemblySlot::FLYWHEEL_BOLT; }
 	bool LowerEngineIntoCar();
 	bool HoistEngineFromCar();
-	// Fluids are bought by the bottle and kept in the shop's stock, by the litre, till they're poured.
+	// Fluids are bought by the jug (or bottle, or can): each a tool of its own (a FLUID_CONTAINER), delivered, held and poured
+	// in at its filler. FluidUnitLitres is what one holds; once it's empty it's gone (OwnsTool says no), and the next one
+	// bought of that fluid is that copy again, full.
 	static double FluidUnitLitres(FluidProduct product);
 	static double FluidUnitPrice(FluidProduct product);
+	// What's on hand of a fluid, every container of it together; and what's left in one.
 	double FluidStock(FluidProduct product) const;
-	// What went in: what's in stock, up to what it takes; poured into a circuit that's open, it runs out on the floor.
-	// quiet: poured a little at a time (held at the filler), so it isn't logged each time.
-	double PourIntoCar(FluidCircuit circuit, FluidProduct product, double litres, bool quiet = false);
-	double DrainCar(FluidCircuit circuit);
+	double ContainerLitres(size_t container) const;
+	// How many more containers of a fluid there's room for (the copies a tool can have, less the ones not yet empty).
+	int FluidRoom(FluidProduct product) const;
+	// The tool index of a fluid's container, and of a circuit's cap.
+	static std::optional<size_t> ContainerToolFor(FluidProduct product);
+	static std::optional<size_t> CapToolFor(FluidCircuit circuit);
+	// Poured from that container into a circuit of the active car, its cap off: what went in (what's in the container, up to
+	// what it takes); into a circuit that's open, it runs out on the floor. quiet: poured a little at a time (held at the
+	// filler), so it isn't logged each time.
+	double PourFromContainer(FluidCircuit circuit, size_t container, double litres, bool quiet = false);
+	// The caps: one taken off a filler of the active car (the world puts it in hand), one put on (it has to be that filler's),
+	// one off whichever car it's on, and which car and filler one's on.
+	bool TakeCarCap(FluidCircuit circuit);
+	bool PutCarCap(FluidCircuit circuit, size_t cap);
+	void TakeCapOff(size_t cap);
+	std::optional<std::pair<int, FluidCircuit>> FindCap(size_t cap) const;
+	// Each car whose caps haven't been made yet has them made and put on (a car from before they were things of their own),
+	// and a save's fluid stock from before containers comes as full containers. After a game's loaded or a garage joined.
+	void UpgradeCarKit();
+	// Developer: that many full containers of a fluid, free (delivered as if bought).
+	int DevAddFluid(FluidProduct product, int count);
+	// Drained into the pan from where it's drained: the engine's oil out of its drain hole (the plug has to be out), the coolant,
+	// the gearbox, the diff and the tank by undoing their drain plugs (done back up after), the brakes and the clutch out of
+	// a bleed nipple (which leaves their lines full of air).
+	// caught: a drain pan under it (says where it went, ShopWorld::DrainInto).
+	double DrainCar(FluidCircuit circuit, bool caught = true);
+	// Whether the engine in the active car has its oil drain plug in (true with no engine in it: there's nothing to leak).
+	bool CarOilDrainPlugIn() const;
 	// Whether the shop owns a tool of that kind (the spring compressor, the tire irons...).
 	bool OwnsToolOfKind(HandToolKind kind) const;
 	// Whether the car's engine fires and keeps running (to burp the coolant, or strobe the timing).
 	bool CarStarts() const;
-	// One go at a bleed point. The air left in that line, which the player only sees as how many bubbles come out.
-	double BleedCar(BleedPoint point);
+	// The Brake Bleeder Kit (that tool id) put on a bleed nipple of the active car, cracking it open; false (and logged why) if
+	// it can't go on. Taken off again (from whichever car it's on), closing the nipple. And which car and nipple it's on.
+	bool AttachBleeder(BleedPoint point, size_t tool);
+	void DetachBleeder(size_t tool);
+	std::optional<std::pair<int, BleedPoint>> FindBleeder(size_t tool) const;
+	// One stroke of the active car's brake or clutch pedal: each line of that circuit with a bleeder on its nipple has fluid
+	// and air pushed out of it (logged: what's seen in each bleeder's tube). False if no nipple on it is open.
+	bool PumpCarPedal(FluidCircuit circuit);
+	// Developer: air right through the active car's brake and clutch lines, as if they'd never been bled.
+	void DevAirInCarLines();
 	// Runs the engine with the radiator cap off till the thermostat opens, to let the air out.
 	bool BurpCarCoolant();
 	void SetCarTune(const CarTune& tune);
@@ -510,6 +547,10 @@ public:
 	// Why turning the key would do nothing at all (no battery, a lead off it, no starter or nothing feeding it), if
 	// it would: the starter doesn't so much as click.
 	std::optional<std::string> CarStarterDead() const;
+	// Why the active car's electrics have no power (the battery, the main harness or the fuse box not on, or the harness's lead or
+	// the ground strap not on the battery), or nothing: then its lights, gauges and the rest come on.
+	std::optional<std::string> CarPowerProblem() const;
+	bool CarHasPower() const { return !CarPowerProblem(); }
 	// The car's keys (tools of HandToolKind::CAR_KEY), each cut for one ignition switch (a part's id), which comes with it.
 	// The ignition switch a key is cut for, if any; and whether it's the one in the car's dash.
 	std::optional<uint32_t> KeyCutFor(size_t keyToolId) const;
@@ -571,6 +612,10 @@ private:
 	void SetUpStartingCar();
 	// One more of it, as a new car (made the active one), its LV-16 on that engine stand's number. The car's number.
 	int BuildStartingCar(int engine);
+	// A car's set of caps made (a copy of each cap tool) and put on its fillers.
+	void IssueCarCaps(CarBuild& build);
+	// One full container of a fluid (a spent copy of its tool filled again, or a new copy): false if there's no room.
+	bool AddFluidContainer(FluidProduct product, double litres);
 	// The faults the engine starts with, added one at a time till the dyno makes it about health (0 to 100) healthy.
 	void WearStartingEngine(int engine, double health);
 	// And the car's: perished tires, a split engine mount, worn-through front pads and oil that's overdue.
@@ -612,5 +657,6 @@ private:
 	std::map<size_t, uint32_t>					m_keyCuts = {};		// a car key's tool id: the ignition switch's part id it turns
 	// A new ignition switch's key: another copy of the car's key, cut for it. False if the shop has all the keys it can.
 	std::optional<size_t> CutKeyFor(const Part& ignitionSwitch);	// (the key's tool id)
-	std::array<double, FLUID_PRODUCTS>			m_fluidStock = {};	// litres of each
+	std::map<size_t, double>					m_containerLitres = {};	// each fluid container (tool id): litres left in it
+	std::array<double, FLUID_PRODUCTS>			m_legacyFluidStock = {};	// litres of each in a save from before containers (UpgradeCarKit)
 };

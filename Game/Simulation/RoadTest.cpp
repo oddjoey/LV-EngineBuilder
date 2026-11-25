@@ -173,6 +173,21 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 		return std::nullopt;
 	};
 	auto fluid = [&](FluidCircuit circuit) -> const FluidLevel& { return car.GetFluid(circuit); };
+	// A filler left open: what that does on the road.
+	if (!forDriving)
+		for (int c = 0; c < FLUID_CIRCUITS; c++)
+			if (!car.CapOn(static_cast<FluidCircuit>(c)))
+				switch (static_cast<FluidCircuit>(c))
+				{
+					case FluidCircuit::ENGINE_OIL:	report(FindingSeverity::WARNING, "The oil filler cap was left off: oil spattered over the engine bay and smoked on the exhaust."); break;
+					case FluidCircuit::COOLANT:		report(FindingSeverity::WARNING, "The radiator cap was left off: it boiled over once it was warm."); break;
+					case FluidCircuit::BRAKES:		report(FindingSeverity::WARNING, "The brake reservoir's cap was left off: the fluid draws water out of the air, and slopped out braking."); break;
+					case FluidCircuit::CLUTCH:		report(FindingSeverity::WARNING, "The clutch reservoir's cap was left off: the fluid slopped out."); break;
+					case FluidCircuit::TRANSMISSION:	report(FindingSeverity::WARNING, "The gearbox's fill plug was left out: gear oil sprayed out of the hole."); break;
+					case FluidCircuit::DIFFERENTIAL:	report(FindingSeverity::WARNING, "The differential's fill plug was left out: oil sprayed over the axle."); break;
+					case FluidCircuit::FUEL:		report(FindingSeverity::WARNING, "The fuel cap was left off: it stank of petrol and slopped out round the corners."); break;
+					default: break;
+				}
 	auto level = [&](FluidCircuit circuit) { return fluid(circuit).Total(); };
 
 	// Nuts and bolts that matter on the road: finger tight is a failure, and well under spec a warning.
@@ -344,6 +359,11 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 			report(FindingSeverity::FAILURE, "The clutch pedal goes to the floor: the pipe from its master cylinder isn't on the slave cylinder.");
 			canDrive = false;
 		}
+		else if (!forDriving && car.BleederOpen(FluidCircuit::CLUTCH))
+		{
+			report(FindingSeverity::FAILURE, "The clutch pedal goes to the floor: there's a bleeder on the slave cylinder and its nipple is open.");
+			canDrive = false;
+		}
 		else if (!forDriving && (fluid(FluidCircuit::CLUTCH).Total() < spec.Fluid(FluidCircuit::CLUTCH).level.min * 0.5
 			|| fluid(FluidCircuit::CLUTCH).air[static_cast<size_t>(BleedPoint::CLUTCH)] > 0.3))
 		{
@@ -353,7 +373,7 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 		else
 		{
 			// Driven by hand, a dead clutch pedal doesn't stop it: the clutch just never frees.
-			if (!car.IsPlugged(CarPlug::CLUTCH_PIPE) || fluid(FluidCircuit::CLUTCH).Total() < spec.Fluid(FluidCircuit::CLUTCH).level.min * 0.5
+			if (!car.IsPlugged(CarPlug::CLUTCH_PIPE) || fluid(FluidCircuit::CLUTCH).Total() < spec.Fluid(FluidCircuit::CLUTCH).level.min * 0.5 || car.BleederOpen(FluidCircuit::CLUTCH)
 				|| fluid(FluidCircuit::CLUTCH).air[static_cast<size_t>(BleedPoint::CLUTCH)] > 0.3)
 				result.clutchWorks = false;
 			// What can't wait: a wheel or the axle coming off.
@@ -419,9 +439,11 @@ RoadTestResult RoadTest::Run(const CarAssembly& car, const DynoResult& engine, b
 			report(FindingSeverity::FAILURE, std::format("No brakes: the {} isn't on. It wasn't taken out.", *missing));
 		else if (auto open = !forDriving ? car.OpenUnion(FluidCircuit::BRAKES) : std::nullopt)
 			report(FindingSeverity::FAILURE, std::format("No brakes: the brake pipe isn't on the {}. It wasn't taken out.", CarPlugName(*open)));
+		else if (!forDriving && car.BleederOpen(FluidCircuit::BRAKES))
+			report(FindingSeverity::FAILURE, "The brake pedal goes to the floor: a bleed nipple is open with the bleeder on it. It wasn't taken out.");
 		else if (!forDriving && (brakeFluid.Total() < brakeSpec.level.min * 0.5 || air > 0.5))
 			report(FindingSeverity::FAILURE, "The brake pedal goes straight to the floor: the brakes need filling and bleeding. It wasn't taken out.");
-		else if (forDriving && (car.OpenUnion(FluidCircuit::BRAKES) || brakeFluid.Total() < brakeSpec.level.min * 0.5 || air > 0.5))
+		else if (forDriving && (car.OpenUnion(FluidCircuit::BRAKES) || brakeFluid.Total() < brakeSpec.level.min * 0.5 || air > 0.5 || car.BleederOpen(FluidCircuit::BRAKES)))
 		{
 			// Driven by hand: the pedal does nothing, but it goes (the handbrake's cable still pulls the back drums on).
 			result.stops = true;

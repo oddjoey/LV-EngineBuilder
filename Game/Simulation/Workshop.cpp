@@ -494,6 +494,9 @@ bool Workshop::OwnsTool(size_t toolId) const
 	const auto& tools = ToolCatalog::All();
 	if (index < tools.size() && tools[index].partOf >= 0)
 		return OwnsTool(ToolCatalog::IdOf(static_cast<size_t>(tools[index].partOf), copy));
+	// A fluid container that's run dry was thrown away: it's not the shop's any more, till its copy's bought full again.
+	if (index < tools.size() && tools[index].handKind == HandToolKind::FLUID_CONTAINER && ContainerLitres(toolId) <= 0.0)
+		return false;
 	return index < m_toolCounts.size() && static_cast<size_t>(m_toolCounts[index]) > copy;
 }
 
@@ -502,6 +505,14 @@ int Workshop::ToolCount(size_t toolIndex) const
 	const auto& tools = ToolCatalog::All();
 	if (toolIndex < tools.size() && tools[toolIndex].partOf >= 0)
 		return ToolCount(static_cast<size_t>(tools[toolIndex].partOf));
+	// (A fluid's containers: the ones with some in.)
+	if (toolIndex < tools.size() && tools[toolIndex].handKind == HandToolKind::FLUID_CONTAINER)
+	{
+		int full = 0;
+		for (int copy = 0; toolIndex < m_toolCounts.size() && copy < m_toolCounts[toolIndex]; copy++)
+			full += ContainerLitres(ToolCatalog::IdOf(toolIndex, static_cast<size_t>(copy))) > 0.0 ? 1 : 0;
+		return full;
+	}
 	return toolIndex < m_toolCounts.size() ? m_toolCounts[toolIndex] : 0;
 }
 
@@ -1140,6 +1151,8 @@ std::optional<std::string> Workshop::CartLineProblem(const CartLine& line, const
 		case CartLine::Kind::FLUID:
 			if (line.index >= static_cast<size_t>(FLUID_PRODUCTS) || line.quantity <= 0)
 				return "Not sold like that.";
+			if (line.quantity > FluidRoom(static_cast<FluidProduct>(line.index)))
+				return std::format("There's only room for {} more of those: use up what's on the shelf first.", FluidRoom(static_cast<FluidProduct>(line.index)));
 			break;
 		case CartLine::Kind::ENGINE_STAND:
 		{
@@ -1194,7 +1207,9 @@ bool Workshop::Checkout(const std::vector<CartLine>& cart)
 				auto product = static_cast<FluidProduct>(line.index);
 				if (Spend(LineTotal(line), FluidProductName(product)))
 				{
-					m_fluidStock[line.index] += FluidUnitLitres(product) * line.quantity;
+					// Each one comes in the post, full (see SyncItems: a new tool is delivered).
+					for (int one = 0; one < line.quantity; one++)
+						AddFluidContainer(product, FluidUnitLitres(product));
 					Log(std::format("Bought {} x {:g} l of {}.", line.quantity, FluidUnitLitres(product), FluidProductName(product)));
 				}
 				break;

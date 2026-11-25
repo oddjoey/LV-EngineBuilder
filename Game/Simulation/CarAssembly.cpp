@@ -199,8 +199,8 @@ namespace
 
 	// Litres out of the nipple with each go (half that for the clutch's small bore): a dozen goes empties the
 	// brake reservoir down to where it starts drawing air, so it wants topping up partway round.
-	constexpr double BLEED_FLUID = 0.02;
-	constexpr double BLEED_KEEPS = 0.4;		// of the air in the line left after each go
+	constexpr double BLEED_FLUID = 0.006;	// litres out of the nipple each stroke of the pedal (the clutch's half that)
+	constexpr double BLEED_KEEPS = 0.65;	// of the air in the line left after each stroke: about eight to run clear
 }
 
 const char* CornerName(Corner corner)
@@ -593,6 +593,13 @@ pPart CarAssembly::Remove(CarSlot slot, int index)
 		if (PlugHarness(plug) == slot)
 			m_wireClips[p].clear();
 	}
+	// A bleeder on its nipple comes off with it.
+	for (int p = 0; p < BLEED_POINTS; p++)
+	{
+		int nippleIndex = 0;
+		if (BleedNipplePart(static_cast<BleedPoint>(p), nippleIndex) == slot && nippleIndex == index)
+			m_bleeders[p].reset();
+	}
 	// A seat that's out has its back up.
 	if (slot == CarSlot::SEAT && index >= 0 && index < 2)
 		m_seatSettings[index].folded = false;
@@ -960,4 +967,24 @@ void CarAssembly::RemoveWireClip(CarPlug plug, int index)
 const CarTune& CarAssembly::GetTune() const
 {
 	return m_tune;
+}
+
+CarSlot CarAssembly::BleedNipplePart(BleedPoint point, int& index)
+{
+	switch (point)
+	{
+		case BleedPoint::REAR_RIGHT:	index = 1; return CarSlot::WHEEL_CYLINDER;
+		case BleedPoint::REAR_LEFT:		index = 0; return CarSlot::WHEEL_CYLINDER;
+		case BleedPoint::FRONT_RIGHT:	index = 1; return CarSlot::BRAKE_CALIPER;
+		case BleedPoint::FRONT_LEFT:	index = 0; return CarSlot::BRAKE_CALIPER;
+		default:						index = 0; return CarSlot::CLUTCH_SLAVE_CYLINDER;
+	}
+}
+
+bool CarAssembly::BleederOpen(FluidCircuit circuit) const
+{
+	for (int p = 0; p < BLEED_POINTS; p++)
+		if (m_bleeders[p] && (static_cast<BleedPoint>(p) == BleedPoint::CLUTCH) == (circuit == FluidCircuit::CLUTCH))
+			return circuit == FluidCircuit::CLUTCH || circuit == FluidCircuit::BRAKES;
+	return false;
 }

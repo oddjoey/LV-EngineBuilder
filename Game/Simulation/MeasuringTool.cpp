@@ -4,7 +4,10 @@
 #include <cctype>
 #include <cmath>
 #include <format>
+#include <initializer_list>
+#include <tuple>
 
+#include "CarFluids.h"
 #include "Random.h"
 #include "Skills.h"
 
@@ -379,10 +382,12 @@ namespace ToolCatalog
 				"the left button on the piston to squeeze its ring into its groove and tap it home, the rod onto the crank pin.", HandToolKind::RING_COMPRESSOR, 25.0);
 
 			// The project car's tools. (Last again, for the same reason.)
-			hand("Fluid Funnel", "A funnel and a jug. At a filler on the car, hold the left button to pour in the fluid picked (R picks another "
-				"from what's in stock), the right button to drain the circuit into the pan.", HandToolKind::FUNNEL, 8.0);
+			hand("Fluid Funnel", "A funnel and a drain-plug spanner. Under the car, hold the right button at a drain plug (the radiator's, the "
+				"gearbox's, the diff's, the fuel tank's, or the oil pan's with its plug taken out) or a brake or clutch bleed nipple to let it "
+				"out. Set the drain pan down under it first, or it goes all over the floor.", HandToolKind::FUNNEL, 8.0);
 			hand("Brake Bleeder Kit", "A clear hose and a catch bottle for a bleed nipple. Click on a caliper, wheel cylinder or the clutch slave "
-				"cylinder: someone pumps the pedal, the nipple's cracked, and you watch the bubbles. Keep the reservoir topped up.",
+				"cylinder to put it on and crack the nipple open, then pump that pedal from the driver's seat until the tube runs clear. Take it "
+				"off to close the nipple. Keep the reservoir topped up.",
 				HandToolKind::BRAKE_BLEEDER, 18.0);
 			hand("Strut Spring Compressor", "Two hooked screws that squeeze a coil spring short. Aimed at a loose front strut, hold the left button to "
 				"compress a spring onto it (one lying nearby), the right to take its spring off. Never undo a strut's top nut without it.",
@@ -429,13 +434,45 @@ namespace ToolCatalog
 				"the steering column to put it in: the car won't start without it. [RMB] on the barrel, switched off, takes it out again.",
 				HandToolKind::CAR_KEY, 0.0);
 			list.back().notSold = true;
+			// The fluids, each in what it's sold in: bought at the parts computer and delivered, held and poured in at its filler with
+			// the cap off; gone once it's empty. And the fillers' own caps and plugs, every car's set made with it (Workshop::IssueCarCaps).
+			// (Last, so saved tool lists keep their order.)
+			for (int product = 0; product < FLUID_PRODUCTS; product++)
+			{
+				const bool fuel = product == static_cast<int>(FluidProduct::PETROL_87) || product == static_cast<int>(FluidProduct::PETROL_91)
+					|| product == static_cast<int>(FluidProduct::DIESEL);
+				hand(FluidProductName(static_cast<FluidProduct>(product)), fuel ? "A jerry can of it. Take the fuel cap off (behind the flap), hold the "
+					"can and aim at the filler, and hold the left button to pour. Gone once it's empty." : "A jug of it. Take the cap off its filler "
+					"(or the fill plug out), hold the jug and aim at the filler, and hold the left button to pour. Gone once it's empty.",
+					HandToolKind::FLUID_CONTAINER, 0.0);
+				list.back().notSold = true;
+				list.back().fluidProduct = product;
+			}
+			for (auto [circuit, name, where] : std::initializer_list<std::tuple<FluidCircuit, const char*, const char*>>{
+				{ FluidCircuit::ENGINE_OIL, "Oil Filler Cap", "the oil filler on the valve cover" },
+				{ FluidCircuit::COOLANT, "Radiator Cap", "the radiator's filler neck" },
+				{ FluidCircuit::BRAKES, "Brake Reservoir Cap", "the brake master cylinder's reservoir" },
+				{ FluidCircuit::CLUTCH, "Clutch Reservoir Cap", "the clutch master cylinder's reservoir" },
+				{ FluidCircuit::TRANSMISSION, "Gearbox Fill Plug", "the gearbox's fill hole, on its side" },
+				{ FluidCircuit::DIFFERENTIAL, "Differential Fill Plug", "the differential's fill hole" },
+				{ FluidCircuit::FUEL, "Fuel Cap", "the fuel filler, behind its flap" } })
+			{
+				hand(name, std::format("The cap for {}. E on it takes it off the car, into your hands, so it can be filled; hold it and click the "
+					"filler to put it back on. Left off, what's in there spills, boils over or picks up dirt.", where).c_str(), HandToolKind::FILLER_CAP, 0.0);
+				list.back().notSold = true;
+				list.back().capCircuit = static_cast<int>(circuit);
+			}
+			// What catches a drain: every shop has one from the start (an older shop gets one too: Workshop::UpgradeCarKit). (Last.)
+			hand("Drain Pan", "A wide, shallow pan. Set it down on the floor under a drain plug (or a bleed nipple) before it's undone: "
+				"what comes out goes in it. Without it, it's all over the floor, and has to be wiped up with paint thinner and a rag.",
+				HandToolKind::DRAIN_PAN, 15.0);
 
 			// A new shop starts with nothing but combination wrenches for every nut and bolt, done up by feel,
 			// and the service manual (hung on the tool board with the rest). Everything else is bought, the pin press and
 			// ring compressor included (the starting money covers those).
 			for (auto& tool : list)
 				for (const char* starter : { "Combination Wrench Set 8-19 mm", "Combination Wrench Set 21-24 mm", "LV-16 Factory Service Manual",
-					"Wire Spool & Crimpers", "Hard Line Spool & Flaring Tool", "Fuel Hose Spool & Clamps", "LE86 Key" })
+					"Wire Spool & Crimpers", "Hard Line Spool & Flaring Tool", "Fuel Hose Spool & Clamps", "LE86 Key", "Drain Pan" })
 					if (tool.name == starter)
 						tool.ownedAtStart = true;
 

@@ -1,5 +1,7 @@
 #include "ShopAssets.h"
 
+#include "../Simulation/CarFluids.h"
+
 #include <algorithm>
 #include <future>
 #include <array>
@@ -845,6 +847,69 @@ void ShopAssets::LoadTools()
 				Box(builder, { 0.047f, 0.0015f, 0.f }, { 0.006f, 0.003f, 0.005f }, steel);
 				Tube(builder, At({ -0.019f, 0.0015f, 0.f }), 0.009f, 0.0072f, 0.003f, steel, 0.f, glm::two_pi<float>(), 16);
 				Box(builder, { -0.044f, 0.004f, 0.f }, { 0.03f, 0.008f, 0.019f }, fob);
+				break;
+			}
+			case ToolShape::FLUID_CONTAINER:
+			{
+				// What the fluid's sold in, standing (the store's models): a jug with a handle and cap, or a jerry can for fuel. Built
+				// light, so it's tinted like what's inside (LayoutItems).
+				const glm::vec3 body = { 0.95f, 0.95f, 0.95f };
+				const auto product = static_cast<FluidProduct>(tool.fluidProduct);
+				if (product == FluidProduct::PETROL_87 || product == FluidProduct::PETROL_91 || product == FluidProduct::DIESEL)
+				{
+					Box(builder, { 0.f, 0.2f, 0.f }, { 0.34f, 0.4f, 0.16f }, body);
+					for (float x : { -0.07f, 0.f, 0.07f })
+						Box(builder, { x, 0.44f, 0.f }, { 0.025f, 0.08f, 0.05f }, body);
+					Box(builder, { 0.f, 0.48f, 0.f }, { 0.19f, 0.02f, 0.05f }, body);
+					Cylinder(builder, glm::rotate(At({ 0.15f, 0.43f, 0.f }), -0.6f, glm::vec3(0.f, 0.f, 1.f)), 0.022f, 0.08f, { 0.3f, 0.3f, 0.32f }, 12);
+				}
+				else
+				{
+					Box(builder, { 0.f, 0.11f, 0.f }, { 0.16f, 0.22f, 0.09f }, body);
+					Box(builder, { -0.03f, 0.235f, 0.f }, { 0.08f, 0.03f, 0.07f }, body);
+					Cylinder(builder, At({ -0.03f, 0.26f, 0.f }), 0.018f, 0.03f, { 0.2f, 0.2f, 0.22f }, 12);
+					Tube(builder, AlongZ({ 0.045f, 0.2f, 0.f }), 0.045f, 0.03f, 0.03f, body, 12);
+					Box(builder, { 0.f, 0.1f, 0.0455f }, { 0.12f, 0.1f, 0.002f }, { 0.25f, 0.25f, 0.28f });
+				}
+				break;
+			}
+			case ToolShape::DRAIN_PAN:
+			{
+				// A wide, shallow round pan in black plastic, standing on its base: its floor, its sloping wall as a ring of
+				// narrowing tubes, a rolled rim and a pouring lip.
+				const glm::vec3 plastic = { 0.08f, 0.08f, 0.09f };
+				Cylinder(builder, At({ 0.f, 0.004f, 0.f }), 0.17f, 0.008f, plastic, 28);
+				for (int step = 0; step < 4; step++)
+				{
+					const float r = 0.17f + step * 0.015f;
+					Tube(builder, At({ 0.f, 0.012f + step * 0.015f, 0.f }), r + 0.008f, r, 0.016f, plastic, 0.f, glm::two_pi<float>(), 28);
+				}
+				Tube(builder, At({ 0.f, 0.075f, 0.f }), 0.24f, 0.22f, 0.008f, plastic, 0.f, glm::two_pi<float>(), 28);
+				Box(builder, { 0.25f, 0.072f, 0.f }, { 0.04f, 0.006f, 0.05f }, plastic);
+				break;
+			}
+			case ToolShape::FILLER_CAP:
+			{
+				// Standing on its seat: a ribbed cap (the radiator's with its pressure lugs), or a fill plug's hex head.
+				const auto circuit = static_cast<FluidCircuit>(tool.capCircuit);
+				if (circuit == FluidCircuit::TRANSMISSION || circuit == FluidCircuit::DIFFERENTIAL)
+				{
+					Cylinder(builder, At({ 0.f, 0.006f, 0.f }), 0.012f, 0.012f, steel, 6);
+					Cylinder(builder, At({ 0.f, -0.006f, 0.f }), 0.009f, 0.012f, steel, 12);
+				}
+				else
+				{
+					const float radius = circuit == FluidCircuit::FUEL ? 0.03f : circuit == FluidCircuit::COOLANT ? 0.026f : circuit == FluidCircuit::ENGINE_OIL ? 0.024f : 0.02f;
+					const glm::vec3 colour = circuit == FluidCircuit::COOLANT ? steel : circuit == FluidCircuit::ENGINE_OIL ? glm::vec3(0.75f, 0.6f, 0.15f) : dark;
+					Cylinder(builder, At({ 0.f, 0.008f, 0.f }), radius, 0.016f, colour, 24);
+					for (int rib = 0; rib < 8; rib++)
+					{
+						const float angle = rib * glm::pi<float>() / 4.f;
+						Box(builder, { radius * std::cos(angle), 0.008f, radius * std::sin(angle) }, { 0.004f, 0.016f, 0.004f }, colour);
+					}
+					if (circuit == FluidCircuit::COOLANT)
+						Box(builder, { 0.f, 0.019f, 0.f }, { radius * 2.4f, 0.004f, 0.008f }, steel);
+				}
 				break;
 			}
 		}
@@ -2688,7 +2753,8 @@ void ShopAssets::LoadAncillaries()
 				Box(cover, { BoreX(cylinder), VALVE_COVER_TOP + 0.003f, side * 0.06f }, { 0.006f, 0.006f, 0.06f }, PAINT_RED);
 		// The baffle under the top, keeping the oil thrown off the cam out of the breather: a plate along one side.
 		Box(cover, { 0.f, VALVE_COVER_TOP - 0.015f, -0.07f }, { BLOCK_LENGTH - 0.04f, 0.002f, 0.05f }, { 0.6f, 0.6f, 0.62f });
-		Cylinder(cover, At({ 0.12f, 0.059f, 0.055f }), 0.018f, 0.008f, BLACK, 20);
+		// The oil filler's neck (its cap is a thing of its own: ShopWorld::FillerSeat puts it on here).
+		Cylinder(cover, At({ 0.12f, 0.057f, 0.055f }), 0.015f, 0.004f, BLACK, 20);
 		add(PartType::VALVE_COVER, cover);
 	}
 	{

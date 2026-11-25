@@ -940,9 +940,7 @@ void ShopAssets::LoadCarParts()
 		for (float y : { 0.072f, 0.096f })
 			Box(master, { 0.003f, y, 0.0365f }, { 0.07f, 0.0025f, 0.001f }, { 0.15f, 0.15f, 0.16f });
 		Cylinder(master, At({ 0.03f, 0.117f, 0.f }), 0.017f, 0.01f, BOTTLE, 18);
-		Cylinder(master, At({ 0.03f, 0.127f, 0.f }), 0.023f, 0.013f, TRIM_BLACK, 12);
-		Box(master, { 0.03f, 0.138f, 0.f }, { 0.016f, 0.01f, 0.012f }, TRIM_BLACK);		// the level switch's plug
-		Box(master, { 0.03f, 0.145f, 0.f }, { 0.012f, 0.004f, 0.009f }, OFF_WHITE);
+		// (Its cap is a thing of its own: ShopWorld::FillerSeat puts it on the neck.)
 		// The two outlets, front and rear circuits, out of the inboard side: the brake pipes' unions screw into them.
 		for (float x : { -0.035f, 0.035f })
 		{
@@ -1159,9 +1157,7 @@ void ShopAssets::LoadCarParts()
 		for (float y : { 0.04f, 0.066f })
 			Box(master, { 0.f, y, -0.0242f }, { 0.016f, 0.003f, 0.001f }, { 0.15f, 0.15f, 0.16f });
 		Cylinder(master, At({ 0.f, 0.082f, 0.f }), 0.018f, 0.008f, BOTTLE, 18);			// the neck
-		Cylinder(master, At({ 0.f, 0.091f, 0.f }), 0.021f, 0.011f, TRIM_BLACK, 12);		// the cap, its edge fluted
-		Box(master, { 0.f, 0.099f, 0.f }, { 0.03f, 0.006f, 0.005f }, TRIM_BLACK);			// and the grip across its top
-		Box(master, { 0.f, 0.099f, 0.f }, { 0.005f, 0.006f, 0.03f }, TRIM_BLACK);
+		// (Its cap is a thing of its own: ShopWorld::FillerSeat puts it on the neck.)
 		// The outlet: a union out of the front end's underside, the pipe to the slave cylinder off it.
 		Cylinder(master, At({ 0.05f, -0.021f, 0.f }), 0.008f, 0.01f, ALLOY, 14);
 		Cylinder(master, At({ 0.05f, -0.029f, 0.f }), 0.0072f, 0.008f, IRON, 6);
@@ -1200,7 +1196,35 @@ void ShopAssets::LoadCarParts()
 		Cylinder(slave, bleed * At({ 0.f, 0.017f, 0.f }), 0.0042f, 0.007f, RUBBER, 10);
 		add(PartType::CLUTCH_SLAVE_CYLINDER, slave);
 	}
-	lying(PartType::DRIVESHAFT, 0.035f, CarBody::ENGINE_X - 0.19f, TRIM_BLACK);		// from the gearbox's tail to the diff's nose
+	{
+		// From the gearbox's tail to the diff's nose, along X about its middle, its axis r up: the tube, a universal joint
+		// at each end (the tube's yoke, the spider, the other yoke), the slip yoke into the gearbox at the front (+X) and
+		// the flange to the diff at the back, and a balance weight welded on the tube (so it's seen to turn).
+		MeshBuilder shaft;
+		const float r = 0.035f, length = CarBody::ENGINE_X - 0.19f, half = length * 0.5f;
+		Cylinder(shaft, AlongX({ 0.f, r, 0.f }), r, length - 0.13f, TRIM_BLACK, 16);
+		for (float end : { -1.f, 1.f })
+		{
+			const float x = end * (half - 0.05f);
+			// The tube's yoke: its two ears either side (across Z), round the spider's cross arms.
+			Cylinder(shaft, AlongX({ x - end * 0.025f, r, 0.f }), r * 0.9f, 0.02f, TRIM_BLACK, 14);
+			for (float s : { -1.f, 1.f })
+				Box(shaft, { x - end * 0.004f, r, s * 0.027f }, { 0.036f, 0.022f, 0.01f }, TRIM_BLACK);
+			// The spider: a cross, one arm up and down, the other across.
+			Box(shaft, { x, r, 0.f }, { 0.016f, 0.062f, 0.016f }, IRON);
+			Box(shaft, { x, r, 0.f }, { 0.016f, 0.016f, 0.062f }, IRON);
+			// The other yoke's ears, up and down, and what it's on: the slip yoke's sleeve into the gearbox's tail, or
+			// the flange bolted to the diff's.
+			for (float s : { -1.f, 1.f })
+				Box(shaft, { x + end * 0.004f, r + s * 0.027f, 0.f }, { 0.036f, 0.01f, 0.022f }, IRON);
+			if (end > 0.f)
+				Cylinder(shaft, AlongX({ half - 0.012f, r, 0.f }), 0.022f, 0.05f, IRON, 14);
+			else
+				Cylinder(shaft, AlongX({ -half + 0.02f, r, 0.f }), 0.045f, 0.012f, IRON, 16);
+		}
+		Box(shaft, { 0.22f, 2.f * r + 0.003f, 0.f }, { 0.03f, 0.007f, 0.026f }, IRON);
+		add(PartType::DRIVESHAFT, shaft);
+	}
 
 	// Fuel
 	{
@@ -1535,9 +1559,7 @@ void ShopAssets::LoadCarParts()
 		}
 		// The filler neck and its pressure cap, on the top tank: the cap's two ears, and the small pipe out of the neck's side.
 		Cylinder(radiator, At({ 0.12f, 0.43f, 0.f }), 0.021f, 0.022f, TANK, 16);
-		Cylinder(radiator, At({ 0.12f, 0.447f, 0.f }), 0.03f, 0.012f, { 0.62f, 0.63f, 0.65f }, 18);
-		Box(radiator, { 0.12f, 0.447f, 0.f }, { 0.074f, 0.008f, 0.014f }, { 0.62f, 0.63f, 0.65f });
-		Cylinder(radiator, At({ 0.12f, 0.455f, 0.f }), 0.012f, 0.005f, { 0.75f, 0.2f, 0.16f }, 12);
+		// (Its cap is a thing of its own: ShopWorld::FillerSeat puts it on the neck.)
 		// The overflow tank it comes with: a white bottle beside the core on the car's left, behind it, its cap, a level line, and the
 		// thin hose over to it from the filler neck.
 		const glm::vec3 BOTTLE = { 0.88f, 0.88f, 0.84f };
@@ -2364,9 +2386,10 @@ void ShopAssets::BuildProjectCarShell()
 		Box(car, { -0.5f, 0.224f, side * 0.4f }, { 0.3f, 0.008f, 0.42f }, CARPET);
 	}
 	// The pedals in the driver's footwell: the clutch, the brake, and the throttle long and low on the right; a rest
-	// for the left foot.
+	// for the left foot. Hung from under the dash: each arm runs up and forward to its pivot, so its pad's face looks back
+	// and up at the driver's foot (leaning the other way, the arms would rise toward the seat and the pads face the floor).
 	{
-		const glm::mat4 lean = glm::rotate(At({ 0.72f, 0.3f, 0.f }), 0.5f, glm::vec3(0.f, 0.f, 1.f));
+		const glm::mat4 lean = glm::rotate(At({ 0.5f, 0.3f, 0.f }), -0.5f, glm::vec3(0.f, 0.f, 1.f));
 		for (float z : { -0.5f, -0.4f })
 		{
 			TurnedBox(car, lean, { 0.f, 0.03f, z }, { 0.012f, 0.06f, 0.055f }, ALLOY);
@@ -2394,15 +2417,27 @@ void ShopAssets::BuildProjectCarShell()
 		AddModel(ShopModels::HANDBRAKE_LEVER, lever);
 	}
 	// A headlight's beam: a cone of light out along +x from its tip at the origin, a metre long and a metre across at its
-	// end (ShopWorld stretches it), drawn faint and see-through.
+	// end (ShopWorld stretches it), drawn as light in the air (ObjectShading::BEAM). In bands along it, each's colour
+	// how thick the light is there (the shader takes it from the red): building up just out of the lamp and thinning
+	// away to nothing by its end, as a real beam spreads and fades.
 	{
 		MeshBuilder beam;
-		constexpr int SIDES = 16;
-		for (int i = 0; i < SIDES; i++)
+		constexpr int SIDES = 40, BANDS = 24;
+		for (int band = 0; band < BANDS; band++)
 		{
-			float a0 = glm::two_pi<float>() * i / SIDES, a1 = glm::two_pi<float>() * (i + 1) / SIDES;
-			glm::vec3 p0 = { 1.f, std::sin(a0) * 0.5f, std::cos(a0) * 0.5f }, p1 = { 1.f, std::sin(a1) * 0.5f, std::cos(a1) * 0.5f };
-			beam.SetColor({ 1.f, 0.97f, 0.85f }).AddFlatTriangle({ 0.f, 0.f, 0.f }, p0, p1).AddFlatTriangle({ 0.f, 0.f, 0.f }, p1, p0);
+			const float x0 = static_cast<float>(band) / BANDS, x1 = static_cast<float>(band + 1) / BANDS, mid = (x0 + x1) * 0.5f;
+			const float thick = glm::smoothstep(0.f, 0.12f, mid) * (1.f - mid) * (1.f - mid);
+			beam.SetColor(glm::vec3(thick));
+			for (int i = 0; i < SIDES; i++)
+			{
+				const float a0 = glm::two_pi<float>() * i / SIDES, a1 = glm::two_pi<float>() * (i + 1) / SIDES;
+				auto ring = [](float x, float a) { return glm::vec3(x, std::sin(a) * 0.5f * x, std::cos(a) * 0.5f * x); };
+				const glm::vec3 p00 = ring(x0, a0), p01 = ring(x0, a1), p10 = ring(x1, a0), p11 = ring(x1, a1);
+				// (Both faces of it, the shader fading each by how square-on it's seen. The first band's a fan from the tip.)
+				beam.AddFlatTriangle(p00, p10, p11).AddFlatTriangle(p00, p11, p10);
+				if (band > 0)
+					beam.AddFlatTriangle(p00, p11, p01).AddFlatTriangle(p00, p01, p11);
+			}
 		}
 		AddModel(ShopModels::HEADLIGHT_BEAM, beam, true);
 	}

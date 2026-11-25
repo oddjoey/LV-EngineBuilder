@@ -1902,6 +1902,7 @@ void WorkshopUI::DrawStoreTab(Workshop& workshop)
 		case StoreCategory::FURNITURE:	DrawFurnitureStore(workshop); break;
 		case StoreCategory::PAINT:		DrawToolStore(workshop, true); break;
 		case StoreCategory::CAR:		DrawCarStore(workshop); break;
+		case StoreCategory::FLUIDS:		DrawFluidStore(workshop); break;
 		case StoreCategory::SKILLS:		RankUI::Draw(workshop); break;
 	}
 }
@@ -1924,7 +1925,8 @@ namespace
 		{ StoreCategory::MACHINES, "Machine Shop", "machine-shop", "Machine Shop", "Machines to bring parts back into spec, the dyno and the hoist." },
 		{ StoreCategory::FURNITURE, "Shop Fittings", "shop-fittings", "Shop Fittings", "Benches, shelving, engine stands and the rest of a working shop." },
 		{ StoreCategory::PAINT, "Paint", "paint", "Paint", "Markers, spray cans and thinner, for the parts and the walls." },
-		{ StoreCategory::CAR, "LE86 Parts", "le86", "LE86 Parts", "Every part for the LE86, and the fluids to fill it." },
+		{ StoreCategory::CAR, "LE86 Parts", "le86", "LE86 Parts", "Every part for the LE86, from the body shell to the wiring." },
+		{ StoreCategory::FLUIDS, "Fluids", "fluids", "Fluids", "Oils, coolant, brake fluid, gear oil and fuel, by the jug or can." },
 		{ StoreCategory::SKILLS, "Rank & Skills", "account/rank", "Rank & Skills", "How your shop stands, and the perks its reputation has earned." },
 	};
 	constexpr const char* STORE_NAME = "MonkeyKobo";
@@ -2705,15 +2707,18 @@ int WorkshopUI::StoreMatches(StoreCategory category, const Workshop& workshop) c
 			break;
 		}
 		case StoreCategory::CAR:
-			// As DrawCarStore lists them: the car's parts by system, then the fluids.
+			// As DrawCarStore lists them: the car's parts by system.
 			for (auto type : PartCatalog::All())
 			{
 				const auto& info = PartCatalog::Get(type);
 				if (IsCarPart(type) && info.listed && type != PartType::BODY_SHELL && info.system != PartSystem::FASTENERS)
 					count += StoreShows(PartCatalog::StoreName(type), PartSystemName(info.system)) || StoreShows(PartTypeName(type)) ? 1 : 0;
 			}
+			break;
+		case StoreCategory::FLUIDS:
+			// As DrawFluidStore lists them, on their shelves.
 			for (int p = 0; p < FLUID_PRODUCTS; p++)
-				count += StoreShows(FluidProductName(static_cast<FluidProduct>(p)), "Fluids") ? 1 : 0;
+				count += StoreShows(FluidProductName(static_cast<FluidProduct>(p)), FluidShelf(static_cast<FluidProduct>(p))) ? 1 : 0;
 			break;
 		case StoreCategory::TOOLS:
 		case StoreCategory::PAINT:

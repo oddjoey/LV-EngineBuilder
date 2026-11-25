@@ -90,6 +90,8 @@ int Workshop::BuildStartingCar(int engine)
 	WearStartingCar();
 	for (size_t i = before; i < m_inventory.size(); i++)
 		m_inventory[i]->MarkUsed();
+	// Its fillers' caps and plugs, on.
+	IssueCarCaps(*m_car);
 	CarChanged();
 	return m_activeCar;
 }
@@ -495,6 +497,7 @@ bool Workshop::ServiceableInCar(AssemblySlot slot)
 		case AssemblySlot::CARBURETTOR:
 		case AssemblySlot::CARBURETTOR_BOLT:
 		case AssemblySlot::OIL_FILTER:
+		case AssemblySlot::DRAIN_PLUG:	// (from under the car, to drain the oil)
 			return true;
 		default:
 			return false;
@@ -519,7 +522,7 @@ std::optional<std::string> Workshop::EngineWorkProblem(int engine, AssemblySlot 
 			return std::nullopt;
 		}
 		if (!ServiceableInCar(slot))
-			return "That engine is in the car: only the top-end service parts (valve cover, plugs and leads, carburettor, oil filter) can be got at, "
+			return "That engine is in the car: only the service parts (valve cover, plugs and leads, carburettor, oil filter, oil drain plug) can be got at, "
 				"and the flywheel with the gearbox out. Lift it out with the hoist for the rest.";
 		return std::nullopt;
 	}
@@ -625,39 +628,217 @@ double Workshop::FluidUnitPrice(FluidProduct product)
 	return 0.0;
 }
 
-double Workshop::FluidStock(FluidProduct product) const
+std::optional<size_t> Workshop::ContainerToolFor(FluidProduct product)
 {
-	return product < FluidProduct::COUNT ? m_fluidStock[static_cast<size_t>(product)] : 0.0;
+	const auto& tools = ToolCatalog::All();
+	for (size_t i = 0; i < tools.size(); i++)
+		if (tools[i].handKind == HandToolKind::FLUID_CONTAINER && tools[i].fluidProduct == static_cast<int>(product))
+			return i;
+	return std::nullopt;
 }
 
-double Workshop::PourIntoCar(FluidCircuit circuit, FluidProduct product, double litres, bool quiet)
+std::optional<size_t> Workshop::CapToolFor(FluidCircuit circuit)
 {
-	if (!m_car || product >= FluidProduct::COUNT)
+	const auto& tools = ToolCatalog::All();
+	for (size_t i = 0; i < tools.size(); i++)
+		if (tools[i].handKind == HandToolKind::FILLER_CAP && tools[i].capCircuit == static_cast<int>(circuit))
+			return i;
+	return std::nullopt;
+}
+
+double Workshop::ContainerLitres(size_t container) const
+{
+	auto it = m_containerLitres.find(container);
+	return it == m_containerLitres.end() ? 0.0 : it->second;
+}
+
+double Workshop::FluidStock(FluidProduct product) const
+{
+	const auto tool = ContainerToolFor(product);
+	if (!tool)
 		return 0.0;
-	auto& stock = m_fluidStock[static_cast<size_t>(product)];
-	litres = (std::min)(litres, stock);
-	if (litres <= 0.0)
+	double litres = 0.0;
+	for (size_t copy = 0; copy < static_cast<size_t>(MAX_TOOL_COPIES); copy++)
+		if (const size_t id = ToolCatalog::IdOf(*tool, copy); OwnsTool(id))
+			litres += ContainerLitres(id);
+	return litres;
+}
+
+int Workshop::FluidRoom(FluidProduct product) const
+{
+	const auto tool = ContainerToolFor(product);
+	return tool ? MAX_TOOL_COPIES - ToolCount(*tool) : 0;
+}
+
+bool Workshop::AddFluidContainer(FluidProduct product, double litres)
+{
+	const auto tool = ContainerToolFor(product);
+	if (!tool)
+		return false;
+	if (m_toolCounts.size() <= *tool)
+		m_toolCounts.resize(ToolCatalog::All().size(), 0);
+	// A spent one's copy first (it was thrown away when it ran dry): this is that copy again, full.
+	for (size_t copy = 0; copy < static_cast<size_t>(m_toolCounts[*tool]); copy++)
+		if (const size_t id = ToolCatalog::IdOf(*tool, copy); ContainerLitres(id) <= 0.0)
+		{
+			m_containerLitres[id] = litres;
+			return true;
+		}
+	if (m_toolCounts[*tool] >= MAX_TOOL_COPIES)
+		return false;
+	m_containerLitres[ToolCatalog::IdOf(*tool, static_cast<size_t>(m_toolCounts[*tool]))] = litres;
+	m_toolCounts[*tool]++;
+	return true;
+}
+
+double Workshop::PourFromContainer(FluidCircuit circuit, size_t container, double litres, bool quiet)
+{
+	const auto& tool = ToolCatalog::Of(container);
+	if (!m_car || tool.handKind != HandToolKind::FLUID_CONTAINER || !OwnsTool(container))
+		return 0.0;
+	const auto product = static_cast<FluidProduct>(tool.fluidProduct);
+	auto& car = m_car->assembly;
+	if (car.CapOn(circuit))
 	{
 		if (!quiet)
-			Log(std::format("There's no {} in stock: buy some at the parts computer.", FluidProductName(product)));
+			Log(std::format("The {}'s cap is on: take it off first.", FluidCircuitLower(circuit)));
 		return 0.0;
 	}
-	auto& car = m_car->assembly;
-	if (auto open = car.CircuitOpen(circuit))
+	double& left = m_containerLitres[container];
+	litres = (std::min)(litres, left);
+	if (litres <= 0.0)
+		return 0.0;
+	double poured = 0.0;
+	// (Oil poured in with the pan's drain plug out goes straight through.)
+	const auto open = circuit == FluidCircuit::ENGINE_OIL && !CarOilDrainPlugIn() ? std::optional<std::string>("oil drain plug") : car.CircuitOpen(circuit);
+	if (open)
 	{
-		stock -= litres;
+		left -= litres;
 		if (!quiet)
 			Log(std::format("The {} ran straight out onto the floor: the {} isn't on.", FluidProductName(product), *open));
-		return 0.0;
 	}
-	double poured = car.Fill(circuit, product, litres);
-	stock -= poured;
-	if (!quiet && poured < litres)
-		Log(std::format("Poured {:.2f} l of {} into the {}: it's full.", poured, FluidProductName(product), FluidCircuitName(circuit)));
-	else if (!quiet)
-		Log(std::format("Poured {:.2f} l of {} into the {}.", poured, FluidProductName(product), FluidCircuitName(circuit)));
+	else
+	{
+		poured = car.Fill(circuit, product, litres);
+		left -= poured;
+		if (!quiet && poured < litres)
+			Log(std::format("Poured {:.2f} l of {} into the {}: it's full.", poured, FluidProductName(product), FluidCircuitName(circuit)));
+		else if (!quiet)
+			Log(std::format("Poured {:.2f} l of {} into the {}.", poured, FluidProductName(product), FluidCircuitName(circuit)));
+	}
+	// Run dry: the empty goes in the bin (it's gone from the shop: OwnsTool), its copy kept for the next one bought.
+	if (left <= 1e-6)
+	{
+		left = 0.0;
+		Log(std::format("The {} is empty: it goes in the bin.", FluidProductName(product)));
+	}
 	CarChanged();
 	return poured;
+}
+
+void Workshop::IssueCarCaps(CarBuild& build)
+{
+	if (m_toolCounts.size() < ToolCatalog::All().size())
+		m_toolCounts.resize(ToolCatalog::All().size(), 0);
+	for (int c = 0; c < FLUID_CIRCUITS; c++)
+	{
+		const auto circuit = static_cast<FluidCircuit>(c);
+		const auto tool = CapToolFor(circuit);
+		if (!tool || build.assembly.CapOn(circuit) || m_toolCounts[*tool] >= MAX_TOOL_COPIES)
+			continue;
+		build.assembly.SetCap(circuit, ToolCatalog::IdOf(*tool, static_cast<size_t>(m_toolCounts[*tool])));
+		m_toolCounts[*tool]++;
+	}
+	build.capsIssued = true;
+}
+
+bool Workshop::TakeCarCap(FluidCircuit circuit)
+{
+	if (!m_car || !m_car->assembly.CapOn(circuit))
+		return false;
+	m_car->assembly.SetCap(circuit, std::nullopt);
+	Log(std::format("Took the {}'s cap off.", FluidCircuitLower(circuit)));
+	CarChanged();
+	return true;
+}
+
+bool Workshop::PutCarCap(FluidCircuit circuit, size_t cap)
+{
+	const auto& tool = ToolCatalog::Of(cap);
+	if (!m_car || tool.handKind != HandToolKind::FILLER_CAP)
+		return false;
+	if (tool.capCircuit != static_cast<int>(circuit))
+	{
+		Log(std::format("The {} doesn't fit the {}'s filler.", tool.name, FluidCircuitLower(circuit)));
+		return false;
+	}
+	if (m_car->assembly.CapOn(circuit))
+	{
+		Log(std::format("The {}'s cap is on already.", FluidCircuitLower(circuit)));
+		return false;
+	}
+	TakeCapOff(cap);
+	m_car->assembly.SetCap(circuit, cap);
+	Log(std::format("Put the {} back on.", tool.name));
+	CarChanged();
+	return true;
+}
+
+void Workshop::TakeCapOff(size_t cap)
+{
+	if (auto on = FindCap(cap))
+	{
+		m_cars[on->first]->assembly.SetCap(on->second, std::nullopt);
+		if (on->first == m_activeCar)
+			CarChanged();
+	}
+}
+
+std::optional<std::pair<int, FluidCircuit>> Workshop::FindCap(size_t cap) const
+{
+	for (int car = 0; car < GetCarCount(); car++)
+		for (int c = 0; c < FLUID_CIRCUITS; c++)
+			if (m_cars[car]->assembly.CapOn(static_cast<FluidCircuit>(c)) == cap)
+				return std::pair{ car, static_cast<FluidCircuit>(c) };
+	return std::nullopt;
+}
+
+void Workshop::UpgradeCarKit()
+{
+	// A drain pan, for a shop from before it had one.
+	const auto& tools = ToolCatalog::All();
+	for (size_t i = 0; i < tools.size(); i++)
+		if (tools[i].handKind == HandToolKind::DRAIN_PAN && ToolCount(i) == 0)
+		{
+			if (m_toolCounts.size() <= i)
+				m_toolCounts.resize(tools.size(), 0);
+			m_toolCounts[i] = 1;
+		}
+	for (auto& car : m_cars)
+		if (!car->capsIssued)
+			IssueCarCaps(*car);
+	// The stock from before, in full containers (and what's over, in one more part full).
+	for (int p = 0; p < FLUID_PRODUCTS; p++)
+	{
+		const auto product = static_cast<FluidProduct>(p);
+		const double unit = FluidUnitLitres(product);
+		for (double& litres = m_legacyFluidStock[p]; litres > 1e-6;)
+		{
+			const double into = (std::min)(litres, unit);
+			if (!AddFluidContainer(product, into))
+				break;
+			litres -= into;
+		}
+		// More than the containers there's room for hold: what's over goes into them, shared out, rather than being lost.
+		if (const auto tool = ContainerToolFor(product); tool && m_legacyFluidStock[p] > 1e-6 && ToolCount(*tool) > 0)
+		{
+			const double each = m_legacyFluidStock[p] / ToolCount(*tool);
+			for (size_t copy = 0; copy < static_cast<size_t>(MAX_TOOL_COPIES); copy++)
+				if (const size_t id = ToolCatalog::IdOf(*tool, copy); OwnsTool(id))
+					m_containerLitres[id] += each;
+		}
+		m_legacyFluidStock[p] = 0.0;
+	}
 }
 
 bool Workshop::OwnsToolOfKind(HandToolKind kind) const
@@ -669,46 +850,126 @@ bool Workshop::OwnsToolOfKind(HandToolKind kind) const
 	return false;
 }
 
-double Workshop::DrainCar(FluidCircuit circuit)
+bool Workshop::CarOilDrainPlugIn() const
+{
+	const int engine = GetEngineInCar();
+	return engine < 0 || GetAssembly(engine).Get(AssemblySlot::DRAIN_PLUG, 0) != nullptr;
+}
+
+double Workshop::DrainCar(FluidCircuit circuit, bool caught)
 {
 	if (!m_car)
 		return 0.0;
+	// The oil comes out of the pan's drain hole: its plug (a fastener of the engine's) undone and out first.
+	if (circuit == FluidCircuit::ENGINE_OIL && CarOilDrainPlugIn())
+	{
+		Log("The oil drain plug is in: undo it with a spanner and take it out, the pan under it.");
+		return 0.0;
+	}
 	double drained = m_car->assembly.Drain(circuit);
-	if (drained > 0.0)
-		Log(std::format("Drained {:.2f} l of {} into the drain pan.", drained, FluidCircuitName(circuit)));
+	// Where it went: in the drain pan, or (with none under it) all over the floor.
+	const std::string into = caught ? "into the drain pan" : "all over the floor (no drain pan under it): wipe it up with paint thinner and a rag";
+	if (drained <= 0.0)
+		Log(std::format("There's nothing in the {} to drain.", FluidCircuitLower(circuit)));
+	else if (circuit == FluidCircuit::ENGINE_OIL)
+		Log(std::format("{:.2f} l of oil came out of the pan's drain hole, {}. The plug goes back in (on a new washer) before it's filled.", drained, into));
+	else if (circuit == FluidCircuit::BRAKES || circuit == FluidCircuit::CLUTCH)
+		Log(std::format("Opened the nipple and let {:.2f} l of {} out, {}. Its lines are full of air now.", drained, FluidCircuitLower(circuit), into));
+	else
+		Log(std::format("Undid the drain plug and let {:.2f} l of {} out, {}. Did the plug back up.", drained, FluidCircuitLower(circuit), into));
 	CarChanged();
 	return drained;
 }
 
-double Workshop::BleedCar(BleedPoint point)
+namespace
+{
+	// What's seen in the bleeder's clear tube as the pedal goes down, by how much air was in that line.
+	const char* SeenInBleedTube(double air)
+	{
+		return air > 0.6 ? "mostly air, spitting" : air > 0.2 ? "fluid with a stream of bubbles" : air > 0.03 ? "fluid with the odd bubble"
+			: "clear fluid, no bubbles";
+	}
+}
+
+bool Workshop::AttachBleeder(BleedPoint point, size_t tool)
 {
 	if (!m_car)
-		return 1.0;
+		return false;
 	auto& car = m_car->assembly;
-	auto circuit = point == BleedPoint::CLUTCH ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES;
+	int index = 0;
+	const CarSlot slot = CarAssembly::BleedNipplePart(point, index);
+	if (!car.IsFilled(slot, index))
+	{
+		Log(std::format("There's no {} on to bleed.", CarSlotName(slot)));
+		return false;
+	}
+	if (car.BleederOn(point))
+	{
+		Log(std::format("There's already a bleeder on the {} nipple.", BleedPointLower(point)));
+		return false;
+	}
+	DetachBleeder(tool);
+	car.SetBleeder(point, tool);
+	Log(std::format("Bleeder on the {} nipple and the nipple cracked open: pump the {} pedal from the driver's seat.", BleedPointLower(point),
+		point == BleedPoint::CLUTCH ? "clutch" : "brake"));
+	CarChanged();
+	return true;
+}
+
+void Workshop::DetachBleeder(size_t tool)
+{
+	auto on = FindBleeder(tool);
+	if (!on)
+		return;
+	m_cars[on->first]->assembly.SetBleeder(on->second, std::nullopt);
+	Log(std::format("Closed the {} nipple and took the bleeder off.", BleedPointLower(on->second)));
+	if (on->first == m_activeCar)
+		CarChanged();
+}
+
+std::optional<std::pair<int, BleedPoint>> Workshop::FindBleeder(size_t tool) const
+{
+	for (int car = 0; car < GetCarCount(); car++)
+		for (int p = 0; p < BLEED_POINTS; p++)
+			if (m_cars[car]->assembly.BleederOn(static_cast<BleedPoint>(p)) == tool)
+				return std::pair{ car, static_cast<BleedPoint>(p) };
+	return std::nullopt;
+}
+
+bool Workshop::PumpCarPedal(FluidCircuit circuit)
+{
+	if (!m_car || !m_car->assembly.BleederOpen(circuit))
+		return false;
+	auto& car = m_car->assembly;
 	if (auto open = car.CircuitOpen(circuit))
 	{
-		Log(std::format("Nothing to bleed: the {} isn't on.", *open));
-		return 1.0;
+		Log(std::format("The pedal does nothing: the {} isn't on.", *open));
+		return true;
 	}
 	if (car.GetFluid(circuit).Total() <= 0.0)
 	{
-		Log(std::format("Fill the {} reservoir first.", FluidCircuitName(circuit)));
-		return 1.0;
+		Log(std::format("The pedal pumps air: fill the {} reservoir first.", FluidCircuitName(circuit)));
+		return true;
 	}
-	double before = car.GetFluid(circuit).air[static_cast<size_t>(point)];
-	double air = car.Bleed(point);
-	// What's seen in the clear tube on the nipple.
-	const char* seen = before > 0.6 ? "mostly air, spitting" : before > 0.2 ? "fluid with a stream of bubbles" : before > 0.03 ? "fluid with the odd bubble"
-		: "clear fluid, no bubbles";
-	Log(std::format("Bled the {}: {}.", BleedPointName(point), seen));
+	// Each open nipple of that circuit gets its share of the stroke; what's seen in each tube is how much air was in it.
+	std::string seen;
+	for (int p = 0; p < BLEED_POINTS; p++)
+	{
+		const auto point = static_cast<BleedPoint>(p);
+		if (!car.BleederOn(point) || (point == BleedPoint::CLUTCH) != (circuit == FluidCircuit::CLUTCH))
+			continue;
+		const double before = car.GetFluid(circuit).air[static_cast<size_t>(point)];
+		car.Bleed(point);
+		seen += std::format("{}{} bleeder: {}", seen.empty() ? "" : "; ", BleedPointName(point), SeenInBleedTube(before));
+	}
+	Log(seen + ".");
 	const auto& spec = car.GetSpec().Fluid(circuit);
 	if (car.GetFluid(circuit).Total() < spec.level.min * 0.6)
 		Log("The reservoir ran dry and the master cylinder drew air: top it up and start again from the farthest wheel.");
 	else if (car.GetFluid(circuit).Total() < spec.level.min)
 		Log("The reservoir is below MIN: top it up before it runs dry.");
 	CarChanged();
-	return air;
+	return true;
 }
 
 bool Workshop::CarStarts() const
@@ -728,6 +989,11 @@ bool Workshop::BurpCarCoolant()
 	if (!CarStarts())
 	{
 		Log("It has to start and run to burp the cooling system.");
+		return false;
+	}
+	if (m_car->assembly.CapOn(FluidCircuit::COOLANT))
+	{
+		Log("Take the radiator cap off first: the air comes out of its filler neck.");
 		return false;
 	}
 	auto& car = m_car->assembly;
@@ -1032,7 +1298,7 @@ namespace
 	// the car keys is cut for: a car from before has one in its dash, used, and the shop's first key cut for it.
 	// 15: a car for each player: how many cars, and for each whose it is before the rest of it. One from before is the
 	// one car, nobody's.
-	constexpr long long CAR_TEXT_VERSION = 15;
+	constexpr long long CAR_TEXT_VERSION = 17;
 	constexpr long long FIRST_SLOT_SHIFTED_IN_14 = static_cast<long long>(CarSlot::IGNITION_SWITCH);
 	constexpr int CAR_PLUGS_BEFORE_PIPES = 11;
 	constexpr long long OLD_ENGINE_HARNESS_SLOT = static_cast<long long>(CarSlot::FUSE_BOX) - 1;	// where it was before version 10
@@ -1109,6 +1375,19 @@ std::string Workshop::CarBodyText(int carNumber) const
 		}
 		out.Num(car.GetGroundPoint()[0]).Num(car.GetGroundPoint()[1]).Num(car.GetGroundPoint()[2]);
 		out.Num(car.GetGroundNormal()[0]).Num(car.GetGroundNormal()[1]).Num(car.GetGroundNormal()[2]);
+		// The bleeders on its nipples (the tool on each, or -1).
+		for (int p = 0; p < BLEED_POINTS; p++)
+		{
+			const auto tool = car.BleederOn(static_cast<BleedPoint>(p));
+			out.Int(tool ? static_cast<long long>(*tool) : -1);
+		}
+		// The cap on each filler (or -1: off), and whether its caps were ever made.
+		for (int c = 0; c < FLUID_CIRCUITS; c++)
+		{
+			const auto cap = car.CapOn(static_cast<FluidCircuit>(c));
+			out.Int(cap ? static_cast<long long>(*cap) : -1);
+		}
+		out.Int(build->capsIssued ? 1 : 0);
 	}
 	return out.Text();
 }
@@ -1119,8 +1398,9 @@ std::string Workshop::CarSharedText() const
 	out.Int(m_carCarried.size());
 	for (const auto& [host, carried] : m_carCarried)
 		out.Int(host).Int(carried);
-	for (double litres : m_fluidStock)
-		out.Num(litres);
+	out.Int(m_containerLitres.size());
+	for (const auto& [container, litres] : m_containerLitres)
+		out.Int(container).Num(litres);
 	out.Int(m_keyCuts.size());
 	for (const auto& [key, ignition] : m_keyCuts)
 		out.Int(key).Int(ignition);
@@ -1277,6 +1557,17 @@ bool Workshop::RestoreCarState(const std::string& text)
 			CarWirePoint normal = { static_cast<float>(in.Num()), static_cast<float>(in.Num()), static_cast<float>(in.Num()) };
 			car.SetGroundNormal(normal);
 		}
+		if (version >= 16)
+			for (int p = 0; p < BLEED_POINTS && !in.Failed(); p++)
+				if (const long long tool = in.Int(); tool >= 0)
+					car.SetBleeder(static_cast<BleedPoint>(p), static_cast<size_t>(tool));
+		if (version >= 17)
+		{
+			for (int c = 0; c < FLUID_CIRCUITS && !in.Failed(); c++)
+				if (const long long cap = in.Int(); cap >= 0)
+					car.SetCap(static_cast<FluidCircuit>(c), static_cast<size_t>(cap));
+			build->capsIssued = in.Int() != 0;
+		}
 		// The fluids go back in last, as they were: installing the parts above opened every circuit.
 		car.RestoreFluids(fluids);
 	}
@@ -1289,9 +1580,22 @@ bool Workshop::RestoreCarState(const std::string& text)
 		if (FindPart(host) && FindPart(rider))
 			carried[host] = rider;
 	}
+	// The fluid containers, what's left in each; from before them, the shop's stock by the litre (put in containers by
+	// UpgradeCarKit).
+	std::map<size_t, double> containers;
 	std::array<double, FLUID_PRODUCTS> stock = {};
-	for (double& litres : stock)
-		litres = in.Num();
+	if (version >= 17)
+	{
+		size_t count = in.Count();
+		for (size_t i = 0; i < count && !in.Failed(); i++)
+		{
+			const auto container = static_cast<size_t>(in.Int());
+			containers[container] = in.Num();
+		}
+	}
+	else
+		for (double& litres : stock)
+			litres = in.Num();
 	// The keys, each with the ignition switch it's cut for (one that's gone is dropped). From before, the shop's first
 	// key is the car's.
 	std::map<size_t, uint32_t> keyCuts;
@@ -1320,7 +1624,8 @@ bool Workshop::RestoreCarState(const std::string& text)
 	m_cars.resize(builds.size());
 	SetActiveCar(m_activeCar);
 	m_carCarried = carried;
-	m_fluidStock = stock;
+	m_containerLitres = containers;
+	m_legacyFluidStock = stock;
 	m_keyCuts = keyCuts;
 	SettleCarPlugs();
 	return true;
@@ -1597,4 +1902,40 @@ uint64_t Workshop::PlacementSignature() const
 	for (const auto& [part, at] : m_headFittings)
 		mix((static_cast<uint64_t>(part) << 32) | at.head);
 	return hash;
+}
+
+void Workshop::DevAirInCarLines()
+{
+	if (!m_car)
+		return;
+	std::array<FluidLevel, FLUID_CIRCUITS> fluids;
+	for (int circuit = 0; circuit < FLUID_CIRCUITS; circuit++)
+		fluids[circuit] = m_car->assembly.GetFluid(static_cast<FluidCircuit>(circuit));
+	fluids[static_cast<size_t>(FluidCircuit::BRAKES)].air.fill(1.0);
+	fluids[static_cast<size_t>(FluidCircuit::CLUTCH)].air.fill(1.0);
+	m_car->assembly.RestoreFluids(fluids);
+	CarChanged();
+}
+
+int Workshop::DevAddFluid(FluidProduct product, int count)
+{
+	int added = 0;
+	while (added < count && AddFluidContainer(product, FluidUnitLitres(product)))
+		added++;
+	return added;
+}
+
+std::optional<std::string> Workshop::CarPowerProblem() const
+{
+	if (!m_car)
+		return "There's no car.";
+	const auto& car = m_car->assembly;
+	for (CarSlot slot : { CarSlot::BATTERY, CarSlot::MAIN_HARNESS, CarSlot::FUSE_BOX })
+		if (!car.IsFilled(slot, 0))
+			return std::format("Nothing: the {} isn't on.", car.PositionName(slot, 0));
+	if (!car.IsPlugged(CarPlug::BATTERY))
+		return "Nothing: the main harness's lead isn't on the battery.";
+	if (!car.IsPlugged(CarPlug::GROUND))
+		return "Nothing: the battery's ground strap isn't on the body.";
+	return std::nullopt;
 }

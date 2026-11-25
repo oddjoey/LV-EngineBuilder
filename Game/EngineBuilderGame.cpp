@@ -474,6 +474,8 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	}
 	m_lighting.Update(m_camera->GetPosition(), m_settings.renderDistance, m_timeOfDay, m_world.GetDoorOpenAmount(),
 		m_settings.brightness, m_world.GetLampHeads(), m_world.GetInterior(), m_world.GetCarLights());
+	// (What can be seen of the headlights' beams in the air.)
+	m_world.SetDarkness(1.f - m_lighting.GetDaylight());
 	{
 		PROFILE_SCOPE("audio");
 		m_audio.Update(deltaTime, m_player, m_world, *m_workshop, m_settings, m_timeOfDay);

@@ -63,6 +63,7 @@ void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float
 	glm::vec3 sunDirection = glm::normalize(glm::vec3(std::cos(shadowAngle), std::sin(shadowAngle), 0.6f));
 	float elevation = sunDirection.y;
 	float daylight = glm::smoothstep(-0.12f, 0.25f, elevation);
+	m_daylight = daylight;
 	float warmth = 1.f - glm::smoothstep(0.f, 0.45f, elevation);
 	float sunUp = glm::smoothstep(-0.02f, 0.08f, elevation);
 

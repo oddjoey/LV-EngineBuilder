@@ -309,6 +309,19 @@ public:
 	// Puts the car's key in its barrel (true: the one cut for its ignition switch, or another cut for it), or takes it out
 	// onto the tool board (false).
 	bool DevIgnitionKey(Workshop& workshop, bool in);
+	// Developer: the bleeder in hand put on that nipple of the active car (as clicked on it), or the first one on a nipple taken off.
+	bool DevAttachBleeder(Workshop& workshop, BleedPoint point);
+	bool DevDetachBleeder(Workshop& workshop);
+	// Developer: the active car's cap on that filler taken off into your hands (as E on it), the cap in hand put on its filler, what
+	// the container in hand pours into a circuit (as held at its filler), and each filler's cap and level.
+	bool DevTakeCap(Workshop& workshop, FluidCircuit circuit);
+	bool DevPutCap(Workshop& workshop, FluidCircuit circuit);
+	double DevPour(Workshop& workshop, FluidCircuit circuit, double litres);
+	std::string DevCapReport(const Workshop& workshop) const;
+	// Developer: that circuit drained at its (first) drain point, into the pan if one's under it, as with the drain pan held there.
+	double DevDrain(Workshop& workshop, FluidCircuit circuit);
+	// Developer: the drain pan set down on the floor right under that circuit's (first) drain point.
+	bool DevPanUnder(const Workshop& workshop, FluidCircuit circuit);
 	bool KeyInIgnition() const { return !m_rig.ignitionKey.IsNone(); }
 	void DevGear(int gear) { m_devGear = gear; if (!m_rig.drive.active) m_rig.drive.gear = std::clamp(gear, -1, 5); }
 	void DevHandbrake() { m_rig.handbrakeOn = !m_rig.handbrakeOn; }
@@ -543,6 +556,33 @@ private:
 	static bool FittedInPlace(const Workshop& workshop, const Part& part);
 	// Takes out of their boxes the parts that are fitted where they belong (and an emptied box goes).
 	void UnpackFittedParts(const Workshop& workshop);
+	// Each fluid filler's cap on it as the car says (ATTACHED, posed at the filler), or off it; and each bleeder on its nipple.
+	void UpdateCarFittings(const Workshop& workshop);
+	// Where a cap sits on a filler of the active car, in the world, and how it's turned: on the neck of the part it's on (the valve
+	// cover, the radiator, the brake and clutch master cylinders' reservoirs), as that part is; or at the fill point (the gearbox's,
+	// the diff's, the fuel's, or with that part off). Pouring aims there too.
+	struct FillerSeatAt
+	{
+		glm::vec3 at = {};
+		glm::quat turn = glm::quat(1.f, 0.f, 0.f, 0.f);
+	};
+	FillerSeatAt FillerSeat(const Workshop& workshop, FluidCircuit circuit) const;
+	// Where each circuit of the active car is drained, in the world: the oil pan's drain plug (or its hole, the plug out), the
+	// radiator's, the gearbox's, the diff's and the fuel tank's drain plugs (at the bottom of each part), and the brakes' and the
+	// clutch's bleed nipples; and what to call it.
+	struct DrainPoint
+	{
+		FluidCircuit circuit = FluidCircuit::COUNT;
+		glm::vec3 at = {};
+		std::string where;
+	};
+	std::vector<DrainPoint> CarDrainPoints(const Workshop& workshop) const;
+	// Whether a drain pan's set down on the floor under a point, to catch what comes out of it.
+	bool DrainPanUnder(const glm::vec3& at) const;
+	// A circuit of the active car let out at that point: into the drain pan under it, or (with none) onto the floor, a puddle
+	// there to be wiped up (inside the shop: outside, it soaks away). What came out.
+	double DrainInto(Workshop& workshop, FluidCircuit circuit, const glm::vec3& at);
+	void SpillOnFloor(const glm::vec3& at, FluidProduct product, double litres);
 	void SyncMachines(const Workshop& workshop);
 	// Dropped on the pile by the roll-up door.
 	// title, if given, heads the label ("Timing drive: ...").
@@ -743,6 +783,13 @@ private:
 		glm::quat rotation = glm::quat(1.f, 0.f, 0.f, 0.f);
 	};
 	CarPose PoseOnCar(CarSlot slot, int index) const;
+	// Where it'd be with the engine still: what's bolted to the engine (the gearbox and clutch, the starter and slave
+	// cylinder) is then shaken with it by PoseOnCar.
+	CarPose PoseOnCarStill(CarSlot slot, int index) const;
+	// A pose in the car's space moved as the engine's shaking moves it, by so much of it (1: bolted to the engine).
+	CarPose ShakenWithEngine(const CarPose& pose, float amount) const;
+	// The back wheels turned on by so far (radians), and the driveshaft with them, the diff's ratio faster.
+	void TurnRearWheels(float radians);
 	// What opens on the car, with the left button aimed at it: the doors, the hood, the trunk lid and the fuel filler's flap.
 	enum class CarPanel { DOOR_LEFT, DOOR_RIGHT, HOOD, TRUNK, FUEL_FLAP, COUNT };
 	struct CarPanelState
@@ -1085,6 +1132,8 @@ private:
 	};
 	// A frame of it: from the revs, the throttle and the rev limiter, and the mounts' condition.
 	void ShakeEngine(const Workshop& workshop, float deltaTime);
+	// Still moving on its mounts (running, or settling after): what's bolted to it is laid out again each frame.
+	bool EngineShaking() const { return m_rig.engineShake.roll != 0.f || m_rig.engineShake.lift != 0.f; }
 	// How much the engine's mounts let it move, against new ones done up (1): worn, split, missing or loose, more.
 	static float MountLooseness(const Workshop& workshop);
 	// The gear lever on the console, and where it is in its gate (across, the driver's left positive; along, forward
@@ -1239,6 +1288,7 @@ private:
 		// The back wheels', which the handbrake locks (they slide while the fronts roll on) and which turn by themselves
 		// with the back of the car off the ground.
 		float rearSpin = 0.f;
+		float shaftSpin = 0.f;			// the driveshaft's: the back wheels' times the final drive
 		bool handbrake = false;			// the lever's pulled up
 		bool footBrake = false;			// the foot's on the brake (the stop lamps are lit)
 		// The rev limiter: at the red line the ignition's cut for a moment, the revs drop back, and it fires again.
@@ -1319,14 +1369,20 @@ private:
 		float									handbrakeUp = 0.f;
 		bool									handbrakeOn = false;
 		EngineShake								engineShake = {};
+		float									finalDrive = 0.f;		// the fitted diff's ratio (0: none), for the driveshaft
+		// Where the exhaust comes out, in the car's space, shaken with the engine (see UpdateExhaustSmoke).
+		glm::vec3								exhaustOutlet = {};
 		pObject									gearLever = nullptr;
 		glm::vec2								leverAt = {};
 		pObject									clusterMarks = nullptr;
 		bool									keyOn = false;
+		bool									powered = false;			// its electrics have power, as of the last frame (Workshop::CarHasPower)
 		bool									keyPressing = false;		// the button went down on the key, and hasn't come up
 		float									keyPressedAt = 0.f;			// when (m_time)
 		bool									crankAuto = false;			// the developer's key: it cranks till it starts, held or not
 		bool									clutchHeld = false;			// the clutch pedal's down, this frame
+		bool									brakePedalWas = false;		// each pedal down last frame, for its strokes while bleeding
+		bool									clutchPedalWas = false;
 		ItemRef									ignitionKey = {};			// the key in its barrel (see PutKeyIn)
 		float									keyTurn = 0.f;
 		bool									ignitionFitted = true;		// an ignition switch in the dash (as of the last frame)
@@ -1584,7 +1640,6 @@ private:
 	// The car's tools: what the funnel pours into each circuit (a FluidProduct, or -1 for what the manual says), how
 	// long the button's been held on what (for the spring compressor, tire irons and draining), and the pause after
 	// each go with the bleeder or a click of the distributor.
-	std::array<int, FLUID_CIRCUITS>					m_funnelProduct = { -1, -1, -1, -1, -1, -1, -1 };
 	float											m_carHold = 0.f;
 	uint64_t										m_carHoldOn = 0;
 	float											m_carToolPause = 0.f;

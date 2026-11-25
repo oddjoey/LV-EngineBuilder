@@ -49,7 +49,10 @@ enum class HandToolKind
 	WIRE_SPOOL,			// a spool of wire and crimpers: held to run the car's harness wires to what they plug into
 	HARD_LINE_SPOOL,	// a coil of hard line and a flaring tool: held to work the brake and clutch pipes
 	FUEL_HOSE_SPOOL,	// a reel of fuel hose and its clamps: held to work the fuel hoses
-	CAR_KEY				// the car's ignition key: it has to be put in its barrel on the dash before the car starts
+	CAR_KEY,			// the car's ignition key: it has to be put in its barrel on the dash before the car starts
+	FLUID_CONTAINER,	// a jug, bottle or can of one fluid (MeasuringTool::fluidProduct): held, it's poured in at a filler with its cap off
+	FILLER_CAP,			// a filler's cap or fill plug (MeasuringTool::capCircuit): off the car to pour, and back on after
+	DRAIN_PAN			// a wide, shallow pan: set down under a drain plug, it catches what comes out (or it's all over the floor)
 };
 
 struct MeasuringTool
@@ -68,6 +71,9 @@ struct MeasuringTool
 	bool ownedAtStart = false;
 	// Not in the store: the shop has the one it starts with (the car's key).
 	bool notSold = false;
+	// A fluid container's fluid (a FluidProduct), or a filler cap's circuit (a FluidCircuit); -1 for every other tool.
+	int fluidProduct = -1;
+	int capCircuit = -1;
 	// The shop rank (see ShopRank) the store sells it from: the better tools are earned.
 	int rank = 1;
 	// A perk (a SkillKind) the shop needs before the store sells it, or -1.

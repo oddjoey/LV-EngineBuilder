@@ -367,6 +367,9 @@ void WorkshopUI::DrawCarFluids(Workshop& workshop)
 	const auto& car = workshop.GetCar()->assembly;
 	const auto& spec = car.GetSpec();
 
+	ImGui::TextDisabled("Each is filled at the car by hand: take its filler's cap off (E on it), hold a jug of the right fluid, aim at the filler "
+		"and hold the left button. Then put the cap back on. It's drained under the car, with the drain pan held at its drain plug (the oil's "
+		"plug undone and out with a spanner first) or, for the brakes and the clutch, a bleed nipple: hold the right button.");
 	if (ImGui::BeginTable("Fluids", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp))
 	{
 		ImGui::TableSetupColumn("Circuit", ImGuiTableColumnFlags_WidthStretch, 0.9f);
@@ -401,54 +404,25 @@ void WorkshopUI::DrawCarFluids(Workshop& workshop)
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip("%s", fs.check);
 			ImGui::TableNextColumn();
-			// What to pour: the manual's by default.
-			int& product = m_pourProduct[c];
-			if (product <= 0 || product > FLUID_PRODUCTS)
-				product = static_cast<int>(fs.product) + 1;
-			ImGui::SetNextItemWidth(190.f);
-			auto chosen = static_cast<FluidProduct>(product - 1);
-			if (ImGui::BeginCombo("##product", std::format("{} ({:.1f} l)", FluidProductName(chosen), workshop.FluidStock(chosen)).c_str()))
-			{
-				for (int p = 0; p < FLUID_PRODUCTS; p++)
-				{
-					auto option = static_cast<FluidProduct>(p);
-					if (ImGui::Selectable(std::format("{} ({:.1f} l in stock)", FluidProductName(option), workshop.FluidStock(option)).c_str(), product == p + 1))
-						product = p + 1;
-				}
-				ImGui::EndCombo();
-			}
-			float& amount = m_pourLitres[c];
-			if (amount <= 0.f)
-				amount = static_cast<float>((std::max)(0.05, fs.level.max - litres));
-			ImGui::SetNextItemWidth(90.f);
-			ImGui::InputFloat("l##amount", &amount, 0.05f, 0.5f, "%.2f");
-			amount = std::clamp(amount, 0.f, 60.f);
-			ImGui::SameLine();
-			if (ImGui::SmallButton("Pour"))
-			{
-				workshop.PourIntoCar(circuit, chosen, amount);
-				amount = 0.f;
-			}
-			ImGui::SameLine();
-			ImGui::BeginDisabled(litres <= 0.0);
-			if (ImGui::SmallButton("Drain"))
-				workshop.DrainCar(circuit);
-			ImGui::EndDisabled();
+			// Poured by hand at the car (a jug held, the cap off): here, whether its cap's on, and what's on the shelf for it.
+			if (car.CapOn(circuit))
+				ImGui::TextColored(DIM, "Cap on");
+			else
+				ImGui::TextColored(WARN, "Cap off");
+			ImGui::TextColored(DIM, "%.1f l of %s on hand", workshop.FluidStock(fs.product), FluidProductName(fs.product));
 			ImGui::PopID();
 		}
 		ImGui::EndTable();
 	}
 
 	ImGui::SeparatorText("Bleeding");
-	ImGui::TextDisabled("The brakes from the wheel farthest from the master cylinder in: rear right, rear left, front right, front left. Watch the "
-		"tube on the nipple, and keep the reservoir topped up: let it run dry and it draws air.");
-	for (int p = 0; p < BLEED_POINTS; p++)
-	{
-		if (p > 0)
-			ImGui::SameLine();
-		if (ImGui::Button(BleedPointName(static_cast<BleedPoint>(p))))
-			workshop.BleedCar(static_cast<BleedPoint>(p));
-	}
+	ImGui::TextDisabled("With the Brake Bleeder Kit: put it on a bleed nipple (that cracks it open), sit in the driver's seat and pump the pedal "
+		"until the tube runs clear, then take it off to close the nipple. The brakes from the wheel farthest from the master cylinder in: rear "
+		"right, rear left, front right, front left. Keep the reservoir topped up: let it run dry and it draws air.");
+	if (const auto* build = workshop.GetCar())
+		for (int p = 0; p < BLEED_POINTS; p++)
+			if (build->assembly.BleederOn(static_cast<BleedPoint>(p)))
+				ImGui::TextColored(ImVec4(1.f, 0.75f, 0.35f, 1.f), "Bleeder on the %s nipple: it's open", BleedPointLower(static_cast<BleedPoint>(p)).c_str());
 	ImGui::SeparatorText("Cooling system");
 	if (ImGui::Button("Run it with the radiator cap off"))
 		workshop.BurpCarCoolant();
@@ -875,22 +849,8 @@ namespace
 
 	ImVec4 FluidTint(FluidProduct product)
 	{
-		switch (product)
-		{
-			case FluidProduct::OIL_5W30:
-			case FluidProduct::OIL_10W30:
-			case FluidProduct::OIL_20W50:			return { 0.95f, 0.75f, 0.25f, 1.f };
-			case FluidProduct::COOLANT_50_50:		return { 0.45f, 0.9f, 0.45f, 1.f };
-			case FluidProduct::WATER:				return { 0.55f, 0.75f, 1.f, 1.f };
-			case FluidProduct::DOT3:
-			case FluidProduct::DOT4:				return { 1.f, 0.95f, 0.75f, 1.f };
-			case FluidProduct::DOT5_SILICONE:		return { 0.75f, 0.55f, 0.95f, 1.f };
-			case FluidProduct::GEAR_OIL_75W90_GL4:
-			case FluidProduct::GEAR_OIL_80W90_GL5:	return { 0.7f, 0.5f, 0.3f, 1.f };
-			case FluidProduct::ATF:					return { 0.95f, 0.35f, 0.35f, 1.f };
-			case FluidProduct::DIESEL:				return { 0.95f, 0.85f, 0.3f, 1.f };
-			default:								return { 0.9f, 0.25f, 0.2f, 1.f };	// petrol: the red can
-		}
+		const auto colour = FluidColour(product);
+		return { colour[0], colour[1], colour[2], 1.f };
 	}
 }
 
@@ -946,32 +906,8 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 					[type](ImDrawList* drawList, ImVec2 min, float size) { PartIcons::Draw(drawList, type, min, size); }))
 				pickPart(type);
 		}
-		bool anyFluid = false;
-		for (int p = 0; p < FLUID_PRODUCTS; p++)
-			anyFluid = anyFluid || StoreShows(FluidProductName(static_cast<FluidProduct>(p)), "Fluids");
-		if (!section && !anyFluid)
+		if (!section)
 			ImGui::TextDisabled("Nothing here matches \"%s\".", m_storeSearch);
-		if (anyFluid)
-		{
-			if (section)
-				ImGui::NewLine();
-			ImGui::SeparatorText("Fluids");
-		}
-		for (int p = 0; p < FLUID_PRODUCTS; p++)
-		{
-			auto product = static_cast<FluidProduct>(p);
-			if (!StoreShows(FluidProductName(product), "Fluids"))
-				continue;
-			std::string label = std::format("{} ({:g} l)", FluidProductName(product), Workshop::FluidUnitLitres(product));
-			if (StoreCard(FluidProductName(product), label.c_str(), price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor()),
-					m_carStoreKind == 2 && m_carStoreFluid == p, false, [product](ImDrawList* drawList, ImVec2 min, float size) {
-						PartIcons::DrawFluid(drawList, FluidModel(product) == std::string("Fuel Can"), ImGui::ColorConvertFloat4ToU32(FluidTint(product)), min, size); }))
-			{
-				m_carStoreKind = 2;
-				m_carStoreFluid = p;
-				m_carStoreBottles = 1;
-			}
-		}
 	}
 	ImGui::EndChild();
 
@@ -1027,39 +963,101 @@ void WorkshopUI::DrawCarStore(Workshop& workshop)
 		line.order = m_carStoreOrder;
 		AddToCartButton(workshop, line, std::format("Add to cart ({})", price(workshop.Quote(m_carStoreOrder))).c_str());
 	}
-	else
+	ImGui::EndChild();
+}
+
+void WorkshopUI::DrawFluidStore(Workshop& workshop)
+{
+	// Like the car's parts: the fluids on the left, a shelf for each use (each card its jug's icon, coloured like what's in
+	// it, and how many are on hand), and the order form for the one picked on the right, with a turning view of it.
+	auto model = [&](const std::string& name) { return m_modelLookup ? m_modelLookup(name) : 0u; };
+	auto price = [](double dollars) { return dollars < 10.0 ? std::format("${:.2f}", dollars) : std::format("${:.0f}", dollars); };
+	const auto& car = CarSpec::LE86Coupe();
+	// The first picked when nothing has been yet: what the book calls for in the engine.
+	if (m_fluidStoreProduct < 0 || m_fluidStoreProduct >= FLUID_PRODUCTS)
+		m_fluidStoreProduct = static_cast<int>(car.Fluid(FluidCircuit::ENGINE_OIL).product);
+
+	if (ImGui::BeginChild("FluidCatalogue", { ImGui::GetContentRegionAvail().x * 0.58f, 0.f }, ImGuiChildFlags_Borders))
 	{
-		auto product = static_cast<FluidProduct>(m_carStoreFluid);
-		ImGui::Text("%s", FluidProductName(product));
-		if (uint32_t index = model(FluidModel(product)))
+		const char* shelf = nullptr;
+		for (int p = 0; p < FLUID_PRODUCTS; p++)
 		{
-			float width = ImGui::GetContentRegionAvail().x;
-			ModelPreview::Draw(index, width, (std::min)(width * 0.6f, 220.f), FluidTint(product));
+			const auto product = static_cast<FluidProduct>(p);
+			// (Narrowed by the store's search bar.)
+			if (!StoreShows(FluidProductName(product), FluidShelf(product)))
+				continue;
+			if (!shelf || std::string_view(shelf) != FluidShelf(product))
+			{
+				if (shelf)
+					ImGui::NewLine();
+				ImGui::SeparatorText(FluidShelf(product));
+				shelf = FluidShelf(product);
+			}
+			// (Its name on the card, and under it the price for one: with its size, or how many are here when there are some.)
+			const int onHand = workshop.ToolCount(Workshop::ContainerToolFor(product).value_or(0));
+			const std::string cost = price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor());
+			const std::string under = onHand > 0 ? std::format("{}, {} here", cost, onHand) : std::format("{} / {:g} l", cost, Workshop::FluidUnitLitres(product));
+			if (StoreCard(FluidProductName(product), FluidProductName(product), under,
+					m_fluidStoreProduct == p, false, [product](ImDrawList* drawList, ImVec2 min, float size) {
+						PartIcons::DrawFluid(drawList, FluidModel(product) == std::string("Fuel Can"), ImGui::ColorConvertFloat4ToU32(FluidTint(product)), min, size); }))
+			{
+				m_fluidStoreProduct = p;
+				m_fluidStoreCount = 1;
+			}
 		}
-		ImGui::Text("%g l a %s, %s", Workshop::FluidUnitLitres(product), FluidModel(product) == std::string("Fuel Can") ? "can" : "bottle",
-			price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor()).c_str());
-		ImGui::TextDisabled("%.1f l in stock. What's bought is kept on the shelf till it's poured with the funnel.", workshop.FluidStock(product));
-		// What the book calls for it in, if anything.
-		std::string uses;
-		for (const auto& fluid : CarSpec::LE86Coupe().fluids)
-			if (FluidFitFor(fluid.circuit, product) == FluidFit::RIGHT)
-				uses += (uses.empty() ? "" : ", ") + std::string(FluidCircuitName(fluid.circuit));
-		ImGui::PushTextWrapPos(0.f);
-		if (!uses.empty())
-			ImGui::TextColored(GOOD, "The book calls for it in: %s.", uses.c_str());
-		else
-			ImGui::TextColored(WARN, "The book doesn't call for it anywhere in this car.");
-		ImGui::PopTextWrapPos();
-		ImGui::Separator();
-		ImGui::SetNextItemWidth(220.f);
-		ImGui::InputInt("Bottles", &m_carStoreBottles);
-		m_carStoreBottles = std::clamp(m_carStoreBottles, 1, 20);
-		CartLine line;
-		line.kind = CartLine::Kind::FLUID;
-		line.index = static_cast<size_t>(product);
-		line.quantity = m_carStoreBottles;
-		AddToCartButton(workshop, line, std::format("Add to cart ({})",
-			price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor() * m_carStoreBottles)).c_str());
+		if (!shelf)
+			ImGui::TextDisabled("Nothing here matches \"%s\".", m_storeSearch);
 	}
+	ImGui::EndChild();
+
+	ImGui::SameLine();
+	if (!ImGui::BeginChild("FluidOrder", { 0.f, 0.f }, ImGuiChildFlags_Borders))
+	{
+		ImGui::EndChild();
+		return;
+	}
+	const auto product = static_cast<FluidProduct>(m_fluidStoreProduct);
+	const bool can = FluidModel(product) == std::string("Fuel Can");
+	ImGui::Text("%s", FluidProductName(product));
+	if (uint32_t index = model(FluidModel(product)))
+	{
+		float width = ImGui::GetContentRegionAvail().x;
+		ModelPreview::Draw(index, width, (std::min)(width * 0.6f, 220.f), FluidTint(product));
+	}
+	ImGui::Text("%g l a %s, %s", Workshop::FluidUnitLitres(product), can ? "can" : "jug",
+		price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor()).c_str());
+	ImGui::PushTextWrapPos(0.f);
+	ImGui::TextDisabled("%.1f l on hand. Each one comes in the post: take its filler's cap off, hold it at the car and pour it in. "
+		"One that runs dry goes in the bin.", workshop.FluidStock(product));
+	// What the book calls for it in, if anything.
+	std::string uses;
+	for (const auto& fluid : car.fluids)
+		if (FluidFitFor(fluid.circuit, product) == FluidFit::RIGHT)
+			uses += (uses.empty() ? "" : ", ") + FluidCircuitLower(fluid.circuit);
+	if (!uses.empty())
+		ImGui::TextColored(GOOD, "The book calls for it in the %s.", uses.c_str());
+	else
+		ImGui::TextColored(WARN, "The book doesn't call for it anywhere in this car.");
+	ImGui::PopTextWrapPos();
+	ImGui::Separator();
+	// As many as there's room for: a shop keeps no more than so many of a fluid on hand.
+	const int room = workshop.FluidRoom(product);
+	if (room <= 0)
+	{
+		ImGui::TextColored(WARN, "There's no room for more: use up what's on hand first.");
+		ImGui::EndChild();
+		return;
+	}
+	ImGui::SetNextItemWidth(220.f);
+	ImGui::InputInt(can ? "Cans" : "Jugs", &m_fluidStoreCount);
+	m_fluidStoreCount = std::clamp(m_fluidStoreCount, 1, room);
+	ImGui::SameLine();
+	ImGui::TextDisabled("(room for %d)", room);
+	CartLine line;
+	line.kind = CartLine::Kind::FLUID;
+	line.index = static_cast<size_t>(product);
+	line.quantity = m_fluidStoreCount;
+	AddToCartButton(workshop, line, std::format("Add to cart ({})",
+		price(Workshop::FluidUnitPrice(product) * workshop.PartPriceFactor() * m_fluidStoreCount)).c_str());
 	ImGui::EndChild();
 }

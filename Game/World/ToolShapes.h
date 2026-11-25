@@ -56,7 +56,10 @@ enum class ToolShape
 	SCREWDRIVER,
 	VALVE_SPRING_COMPRESSOR,	// a C-clamp: a cup over the spring, a foot under the valve
 	WIRE_SPOOL,			// a reel of wire with crimpers
-	CAR_KEY				// the car's key on its fob
+	CAR_KEY,			// the car's key on its fob
+	FLUID_CONTAINER,	// a jug or a jerry can of a fluid (its model is the store's, tinted like what's in it)
+	FILLER_CAP,			// a filler's cap, or a fill plug
+	DRAIN_PAN			// a wide, shallow round pan
 };
 
 // The floor jack and jack stand (shop fittings: see FurnitureKind) as they stand on the floor: how high the jack's saddle is let right down and the
@@ -108,6 +111,9 @@ inline ToolShape ToolShapeFor(const MeasuringTool& tool)
 		case HandToolKind::FUEL_HOSE_SPOOL:
 		case HandToolKind::WIRE_SPOOL:		return ToolShape::WIRE_SPOOL;
 		case HandToolKind::CAR_KEY:			return ToolShape::CAR_KEY;
+		case HandToolKind::FLUID_CONTAINER:	return ToolShape::FLUID_CONTAINER;
+		case HandToolKind::FILLER_CAP:		return ToolShape::FILLER_CAP;
+		case HandToolKind::DRAIN_PAN:		return ToolShape::DRAIN_PAN;
 		case HandToolKind::BREAKER_BAR:		return ToolShape::BREAKER_BAR;
 		case HandToolKind::SOCKETS:			return ToolShape::SOCKET_SET;
 		case HandToolKind::WRENCHES:		return ToolShape::WRENCH_SET;
@@ -184,6 +190,9 @@ inline glm::ivec2 ToolGridSize(ToolShape shape)
 		case ToolShape::VALVE_SPRING_COMPRESSOR:	return { 2, 2 };
 		case ToolShape::WIRE_SPOOL:		return { 2, 2 };
 		case ToolShape::CAR_KEY:			return { 1, 1 };
+		case ToolShape::FLUID_CONTAINER:	return { 2, 2 };
+		case ToolShape::FILLER_CAP:		return { 1, 1 };
+		case ToolShape::DRAIN_PAN:		return { 3, 3 };
 	}
 	return { 1, 1 };
 }

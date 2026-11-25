@@ -26,9 +26,13 @@ public:
 	void Update(const glm::vec3& cameraPosition, float farPlane, float hours, float doorOpen, float brightness,
 		const std::vector<pObject>& lampHeads, const ShopInterior& interior, const std::vector<PointLight>& carLights);
 
+	// How much daylight there is, 0 (night) to 1 (day), as of the last Update.
+	float GetDaylight() const { return m_daylight; }
+
 	// "14:05"
 	static std::string ClockText(float hours);
 private:
 	pObject		m_sky = nullptr;
 	pObject		m_mountains = nullptr;
+	float		m_daylight = 1.f;
 };

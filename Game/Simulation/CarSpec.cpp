@@ -1,6 +1,7 @@
 #include "CarSpec.h"
 
 #include <algorithm>
+#include <cctype>
 
 // ---- Fluids ----
 
@@ -55,6 +56,13 @@ const char* BleedPointName(BleedPoint point)
 		case BleedPoint::COUNT:			break;
 	}
 	return "";
+}
+std::string BleedPointLower(BleedPoint point)
+{
+	std::string name = BleedPointName(point);
+	if (!name.empty())
+		name[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[0])));
+	return name;
 }
 
 FluidFit FluidFitFor(FluidCircuit circuit, FluidProduct product)
@@ -250,4 +258,51 @@ const CarSpec& CarSpec::LE86Coupe()
 		return car;
 	}();
 	return spec;
+}
+
+std::array<float, 3> FluidColour(FluidProduct product)
+{
+	switch (product)
+	{
+		case FluidProduct::OIL_5W30:
+		case FluidProduct::OIL_10W30:
+		case FluidProduct::OIL_20W50:			return { 0.95f, 0.75f, 0.25f };
+		case FluidProduct::COOLANT_50_50:		return { 0.45f, 0.9f, 0.45f };
+		case FluidProduct::WATER:				return { 0.55f, 0.75f, 1.f };
+		case FluidProduct::DOT3:
+		case FluidProduct::DOT4:				return { 1.f, 0.95f, 0.75f };
+		case FluidProduct::DOT5_SILICONE:		return { 0.75f, 0.55f, 0.95f };
+		case FluidProduct::GEAR_OIL_75W90_GL4:
+		case FluidProduct::GEAR_OIL_80W90_GL5:	return { 0.7f, 0.5f, 0.3f };
+		case FluidProduct::ATF:					return { 0.95f, 0.35f, 0.35f };
+		case FluidProduct::DIESEL:				return { 0.95f, 0.85f, 0.3f };
+		default:								return { 0.9f, 0.25f, 0.2f };	// petrol: the red can
+	}
+}
+
+std::string FluidCircuitLower(FluidCircuit circuit)
+{
+	std::string name = FluidCircuitName(circuit);
+	if (!name.empty())
+		name[0] = static_cast<char>(std::tolower(static_cast<unsigned char>(name[0])));
+	return name;
+}
+
+const char* FluidShelf(FluidProduct product)
+{
+	switch (product)
+	{
+		case FluidProduct::OIL_5W30:
+		case FluidProduct::OIL_10W30:
+		case FluidProduct::OIL_20W50:			return "Engine oil";
+		case FluidProduct::COOLANT_50_50:
+		case FluidProduct::WATER:				return "Coolant";
+		case FluidProduct::DOT3:
+		case FluidProduct::DOT4:
+		case FluidProduct::DOT5_SILICONE:		return "Brake & clutch fluid";
+		case FluidProduct::GEAR_OIL_75W90_GL4:
+		case FluidProduct::GEAR_OIL_80W90_GL5:
+		case FluidProduct::ATF:					return "Gear oil & ATF";
+		default:								return "Fuel";
+	}
 }

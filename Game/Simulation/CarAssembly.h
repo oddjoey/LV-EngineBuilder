@@ -262,9 +262,21 @@ public:
 	double Fill(FluidCircuit circuit, FluidProduct product, double litres);
 	// Drains it all out (into the drain pan); returns how much came out.
 	double Drain(FluidCircuit circuit);
-	// One go at a bleed point: the pedal pumped and the nipple cracked. Lets some air out of that line
-	// (and a little fluid), as long as the reservoir doesn't run dry. Returns the air left in that line.
+	// One stroke of the pedal with that nipple open: lets some air out of that line (and a little fluid), as long as the
+	// reservoir doesn't run dry. Returns the air left in that line.
 	double Bleed(BleedPoint point);
+	// The bleed nipple for each point, and the part it's on (its slot, and its index there).
+	static CarSlot BleedNipplePart(BleedPoint point, int& index);
+	// A bleeder on a nipple, the nipple cracked open: the Brake Bleeder Kit's tool id, or none. Pumping that circuit's pedal
+	// bleeds each line with one on (Workshop::PumpCarPedal); with a nipple open, that pedal sinks and does nothing. Taken
+	// off, the nipple's closed; the part it's on coming off takes it with it.
+	std::optional<size_t> BleederOn(BleedPoint point) const { return m_bleeders[static_cast<size_t>(point)]; }
+	void SetBleeder(BleedPoint point, std::optional<size_t> tool) { m_bleeders[static_cast<size_t>(point)] = tool; }
+	// Whether any nipple of that circuit is open (a bleeder on it).
+	bool BleederOpen(FluidCircuit circuit) const;
+	// The cap on each circuit's filler (the fill plug, for the gearbox and the diff): that cap's tool id, or none, off it to fill it.
+	std::optional<size_t> CapOn(FluidCircuit circuit) const { return m_caps[static_cast<size_t>(circuit)]; }
+	void SetCap(FluidCircuit circuit, std::optional<size_t> cap) { m_caps[static_cast<size_t>(circuit)] = cap; }
 	// Running the engine with the radiator cap off till it's warm: burps the coolant's air out.
 	void BurpCoolant(double minutes);
 	// Fluid that's been used up running it: fuel burned, oil and coolant aged.
@@ -340,4 +352,6 @@ private:
 	std::array<CarSeatSetting, 2>				m_seatSettings = {};
 	CarWirePoint								m_groundNormal = DEFAULT_GROUND_NORMAL;
 	CarWirePoint								m_groundPoint = DEFAULT_GROUND_POINT;
+	std::array<std::optional<size_t>, BLEED_POINTS>	m_bleeders = {};	// see BleederOn
+	std::array<std::optional<size_t>, FLUID_CIRCUITS>	m_caps = {};	// see CapOn
 };

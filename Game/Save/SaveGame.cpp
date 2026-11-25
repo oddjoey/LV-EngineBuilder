@@ -1596,9 +1596,13 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 	workshop.m_cars.clear();
 	workshop.SetActiveCar(0);
 	workshop.m_carCarried.clear();
-	workshop.m_fluidStock = {};
+	workshop.m_containerLitres.clear();
+	workshop.m_legacyFluidStock = {};
 	if (!carText.empty() && !workshop.RestoreCarState(carText))
 		workshop.Log("The car in the save couldn't be read.");
+	// A car from before the fillers' caps were things of their own has them made, and fluid stock from before containers comes
+	// in full ones.
+	workshop.UpgradeCarKit();
 	// Before version 32 the pins were part of the pistons: each piston gets one, pressed in if it's on an engine.
 	if (version < 32)
 	{

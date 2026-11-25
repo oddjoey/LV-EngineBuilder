@@ -27,7 +27,7 @@ struct BenchItem
 	int depth = 0;
 };
 // (SKILLS isn't a shelf of the store but the shop's own page on the computer: its rank, and the perks to spend skill points on.)
-enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, PAINT, CAR, SKILLS };
+enum class StoreCategory { PARTS, HARDWARE, TOOLS, MACHINES, FURNITURE, PAINT, CAR, FLUIDS, SKILLS };
 
 // ImGui front end for the workshop. It only ever shows the player what they've measured;
 // the true geometry is visible only with the X-ray developer toggle.
@@ -142,6 +142,8 @@ private:
 	void DrawCarTune(Workshop& workshop);
 	void DrawCarRoadTest(Workshop& workshop);
 	void DrawCarStore(Workshop& workshop);
+	// The fluids: oils, coolant, brake fluid, gear oil and fuel, each by the jug or can (WorkshopCarUI.cpp).
+	void DrawFluidStore(Workshop& workshop);
 	void DrawLog(Workshop& workshop);
 
 	std::string Size(double mm) const;
@@ -184,13 +186,11 @@ private:
 	int				m_carSystem = 0;			// the car system the build page shows (from FIRST_CAR_SYSTEM)
 	std::optional<CarTune>	m_tuneDraft = std::nullopt;	// the tune being set, till it's applied
 	int						m_carPageRequest = -1;		// a Car page to turn to next frame, or -1
-	int				m_pourProduct[FLUID_CIRCUITS] = {};
-	float				m_pourLitres[FLUID_CIRCUITS] = {};
-	// The car store's selection: the project (0), a part (1) or a fluid (2), and how it's ordered.
+	// The car store's selection (0: none yet, 1: a part) and how it's ordered; and the fluid store's, and how many of it.
 	int					m_carStoreKind = 0;
 	PartOrder			m_carStoreOrder = {};
-	int					m_carStoreFluid = 0;
-	int					m_carStoreBottles = 1;
+	int					m_fluidStoreProduct = -1;
+	int					m_fluidStoreCount = 1;
 	std::map<std::string, uint32_t>	m_carPick = {};		// the loose part picked to fit at each position
 	std::string			m_cartMessage = "";
 	size_t				m_lastLogSize = 0;

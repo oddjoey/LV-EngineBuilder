@@ -64,6 +64,15 @@ enum class BleedPoint
 };
 constexpr int BLEED_POINTS = static_cast<int>(BleedPoint::COUNT);
 const char* BleedPointName(BleedPoint point);
+// The same in the middle of a sentence: "the rear right wheel cylinder".
+std::string BleedPointLower(BleedPoint point);
+// A circuit's name in the middle of a sentence: "the engine oil".
+std::string FluidCircuitLower(FluidCircuit circuit);
+
+// The colour of what's in a fluid's jug or can (the store's, and the containers in the shop), red, green and blue.
+std::array<float, 3> FluidColour(FluidProduct product);
+// The store's shelf a fluid's on: what it's for (engine oil, coolant, brake and clutch fluid, gear oil and ATF, fuel).
+const char* FluidShelf(FluidProduct product);
 
 // One circuit's contents: what's been poured in, and how much air is trapped in it.
 struct FluidLevel

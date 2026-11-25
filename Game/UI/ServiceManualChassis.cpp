@@ -367,11 +367,16 @@ void ServiceManual::BuildChassis(bool imperial)
 	text("Every line is full of air when the brakes are built, and opening any part of the system lets air back in. Air compresses: "
 		"the pedal goes soft, or to the floor.");
 	illustrate(Figure::BRAKE_BLEED_ORDER, "The bleed order: the longest line first.");
-	step("Fill the reservoir to MAX with the funnel.");
-	step(std::format("Hold the brake bleeder kit and aim at the rear right wheel's bleed nipple. Each {} pumps the pedal and cracks the "
-		"nipple, letting some air out and some fluid with it.", NameOf(Control::PRIMARY)));
-	step("Keep going until no bubbles come. Watch the reservoir: let it fall below MIN and air is drawn in at the top, and the job starts again.");
-	step("Rear left, front right, front left, topping up between them.");
+	step("Take the reservoir's cap off and fill it to MAX from a bottle of brake fluid. The cap goes back on when it's done.");
+	step(std::format("Hold the brake bleeder kit, aim at the rear right wheel's bleed nipple and press {}: the hose goes on and the "
+		"nipple is cracked open. The kit stays there.", NameOf(Control::PRIMARY)));
+	step(std::format("Sit in the driver's seat and pump the brake pedal: press {} and let it up again for each stroke. Each stroke pushes "
+		"some air out of the open line, and some fluid with it. What the tube shows is called out.", NameOf(Control::BACK)));
+	step("Keep pumping until the tube runs clear, with no bubbles. Watch the reservoir: let it fall below MIN and air is drawn in at the top, "
+		"and the job starts again.");
+	step(std::format("Take the kit off ({} on it). That closes the nipple. With a nipple open, the pedal goes to the floor.", NameOf(Control::USE)));
+	step("Rear left, front right, front left, topping up between them. The clutch is bled the same way at its slave cylinder, pumping "
+		"the clutch pedal.");
 	note("DOT 4 does for DOT 3. DOT 5 silicone does not: it ruins the seals of a system built for DOT 3 the moment it runs.");
 
 	begin("8. Clutch and Drivetrain");
@@ -488,12 +493,22 @@ void ServiceManual::BuildChassis(bool imperial)
 		text(fluid.check);
 	}
 	heading("Filling");
-	step(std::format("Hold the fluid funnel and aim at the car: each filler is marked with how much is in it. {} (held) pours; {} picks "
-		"another fluid from what's in stock; {} (held) drains the circuit into the drain pan.", NameOf(Control::PRIMARY), NameOf(Control::ROTATE),
-		NameOf(Control::SET_DOWN)));
+	step(std::format("Take the filler's cap off ({} on it): it goes in your hands. The gearbox and the diff have a fill plug instead. The "
+		"fuel cap is behind its flap.", NameOf(Control::USE)));
+	step(std::format("Hold a jug of the right fluid and aim at the filler: it says how much is in there. {} (held) pours from the jug. A jug "
+		"that runs dry is thrown away.", NameOf(Control::PRIMARY)));
+	step(std::format("Put the cap back on: hold it and {} on the filler. Left off, the oil spatters, the coolant boils over, the brake "
+		"fluid draws water and the fuel slops out.", NameOf(Control::PRIMARY)));
+	step("Set the drain pan down on the floor under where it comes out first. Without it, it all goes on the floor, and has to be wiped up "
+		"with paint thinner and a rag.");
+	step(std::format("To drain a circuit, hold the fluid funnel at where it's drained and {} (held): the radiator, the gearbox, the diff and "
+		"the fuel tank at the drain plug on the bottom of each (undone and done back up); the brakes and the clutch at a bleed nipple, "
+		"which leaves their lines full of air.", NameOf(Control::SET_DOWN)));
+	step("The engine oil comes out of the oil pan's drain hole: undo the drain plug with a spanner and take it out first, with the pan "
+		"under it. It goes back in, on a new washer, before the oil's poured in, or the oil runs straight through.");
 	step("Brakes and clutch: bleed them after filling (chapter 7).");
-	step("Coolant: burp the air out. With the radiator cap off, run the engine till it's warm (the Fluids page of the Car tab: Run it with "
-		"the radiator cap off), then top it up.");
+	step("Coolant: burp the air out. With the radiator cap off, run the engine till it's warm (take the cap off, then the Fluids page of the Car tab: Run it "
+		"with the radiator cap off), then top it up.");
 	note("A heavier oil or a higher octane will do. GL-5 hypoid oil in the gearbox eats its brass synchro rings, plain water in the "
 		"cooling system rusts and boils, and diesel in the tank stops it dead.");
 
@@ -578,7 +593,7 @@ void ServiceManual::BuildChassis(bool imperial)
 		"battery's positive post, the starter's plug is loose, the battery's ground strap isn't on the body, or the battery is flat.");
 	problem("A gauge, a headlight or the fan does nothing", "Its plug isn't pushed onto it: see Electrical.");
 	problem("It cranks but gets no fuel, with fuel in the tank", "One of the fuel line's three hoses is off: the tank's, the filter's or the pump's.");
-	problem("The brakes or the clutch won't take fluid", "A pipe's union is undone: the funnel says which.");
+	problem("The brakes or the clutch won't take fluid", "A pipe's union is undone: holding a jug at the filler says which.");
 	problem("It cranks but won't fire", "The engine isn't finished, the tank is dry or holds the wrong fuel, the fuel line or filter is "
 		"missing, the ignition coil isn't on, the coil's or the distributor's plug is off, or the timing is miles out.");
 	problem("The brake pedal goes to the floor", "The brakes have never been filled and bled, or the reservoir ran dry while bleeding and "

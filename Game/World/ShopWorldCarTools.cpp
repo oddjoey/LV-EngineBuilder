@@ -4,7 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
+#include <tuple>
 
+#include "LV/Engine/Graphics/Models/ModelManager.h"
 #include "LV/Engine/Utility/InputManager.h"
 #include "../Controls.h"
 #include "CarBody.h"
@@ -43,19 +46,6 @@ namespace
 			case FluidCircuit::TRANSMISSION:
 			case FluidCircuit::DIFFERENTIAL: return 0.25;
 			default:						return 0.5;
-		}
-	}
-
-	// The bleed nipple for each point, and the part it's on.
-	CarSlot BleedPart(BleedPoint point, int& index)
-	{
-		switch (point)
-		{
-			case BleedPoint::REAR_RIGHT:	index = 1; return CarSlot::WHEEL_CYLINDER;
-			case BleedPoint::REAR_LEFT:		index = 0; return CarSlot::WHEEL_CYLINDER;
-			case BleedPoint::FRONT_RIGHT:	index = 1; return CarSlot::BRAKE_CALIPER;
-			case BleedPoint::FRONT_LEFT:	index = 0; return CarSlot::BRAKE_CALIPER;
-			default:						index = 0; return CarSlot::CLUTCH_SLAVE_CYLINDER;
 		}
 	}
 
@@ -180,26 +170,77 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 	const auto& car = build->assembly;
 	const auto& spec = car.GetSpec();
 
+	// The funnel and its drain-plug spanner, at where each circuit is drained (CarDrainPoints): undone, it comes out into the
+	// drain pan set down under it, or with none there, onto the floor.
 	if (kind == HandToolKind::FUNNEL)
 	{
-		std::optional<FluidCircuit> aimed;
+		const std::vector<DrainPoint> drains = CarDrainPoints(workshop);
+		const DrainPoint* aimed = nullptr;
 		float best = 0.f;
-		for (int c = 0; c < FLUID_CIRCUITS; c++)
+		for (const auto& drain : drains)
 		{
-			glm::vec3 point = CarToWorld(FillPoint(static_cast<FluidCircuit>(c)));
-			m_fitPoints.push_back({ point, !car.CircuitOpen(static_cast<FluidCircuit>(c)) });
-			if (auto off = offAim(point); off && (!aimed || *off < best))
+			m_fitPoints.push_back({ drain.at, car.GetFluid(drain.circuit).Total() > 0.0 });
+			if (auto off = offAim(drain.at); off && (!aimed || *off < best))
 			{
-				aimed = static_cast<FluidCircuit>(c);
+				aimed = &drain;
 				best = *off;
 			}
 		}
 		if (!aimed)
 			return false;
-		auto circuit = *aimed;
-		glm::vec3 point = CarToWorld(FillPoint(circuit));
-		m_spannerTarget = point;
-		// The fuel's cap is behind its flap.
+		const auto circuit = aimed->circuit;
+		m_spannerTarget = aimed->at;
+		const double level = car.GetFluid(circuit).Total();
+		if (circuit == FluidCircuit::ENGINE_OIL && workshop.CarOilDrainPlugIn())
+		{
+			m_prompt = std::format("{}: {:.2f} l of oil in the engine", aimed->where, level);
+			m_secondaryPrompt = std::format("Set the drain pan under it, then undo the plug with a {} mm spanner and take it out: the oil comes straight out",
+				PartCatalog::Get(PartType::OIL_DRAIN_PLUG).fastener.headMm);
+			return true;
+		}
+		m_prompt = std::format("{}: {:.2f} l of {}   [RMB] Hold to undo it and let it out", aimed->where, level, FluidCircuitLower(circuit));
+		// (And whether the drain pan's under it: without, it's all over the floor.)
+		m_secondaryPrompt = std::string(DrainPanUnder(aimed->at) ? "The drain pan's under it" : "No drain pan under it: set one down first, or it'll be all over the floor")
+			+ (circuit == FluidCircuit::BRAKES || circuit == FluidCircuit::CLUTCH ? ". It leaves the lines full of air: bleed them after filling" : "");
+		// (Held on a drain point: a circuit, numbered past any part's id.)
+		float holding = holdOn((uint64_t(1) << 40) + static_cast<uint64_t>(circuit) * 16 + static_cast<uint64_t>(aimed - drains.data()), rightHeld && level > 0.0);
+		m_pressAimed = holding > 0.f;
+		m_pressProgress = holding / HOLD_SECONDS;
+		if (holding >= HOLD_SECONDS)
+		{
+			m_carHold = 0.f;
+			m_carHoldOn = 0;
+			DrainInto(workshop, circuit, aimed->at);
+			Cue(Sound::CLICK, aimed->at, 0.5f);
+			Toast(workshop.GetLog().empty() ? "" : workshop.GetLog().back());
+		}
+		return true;
+	}
+
+	// At the fillers: a jug poured in with the cap off, a cap put back on its own.
+	if (kind == HandToolKind::FLUID_CONTAINER || kind == HandToolKind::FILLER_CAP)
+	{
+		std::optional<FluidCircuit> aimed;
+		float best = 0.f;
+		for (int c = 0; c < FLUID_CIRCUITS; c++)
+		{
+			const auto circuit = static_cast<FluidCircuit>(c);
+			// (A cap goes on its own filler only.)
+			if (kind == HandToolKind::FILLER_CAP && tool.capCircuit != c)
+				continue;
+			glm::vec3 point = FillerSeat(workshop, circuit).at;
+			m_fitPoints.push_back({ point, kind == HandToolKind::FILLER_CAP ? !car.CapOn(circuit) : !car.CircuitOpen(circuit) && !car.CapOn(circuit) });
+			if (auto off = offAim(point); off && (!aimed || *off < best))
+			{
+				aimed = circuit;
+				best = *off;
+			}
+		}
+		if (!aimed)
+			return false;
+		const auto circuit = *aimed;
+		m_spannerTarget = FillerSeat(workshop, circuit).at;
+		// The fuel's filler is behind its flap.
 		if (circuit == FluidCircuit::FUEL && !IsCarPanelOpen(CarPanel::FUEL_FLAP))
 		{
 			m_prompt = "[LMB] Open the fuel flap";
@@ -208,47 +249,61 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 			return true;
 		}
 		const auto& fs = spec.Fluid(circuit);
-		int& picked = m_funnelProduct[static_cast<size_t>(circuit)];
-		if (picked < 0)
-			picked = static_cast<int>(fs.product);
-		// R: the next fluid there's some of.
-		if (Controls::Pressed(input, Control::ROTATE))
-			for (int step = 1; step <= FLUID_PRODUCTS; step++)
+		const double level = car.GetFluid(circuit).Total();
+		const auto open = car.CircuitOpen(circuit);
+		const bool capped = car.CapOn(circuit).has_value();
+		ItemVisual* held = GetHeld();
+
+		if (kind == HandToolKind::FILLER_CAP)
+		{
+			if (capped)
 			{
-				int next = (picked + step) % FLUID_PRODUCTS;
-				if (workshop.FluidStock(static_cast<FluidProduct>(next)) > 0.0)
-				{
-					picked = next;
-					break;
-				}
+				m_prompt = std::format("The {}'s cap is on already", FluidCircuitLower(circuit));
+				return true;
 			}
-		auto product = static_cast<FluidProduct>(picked);
-		double level = car.GetFluid(circuit).Total();
-		auto open = car.CircuitOpen(circuit);
-		m_prompt = std::format("{}: {:.2f} l (full at {:.2f})   [LMB] Hold to pour {} ({:.1f} l in stock)   [R] Another fluid   [RMB] Hold to drain",
-			FluidCircuitName(circuit), level, fs.level.max, FluidProductName(product), workshop.FluidStock(product));
-		m_secondaryPrompt = open ? std::format("Open: the {} isn't on, so it would run straight out", *open) : std::string(fs.check);
-		if (leftPressed && open)
-			Toast(std::format("The {} isn't on: it would run straight out onto the floor.", *open));
-		else if (leftPressed && workshop.FluidStock(product) <= 0.0)
-			Toast(std::format("There's no {} in stock: buy some at the parts computer.", FluidProductName(product)));
-		if (leftHeld && !open)
-		{
-			double poured = workshop.PourIntoCar(circuit, product, PourRate(circuit) * deltaTime, true);
-			if (poured <= 0.0 && leftPressed && level >= fs.level.max * 0.99)
-				Toast(std::format("The {} is full.", FluidCircuitName(circuit)));
+			m_prompt = std::format("{}: {:.2f} l (full at {:.2f})   [LMB] Put the {} on", FluidCircuitName(circuit), level, fs.level.max, tool.name);
+			if (leftPressed && m_carToolPause <= 0.f && held && workshop.PutCarCap(circuit, held->ref.id))
+			{
+				m_carToolPause = CLICK_PAUSE;
+				// On the filler, out of the hand (see UpdateCarFittings).
+				SetPlace(*held, ItemPlace::ATTACHED);
+				SyncHand();
+				Cue(Sound::FIT_PART, m_spannerTarget.value_or(glm::vec3(0.f)), 0.5f);
+				Toast(workshop.GetLog().back());
+			}
+			return true;
 		}
-		// (Held on a circuit, numbered past any part's id.)
-		float held = holdOn((uint64_t(1) << 40) + static_cast<uint64_t>(circuit), rightHeld && level > 0.0);
-		m_pressAimed = held > 0.f;
-		m_pressProgress = held / HOLD_SECONDS;
-		if (held >= HOLD_SECONDS)
+
+		if (kind == HandToolKind::FLUID_CONTAINER)
 		{
-			m_carHold = 0.f;
-			m_carHoldOn = 0;
-			workshop.DrainCar(circuit);
-			Toast(workshop.GetLog().empty() ? "" : workshop.GetLog().back());
+			const auto product = static_cast<FluidProduct>(tool.fluidProduct);
+			const double left = held ? workshop.ContainerLitres(held->ref.id) : 0.0;
+			if (capped)
+			{
+				m_prompt = std::format("{}: {:.2f} l (full at {:.2f})   Its cap is on: take it off first (E on it)", FluidCircuitName(circuit), level,
+					fs.level.max);
+				m_secondaryPrompt = fs.check;
+				return true;
+			}
+			m_prompt = std::format("{}: {:.2f} l (full at {:.2f})   [LMB] Hold to pour the {} ({:.2f} l left in it)", FluidCircuitName(circuit), level,
+				fs.level.max, FluidProductName(product), left);
+			m_secondaryPrompt = open ? std::format("Open: the {} isn't on, so it would run straight out", *open)
+				: FluidFitFor(circuit, product) == FluidFit::RIGHT ? std::string(fs.check)
+				: std::format("The book calls for {} here", fs.grade);
+			if (leftPressed && open)
+				Toast(std::format("The {} isn't on: it would run straight out onto the floor.", *open));
+			if (leftHeld && !open && held)
+			{
+				const double poured = workshop.PourFromContainer(circuit, held->ref.id, PourRate(circuit) * deltaTime, true);
+				if (poured <= 0.0 && leftPressed && level >= fs.level.max * 0.99)
+					Toast(std::format("The {} is full.", FluidCircuitName(circuit)));
+				// Emptied: it's gone from the hand (and the shop: SyncItems).
+				if (!workshop.OwnsTool(held->ref.id))
+					Toast(std::format("The {} is empty: it goes in the bin.", FluidProductName(product)));
+			}
+			return true;
 		}
+
 		return true;
 	}
 
@@ -259,7 +314,7 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 		for (int p = 0; p < BLEED_POINTS; p++)
 		{
 			int index = 0;
-			CarSlot slot = BleedPart(static_cast<BleedPoint>(p), index);
+			CarSlot slot = CarAssembly::BleedNipplePart(static_cast<BleedPoint>(p), index);
 			if (!car.IsFilled(slot, index))
 				continue;
 			glm::vec3 point = CarSlotCenter(slot, index);
@@ -273,24 +328,36 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 		if (!aimed)
 			return false;
 		int index = 0;
-		CarSlot slot = BleedPart(*aimed, index);
+		CarSlot slot = CarAssembly::BleedNipplePart(*aimed, index);
 		m_spannerTarget = CarSlotCenter(slot, index);
 		auto circuit = *aimed == BleedPoint::CLUTCH ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES;
 		const auto& fs = spec.Fluid(circuit);
-		m_prompt = std::format("{}   [LMB] Bleed it (the reservoir has {:.2f} l: MIN {:.2f})", BleedPointName(*aimed),
-			car.GetFluid(circuit).Total(), fs.level.min);
-		m_secondaryPrompt = "Farthest from the master cylinder first: rear right, rear left, front right, front left";
-		if (leftPressed && m_carToolPause <= 0.f)
+		// The bleeder goes on the nipple and cracks it open; then the pedal's pumped from the driver's seat, and it's taken off
+		// again (closing the nipple) once the tube runs clear.
+		if (car.BleederOn(*aimed))
+		{
+			m_prompt = std::format("{}: there's already a bleeder on it", BleedPointName(*aimed));
+			return true;
+		}
+		m_prompt = std::format("{}   [LMB] Put the bleeder on and crack the nipple open (the reservoir has {:.2f} l: MIN {:.2f})",
+			BleedPointName(*aimed), car.GetFluid(circuit).Total(), fs.level.min);
+		m_secondaryPrompt = *aimed == BleedPoint::CLUTCH ? "Then pump the clutch pedal from the driver's seat"
+			: "Then pump the brake pedal from the driver's seat. Farthest from the master cylinder first: rear right, rear left, front right, front left";
+		ItemVisual* held = GetHeld();
+		if (leftPressed && m_carToolPause <= 0.f && held && held->ref.IsTool())
 		{
 			m_carToolPause = CLICK_PAUSE;
-			workshop.BleedCar(*aimed);
-			Cue(Sound::WRENCH, m_spannerTarget.value_or(glm::vec3(0.f)), 0.6f);
-			// What was seen in the tube, and anything about the reservoir.
-			const auto& log = workshop.GetLog();
-			std::string seen = log.empty() ? "" : log.back();
-			if (log.size() >= 2 && seen.starts_with("The reservoir"))
-				seen = log[log.size() - 2] + " " + seen;
-			Toast(seen);
+			if (workshop.AttachBleeder(*aimed, held->ref.id))
+			{
+				// It stays on the nipple, out of the hand, till it's taken off (see UpdateBleeders).
+				if (auto host = car.Get(slot, index))
+					held->hostPart = host->GetId();
+				SetPlace(*held, ItemPlace::ATTACHED);
+				SyncHand();
+				Cue(Sound::WRENCH, m_spannerTarget.value_or(glm::vec3(0.f)), 0.6f);
+			}
+			if (!workshop.GetLog().empty())
+				Toast(workshop.GetLog().back());
 		}
 		return true;
 	}
@@ -486,5 +553,148 @@ bool ShopWorld::UpdateCarTool(Workshop& workshop, const FirstPersonController& p
 		}
 		return true;
 	}
+	return false;
+}
+
+ShopWorld::FillerSeatAt ShopWorld::FillerSeat(const Workshop& workshop, FluidCircuit circuit) const
+{
+	// The neck on its part, in that part's own space (where its model's neck is: ShopAssets).
+	pPart host;
+	glm::vec3 neck = {};
+	if (const auto* build = workshop.GetCar())
+		switch (circuit)
+		{
+			case FluidCircuit::ENGINE_OIL:
+				if (const int engine = build->assembly.GetEngine(); engine >= 0 && engine < workshop.GetEngineCount())
+					host = workshop.GetAssembly(engine).Get(AssemblySlot::VALVE_COVER, 0);
+				neck = { 0.12f, 0.059f, 0.055f };
+				break;
+			case FluidCircuit::COOLANT:
+				host = build->assembly.Get(CarSlot::RADIATOR, 0);
+				neck = { 0.12f, 0.441f, 0.f };
+				break;
+			case FluidCircuit::BRAKES:
+				host = build->assembly.Get(CarSlot::BRAKE_MASTER_CYLINDER, 0);
+				neck = { 0.03f, 0.122f, 0.f };
+				break;
+			case FluidCircuit::CLUTCH:
+				host = build->assembly.Get(CarSlot::CLUTCH_MASTER_CYLINDER, 0);
+				neck = { 0.f, 0.086f, 0.f };
+				break;
+			default:
+				break;
+		}
+	if (const ItemVisual* visual = host ? Find(ItemRef::Part(host->GetId())) : nullptr)
+		return { glm::vec3(visual->object->GetModelMatrix() * glm::vec4(neck, 1.f)), visual->object->GetRotation() };
+	return { CarToWorld(FillPoint(circuit)), CarRotation() };
+}
+
+bool ShopWorld::DrainPanUnder(const glm::vec3& at) const
+{
+	// Lying on the floor (or anything under the car), below the point and close enough under it to catch it: its rim's
+	// 0.24 across, and a stream wanders.
+	constexpr float CATCHES = 0.26f;
+	for (const auto& [ref, visual] : m_items)
+	{
+		if (!ref.IsTool() || ToolCatalog::Of(ref.id).handKind != HandToolKind::DRAIN_PAN || visual.place != ItemPlace::WORLD)
+			continue;
+		const glm::vec3 pan = visual.object->GetPosition();
+		const glm::vec2 off = { pan.x - at.x, pan.z - at.z };
+		if (pan.y < at.y && glm::dot(off, off) <= CATCHES * CATCHES)
+			return true;
+	}
+	return false;
+}
+
+double ShopWorld::DrainInto(Workshop& workshop, FluidCircuit circuit, const glm::vec3& at)
+{
+	const auto* build = workshop.GetCar();
+	if (!build)
+		return 0.0;
+	const FluidProduct main = build->assembly.GetFluid(circuit).Main();
+	const bool caught = DrainPanUnder(at);
+	const double drained = workshop.DrainCar(circuit, caught);
+	if (drained > 0.0 && !caught && main != FluidProduct::COUNT)
+		SpillOnFloor(at, main, drained);
+	return drained;
+}
+
+void ShopWorld::SpillOnFloor(const glm::vec3& at, FluidProduct product, double litres)
+{
+	// Only the shop's floor takes it (it's painted on, and wiped off with thinner and a rag like paint); outside, it soaks
+	// into the ground. A puddle the size of what came out, a darker, dirtier shade of it.
+	const glm::vec3 point = { at.x, 0.f, at.z };
+	if (!GetInterior().InGarage(point + glm::vec3(0.f, 0.1f, 0.f)))
+		return;
+	const auto colour = FluidColour(product);
+	auto channel = [&](float c) { return static_cast<uint32_t>(std::clamp(c * 0.55f, 0.f, 1.f) * 255.f); };
+	const uint32_t rgb = (channel(colour[0]) << 16) | (channel(colour[1]) << 8) | channel(colour[2]);
+	const float radius = std::clamp(0.1f + 0.12f * std::sqrt(static_cast<float>(litres)), 0.1f, 0.55f);
+	m_paint.Dab({ 1, 1, 0.f }, point, radius, WallPaint::NearestColor(rgb));
+}
+
+std::vector<ShopWorld::DrainPoint> ShopWorld::CarDrainPoints(const Workshop& workshop) const
+{
+	std::vector<DrainPoint> drains;
+	const auto* build = workshop.GetCar();
+	if (!build)
+		return drains;
+	const auto& car = build->assembly;
+	// The middle of a part's underside, where its plug is, as the part is.
+	auto bottomOf = [&](const pPart& part) -> std::optional<glm::vec3> {
+		const ItemVisual* visual = part ? Find(ItemRef::Part(part->GetId())) : nullptr;
+		const Model* model = visual ? ModelManager::Get()->PeekModel(visual->object->GetModelIndex()) : nullptr;
+		if (!model)
+			return std::nullopt;
+		const glm::vec3 low = model->GetBoundsMin(), high = model->GetBoundsMax();
+		return glm::vec3(visual->object->GetModelMatrix() * glm::vec4((low.x + high.x) * 0.5f, low.y, (low.z + high.z) * 0.5f, 1.f));
+	};
+	if (const int engine = workshop.GetEngineInCar(); engine >= 0)
+	{
+		const auto& assembly = workshop.GetAssembly(engine);
+		if (const ItemVisual* plug = assembly.Get(AssemblySlot::DRAIN_PLUG, 0) ? Find(ItemRef::Part(assembly.Get(AssemblySlot::DRAIN_PLUG, 0)->GetId())) : nullptr)
+			drains.push_back({ FluidCircuit::ENGINE_OIL, plug->object->GetPosition(), "The oil pan's drain plug" });
+		else if (auto at = bottomOf(assembly.Get(AssemblySlot::OIL_PAN, 0)))
+			drains.push_back({ FluidCircuit::ENGINE_OIL, *at, "The oil pan's drain hole" });
+	}
+	for (auto [circuit, slot, where] : std::initializer_list<std::tuple<FluidCircuit, CarSlot, const char*>>{
+		{ FluidCircuit::COOLANT, CarSlot::RADIATOR, "The radiator's drain plug" },
+		{ FluidCircuit::TRANSMISSION, CarSlot::TRANSMISSION, "The gearbox's drain plug" },
+		{ FluidCircuit::DIFFERENTIAL, CarSlot::DIFFERENTIAL, "The differential's drain plug" },
+		{ FluidCircuit::FUEL, CarSlot::FUEL_TANK, "The fuel tank's drain plug" } })
+		if (auto at = bottomOf(car.Get(slot, 0)))
+			drains.push_back({ circuit, *at, where });
+	for (int p = 0; p < BLEED_POINTS; p++)
+	{
+		const auto point = static_cast<BleedPoint>(p);
+		int index = 0;
+		const CarSlot slot = CarAssembly::BleedNipplePart(point, index);
+		if (car.IsFilled(slot, index))
+			drains.push_back({ point == BleedPoint::CLUTCH ? FluidCircuit::CLUTCH : FluidCircuit::BRAKES, CarSlotCenter(slot, index),
+				std::format("The {}'s bleed nipple", BleedPointLower(point)) });
+	}
+	return drains;
+}
+
+double ShopWorld::DevDrain(Workshop& workshop, FluidCircuit circuit)
+{
+	for (const auto& drain : CarDrainPoints(workshop))
+		if (drain.circuit == circuit)
+			return DrainInto(workshop, circuit, drain.at);
+	return 0.0;
+}
+
+bool ShopWorld::DevPanUnder(const Workshop& workshop, FluidCircuit circuit)
+{
+	for (const auto& drain : CarDrainPoints(workshop))
+		if (drain.circuit == circuit)
+			for (auto& [ref, visual] : m_items)
+				if (ref.IsTool() && ToolCatalog::Of(ref.id).handKind == HandToolKind::DRAIN_PAN)
+				{
+					m_inventory.Remove(ref);
+					PlaceInWorld(visual, { drain.at.x, 0.05f, drain.at.z }, glm::vec3(0.f));
+					SyncHand();
+					return true;
+				}
 	return false;
 }

@@ -717,7 +717,13 @@ private:
 	void MarkEmptyHoles(const Workshop& workshop, const FirstPersonController& player);
 	// A card on the right about the nut or bolt being looked at (or the empty hole): its size, the
 	// spanner it takes, and where it goes and how tight, or how tight it is.
-	void DrawHardwarePanel(const Workshop& workshop) const;
+	// False when nothing like that is looked at.
+	bool DrawHardwarePanel(const Workshop& workshop) const;
+	// The same card for any other part looked at: what it is, its condition, where it's fitted and what holds it on,
+	// what has to come off first, or where a loose one goes.
+	void DrawPartPanel(const Workshop& workshop) const;
+	// The card itself, on the right: a title and lines, wrapped to fit.
+	static void DrawInfoCard(const std::string& title, const std::vector<std::pair<std::string, uint32_t>>& lines);
 	// A ratchet, breaker bar, torque wrench or the wrench set in hand: sockets go on from a set within
 	// reach, and nuts and bolts are done up or undone. True if it used this frame's E.
 	bool UpdateSpanner(Workshop& workshop, const FirstPersonController& player, const InputManager& input, size_t toolIndex, float deltaTime);
@@ -788,6 +794,45 @@ private:
 	CarPose PoseOnCarStill(CarSlot slot, int index) const;
 	// A pose in the car's space moved as the engine's shaking moves it, by so much of it (1: bolted to the engine).
 	CarPose ShakenWithEngine(const CarPose& pose, float amount) const;
+	// Lifted by its body, a corner's wheel hangs down on its suspension, up to WHEEL_DROOP below where it sits on the
+	// ground: how far it hangs now (the tire stays on the floor till the body's risen that much).
+	static constexpr float WHEEL_DROOP = 0.04f;
+	float WheelDroop(int corner) const;
+	// The rear axle's drop at its middle, for the driveshaft to follow.
+	float RearAxleDroop() const { return (WheelDroop(2) + WheelDroop(3)) * 0.5f; }
+	// How far the rear axle's tube has gone down that far across the car (+z its right).
+	float AxleDropAt(float z) const;
+	// Something on the back axle (its pose as it'd sit on the car) where it is in the body's space: hanging with the axle, and
+	// the axle level on the road as the body leans driving. And how far below a point on the axle has gone from there, in the
+	// body's space (less than nothing pushed up nearer the body).
+	CarPose OnAxle(const CarPose& pose) const;
+	// A pose on something that stays level on the road as the body leans driving (the knuckles and what's on them, the back
+	// axle), where it is as the body sees it.
+	CarPose Unleaned(const CarPose& pose) const;
+	// A front knuckle's place, as the body sees it: the strut's foot still and now, and the strut's turn from upright, which
+	// the knuckle and all on it turn with (about the foot).
+	struct KnuckleFrame { glm::vec3 still = {}, foot = {}; glm::quat tip = glm::quat(1.f, 0.f, 0.f, 0.f); };
+	KnuckleFrame FrontKnuckle(float side) const;
+	// A point on a front knuckle (as it'd be on the car, still) where it is as the body sees it: tipped, hanging, level.
+	glm::vec3 OnKnuckle(float side, const glm::vec3& at) const;
+	// A front strut from its foot in the knuckle up to its top mount on the body, turned about its axis as given (steered).
+	CarPose FrontStrut(float side, const glm::quat& steered) const;
+	float AxleDropAt(const glm::vec3& at) const;
+	// A side's tie rod as one straight line: the ball in the end of the rack, and the end's stud in the knuckle's
+	// steering arm (steered and hanging with it).
+	// A brake hose's two ends, in the car's space: its foot on what it feeds (a front caliper, the T on the back axle),
+	// which moves as the wheels hang and steer, and its head where it's held on the body.
+	std::pair<glm::vec3, glm::vec3> BrakeHoseEnds(int index) const;
+	// A front corner's camber as it hangs: the strut's top mount it tips about, and the turn (the top of the wheel out).
+	std::pair<glm::vec3, glm::quat> FrontCamber(float side) const;
+	struct TieRodLine { glm::vec3 ball, stud; };
+	TieRodLine TieRod(float side) const;
+	// A rotation turning a model's +x to that direction.
+	static glm::quat AlongLine(const glm::vec3& direction);
+	// That corner's tire up off the floor, past the suspension's droop.
+	bool WheelOffGround(int corner) const;
+	// A pose in the car's space moved as the hanging suspension moves the part in that slot (and position).
+	CarPose Drooped(CarSlot slot, int index, const CarPose& pose) const;
 	// The back wheels turned on by so far (radians), and the driveshaft with them, the diff's ratio faster.
 	void TurnRearWheels(float radians);
 	// What opens on the car, with the left button aimed at it: the doors, the hood, the trunk lid and the fuel filler's flap.
@@ -1186,6 +1231,14 @@ private:
 	};
 	// Puts the seats' backs where they are (and swings one that's tipping), each frame.
 	void PoseSeatBacks(const Workshop& workshop, float deltaTime);
+	// Each front strut's rod and top mount, up in its tower over the body that hangs with the knuckle.
+	void PoseStrutTops(const Workshop& workshop);
+	// The sway bar's ends, each turned about the bar's axis to keep its drop link on its lower arm as that hangs.
+	void PoseSwayBarEnds(const Workshop& workshop);
+	// Each tie rod end's stud, down through its knuckle's steering arm, turned with the knuckle.
+	void PoseTieRodStuds(const Workshop& workshop);
+	// Where a tie rod end's stud is (its model's origin and turn), in the car's space.
+	CarPose TieRodStudPose(float side) const;
 	// Where the head of whoever's in a seat is, in the car's space, as that seat is set.
 	glm::vec3 SeatHead(int seat) const;
 	// How far off what's under the crosshair is (see UpdateHover).
@@ -1203,7 +1256,11 @@ private:
 		float thick = 0.f;		// how much of it there is to see, at first
 	};
 	static constexpr int SMOKE_PUFFS = 36;
+	static constexpr int RADIATOR_BUBBLES = 28;
 	void UpdateExhaustSmoke(const Workshop& workshop, float deltaTime);
+	// The radiator's neck, cap off and running with air in it: bubbles coming up out of it and popping, more and bigger the
+	// faster it's burping (warm, and revved).
+	void UpdateRadiatorBubbles(const Workshop& workshop, float deltaTime);
 	// The looms' plugs (ShopWorldCarWiring.cpp). Each is a connector on a wire off its loom: pushed onto what it
 	// feeds, hanging loose near it, or in the player's hand on its way from one to the other (LMB takes one, LMB on a
 	// socket pushes it on, RMB lets it go).
@@ -1261,7 +1318,10 @@ private:
 	// The key turned: the starter (then it runs, if it will), or off again once it's stopped.
 	void TurnKey(Workshop& workshop);
 	// A frame at the wheel with the car up off the ground: it revs, and its back wheels turn in the air.
-	void SpinOffGround(float deltaTime, const InputManager& input, bool playerHasControl);
+	void SpinOffGround(float deltaTime, Workshop& workshop, const InputManager& input, bool playerHasControl);
+	// A frame of the engine running (see Workshop::DriveCar, given its revs): fuel burned, warmed, and with the radiator cap off
+	// the air burped out of the cooling system, said when it's all out. False once the tank's dry.
+	bool RunCarEngine(Workshop& workshop, float deltaTime, double metres, double throttle);
 	// A frame of the engine running with no one at the wheel.
 	void IdleCar(float deltaTime, Workshop& workshop);
 	// Driven now: the engine running, the driver in their seat.
@@ -1367,11 +1427,16 @@ private:
 		std::array<pObject, 2>					headlightLenses = {};	// the lamps in their pods, lit when they're on
 		std::array<pObject, 2>					headlightBeams = {};
 		std::array<pObject, 2>					stopLamps = {};
+		std::array<pObject, 2>					strutTops = {};		// each front strut's rod and top mount, up in its tower (its body hangs)
+		std::array<pObject, 2>					swayBarEnds = {};	// the sway bar's ends and drop links, by its own -x and +x side
+		std::array<pObject, 2>					tieRodStuds = {};	// each tie rod end's stud, square in its knuckle's arm
 		pObject									handbrakeLever = nullptr;
 		float									handbrakeUp = 0.f;
 		bool									handbrakeOn = false;
 		EngineShake								engineShake = {};
 		float									finalDrive = 0.f;		// the fitted diff's ratio (0: none), for the driveshaft
+		bool									burpSaid = false;		// the bubbles at the radiator's neck called out (see RunCarEngine)
+		bool									burpRevSaid = false;	// and its gurgling, revved
 		// Where the exhaust comes out, in the car's space, shaken with the engine (see UpdateExhaustSmoke).
 		glm::vec3								exhaustOutlet = {};
 		pObject									gearLever = nullptr;
@@ -1396,6 +1461,9 @@ private:
 		std::array<SmokePuff, SMOKE_PUFFS>		smoke = {};
 		float									smokeDue = 0.f;				// seconds till the next puff
 		float									smokeRunning = 0.f;			// seconds the engine's been running: it smokes more just started
+		// The bubbles at the radiator's neck while the air's burping out of it with the cap off (see UpdateRadiatorBubbles).
+		std::array<SmokePuff, RADIATOR_BUBBLES>	bubbles = {};
+		float									bubbleDue = 0.f;			// seconds till the next one
 		std::array<PlugVisual, CAR_PLUGS>		plugVisuals = {};
 		std::array<pObject, 2>					loomTrunks = {};			// where the harness's two branches lie along the firewall
 		std::array<pObject, 2>					lineFixtures = {};			// the brake pipes' junction block, and the fuel line's end

@@ -467,13 +467,13 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			break;
 
 		// Ignition: plugs into the head, the distributor into the back of the head on the cam, then
-		// a lead from its cap down through the cover onto each plug.
+		// a wire from its cap onto each plug, down the plug's tube in the side of the head: clear of the
+		// valve cover, which comes off with the wires on.
 		// (The spark plugs are fasteners now: they go in once the head's on, see Holes.)
 		case A::DISTRIBUTOR:
 			all(A::CAM_CAP);
 			break;
 		case A::PLUG_LEAD:
-			one(A::VALVE_COVER);
 			one(A::DISTRIBUTOR);
 			needed.push_back({ A::SPARK_PLUG, index });
 			break;
@@ -542,8 +542,8 @@ std::vector<std::pair<AssemblySlot, int>> EngineAssembly::ComputePrerequisites(A
 			break;
 	}
 
-	// The leads only push onto the plugs and the cap, over the valve cover: they need those there, not
-	// bolted down, so the cover's (and the distributor's) bolts can be undone with them on.
+	// The wires only push onto the plugs and the cap: they need those there, not bolted down, so the
+	// distributor's bolts can be undone with them on.
 	if (slot == A::PLUG_LEAD)
 		return needed;
 	// The valvetrain is in the head before it goes on, so it doesn't wait for the head bolts (and doesn't hold them in).

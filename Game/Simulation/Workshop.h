@@ -564,7 +564,9 @@ public:
 	// Developer shortcut: every plug that can be pushed home, or all of them pulled.
 	void DevPlugCar(bool plugged);
 	// Driven for this long, this far: fuel burned, the oil and coolant aged, the engine warmed. False once the tank is dry.
-	bool DriveCar(double seconds, double metres, double throttle);
+	// revs: how far the engine's turning above its idle toward the red line (0 to 1). With the radiator cap off it burps the air out
+	// of the cooling system as it goes (a little cold, properly once the thermostat's open, quicker revved).
+	bool DriveCar(double seconds, double metres, double throttle, double revs = 0.0);
 	// The engines in the cars cooling for this many seconds (a road test warms one right up), but for the one running (-1: none).
 	void CoolCarEngine(double seconds, int runningCar = -1);
 	double CarEngineHeat() const { return m_car ? m_car->engineHeat : 0.0; }

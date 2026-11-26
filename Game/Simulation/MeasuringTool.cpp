@@ -394,7 +394,7 @@ namespace ToolCatalog
 				HandToolKind::SPRING_COMPRESSOR, 55.0);
 			hand("Tire Irons & Bead Breaker", "Aimed at a loose wheel, hold the left button to lever a tire lying nearby onto it, the right to break the "
 				"bead and take its tire off.", HandToolKind::TIRE_IRONS, 40.0);
-			hand("Timing Light", "An inductive strobe clipped on the number one plug lead. With the engine running, aim it at the crank pulley's "
+			hand("Timing Light", "An inductive strobe clipped on the number one plug wire. With the engine running, aim it at the crank pulley's "
 				"marks to read the timing; the buttons turn the distributor, left to advance, right to retard.", HandToolKind::TIMING_LIGHT, 65.0);
 			hand("Tire Gauge & Inflator", "Aimed at a tire, it reads the pressure. Hold the left button to pump it up off the compressor, the right "
 				"to let some out.", HandToolKind::TIRE_GAUGE, 25.0);

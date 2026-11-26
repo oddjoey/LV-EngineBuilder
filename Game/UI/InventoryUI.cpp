@@ -378,9 +378,13 @@ void InventoryUI::DrawDetails(ShopWorld& world, Workshop& workshop, const FirstP
 			ImGui::TextColored({ 1.f, 0.45f, 0.4f, 1.f }, "%s", PartConditionName(part.GetCondition()));
 		else
 			ImGui::TextUnformatted(PartConditionName(part.GetCondition()));
-		row("Size");
+		// (A differential keeps its ratio there, not a size.)
+		const bool ratio = part.GetType() == PartType::DIFFERENTIAL;
+		row(ratio ? "Ratio" : "Size");
 		double offset = part.GetSizeOffset();
-		if (std::abs(offset) < 1e-6)
+		if (ratio)
+			offset > 0.0 ? ImGui::Text("%.2f:1", offset) : ImGui::TextUnformatted("Standard");
+		else if (std::abs(offset) < 1e-6)
 			ImGui::TextUnformatted("Standard");
 		else
 			ImGui::Text("%s %s", Units::FormatSize(std::abs(offset), m_units).c_str(), offset > 0.0 ? "oversize" : "undersize");

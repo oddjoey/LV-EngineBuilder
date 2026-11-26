@@ -929,13 +929,17 @@ bool SaveGame::Load(Workshop& workshop, ShopWorld& world, FirstPersonController&
 			shift(FeatureNames::FREE_LENGTH, 44.60 - 44.0);
 			scale(FeatureNames::SPRING_RATE, 38.5 / 45.0);
 			scale(FeatureNames::SEAT_PRESSURE, 231.0 / 270.0);
-			// And its hardware: buckets became rocker arms, coils plug leads, the throttle body a
+			// And its hardware: buckets became rocker arms, coils plug wires, the throttle body a
 			// carburettor and the fuel rail a fuel pump (each measured fresh: what was measured was the old part).
-			for (auto [from, to] : { std::pair{ "Bucket Lifter", "Rocker Arm" }, std::pair{ "Ignition Coil", "Spark Plug Lead" },
+			for (auto [from, to] : { std::pair{ "Bucket Lifter", "Rocker Arm" }, std::pair{ "Ignition Coil", "Spark Plug Wire" },
 				std::pair{ "Throttle Body", "Carburettor" }, std::pair{ "Fuel Rail", "Fuel Pump" } })
 				if (auto at = part->m_name.find(from); at != std::string::npos)
 					part->m_name.replace(at, std::string(from).size(), to);
 		}
+		// Spark plug leads are called wires now (2026-11-24): the name is saved with each part.
+		if (type == PartType::PLUG_LEAD)
+			if (auto at = part->m_name.find("Spark Plug Lead"); at != std::string::npos)
+				part->m_name.replace(at, std::string("Spark Plug Lead").size(), "Spark Plug Wire");
 
 		if (partsById.contains(id))
 			in.Fail("two parts share an id");

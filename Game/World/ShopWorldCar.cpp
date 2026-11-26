@@ -63,6 +63,19 @@ namespace
 ShopWorld::CarPose ShopWorld::PoseOnCar(CarSlot slot, int index) const
 {
 	CarPose pose = PoseOnCarStill(slot, index);
+	// The suspension hanging, lifted by the body: what moves with a wheel goes down with it (a nut or bolt with its part).
+	// (The strut's top mount nuts are up on the tower, with its top: only its body hangs.)
+	// And a rear shock's top bolt, up on the body: only its bottom one goes down with the axle.
+	if (slot == CarSlot::STRUT_MOUNT_NUT || (slot == CarSlot::REAR_SHOCK_BOLT && index % 2 == 1))
+		;
+	// (And the nuts holding the driveshaft to the diff's flange go with the diff, on the axle, as does the shock's bottom
+	// bolt: down as it hangs, and level on the road as the body leans driving, OnAxle.)
+	else if (slot == CarSlot::REAR_SHOCK_BOLT || slot == CarSlot::DRIVESHAFT_FLANGE_NUT)
+		pose = OnAxle(pose);
+	else if (const auto* held = CarAssembly::Holes(slot))
+		pose = Drooped(CarAssembly::SlotFor(held->parent), held->throughAll ? 0 : index / held->perParent, pose);
+	else
+		pose = Drooped(slot, index, pose);
 	// What's bolted to the engine shakes with it on its mounts (see ShakeEngine and RestingPose): the gearbox on the
 	// back of the block, the clutch inside its bellhousing, the starter and the slave cylinder on it, and their bolts.
 	// The exhaust too: the front pipe and converter are bolted to the engine's downpipe and go with it; the silencer and
@@ -94,6 +107,229 @@ ShopWorld::CarPose ShopWorld::ShakenWithEngine(const CarPose& pose, float amount
 	const glm::vec3 crank = { 0.f, SHAFT_Y, 0.f };
 	const glm::quat rock = Roll(-shake.roll * amount);
 	return { crank + rock * (pose.offset - crank) + glm::vec3(0.f, shake.lift * amount, 0.f), rock * pose.rotation };
+}
+
+ShopWorld::CarPose ShopWorld::OnAxle(const CarPose& pose) const
+{
+	// Where something on the back axle is in the body's own space: down with the axle as it hangs, and, as the body
+	// leans on its springs driving (CarRotation), the axle staying level on the road (as PlaceOnCar puts it): turned back
+	// by the lean, about the car's origin, as the body sees it.
+	return Unleaned(Drooped(CarSlot::REAR_AXLE, 0, pose));
+}
+
+ShopWorld::CarPose ShopWorld::Unleaned(const CarPose& pose) const
+{
+	// What's on the road, not on the springs (PlaceOnCar's unsprung: the knuckles and what's on them, the back axle), stays
+	// level as the body leans driving: where such a pose is as the body sees it, turned back by the lean about the car's origin.
+	if (!m_rig.drive.active || (m_rig.drive.roll == 0.f && m_rig.drive.pitch == 0.f))
+		return pose;
+	const glm::quat unlean = glm::inverse(Roll(m_rig.drive.roll) * Pitch(m_rig.drive.pitch));
+	return { unlean * pose.offset, unlean * pose.rotation };
+}
+
+ShopWorld::KnuckleFrame ShopWorld::FrontKnuckle(float side) const
+{
+	// The strut's foot, clamped in the knuckle: tipped with the camber as the wheel hangs, down with it, and where the wheel
+	// on the road has it as the body leans driving (level on the road, as the body sees it). The strut runs from there up
+	// to its top mount on the body, and the knuckle, clamped on it, tips with it: the strut's turn from upright.
+	KnuckleFrame frame;
+	frame.still = { FRONT_AXLE_X, 0.165f, side * KINGPIN_Z };
+	const auto [mount, camber] = FrontCamber(side);
+	frame.foot = Unleaned({ mount + camber * (frame.still - mount) - glm::vec3(0.f, WheelDroop(side < 0.f ? 0 : 1), 0.f),
+		glm::quat(1.f, 0.f, 0.f, 0.f) }).offset;
+	const glm::vec3 up = { 0.f, 1.f, 0.f }, dir = glm::normalize(mount - frame.foot);
+	const glm::vec3 axis = glm::cross(up, dir);
+	frame.tip = glm::length(axis) < 1e-6f ? glm::quat(1.f, 0.f, 0.f, 0.f)
+		: glm::angleAxis(std::acos(glm::clamp(glm::dot(up, dir), -1.f, 1.f)), glm::normalize(axis));
+	return frame;
+}
+
+glm::vec3 ShopWorld::OnKnuckle(float side, const glm::vec3& at) const
+{
+	// A point on a front knuckle (where it'd be on the car, still, steered) where it is now, as the body sees it.
+	const auto frame = FrontKnuckle(side);
+	return frame.foot + frame.tip * (at - frame.still);
+}
+
+ShopWorld::CarPose ShopWorld::FrontStrut(float side, const glm::quat& steered) const
+{
+	// From its foot, clamped in the knuckle, up to its top mount in the tower on the body: its rod slides in and out of its
+	// body as the length between them changes. (Turned as the steering turns it, about its axis.)
+	const auto frame = FrontKnuckle(side);
+	return { frame.foot, frame.tip * steered };
+}
+
+float ShopWorld::AxleDropAt(const glm::vec3& at) const
+{
+	// (Up as well as down: the body leaning toward that side pushes it up nearer the axle.)
+	return at.y - OnAxle({ at, glm::quat(1.f, 0.f, 0.f, 0.f) }).offset.y;
+}
+
+float ShopWorld::AxleDropAt(float z) const
+{
+	// The axle's down by the middle of its two ends' droops, and tipped across by their difference (see Drooped).
+	const float left = WheelDroop(2), right = WheelDroop(3);
+	return (left + right) * 0.5f + (right - left) * 0.5f * z / WHEEL_Z;
+}
+
+float ShopWorld::WheelDroop(int corner) const
+{
+	// The body's height there over where it sits on its wheels, as far as the suspension lets the wheel hang. (Not the back
+	// ones while the jack under the diff holds the car up by its axle: the axle carries it, on its springs, as on the ground.)
+	corner = std::clamp(corner, 0, CAR_CORNERS - 1);
+	if (corner >= 2)
+		if (const auto& diff = m_rig.carSupports[REAR_LIFT_POINT]; diff.station != NO_STATION && diff.height >= m_rig.cornerHeights[corner] - 0.005f)
+			return 0.f;
+	return std::clamp(m_rig.cornerHeights[corner], 0.f, WHEEL_DROOP);
+}
+
+std::pair<glm::vec3, glm::vec3> ShopWorld::BrakeHoseEnds(int index) const
+{
+	if (index < 2)
+	{
+		// A front one: from the banjo union on top of its caliper (wherever the caliper's gone: steered, hanging, tipped)
+		// up to its bracket on the wheel housing's wall, where the pipe from the junction block meets it (PlugSocket).
+		const float side = index == 0 ? -1.f : 1.f;
+		const CarPose caliper = PoseOnCar(CarSlot::BRAKE_CALIPER, index);
+		const glm::vec3 banjo = caliper.offset + caliper.rotation * glm::vec3(0.0203f, 0.1175f, 0.014f);
+		return { banjo, { FRONT_AXLE_X + 0.1f, 0.6f, side * 0.395f } };
+	}
+	// The rear one: from the T on the axle tube beside the diff (down with the axle as it hangs) up under the kick-up to
+	// the pipe's union on the body back by the tank.
+	const glm::vec3 tee = OnAxle({ { REAR_AXLE_X + 0.02f, 0.34f, -0.15f }, glm::quat(1.f, 0.f, 0.f, 0.f) }).offset;
+	return { tee, { CarBody::REAR_HOSE_UNION[0], CarBody::REAR_HOSE_UNION[1], CarBody::REAR_HOSE_UNION[2] } };
+}
+
+std::pair<glm::vec3, glm::quat> ShopWorld::FrontCamber(float side) const
+{
+	// The strut swings about its top mount as the wheel hangs (the lower arm pulling its foot in on its arc), the knuckle
+	// clamped on it: the top of the wheel tips out, to FULL_CAMBER of positive camber at full droop. (The top mount on the
+	// strut's axis, which the steering turns about, 0.56 up its model from where it sits at 0.165.)
+	constexpr float FULL_CAMBER = 0.03f;
+	const glm::vec3 mount = { FRONT_AXLE_X, 0.165f + 0.56f, side * KINGPIN_Z };
+	const float camber = FULL_CAMBER * WheelDroop(side < 0.f ? 0 : 1) / WHEEL_DROOP;
+	return { mount, glm::angleAxis(side * camber, glm::vec3(1.f, 0.f, 0.f)) };
+}
+
+ShopWorld::TieRodLine ShopWorld::TieRod(float side) const
+{
+	// The ball in the end of the rack (which slides across as it's steered), on the rack's own axis; the stud in the eye of
+	// the knuckle's steering arm, level with it and straight out across the car from it, turned with the knuckle and down
+	// with it when the wheel hangs. The inner rod and the end screwed onto it are one straight rod between the two.
+	const float steer = m_rig.drive.steer;
+	const glm::vec3 ball = { FRONT_AXLE_X + CarBody::STEERING_ARM_X, CarBody::TIE_ROD_Y, side * CarBody::RACK_BALL_Z - 0.18f * std::sin(steer) };
+	const glm::vec3 pivot = { FRONT_AXLE_X, 0.f, side * KINGPIN_Z };
+	glm::vec3 stud = pivot + TurnY(steer) * (glm::vec3(FRONT_AXLE_X + CarBody::STEERING_ARM_X, CarBody::TIE_ROD_Y, side * KINGPIN_Z) - pivot);
+	// (Tipped with the knuckle's camber as it hangs, down with it, and where it is as the body leans driving: OnKnuckle.)
+	return { ball, OnKnuckle(side, stud) };
+}
+
+glm::quat ShopWorld::AlongLine(const glm::vec3& direction)
+{
+	// Its own +x turned to the direction: swung round about the up axis, then tipped up or down to it.
+	const glm::vec3 d = glm::normalize(direction);
+	return TurnY(std::atan2(-d.z, d.x)) * glm::angleAxis(std::asin(std::clamp(d.y, -1.f, 1.f)), glm::vec3(0.f, 0.f, 1.f));
+}
+
+bool ShopWorld::WheelOffGround(int corner) const
+{
+	// (Up past as far as it hangs: at once, for one that doesn't hang.)
+	return m_rig.cornerHeights[std::clamp(corner, 0, CAR_CORNERS - 1)] > WheelDroop(corner) + 0.005f;
+}
+
+ShopWorld::CarPose ShopWorld::Drooped(CarSlot slot, int index, const CarPose& pose) const
+{
+	using C = CarSlot;
+	auto moved = [&](const glm::vec3& pivot, const glm::quat& turn, float down) {
+		return CarPose{ pivot + turn * (pose.offset - pivot) - glm::vec3(0.f, down, 0.f), turn * pose.rotation };
+	};
+	const glm::quat still = glm::quat(1.f, 0.f, 0.f, 0.f);
+	const glm::vec3 X = { 1.f, 0.f, 0.f }, Z = { 0.f, 0.f, 1.f };
+	auto corner = CarAssembly::CornerOf(slot, index);
+	const bool front = corner && (*corner == Corner::FRONT_LEFT || *corner == Corner::FRONT_RIGHT);
+	const float side = SideOf(slot, index);
+
+	// The solid rear axle hangs from both its springs: down by the middle of the two, and tipped across by the difference.
+	// And as the body leans in a corner, the axle rolls a little the same way, with its wheels (AXLE_ROLL of the body's lean),
+	// about the road under its middle: the outside tire squashed down, the inside one off its load.
+	constexpr float AXLE_ROLL = 0.2f;
+	auto onAxle = [&]() {
+		float left = WheelDroop(2), right = WheelDroop(3);
+		const float roll = m_rig.drive.active ? AXLE_ROLL * m_rig.drive.roll : 0.f;
+		if (left == 0.f && right == 0.f && roll == 0.f)
+			return pose;
+		float tip = std::asin(std::clamp((right - left) / (2.f * WHEEL_Z), -1.f, 1.f));
+		CarPose hung = moved({ REAR_AXLE_X, WHEEL_Y, 0.f }, glm::angleAxis(tip, X), (left + right) * 0.5f);
+		if (roll == 0.f)
+			return hung;
+		const glm::vec3 road = { REAR_AXLE_X, 0.f, 0.f };
+		const glm::quat rolled = Roll(roll);
+		return CarPose{ road + rolled * (hung.offset - road), rolled * hung.rotation };
+	};
+	// A link or arm swung down about its pivot on the body, its other end on what drops by so much, so far from it.
+	auto swung = [&](const glm::vec3& pivot, const glm::vec3& axis, float reach, float down) {
+		if (down == 0.f)
+			return pose;
+		return moved(pivot, glm::angleAxis(std::asin(std::clamp(down / reach, -1.f, 1.f)), axis), 0.f);
+	};
+	const float droop = side < 0.f ? WheelDroop(front ? 0 : 2) : WheelDroop(front ? 1 : 3);
+	// What's on a front knuckle, turned with it as its strut has it (FrontKnuckle: tipped, hanging, and as the body leans).
+	auto onKnuckle = [&]() {
+		const auto frame = FrontKnuckle(side);
+		return CarPose{ frame.foot + frame.tip * (pose.offset - frame.still), frame.tip * pose.rotation };
+	};
+	switch (slot)
+	{
+		// Front: the knuckle slides down its strut, and the hub, the brake, the wheel and the tie rod's end with it; the
+		// lower arm swings down about its inner bushes. All of it tips out at the top a little as it goes (FrontCamber).
+		// The strut's body is clamped in the knuckle and goes down with it, its rod sliding out (its rod and top mount are a
+		// model of their own on the car, which stays in the tower: PoseStrutTops).
+		case C::STEERING_KNUCKLE: case C::BRAKE_ROTOR: case C::BRAKE_PAD_SET: case C::BRAKE_CALIPER:
+			return onKnuckle();
+		case C::FRONT_STRUT: case C::FRONT_COIL_SPRING:
+			// From the knuckle up to its top mount (FrontStrut), the spring with it, stretched or squeezed between its seat
+			// and the mount: see PlaceOnCar.
+			return FrontStrut(side, pose.rotation);
+		case C::TIE_ROD_END:
+			// (Already down with the knuckle and in line with the inner rod: see TieRod.)
+			return pose;
+		case C::WHEEL: case C::TIRE:
+			if (!corner)
+				return pose;
+			if (front)
+				return onKnuckle();
+			return onAxle();
+		case C::LOWER_CONTROL_ARM:
+		{
+			// From its bushes 0.18 out from the middle to the knuckle's ball joint at 0.55: swung about the bushes to follow
+			// the ball joint, down with the knuckle and in with its camber.
+			// (And as the body leans driving, to wherever the knuckle, level on the road, has it: OnKnuckle.)
+			const glm::vec3 bushes = { FRONT_AXLE_X, 0.165f, side * 0.18f };
+			const glm::vec3 ball = { FRONT_AXLE_X, 0.14f, side * 0.55f };
+			const glm::vec3 hung = OnKnuckle(side, ball);
+			if (glm::distance(hung, ball) < 1e-6f)
+				return pose;
+			// (A turn about x by a takes a point's angle round it, atan2(y, z), back by a.)
+			const float a = std::atan2(ball.y - bushes.y, ball.z - bushes.z) - std::atan2(hung.y - bushes.y, hung.z - bushes.z);
+			return moved(bushes, glm::angleAxis(a, X), 0.f);
+		}
+		// Rear: everything on the axle, and the links swung down about their front ends on the body.
+		case C::REAR_AXLE: case C::DIFFERENTIAL: case C::BRAKE_DRUM: case C::BRAKE_SHOE_SET: case C::WHEEL_CYLINDER:
+			return onAxle();
+		case C::REAR_COIL_SPRING: case C::REAR_SHOCK:
+			// (Stretched instead, between the axle and the body: see PlaceOnCar.)
+			return pose;
+		// (Each by as far as the axle's gone down where it's bolted on: the lower ones 0.525 out, the upper ones 0.305.)
+		case C::LOWER_TRAILING_LINK:
+			return swung({ REAR_AXLE_X + 0.59f, 0.146f, 0.f }, Z, 0.58f, AxleDropAt(glm::vec3(REAR_AXLE_X + 0.01f, 0.146f, side * 0.525f)));
+		case C::UPPER_TRAILING_LINK:
+			return swung({ REAR_AXLE_X + 0.38f, 0.344f, 0.f }, Z, 0.32f, AxleDropAt(glm::vec3(REAR_AXLE_X + 0.06f, 0.344f, side * 0.305f)));
+		case C::LATERAL_ROD:
+			// Across from its bracket on the body (on the left) to the axle (on the right), swung about the body's end.
+			return swung({ REAR_AXLE_X - 0.166f, 0.316f, -0.47f }, X, 0.94f, AxleDropAt(glm::vec3(REAR_AXLE_X - 0.166f, 0.316f, 0.47f)));
+		default:
+			return pose;
+	}
 }
 
 void ShopWorld::TurnRearWheels(float radians)
@@ -195,10 +431,16 @@ ShopWorld::CarPose ShopWorld::PoseOnCarStill(CarSlot slot, int index) const
 			case CarSlot::STRUT_ROD_NUT:		return hole == 0 ? CarPose{ { 0.705f, 0.202f, s * 0.42f }, FACING_BACK } : CarPose{ { 0.76f, 0.202f, s * 0.42f }, FACING_FRONT };
 			// Up through the flanges of the sway bar's bushing straps into the chassis rails.
 			case CarSlot::SWAY_BAR_BOLT:		return { { FRONT_AXLE_X + 0.35f + of * 0.045f, 0.204f, pair * 0.36f }, HEAD_DOWN };
-			// Steering: the tie rod end's nut on top of the knuckle's arm, the rack's clamps either side of its middle.
-			case CarSlot::TIE_ROD_END_NUT:		return steered(s, { { FRONT_AXLE_X + 0.18f, CarBody::TIE_ROD_Y + 0.025f, s * KINGPIN_Z }, NONE });
+			// Steering: the tie rod end's nut under the knuckle's arm, the rack's clamps either side of its middle.
+			// (The tie rod end's nut on its stud, under the steering arm it comes down through.)
+			case CarSlot::TIE_ROD_END_NUT:
+			{
+				// On the stud under the arm, square to the knuckle as the stud is.
+				const glm::quat knuckle = PoseOnCar(CarSlot::STEERING_KNUCKLE, s < 0.f ? 0 : 1).rotation;
+				return { TieRod(s).stud + knuckle * glm::vec3(0.f, -(CarBody::TIE_ROD_ARM_DROP + 0.015f), 0.f), knuckle * HEAD_DOWN };
+			}
 			// Up through the flanges of the rack's clamps into the pads under the chassis rails.
-			case CarSlot::STEERING_RACK_BOLT:	return { { FRONT_AXLE_X + 0.2f + of * 0.045f, 0.189f, pair * 0.32f }, HEAD_DOWN };
+			case CarSlot::STEERING_RACK_BOLT:	return { { FRONT_AXLE_X + 0.2f + of * 0.045f, 0.189f, pair * CarBody::RACK_CLAMP_Z }, HEAD_DOWN };
 			case CarSlot::CALIPER_BOLT:			return steered(s, { { FRONT_AXLE_X + 0.085f, 0.265f + hole * 0.05f, s * 0.645f }, FacingSide(s) });
 			// Rear suspension: through the eyes at each end of the links and the lateral rod, and the shock's two ends.
 			case CarSlot::REAR_LINK_BOLT:		return { { hole == 0 ? REAR_AXLE_X + 0.01f : REAR_AXLE_X + 0.59f, 0.146f, s * 0.525f }, FacingSide(s) };
@@ -314,16 +556,21 @@ ShopWorld::CarPose ShopWorld::PoseOnCarStill(CarSlot slot, int index) const
 		// The rack ahead of the axle, under the engine's nose (its pinion to the driver's side), a tie rod end from each
 		// of its ends out to the knuckle's arm; the column from the firewall up to the wheel.
 		case C::STEERING_RACK:		return { { FRONT_AXLE_X + 0.2f, CarBody::TIE_ROD_Y - 0.036f, 0.f }, TurnY(-glm::half_pi<float>()) };
-		// The tie rod end's stud up through the knuckle's steering arm, its shank pointing in; the inner tie rod from its
-		// ball in the end of the rack (which slides across as it's steered) out into that shank.
+		// The tie rod: the inner rod straight out of the end of the rack, in line with it, from its ball; the end screwed
+		// onto it, its stud down through the knuckle's steering arm. Both along the one line (TieRod).
 		case C::TIE_ROD_END:
-			return steered(side, { { FRONT_AXLE_X + 0.18f, CarBody::TIE_ROD_Y - 0.055f, side * KINGPIN_Z }, side > 0.f ? ACROSS : TurnY(-glm::half_pi<float>()) });
+		{
+			// (Its model is built along +x inward from the stud, its body level with the rod 0.06 up.)
+			const auto rod = TieRod(side);
+			const glm::quat turn = AlongLine(rod.ball - rod.stud);
+			return { rod.stud - turn * glm::vec3(0.f, CarBody::TIE_ROD_END_UP, 0.f), turn };
+		}
 		case C::TIE_ROD_INNER:
 		{
-			const glm::vec3 shank = steered(side, { { FRONT_AXLE_X + 0.18f, CarBody::TIE_ROD_Y, side * (KINGPIN_Z - 0.105f) }, NONE }).offset;
-			const glm::vec3 ball = { FRONT_AXLE_X + 0.2f, CarBody::TIE_ROD_Y, side * 0.34f - 0.18f * std::sin(m_rig.drive.steer) };
-			const glm::vec3 along = glm::normalize(shank - ball);
-			return { ball - glm::vec3(0.f, 0.016f, 0.f), TurnY(std::atan2(-along.z, along.x)) };
+			// (Its model along +x outward from the ball, whose middle is 0.016 up.)
+			const auto rod = TieRod(side);
+			const glm::quat turn = AlongLine(rod.stud - rod.ball);
+			return { rod.ball - turn * glm::vec3(0.f, 0.016f, 0.f), turn };
 		}
 		case C::STEERING_COLUMN:	return { { 0.55f, 0.61f, -0.37f }, Pitch(-0.4f) };
 		// Brakes: the booster and master cylinder on the driver's side of the firewall, the lines along the floor.
@@ -332,14 +579,14 @@ ShopWorld::CarPose ShopWorld::PoseOnCarStill(CarSlot slot, int index) const
 		case C::BRAKE_LINE_SET:		return { { -0.2f, 0.15f, -0.5f }, NONE };	// outboard of the exhaust
 		case C::BRAKE_HOSE:
 		{
-			if (index < 2)
-				return { { FRONT_AXLE_X - 0.08f, 0.3f, side * 0.42f }, NONE };
-			// The rear one up under the kick-up, from the pipe's union on the body back by the tank down to the T on the
-			// axle tube beside the diff.
-			const glm::vec3 from = { CarBody::REAR_HOSE_UNION[0], CarBody::REAR_HOSE_UNION[1], CarBody::REAR_HOSE_UNION[2] };
-			const glm::vec3 to = { REAR_AXLE_X + 0.02f, 0.34f, -0.15f };
-			const glm::vec3 up = { 0.f, 1.f, 0.f }, dir = glm::normalize(to - from);
-			return { from, glm::angleAxis(std::acos(glm::clamp(glm::dot(up, dir), -1.f, 1.f)), glm::normalize(glm::cross(up, dir))) };
+			// Straight from what it feeds up to where it's held on the body (BrakeHoseEnds), its model standing up from its
+			// foot, stretched to reach (PlaceOnCar).
+			const auto [foot, head] = BrakeHoseEnds(index);
+			const glm::vec3 up = { 0.f, 1.f, 0.f }, dir = glm::normalize(head - foot);
+			const glm::vec3 axis = glm::cross(up, dir);
+			if (glm::length(axis) < 1e-5f)
+				return { foot, NONE };
+			return { foot, glm::angleAxis(std::acos(glm::clamp(glm::dot(up, dir), -1.f, 1.f)), glm::normalize(axis)) };
 		}
 		case C::BRAKE_ROTOR:		return steered(side, { { FRONT_AXLE_X, WHEEL_Y, side * 0.6f }, Pitch(-m_rig.drive.spin) * FacingSide(side) });
 		// The caliper over the rotor's front edge with the pads in it; the shoes inside the drum, the wheel cylinder behind.
@@ -364,10 +611,12 @@ ShopWorld::CarPose ShopWorld::PoseOnCarStill(CarSlot slot, int index) const
 			// From the gearbox's tail down to the diff's nose.
 			// Turned about its own axis (its model's, 0.035 m up) as the back wheels turn it, the diff's ratio faster, the
 			// way the engine turns (clockwise, seen from the front).
-			float run = GEARBOX_TAIL_X - DIFF_NOSE_X, drop = SHAFT_Y - WHEEL_Y;
-			const glm::quat tilt = Pitch(std::atan2(drop, run)), spun = Roll(-m_rig.drive.shaftSpin);
-			const glm::vec3 axis = { 0.f, 0.035f, 0.f };
-			return { glm::vec3((GEARBOX_TAIL_X + DIFF_NOSE_X) * 0.5f, (SHAFT_Y + WHEEL_Y) * 0.5f - 0.035f, 0.f) + tilt * (axis - spun * axis), tilt * spun };
+			// Its back end wherever the diff's nose is (down with the axle as it hangs, and the axle level on the road as the
+			// body leans driving: OnAxle); its model along +x toward the gearbox.
+			const glm::vec3 front = { GEARBOX_TAIL_X, SHAFT_Y, 0.f };
+			const glm::vec3 back = OnAxle({ { DIFF_NOSE_X, WHEEL_Y, 0.f }, glm::quat(1.f, 0.f, 0.f, 0.f) }).offset;
+			const glm::quat turn = AlongLine(front - back) * Roll(-m_rig.drive.shaftSpin);
+			return { (front + back) * 0.5f - turn * glm::vec3(0.f, 0.035f, 0.f), turn };
 		}
 		// Fuel, under the boot floor and along the right of the floor.
 		case C::FUEL_TANK:			return { { CarBody::FUEL_TANK_X, 0.24f, 0.f }, ACROSS };
@@ -611,7 +860,11 @@ void ShopWorld::AnimateCarPanels(const Workshop& workshop, float deltaTime)
 	}
 	PoseCarInstruments(workshop, deltaTime);
 	PoseSeatBacks(workshop, deltaTime);
+	PoseStrutTops(workshop);
+	PoseSwayBarEnds(workshop);
+	PoseTieRodStuds(workshop);
 	UpdateExhaustSmoke(workshop, deltaTime);
+	UpdateRadiatorBubbles(workshop, deltaTime);
 }
 
 bool ShopWorld::UpdateCarPanels(const Workshop& workshop, const FirstPersonController& player, const InputManager& input)
@@ -654,6 +907,11 @@ void ShopWorld::PlaceOnCar(ItemVisual& visual, CarSlot slot, int index) const
 		default:
 			break;
 	}
+	// (Not a front wheel's, though: the knuckle's clamped on its strut and tips with it, which runs from the wheel on the
+	// road up to the body: its pose is worked out as the body sees it, FrontKnuckle.)
+	if (unsprung)
+		if (auto corner = CarAssembly::CornerOf(slot, index); corner && (*corner == Corner::FRONT_LEFT || *corner == Corner::FRONT_RIGHT))
+			unsprung = false;
 	if (unsprung && m_rig.carStation < m_stations.size())
 	{
 		visual.object->SetPosition(CarOrigin() + CarBaseRotation() * pose.offset);
@@ -665,6 +923,32 @@ void ShopWorld::PlaceOnCar(ItemVisual& visual, CarSlot slot, int index) const
 		visual.object->SetRotation(CarRotation() * pose.rotation);
 	}
 	visual.object->SetScale({ 1.f, 1.f, 1.f });
+	// A brake hose reaches all the way from its foot to its head (its model is BRAKE_HOSE_LENGTH long).
+	if (slot == CarSlot::BRAKE_HOSE)
+	{
+		constexpr float BRAKE_HOSE_LENGTH = 0.35f;
+		const auto [foot, head] = BrakeHoseEnds(index);
+		visual.object->SetScale({ 1.f, glm::distance(foot, head) / BRAKE_HOSE_LENGTH, 1.f });
+	}
+	// The springs and the rear shocks stretch as the wheels hang: each one's top stays where it's held on the body (a front
+	// spring under its strut's top mount), its bottom goes down with what it sits on (the seat on the strut's body, the axle:
+	// as far as the axle's gone down where it sits on it). (LOW to HIGH is how far up its model it runs.)
+	const bool front = slot == CarSlot::FRONT_COIL_SPRING;
+	if (front || slot == CarSlot::REAR_COIL_SPRING || slot == CarSlot::REAR_SHOCK)
+		// (A front one by how much longer than it sits the strut is, from the knuckle to the top mount: FrontStrut.)
+		if (float droop = front ? glm::distance(FrontCamber(index == 0 ? -1.f : 1.f).first, pose.offset) - 0.56f : AxleDropAt(slot == CarSlot::REAR_SHOCK ? glm::vec3(REAR_AXLE_X - 0.1f, 0.22f, (index == 0 ? -1.f : 1.f) * 0.56f)
+				: glm::vec3(REAR_AXLE_X - 0.01f, 0.3445f, (index == 0 ? -1.f : 1.f) * 0.5f));
+			droop != 0.f)
+		{
+			const float LOW = front ? 0.154f : slot == CarSlot::REAR_COIL_SPRING ? 0.0145f : 0.f;
+			const float HIGH = front ? 0.491f : slot == CarSlot::REAR_COIL_SPRING ? 0.2655f : 0.45f;
+			const float stretch = (HIGH - LOW + droop) / (HIGH - LOW);
+			visual.object->SetScale({ 1.f, stretch, 1.f });
+			// (A front one's bottom stays on its seat on the strut, its top goes with the mount; a back one's top stays on the body,
+			// its bottom goes with the axle.)
+			const float anchor = front ? LOW : HIGH;
+			visual.object->SetPosition(CarToWorld(pose.offset + pose.rotation * glm::vec3(0.f, anchor * (1.f - stretch), 0.f)));
+		}
 }
 
 std::optional<size_t> ShopWorld::FindCarFitTarget(const Workshop& workshop, const FirstPersonController& player, const ItemVisual& held)
@@ -942,6 +1226,110 @@ glm::vec3 ShopWorld::SeatHead(int seat) const
 	return head;
 }
 
+void ShopWorld::PoseStrutTops(const Workshop& workshop)
+{
+	const auto* build = workshop.GetCar();
+	bool present = build && m_rig.carStation < m_stations.size() && m_stations[m_rig.carStation].present;
+	for (int side = 0; side < 2; side++)
+	{
+		const auto& top = m_rig.strutTops[side];
+		if (!top)
+			continue;
+		pPart strut = present ? build->assembly.Get(CarSlot::FRONT_STRUT, side) : nullptr;
+		const ItemVisual* visual = strut ? Find(ItemRef::Part(strut->GetId())) : nullptr;
+		bool shown = visual && visual->place == ItemPlace::CAR && visual->object->IsVisible();
+		top->SetVisible(shown);
+		top->SetPickable(shown);
+		if (!shown)
+			continue;
+		// Aimed at, it's the strut that's aimed at; and it looks as the strut does.
+		m_targets[top.get()] = { TargetKind::ITEM, visual->ref, 0, 0 };
+		top->SetTint(visual->object->GetTint());
+		top->SetEmissive(visual->object->GetEmissive());
+		// Where the whole strut would be, not hanging: the top mount's held in the tower.
+		// On the strut's line (PoseOnCar: from its foot in the knuckle up to here), its plate at the top mount, 0.56 up its model.
+		const float s = side == 0 ? -1.f : 1.f;
+		CarPose pose = PoseOnCar(CarSlot::FRONT_STRUT, side);
+		pose.offset = FrontCamber(s).first - pose.rotation * glm::vec3(0.f, 0.56f, 0.f);
+		top->SetPosition(CarToWorld(pose.offset));
+		top->SetRotation(CarRotation() * pose.rotation);
+	}
+}
+
+void ShopWorld::PoseSwayBarEnds(const Workshop& workshop)
+{
+	const auto* build = workshop.GetCar();
+	bool present = build && m_rig.carStation < m_stations.size() && m_stations[m_rig.carStation].present;
+	pPart bar = present ? build->assembly.Get(CarSlot::FRONT_SWAY_BAR, 0) : nullptr;
+	const ItemVisual* visual = bar ? Find(ItemRef::Part(bar->GetId())) : nullptr;
+	bool shown = visual && visual->place == ItemPlace::CAR && visual->object->IsVisible();
+	// The bar's own space (see its model): its axis along x at AXIS_Y, each end back from its bend to BACK, the drop
+	// link's foot on its tab at FOOT_Y. Where the whole bar goes on the car.
+	constexpr float END = 0.455f, AXIS_Y = 0.05f, BACK = -0.27f, FOOT_Y = 0.014f;
+	const CarPose pose = PoseOnCarStill(CarSlot::FRONT_SWAY_BAR, 0);
+	for (int end = 0; end < 2; end++)
+	{
+		const auto& object = m_rig.swayBarEnds[end];
+		if (!object)
+			continue;
+		object->SetVisible(shown);
+		object->SetPickable(shown);
+		if (!shown)
+			continue;
+		m_targets[object.get()] = { TargetKind::ITEM, visual->ref, 0, 0 };
+		object->SetTint(visual->object->GetTint());
+		object->SetEmissive(visual->object->GetEmissive());
+
+		// Where the link's foot is on its arm's tab, and where that tab has gone as the arm swung down: the end's turned
+		// about the bar's axis by enough to bring the foot down as far. (The arm on the car's side of the bar's end.)
+		const float x = end == 0 ? -END : END;
+		const glm::vec3 foot = pose.offset + pose.rotation * glm::vec3(x, FOOT_Y, BACK);
+		const int arm = foot.z < 0.f ? 0 : 1;
+		const CarPose still = PoseOnCarStill(CarSlot::LOWER_CONTROL_ARM, arm);
+		const CarPose hung = Drooped(CarSlot::LOWER_CONTROL_ARM, arm, still);
+		const glm::vec3 moved = hung.offset + hung.rotation * glm::inverse(still.rotation) * (foot - still.offset);
+		const float down = foot.y - moved.y;
+		// (Turning about x by a takes (0, 0, BACK) round to y = -BACK sin a: down by d is a = asin(-d / -BACK).)
+		const glm::quat twist = glm::angleAxis(-std::asin(std::clamp(down / -BACK, -1.f, 1.f)), glm::vec3(1.f, 0.f, 0.f));
+		const glm::vec3 axis = { 0.f, AXIS_Y, 0.f };
+		object->SetPosition(CarToWorld(pose.offset + pose.rotation * (axis - twist * axis)));
+		object->SetRotation(CarRotation() * pose.rotation * twist);
+	}
+}
+
+void ShopWorld::PoseTieRodStuds(const Workshop& workshop)
+{
+	const auto* build = workshop.GetCar();
+	bool present = build && m_rig.carStation < m_stations.size() && m_stations[m_rig.carStation].present;
+	for (int side = 0; side < 2; side++)
+	{
+		const auto& stud = m_rig.tieRodStuds[side];
+		if (!stud)
+			continue;
+		pPart end = present ? build->assembly.Get(CarSlot::TIE_ROD_END, side) : nullptr;
+		const ItemVisual* visual = end ? Find(ItemRef::Part(end->GetId())) : nullptr;
+		bool shown = visual && visual->place == ItemPlace::CAR && visual->object->IsVisible();
+		stud->SetVisible(shown);
+		stud->SetPickable(shown);
+		if (!shown)
+			continue;
+		m_targets[stud.get()] = { TargetKind::ITEM, visual->ref, 0, 0 };
+		stud->SetTint(visual->object->GetTint());
+		stud->SetEmissive(visual->object->GetEmissive());
+		const auto pose = TieRodStudPose(side == 0 ? -1.f : 1.f);
+		stud->SetPosition(CarToWorld(pose.offset));
+		stud->SetRotation(CarRotation() * pose.rotation);
+	}
+}
+
+ShopWorld::CarPose ShopWorld::TieRodStudPose(float side) const
+{
+	// Square in the knuckle's steering arm, however that's turned (steered, tipped with the camber): its model's ball at
+	// the rod's end, the stud down from it along the knuckle's own up.
+	const glm::quat knuckle = PoseOnCar(CarSlot::STEERING_KNUCKLE, side < 0.f ? 0 : 1).rotation;
+	return { TieRod(side).stud - knuckle * glm::vec3(0.f, CarBody::TIE_ROD_END_UP, 0.f), knuckle };
+}
+
 void ShopWorld::PoseSeatBacks(const Workshop& workshop, float deltaTime)
 {
 	using namespace CarBody;
@@ -1075,6 +1463,85 @@ void ShopWorld::UpdateExhaustSmoke(const Workshop& workshop, float deltaTime)
 		puff.object->SetPosition(puff.position);
 		puff.object->SetScale(glm::vec3(puff.size * (1.f + 5.5f * through)));
 		puff.object->SetTint({ shade, shade, shade * 1.02f, puff.thick * std::pow(1.f - through, 1.5f) * (std::min)(1.f, puff.age / 0.06f) });
+	}
+}
+
+void ShopWorld::UpdateRadiatorBubbles(const Workshop& workshop, float deltaTime)
+{
+	const auto* build = workshop.GetCar();
+	const bool present = build && m_rig.carStation < m_stations.size() && m_stations[m_rig.carStation].present;
+	// How fast the air's coming out (as Workshop::DriveCar burps it): a little cold, properly once the thermostat's open,
+	// faster revved, and dying away as the last of it comes.
+	float burping = 0.f, revs = 0.f;
+	glm::vec3 colour = { 0.3f, 0.75f, 0.35f };
+	if (present && m_rig.drive.active && !build->assembly.CapOn(FluidCircuit::COOLANT))
+	{
+		const auto& coolant = build->assembly.GetFluid(FluidCircuit::COOLANT);
+		if (coolant.airPocket > 0.0 && coolant.Total() > 0.0)
+		{
+			const float open = std::clamp((static_cast<float>(workshop.CarEngineHeat()) - 0.8f) / 0.2f, 0.f, 1.f);
+			revs = std::clamp((m_rig.drive.rpm - m_rig.drive.idleRpm) / (REDLINE - m_rig.drive.idleRpm), 0.f, 1.f);
+			burping = (0.15f + 0.85f * open) * (1.f + 4.f * revs) * (std::min)(1.f, static_cast<float>(coolant.airPocket) * 4.f);
+			if (const auto main = coolant.Main(); main != FluidProduct::COUNT)
+			{
+				const auto c = FluidColour(main);
+				colour = { c[0], c[1], c[2] };
+			}
+		}
+	}
+	// New ones up out of the neck: a few a second cold, a steady stream warm, a boiling gurgle revved.
+	if (burping > 0.f)
+	{
+		const float rate = 3.f + 14.f * burping;
+		m_rig.bubbleDue -= deltaTime;
+		// Up out of the mouth of the radiator's filler neck, where its cap goes.
+		const auto neck = FillerSeat(workshop, FluidCircuit::COOLANT);
+		for (int made = 0; m_rig.bubbleDue <= 0.f && made < 3; made++)
+		{
+			m_rig.bubbleDue += (0.5f + Chance()) / rate;
+			SmokePuff* bubble = &m_rig.bubbles[0];
+			for (auto& candidate : m_rig.bubbles)
+				if (candidate.life <= 0.f || (bubble->life > 0.f && candidate.age / candidate.life > bubble->age / bubble->life))
+					bubble = &candidate;
+			if (!bubble->object)
+				continue;
+			// Anywhere across the neck's mouth; the bigger ones, gulps of air, revved.
+			const float angle = glm::two_pi<float>() * Chance(), across = 0.011f * std::sqrt(Chance());
+			bubble->position = neck.at + neck.turn * glm::vec3(std::cos(angle) * across, 0.f, std::sin(angle) * across);
+			bubble->velocity = { 0.f, 0.03f + 0.05f * Chance() + 0.06f * revs, 0.f };
+			bubble->size = 0.007f + 0.008f * Chance() + (Chance() < 0.25f * revs ? 0.01f : 0.f);
+			bubble->age = 0.f;
+			bubble->life = 0.25f + 0.45f * Chance();
+			bubble->thick = 1.f;
+		}
+		m_rig.bubbleDue = (std::max)(m_rig.bubbleDue, -0.1f);
+	}
+	else
+		m_rig.bubbleDue = 0.f;
+	// Each swells as it comes up, wobbling, and pops at the top. (Gone at once with the car.)
+	for (auto& bubble : m_rig.bubbles)
+	{
+		if (!bubble.object)
+			continue;
+		if (bubble.life > 0.f)
+		{
+			bubble.age += deltaTime;
+			if (bubble.age >= bubble.life || !present)
+				bubble.life = 0.f;
+		}
+		bubble.object->SetVisible(bubble.life > 0.f);
+		if (bubble.life <= 0.f)
+			continue;
+		bubble.position += bubble.velocity * deltaTime;
+		bubble.velocity *= std::exp(-2.5f * deltaTime);
+		const float through = bubble.age / bubble.life;
+		const float wobble = 1.f + 0.12f * std::sin(bubble.age * 40.f + bubble.size * 900.f);
+		bubble.object->SetPosition(bubble.position);
+		bubble.object->SetScale(glm::vec3(bubble.size * (1.f + 0.6f * through) * wobble, bubble.size * (1.f + 0.6f * through) / wobble, bubble.size * (1.f + 0.6f * through) * wobble));
+		// A film of the coolant itself, its colour (a touch lighter, catching the light), mostly opaque; just out of the neck
+		// it grows in, and at the end it's gone (popped).
+		bubble.object->SetTint({ 0.15f + 0.85f * colour.x, 0.15f + 0.85f * colour.y, 0.15f + 0.85f * colour.z,
+			0.85f * (std::min)(1.f, bubble.age / 0.05f) * (through > 0.9f ? (1.f - through) / 0.1f : 1.f) });
 	}
 }
 
@@ -1373,7 +1840,7 @@ void ShopWorld::Drive(float deltaTime, Workshop& workshop, FirstPersonController
 	if (m_rig.seat == 0)
 		UpdateHandbrake(input, playerHasControl);
 	if (CarBeingDriven() && CarOffGround())
-		SpinOffGround(deltaTime, input, playerHasControl);
+		SpinOffGround(deltaTime, workshop, input, playerHasControl);
 	else if (CarBeingDriven())
 		MoveCar(deltaTime, workshop, input, playerHasControl);
 	else if (m_rig.seat == 0)
@@ -1689,7 +2156,7 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 	}
 
 	// Fuel burned by the mile; out of it, that's that.
-	if (!workshop.DriveCar(deltaTime, std::abs(moved), throttle))
+	if (!RunCarEngine(workshop, deltaTime, std::abs(moved), throttle))
 	{
 		Toast("It's run out of fuel.");
 		EndDrive();
@@ -2236,7 +2703,7 @@ void ShopWorld::SteerStanding(float deltaTime, const InputManager& input)
 		m_rig.carLaidOutAt = glm::vec3(-1e9f);
 }
 
-void ShopWorld::SpinOffGround(float deltaTime, const InputManager& input, bool playerHasControl)
+void ShopWorld::SpinOffGround(float deltaTime, Workshop& workshop, const InputManager& input, bool playerHasControl)
 {
 	// Up on the lift, a jack or stands, it goes nowhere: the engine revs with the throttle, and in gear with the clutch
 	// up the back wheels turn in the air (or, if the handbrake or the brakes hold them, it stalls). The lever and the
@@ -2277,7 +2744,7 @@ void ShopWorld::SpinOffGround(float deltaTime, const InputManager& input, bool p
 	}
 	// In gear with the clutch let up, the engine's tied to the back wheels. If they can't turn (the handbrake on them,
 	// the brakes on, or neither of them up off the ground) the engine's dragged down and it stalls, up in the air or not.
-	const bool rearUp = m_rig.cornerHeights[2] > 0.01f || m_rig.cornerHeights[3] > 0.01f;
+	const bool rearUp = WheelOffGround(2) || WheelOffGround(3);
 	const bool braked = drive.footBrake && drive.brakesWork;
 	if (drive.gear != 0 && drive.clutch > 0.6f && (drive.handbrake || braked || !rearUp))
 	{
@@ -2295,6 +2762,49 @@ void ShopWorld::SpinOffGround(float deltaTime, const InputManager& input, bool p
 		m_rig.carLaidOutAt = glm::vec3(-1e9f);
 	}
 	LeanCar(deltaTime, 0.f, 0.f);
+	// It burns fuel and warms up up there as it does on the road (going nowhere).
+	if (!RunCarEngine(workshop, deltaTime, 0.0, drive.throttle))
+	{
+		Toast("It's run out of fuel.");
+		EndDrive();
+	}
+}
+
+bool ShopWorld::RunCarEngine(Workshop& workshop, float deltaTime, double metres, double throttle)
+{
+	const auto* build = workshop.GetCar();
+	const auto& drive = m_rig.drive;
+	const double revs = std::clamp((drive.rpm - drive.idleRpm) / (REDLINE - drive.idleRpm), 0.f, 1.f);
+	const bool capOff = build && !build->assembly.CapOn(FluidCircuit::COOLANT);
+	const double airBefore = build ? build->assembly.GetFluid(FluidCircuit::COOLANT).airPocket : 0.0;
+	const bool running = workshop.DriveCar(deltaTime, metres, throttle, revs);
+	// With the radiator cap off: bubbles at the neck while there's air coming out (said once, and again revved, when it
+	// gurgles), and when the last of it's out, that it wants topping up.
+	if (capOff && (build = workshop.GetCar()))
+	{
+		const double air = build->assembly.GetFluid(FluidCircuit::COOLANT).airPocket;
+		if (airBefore > 0.0 && air <= 0.0)
+		{
+			Toast("No more bubbles at the radiator's neck: the air's out of it. Top it up, and put the cap back on.");
+			Cue(Sound::CLICK, GetCarPosition(), 0.3f);
+		}
+		else if (air > 0.0 && airBefore - air > 0.0)
+		{
+			const bool gurgling = revs > 0.35 && workshop.CarEngineHeat() >= 0.8;
+			if (!m_rig.burpSaid || (gurgling && !m_rig.burpRevSaid))
+			{
+				Toast(gurgling ? "Revved, it gurgles: bubbles pour out of the radiator's neck." : workshop.CarEngineHeat() < 0.8
+					? "A few bubbles at the radiator's neck. Once it's warm and the thermostat opens, rev it to burp the air out quicker."
+					: "Bubbles at the radiator's neck: the air's coming out. Rev it to burp it out quicker.");
+				m_rig.burpSaid = true;
+				m_rig.burpRevSaid = m_rig.burpRevSaid || gurgling;
+			}
+		}
+	}
+	// (Said afresh the next time it's run with the cap off.)
+	if (!capOff)
+		m_rig.burpSaid = m_rig.burpRevSaid = false;
+	return running;
 }
 
 void ShopWorld::BeginCranking(Workshop& workshop)
@@ -2448,7 +2958,7 @@ void ShopWorld::IdleCar(float deltaTime, Workshop& workshop)
 	// open diff lets that one spin while the other stays put) and not held by the handbrake. Otherwise the engine
 	// can't turn the wheels at idle with the clutch dumped: the car lurches and the engine stalls.
 	drive.rpm += (drive.idleRpm - drive.rpm) * (1.f - std::exp(-deltaTime * 4.f));
-	const bool backWheelFree = !m_rig.handbrakeOn && (m_rig.cornerHeights[2] > 0.01f || m_rig.cornerHeights[3] > 0.01f);
+	const bool backWheelFree = !m_rig.handbrakeOn && (WheelOffGround(2) || WheelOffGround(3));
 	if (drive.gear != 0 && !backWheelFree)
 	{
 		// The lurch: with the handbrake off and all four wheels on the ground, it jerks a little way in the gear's
@@ -2480,7 +2990,7 @@ void ShopWorld::IdleCar(float deltaTime, Workshop& workshop)
 		TurnRearWheels(wheelSpeed * deltaTime / WHEEL_Y);
 		m_rig.carLaidOutAt = glm::vec3(-1e9f);
 	}
-	if (!workshop.DriveCar(deltaTime, 0.0, 0.0))
+	if (!RunCarEngine(workshop, deltaTime, 0.0, 0.0))
 	{
 		Toast("It's run out of fuel.");
 		EndDrive();
@@ -2827,6 +3337,22 @@ void ShopWorld::BuildCarRig(int car)
 	};
 	for (auto& back : m_rig.seatBacks)
 		back = extra(ShopModels::SEAT_BACK);
+	// Each front strut's rod and top mount, up in its tower.
+	for (auto& top : m_rig.strutTops)
+	{
+		top = extra(ShopModels::STRUT_TOP);
+		top->SetCastsShadows(true);
+	}
+	for (auto& stud : m_rig.tieRodStuds)
+	{
+		stud = extra(ShopModels::TIE_ROD_STUD);
+		stud->SetCastsShadows(true);
+	}
+	for (int end = 0; end < 2; end++)
+	{
+		m_rig.swayBarEnds[end] = extra(end == 0 ? ShopModels::SWAY_BAR_END_NEG : ShopModels::SWAY_BAR_END_POS);
+		m_rig.swayBarEnds[end]->SetCastsShadows(true);
+	}
 	// The handbrake's lever, the headlights' beams and the tail lights' stop lamps, and the rams and posts of the jacks
 	// and stands under the car.
 	m_rig.handbrakeLever = extra(ShopModels::HANDBRAKE_LEVER);
@@ -2846,6 +3372,11 @@ void ShopWorld::BuildCarRig(int car)
 		support.post = extra(ShopModels::SUPPORT_POST);
 	for (auto& puff : m_rig.smoke)
 		puff.object = extra(ShopModels::SMOKE_PUFF);
+	for (auto& bubble : m_rig.bubbles)
+	{
+		bubble.object = extra(ShopModels::SMOKE_PUFF);
+		bubble.object->SetCastsLampShadows(false);
+	}
 	for (auto& plug : m_rig.plugVisuals)
 	{
 		// (A wire's plug and socket; a pipe's flare nut and the port it screws into; a hose's clipped end and its stub.)

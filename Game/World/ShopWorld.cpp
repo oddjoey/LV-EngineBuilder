@@ -2187,7 +2187,7 @@ float ShopWorld::FastenerRise(const ItemVisual& visual, AssemblySlot slot, int i
 
 glm::vec3 ShopWorld::SlotWorldCenter(int engine, AssemblySlot slot, int index) const
 {
-	// A spark plug lead: where its boot goes in, the mouth of its plug's tube in the side of the head (on the plug's axis,
+	// A spark plug wire: where its boot goes in, the mouth of its plug's tube in the side of the head (on the plug's axis,
 	// where it comes out of the head's side face). Its loose model, the boot straight up and the wire off along X, is
 	// nothing like the shape it takes fitted.
 	if (slot == AssemblySlot::PLUG_LEAD)
@@ -2920,7 +2920,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 
 	auto layout = [&](ItemVisual& visual)
 	{
-		// A spark plug lead on the engine runs all the way to its tower on the distributor cap.
+		// A spark plug wire on the engine runs all the way to its tower on the distributor cap.
 		if (visual.part && visual.part->GetType() == PartType::PLUG_LEAD)
 		{
 			uint32_t wanted = m_assets->PartModel(PartType::PLUG_LEAD);
@@ -2954,6 +2954,23 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 		if (visual.part && visual.part->GetType() == PartType::TRANSMISSION)
 		{
 			uint32_t wanted = visual.place == ItemPlace::CAR ? m_assets->Model(ShopModels::TRANSMISSION_BODY) : m_assets->PartModel(PartType::TRANSMISSION);
+			if (visual.object->GetModelIndex() != wanted)
+			{
+				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				visual.carSlot = -1;
+			}
+		}
+		// A front strut on the car is its body alone, which hangs with the knuckle: its rod and top mount are a model of their
+		// own there, up in the tower (PoseStrutTops).
+		if (visual.part && (visual.part->GetType() == PartType::FRONT_STRUT || visual.part->GetType() == PartType::FRONT_SWAY_BAR
+			|| visual.part->GetType() == PartType::TIE_ROD_END))
+		{
+			// (The sway bar likewise: its bar alone, its ends and drop links models of their own, PoseSwayBarEnds. And a tie
+			// rod end: its body alone, its stud a model of its own square in the knuckle's arm, PoseTieRodStuds.)
+			const PartType type = visual.part->GetType();
+			uint32_t wanted = visual.place == ItemPlace::CAR ? m_assets->Model(type == PartType::FRONT_STRUT ? ShopModels::STRUT_BODY
+					: type == PartType::FRONT_SWAY_BAR ? ShopModels::SWAY_BAR_BODY : ShopModels::TIE_ROD_END_BODY)
+				: m_assets->PartModel(type);
 			if (visual.object->GetModelIndex() != wanted)
 			{
 				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
@@ -5301,5 +5318,7 @@ std::string ShopWorld::DevCapReport(const Workshop& workshop) const
 		out += std::format("{}{} {:.2f} l, cap {}", out.empty() ? "" : "; ", FluidCircuitName(circuit), build->assembly.GetFluid(circuit).Total(),
 			!cap ? "off" : visual && visual->place == ItemPlace::ATTACHED ? "on" : "on (item not on it!)");
 	}
-	return out;
+	// (And the air trapped in the cooling system, how warm the engine is, and whether it's running: for burping it.)
+	return out + std::format(". Coolant air {:.2f}, engine heat {:.2f}, {}", build->assembly.GetFluid(FluidCircuit::COOLANT).airPocket,
+		workshop.CarEngineHeat(), m_rig.drive.active ? std::format("running in gear {}", m_rig.drive.gear) : "not running");
 }

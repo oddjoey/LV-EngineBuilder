@@ -114,6 +114,16 @@ namespace CarBody
 	constexpr float IGNITION_BARREL[3] = { 0.33f, 0.665f, -0.12f };
 	// Where the steering's tie rods run, under the engine's sump.
 	constexpr float TIE_ROD_Y = 0.165f;
+	// The tie rod end: an L, its body level with the rod this far up its model, its stud down from it through the eye of the
+	// knuckle's steering arm, whose middle is this far under the rod (the arm 0.03 thick, the nut under it); the arm's eye
+	// this far ahead of the axle, under the rack.
+	constexpr float TIE_ROD_END_UP = 0.06f;
+	constexpr float TIE_ROD_ARM_DROP = 0.035f;
+	constexpr float STEERING_ARM_X = 0.2f;
+	// The steering rack's clamps, either side of its middle (and the pads on the body they bolt up to); its tube ends inside the
+	// boots, which end short of the inner tie rods' balls at RACK_BALL_Z, for the rods to swing clear of them.
+	constexpr float RACK_CLAMP_Z = 0.22f;
+	constexpr float RACK_BALL_Z = 0.34f;
 	// The doors' inside handles, on the door's own model (from its hinge line: how far back along it, how far up from
 	// its bottom edge, and how far in from its outer skin the lever stands): on the cloth of the card behind the
 	// dashboard's end, where they show with the door shut.

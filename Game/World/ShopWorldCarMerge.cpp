@@ -133,7 +133,7 @@ std::vector<pObject> ShopWorld::CarMergeMembers(const Workshop& workshop, int ca
 	// The car's own fittings that are objects of their own.
 	for (const pObject& object : { rig.fuelFlap, rig.handbrakeLever, rig.gearLever, rig.clusterMarks })
 		add(object);
-	for (const auto* objects : { &rig.doorGlass, &rig.headlightLenses, &rig.stopLamps, &rig.seatBacks, &rig.loomTrunks, &rig.lineFixtures })
+	for (const auto* objects : { &rig.doorGlass, &rig.headlightLenses, &rig.stopLamps, &rig.seatBacks, &rig.strutTops, &rig.swayBarEnds, &rig.tieRodStuds, &rig.loomTrunks, &rig.lineFixtures })
 		for (const pObject& object : *objects)
 			add(object);
 	for (const pObject& object : rig.gaugeNeedles)

@@ -118,7 +118,7 @@ namespace
 		{ PartType::SPARK_PLUG,				"Spark Plug",				S::IGNITION,	8.0,	PER_CYLINDER,	false,	true,	false,	false,	1, 1,
 			"M14 x 1.25 with a 16 mm hex, done up with a spark plug socket. Gap 0.8 to 0.9 mm. Electrodes wear the gap open until the coil can't jump it under load.",
 			nullptr, true, { "M14x1.25", 16, false } },
-		{ PartType::PLUG_LEAD,				"Spark Plug Lead",			S::IGNITION,	12.0,	PER_CYLINDER,	true,	true,	false,	false,	1, 2,
+		{ PartType::PLUG_LEAD,				"Spark Plug Wire",			S::IGNITION,	12.0,	PER_CYLINDER,	true,	true,	false,	false,	1, 2,
 			"Carries the spark from the distributor cap to its plug, pushed down through the valve cover onto it." },
 		{ PartType::INTAKE_MANIFOLD_GASKET,	"Intake Manifold Gasket",	S::FUEL_AND_AIR, 18.0,	1,				false,	false,	true,	false,	4, 1,
 			"Seals the runners to the intake ports. A leak here is unmetered air. Single use." },
@@ -182,7 +182,7 @@ namespace
 		{ PartType::ROCKER_SHAFT,			"Rocker Shaft",				S::VALVETRAIN,	45.0,	2,				true,	true,	false,	false,	5, 1,
 			"Hollow steel shaft the rocker arms pivot on: one for the intakes, one for the exhausts, oil fed down the middle. Each arm wears its own spot on it: mic it there." },
 		{ PartType::DISTRIBUTOR,			"Distributor",				S::IGNITION,	140.0,	1,				true,	true,	false,	false,	2, 2,
-			"Gear-driven off the back of the camshaft: it times the spark and sends it down the right plug lead. A worn shaft bearing lets the rotor wobble and the timing wander." },
+			"Gear-driven off the back of the camshaft: it times the spark and sends it down the right plug wire. A worn shaft bearing lets the rotor wobble and the timing wander." },
 		{ PartType::FLYWHEEL,				"Flywheel",					S::BOTTOM_END,	180.0,	1,				true,	true,	false,	true,	3, 3,
 			"Bolted to the back of the crank: the starter's ring gear and the clutch face. A warped or hot-spotted face judders; it can be skimmed flat." },
 		{ PartType::EXHAUST_PIPE,			"Exhaust Downpipe",			S::EXHAUST,		70.0,	1,				true,	true,	false,	false,	1, 4,
@@ -516,7 +516,7 @@ const char* PartCatalog::Purpose(PartType type)
 		case PartType::VALVE_COVER_GASKET:		return "Seals the valve cover to the head.";
 		case PartType::VALVE_COVER:				return "Closes up the top of the head over the cam and rockers, keeping the oil in and the dirt out.";
 		case PartType::SPARK_PLUG:				return "Screws into the head, its tip in the combustion chamber, and sparks across its gap to light the mixture.";
-		case PartType::PLUG_LEAD:				return "The insulated lead carrying the high voltage from the distributor to its spark plug.";
+		case PartType::PLUG_LEAD:				return "The insulated wire carrying the high voltage from the distributor to its spark plug.";
 		case PartType::INTAKE_MANIFOLD_GASKET:	return "Seals the intake manifold to the head's intake ports.";
 		case PartType::INTAKE_MANIFOLD:			return "Carries the fuel and air mixture from the carburettor and shares it out to each cylinder's intake port.";
 		case PartType::CARBURETTOR:				return "Mixes fuel into the air the engine draws in, in the right proportion, and its throttle sets how much goes in: how hard the engine works.";
@@ -538,7 +538,7 @@ const char* PartCatalog::Purpose(PartType type)
 		case PartType::BOLT_M12:
 		case PartType::BOLT_M14:				return "A bolt, holding a part on by being stretched a little as it's done up: torqued right, it clamps hard enough that the joint never moves.";
 		case PartType::NUT_M8:					return "A nut, clamping a part on as it's done up a stud or bolt.";
-		case PartType::DISTRIBUTOR:				return "Driven off the camshaft, it sends the spark to each cylinder's plug lead in turn, at the right moment in its stroke.";
+		case PartType::DISTRIBUTOR:				return "Driven off the camshaft, it sends the spark to each cylinder's plug wire in turn, at the right moment in its stroke.";
 		case PartType::FLYWHEEL:				return "The heavy disc on the back of the crank: it smooths out the power strokes, carries the starter ring, and is what the clutch grips.";
 		case PartType::ALTERNATOR:				return "Driven by the V-belt, it makes the electricity that runs the car and charges the battery.";
 		case PartType::ALTERNATOR_BRACKET:		return "Holds the alternator to the block: its pivot, and the strap that locks it swung out to tension the belt.";

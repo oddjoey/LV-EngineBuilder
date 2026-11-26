@@ -420,7 +420,7 @@ void ServiceManual::BuildChassis(bool imperial)
 	heading("Service in the Car");
 	text("With the engine in, these can come off and go back on where it sits:");
 	bullet("The valve cover, its gasket and bolts (for the valve lash)");
-	bullet("Spark plugs and plug leads");
+	bullet("Spark plugs and plug wires");
 	bullet("The carburettor and its bolts");
 	bullet("The oil filter");
 	bullet("The flywheel, with the clutch and gearbox off");
@@ -463,7 +463,7 @@ void ServiceManual::BuildChassis(bool imperial)
 		"at the front, and on its engine branch the starter, the ignition coil, the distributor, the alternator, the coolant temperature sender "
 		"in the water outlet and the oil pressure sender in the block by the filter. Take off a part and its plug comes loose again. The "
 		"engine can't be lifted out with the distributor's, the alternator's or either sender's plug on it, and the harness itself only comes out "
-		"once every one of its plugs is pulled. (The spark plugs' leads are parts of "
+		"once every one of its plugs is pulled. (The spark plugs' wires are parts of "
 		"their own, from the distributor's cap to each plug: see the engine's manual.)");
 	text("To keep the wires tidy, clip them as you go. With a plug in hand, aim at somewhere under the hood and press the use key: the wire "
 		"is clipped there, and runs on from that clip. Each wire takes up to six clips, in the order they're put on, so a wire can be led "

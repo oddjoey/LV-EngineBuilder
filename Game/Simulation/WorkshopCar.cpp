@@ -523,7 +523,7 @@ std::optional<std::string> Workshop::EngineWorkProblem(int engine, AssemblySlot 
 			return std::nullopt;
 		}
 		if (!ServiceableInCar(slot))
-			return "That engine is in the car: only the service parts (valve cover, plugs and leads, carburettor, oil filter, oil drain plug) can be got at, "
+			return "That engine is in the car: only the service parts (valve cover, plugs and plug wires, carburettor, oil filter, oil drain plug) can be got at, "
 				"and the flywheel with the gearbox out. Lift it out with the hoist for the rest.";
 		return std::nullopt;
 	}
@@ -1856,7 +1856,7 @@ Workshop::CarDrive Workshop::StartCar()
 	return drive;
 }
 
-bool Workshop::DriveCar(double seconds, double metres, double throttle)
+bool Workshop::DriveCar(double seconds, double metres, double throttle, double revs)
 {
 	if (!m_car)
 		return false;
@@ -1869,6 +1869,15 @@ bool Workshop::DriveCar(double seconds, double metres, double throttle)
 	double pace = seconds > 0.0 ? metres / seconds : 0.0;
 	double warming = 1.0 / CAR_ENGINE_WARM_SECONDS * (1.0 + 1.2 * std::clamp(pace / 25.0, 0.0, 1.0) + 0.8 * std::clamp(throttle, 0.0, 1.0));
 	build.engineHeat = (std::min)(1.0, build.engineHeat + seconds * warming);
+	// With the radiator cap off, the air trapped in the cooling system burps out of the filler neck as the water pump
+	// pushes the coolant round: hardly at all cold (the thermostat's shut, so only the engine's own jackets go round),
+	// properly once the thermostat's open, and much quicker revved, the pump turning faster. The level drops as it does.
+	if (!build.assembly.CapOn(FluidCircuit::COOLANT) && build.assembly.GetFluid(FluidCircuit::COOLANT).airPocket > 0.0)
+	{
+		const double open = std::clamp((build.engineHeat - 0.8) / 0.2, 0.0, 1.0);
+		const double pumping = (0.15 + 0.85 * open) * (1.0 + 4.0 * std::clamp(revs, 0.0, 1.0));
+		build.assembly.BurpCoolant(seconds / 60.0 * pumping);
+	}
 	return build.assembly.GetFluid(FluidCircuit::FUEL).Total() > 0.01;
 }
 

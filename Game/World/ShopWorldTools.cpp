@@ -757,7 +757,7 @@ void ShopWorld::MarkEmptyHoles(const Workshop& workshop, const FirstPersonContro
 	}
 }
 
-void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
+bool ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 {
 	// What's looked at: the nut or bolt the spanner in hand is on, else one under the crosshair
 	// (fitted or loose), else the empty hole nearest the crosshair.
@@ -777,9 +777,9 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 	if (!part && !hole)
 		hole = m_aimedHole;
 	if (!part && !hole)
-		return;
+		return false;
 	if (hole && hole->car && !workshop.GetCar())
-		return;
+		return false;
 
 	// On the car or on an engine.
 	const CarAssembly* car = hole && hole->car ? &workshop.GetCar()->assembly : nullptr;
@@ -788,7 +788,7 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 	if (hole && !part)
 		part = (car ? car->Get(hole->carSlot, hole->index) : assembly->Get(hole->slot, hole->index)).get();
 	if (!part && !holes)
-		return;
+		return false;
 	PartType type = part ? part->GetType() : holes->size;
 	const auto& info = PartCatalog::Get(type);
 	const auto& spec = info.fastener;
@@ -838,21 +838,217 @@ void ShopWorld::DrawHardwarePanel(const Workshop& workshop) const
 			lines.push_back({ use, dim });
 	}
 
-	// On the right, under where the gauge readout goes.
+	DrawInfoCard(title, lines);
+	return true;
+}
+
+void ShopWorld::DrawInfoCard(const std::string& title, const std::vector<std::pair<std::string, uint32_t>>& lines)
+{
+	// On the right, under where the gauge readout goes. Long lines wrap at the card's widest.
 	ImDrawList* drawList = ImGui::GetForegroundDrawList();
 	ImVec2 display = ImGui::GetIO().DisplaySize;
-	float lineHeight = ImGui::GetTextLineHeightWithSpacing();
-	float width = ImGui::CalcTextSize(title.c_str()).x + 32.f;
+	float spacing = ImGui::GetStyle().ItemSpacing.y;
+	float widest = (std::min)(display.x * 0.3f, 460.f);
+	float width = ImGui::CalcTextSize(title.c_str()).x;
 	for (const auto& line : lines)
-		width = (std::max)(width, ImGui::CalcTextSize(line.first.c_str()).x + 32.f);
-	width = (std::min)(width, display.x * 0.45f);
-	ImVec2 min = { display.x - width - 20.f, display.y * 0.32f };
-	ImVec2 max = { display.x - 20.f, min.y + 22.f + lineHeight * (lines.size() + 1) };
+		width = (std::max)(width, ImGui::CalcTextSize(line.first.c_str()).x);
+	width = (std::min)(width, widest);
+	std::vector<float> heights;
+	float height = ImGui::CalcTextSize(title.c_str(), nullptr, false, width).y + spacing + 4.f;
+	for (const auto& line : lines)
+	{
+		heights.push_back(line.first.empty() ? ImGui::GetTextLineHeight() * 0.5f : ImGui::CalcTextSize(line.first.c_str(), nullptr, false, width).y);
+		height += heights.back() + spacing;
+	}
+	ImVec2 min = { display.x - width - 44.f, display.y * 0.32f };
+	ImVec2 max = { display.x - 20.f, min.y + height + 16.f };
 	drawList->AddRectFilled(min, max, IM_COL32(15, 18, 22, 200), 6.f);
 	drawList->AddRect(min, max, IM_COL32(255, 170, 60, 220), 6.f, 0, 2.f);
-	drawList->AddText({ min.x + 12.f, min.y + 8.f }, IM_COL32(255, 200, 120, 255), title.c_str());
+	ImFont* font = ImGui::GetFont();
+	float size = ImGui::GetFontSize();
+	float y = min.y + 8.f;
+	drawList->AddText(font, size, { min.x + 12.f, y }, IM_COL32(255, 200, 120, 255), title.c_str(), nullptr, width);
+	y += ImGui::CalcTextSize(title.c_str(), nullptr, false, width).y + spacing + 4.f;
 	for (size_t i = 0; i < lines.size(); i++)
-		drawList->AddText({ min.x + 12.f, min.y + 12.f + lineHeight * (i + 1) }, lines[i].second, lines[i].first.c_str());
+	{
+		if (!lines[i].first.empty())
+			drawList->AddText(font, size, { min.x + 12.f, y }, lines[i].second, lines[i].first.c_str(), nullptr, width);
+		y += heights[i] + spacing;
+	}
+}
+
+namespace
+{
+	// The nuts and bolts that hold one part on, and how many of them are in and how tight.
+	struct HeldOn
+	{
+		int holes = 0, in = 0, torqued = 0, snug = 0;
+		std::vector<std::string> names;
+
+		// Whether what's in the way of taking it off is just its own nuts and bolts.
+		bool Own(const std::string& blocker) const
+		{
+			for (const auto& name : names)
+				if (blocker.find(name) != std::string::npos)
+					return true;
+			return false;
+		}
+	};
+
+	HeldOn EngineFasteners(const EngineAssembly& assembly, AssemblySlot slot, int index)
+	{
+		HeldOn held;
+		for (int s = static_cast<int>(AssemblySlot::HEAD_BOLT); s < static_cast<int>(AssemblySlot::COUNT); s++)
+		{
+			auto hole = static_cast<AssemblySlot>(s);
+			const auto* holes = EngineAssembly::Holes(hole);
+			// The drain plug doesn't hold the pan on, nor the spark plugs the head.
+			if (!holes || hole == AssemblySlot::DRAIN_PLUG || hole == AssemblySlot::SPARK_PLUG || EngineAssembly::SlotFor(holes->parent) != slot)
+				continue;
+			for (int i = 0; i < holes->perParent; i++)
+			{
+				int at = holes->throughAll ? i : index * holes->perParent + i;
+			held.names.push_back(holes->name);
+				if (at >= assembly.SlotCount(hole))
+					continue;
+				held.holes++;
+				if (auto fastener = assembly.Get(hole, at))
+				{
+					held.in++;
+					held.torqued += fastener->GetTightness() == FastenerTightness::TORQUED;
+					held.snug += fastener->GetTightness() == FastenerTightness::SNUG;
+				}
+			}
+		}
+		return held;
+	}
+
+	HeldOn CarFasteners(const CarAssembly& assembly, CarSlot slot, int index)
+	{
+		HeldOn held;
+		for (int s = static_cast<int>(CarSlot::STRUT_MOUNT_NUT); s < static_cast<int>(CarSlot::COUNT); s++)
+		{
+			auto hole = static_cast<CarSlot>(s);
+			const auto* holes = CarAssembly::Holes(hole);
+			if (!holes || CarAssembly::SlotFor(holes->parent) != slot)
+				continue;
+			// Drain and fill plugs don't hold anything on.
+			std::string_view name = holes->name;
+			if (name.find("Plug") != std::string_view::npos || name.find("Nipple") != std::string_view::npos)
+				continue;
+			for (int i = 0; i < holes->perParent; i++)
+			{
+				int at = holes->throughAll ? i : index * holes->perParent + i;
+			held.names.push_back(holes->name);
+				if (at >= assembly.SlotCount(hole))
+					continue;
+				held.holes++;
+				if (auto fastener = assembly.Get(hole, at))
+				{
+					held.in++;
+					held.torqued += fastener->GetTightness() == FastenerTightness::TORQUED;
+					held.snug += fastener->GetTightness() == FastenerTightness::SNUG;
+				}
+			}
+		}
+		return held;
+	}
+}
+
+void ShopWorld::DrawPartPanel(const Workshop& workshop) const
+{
+	if (!m_hover || m_hover->kind != TargetKind::ITEM)
+		return;
+	const ItemVisual* visual = Find(m_hover->item);
+	if (!visual || !visual->part)
+		return;
+	const Part& part = *visual->part;
+
+	const ImU32 text = IM_COL32(240, 240, 235, 255);
+	const ImU32 dim = IM_COL32(175, 182, 192, 255);
+	const ImU32 green = IM_COL32(120, 230, 130, 255);
+	const ImU32 amber = IM_COL32(255, 190, 90, 255);
+	const ImU32 red = IM_COL32(250, 120, 110, 255);
+	std::vector<std::pair<std::string, ImU32>> lines;
+
+	// What it is, and what shape it's in.
+	PartCondition condition = part.GetCondition();
+	lines.push_back({ std::format("{}, {} quality", PartConditionName(condition), PartQualityName(part.GetQuality())),
+		condition == PartCondition::NEW ? green : condition == PartCondition::DAMAGED ? red : text });
+	if (condition == PartCondition::DAMAGED && !part.GetDamageReason().empty())
+		lines.push_back({ part.GetDamageReason(), red });
+	// (A differential keeps its ratio there, not a size: see CarAssembly's tune.)
+	if (part.GetType() == PartType::DIFFERENTIAL && part.GetSizeOffset() > 0.0)
+		lines.push_back({ std::format("{:.2f}:1 ratio", part.GetSizeOffset()), text });
+	else if (double offset = part.GetSizeOffset(); std::abs(offset) > 1e-6)
+		lines.push_back({ std::format("{:.2f} mm {}", std::abs(offset), offset > 0.0 ? "oversize" : "undersize"), text });
+	if (double surfaced = part.GetResurfaced(); surfaced > 1e-6)
+		lines.push_back({ std::format("{:.2f} mm surfaced off", surfaced), dim });
+	if (int features = static_cast<int>(part.GetFeatures().size()))
+	{
+		int measured = 0, stale = 0;
+		for (const auto& feature : part.GetFeatures())
+			if (const auto* reading = part.GetReading(feature.name))
+				(reading->stale ? stale : measured)++;
+		lines.push_back({ measured + stale == 0 ? std::format("Not measured ({} {} to check)", features, features == 1 ? "thing" : "things")
+			: stale ? std::format("Measured {} of {} ({} out of date since machining)", measured + stale, features, stale)
+			: std::format("Measured {} of {}", measured, features), measured == features ? green : dim });
+	}
+	lines.push_back({ std::format("Worth about ${:.0f}", part.GetValue()), dim });
+
+	// Where it is, what holds it on, and what's in the way of taking it off.
+	auto heldOn = [&](const HeldOn& held) {
+		if (!held.holes)
+			return;
+		int loose = held.in - held.torqued - held.snug;
+		std::string state = held.in == 0 ? "none in"
+			: held.torqued == held.holes ? "all torqued"
+			: std::format("{} in: {} torqued, {} snug, {} finger tight", held.in, held.torqued, held.snug, loose);
+		lines.push_back({ std::format("Held by {} {}: {}", held.holes, held.holes == 1 ? "fastener" : "fasteners", state),
+			held.torqued == held.holes ? green : held.in == 0 ? dim : amber });
+	};
+	lines.push_back({ "", text });
+	if (visual->place == ItemPlace::CAR && workshop.GetCar())
+	{
+		const auto& car = workshop.GetCar()->assembly;
+		if (auto at = car.Find(visual->part.get()))
+		{
+			lines.push_back({ std::format("On the car: {}", car.PositionName(at->first, at->second)), text });
+			auto held = CarFasteners(car, at->first, at->second);
+			heldOn(held);
+			if (auto blocked = car.RemovalBlockedBy(at->first, at->second); blocked && !held.Own(*blocked))
+				lines.push_back({ std::format("The {} has to come off first", *blocked), amber });
+		}
+	}
+	else if (visual->place == ItemPlace::STAND)
+	{
+		const auto& assembly = workshop.GetAssembly(visual->engineIndex);
+		if (auto at = FindInstalledSlot(assembly, visual->part))
+		{
+			bool inCar = CarWithEngine(visual->engineIndex) >= 0;
+			lines.push_back({ std::format("On the engine{}: {}", inCar ? " (in the car)" : "", assembly.PositionName(at->first, at->second)), text });
+			auto held = EngineFasteners(assembly, at->first, at->second);
+			heldOn(held);
+			if (auto blocked = assembly.RemovalBlockedBy(at->first, at->second); blocked && !held.Own(*blocked))
+				lines.push_back({ *blocked, amber });
+		}
+	}
+	else
+	{
+		bool engine = EngineAssembly::SlotFor(part.GetType()) != AssemblySlot::COUNT;
+		bool car = CarAssembly::SlotFor(part.GetType()) != CarSlot::COUNT && part.GetType() != PartType::BLOCK;
+		lines.push_back({ engine && car ? "Loose: goes on the engine or the car" : engine ? "Loose: goes on the engine"
+			: car ? "Loose: goes on the car" : "Loose", dim });
+	}
+
+	// What it does.
+	if (const char* purpose = PartCatalog::Purpose(part.GetType()); purpose && *purpose)
+	{
+		lines.push_back({ "", text });
+		lines.push_back({ purpose, dim });
+	}
+
+	DrawInfoCard(PartLabel(part), lines);
 }
 
 bool ShopWorld::IsMovingStation() const
@@ -1442,7 +1638,8 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		ShadowText(drawList, { center.x, display.y - 160.f }, IM_COL32(255, 220, 140, alpha), Controls::Keys(m_toast), true);
 	}
 
-	DrawHardwarePanel(workshop);
+	if (!DrawHardwarePanel(workshop))
+		DrawPartPanel(workshop);
 	DrawPlugMenu(workshop);
 
 	// The last reading, like the face of the gauge, in the top right.

@@ -337,6 +337,18 @@ namespace ShopModels
 	inline const std::string HEADLIGHT_LENS = "Headlight Lens";		// the lamp in a headlight's pod, lit when they're on
 	inline const std::string GAUGE_NEEDLE = "Gauge Needle";
 	inline const std::string KNUCKLE_RIGHT = "Steering Knuckle Right";
+	// A front strut on the car is two: its body (the tube and spring seat, on the knuckle, which hangs with the wheel) and its
+	// piston rod and top mount, which stay up in the tower.
+	inline const std::string STRUT_BODY = "Front Strut (Body)";
+	inline const std::string STRUT_TOP = "Front Strut (Rod and Mount)";
+	// And the front sway bar: the bar across, which stays put, and each end (its drop link down to its arm) turned on its own as
+	// that arm hangs. (The ends by which side of the bar's own x they're on.)
+	inline const std::string SWAY_BAR_BODY = "Front Sway Bar (Bar)";
+	inline const std::string SWAY_BAR_END_NEG = "Front Sway Bar (End -x)";
+	inline const std::string SWAY_BAR_END_POS = "Front Sway Bar (End +x)";
+	// And a tie rod end: its body in line with the rod, and its stud square in the knuckle's steering arm.
+	inline const std::string TIE_ROD_END_BODY = "Tie Rod End (Body)";
+	inline const std::string TIE_ROD_STUD = "Tie Rod End (Stud)";
 	inline const std::string DOOR_GLASS = "Door Glass";
 	inline const std::string DOOR_GLASS_RIGHT = "Door Glass Right";
 	inline const std::string CAR_QUARTER_GLASS = "Car Quarter Glass";
@@ -365,9 +377,9 @@ namespace ShopModels
 	inline const std::string PACKAGE_CRATE = "Package: Crate";
 	// A paint tile: one metre square in X and Y, facing +Z, its texture across it once (scaled to the tile).
 	inline const std::string PAINT_TILE = "Paint Tile";
-	// A spark plug lead fitted to its cylinder (0-3): routed from the plug over the valve cover to its
-	// tower on the distributor cap. Off the engine, a lead is the plain Spark Plug Lead.
-	inline std::string PlugLeadFitted(int cylinder) { return "Spark Plug Lead, fitted " + std::to_string(cylinder + 1); }
+	// A spark plug wire fitted to its cylinder (0-3): routed from the plug over the valve cover to its
+	// tower on the distributor cap. Off the engine, a wire is the plain Spark Plug Wire.
+	inline std::string PlugLeadFitted(int cylinder) { return "Spark Plug Wire, fitted " + std::to_string(cylinder + 1); }
 	// Another player, in a game over the network: the torso, and the parts that move on it. The fur, the
 	// bare skin and the cap are pieces of their own, each taking the player's colour for it (MonkeyLook).
 	inline const std::string PLAYER = "Player";

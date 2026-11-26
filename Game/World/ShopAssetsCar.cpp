@@ -759,6 +759,17 @@ void ShopAssets::LoadCarParts()
 		Cylinder(strut, At({ 0.f, 0.14f, 0.f }), 0.065f, 0.008f, IRON, 20);
 		Cylinder(strut, At({ 0.f, 0.56f, 0.f }), 0.065f, 0.02f, IRON, 20);
 		add(PartType::FRONT_STRUT, strut);
+
+		// On the car it's two (see ShopModels::STRUT_BODY): the tube with its spring seat, which hangs with the knuckle, and
+		// the rod and top mount up in the tower, the rod long enough to stay in the tube with the wheel hanging.
+		MeshBuilder body;
+		Cylinder(body, At({ 0.f, 0.22f, 0.f }), 0.026f, 0.44f, IRON, 16);
+		Cylinder(body, At({ 0.f, 0.14f, 0.f }), 0.065f, 0.008f, IRON, 20);
+		AddModel(ShopModels::STRUT_BODY, body);
+		MeshBuilder top;
+		Cylinder(top, At({ 0.f, 0.475f, 0.f }), 0.011f, 0.19f, ALLOY, 12);
+		Cylinder(top, At({ 0.f, 0.56f, 0.f }), 0.065f, 0.02f, IRON, 20);
+		AddModel(ShopModels::STRUT_TOP, top);
 	}
 	{
 		MeshBuilder spring;
@@ -774,10 +785,11 @@ void ShopAssets::LoadCarParts()
 			MeshBuilder knuckle;
 			Box(knuckle, { 0.f, 0.13f, 0.f }, { 0.1f, 0.26f, 0.08f }, IRON);
 			Cylinder(knuckle, AlongZ({ 0.f, 0.1f, side * 0.05f }), 0.045f, 0.06f, ALLOY, 16);
-			// (The arm drops to the tie rod's height, under the engine's sump: the knuckle sits a tenth under the axle.)
-			const float arm = TIE_ROD_Y - (AXLE_Y - 0.1f);
-			Box(knuckle, { 0.1f, arm, 0.f }, { 0.2f, 0.04f, 0.05f }, IRON);
-			Cylinder(knuckle, At({ 0.18f, arm, 0.f }), 0.02f, 0.05f, IRON, 12);
+			// (The arm runs forward low, just under the tie rod, which is under the engine's sump: the knuckle sits a tenth
+			// under the axle. Its eye is under the rack's end, for the tie rod end's stud to come down through, its nut under it.)
+			const float arm = TIE_ROD_Y - TIE_ROD_ARM_DROP - (AXLE_Y - 0.1f);
+			Box(knuckle, { STEERING_ARM_X * 0.5f, arm, 0.f }, { STEERING_ARM_X, 0.03f, 0.04f }, IRON);
+			Cylinder(knuckle, At({ STEERING_ARM_X, arm, 0.f }), 0.021f, 0.03f, IRON, 14);
 			AddModel(side < 0.f ? std::string(PartTypeName(PartType::STEERING_KNUCKLE)) : ShopModels::KNUCKLE_RIGHT, knuckle);
 		}
 	}
@@ -811,6 +823,35 @@ void ShopAssets::LoadCarParts()
 			}
 		}
 		add(PartType::FRONT_SWAY_BAR, bar);
+
+		// On the car it's three (see ShopModels::SWAY_BAR_BODY): the bar across with its bends and bushings, which stays
+		// put, and each end back from its bend with the drop link and tab, turned about the bar's axis as its arm hangs.
+		// All in the bar's own space, so they go on where the whole one would.
+		MeshBuilder body;
+		Cylinder(body, AlongX({ 0.f, Y, 0.f }), R, 2.f * END, TRIM_BLACK, 12);
+		for (float side : { -1.f, 1.f })
+		{
+			body.ResetTransform().SetColor(TRIM_BLACK).AddSphere({ side * END, Y, 0.f }, R, 4, 12);
+			const float x = side * 0.36f;
+			Box(body, { x, 0.047f, 0.f }, { 0.04f, 0.034f, 0.045f }, RUBBER);
+			Box(body, { x, 0.028f, 0.f }, { 0.034f, 0.004f, 0.053f }, IRON);
+			for (float face : { -1.f, 1.f })
+			{
+				Box(body, { x, 0.046f, face * 0.0245f }, { 0.034f, 0.036f, 0.004f }, IRON);
+				Box(body, { x, 0.061f, face * 0.045f }, { 0.034f, 0.006f, 0.036f }, IRON);
+			}
+		}
+		AddModel(ShopModels::SWAY_BAR_BODY, body);
+		for (float side : { -1.f, 1.f })
+		{
+			MeshBuilder end;
+			Cylinder(end, AlongZ({ side * END, Y, BACK * 0.5f }), R, -BACK, TRIM_BLACK, 12);
+			end.ResetTransform().SetColor(TRIM_BLACK).AddSphere({ side * END, Y, BACK }, R, 4, 12);
+			Cylinder(end, At({ side * END, 0.025f, BACK }), 0.007f, 0.05f, IRON, 8);
+			Cylinder(end, At({ side * END, Y, BACK }), 0.014f, 0.012f, RUBBER, 10);
+			Box(end, { side * END, 0.014f, BACK - 0.02f }, { 0.024f, 0.012f, 0.05f }, IRON);
+			AddModel(side < 0.f ? ShopModels::SWAY_BAR_END_NEG : ShopModels::SWAY_BAR_END_POS, end);
+		}
 	}
 
 	// Rear suspension: the axle across, the diff in its nose.
@@ -857,17 +898,26 @@ void ShopAssets::LoadCarParts()
 		MeshBuilder rack;
 		// Slim, to pass under the engine's sump: its tube, the boots on its ends, and the pinion's housing standing up
 		// off it on the driver's side. A clamp near each end (a rubber bushing round the tube, in a bracket) has a flange
-		// on top that bolts up under the pad on the chassis rail over it.
+		// on top that bolts up under the pad on the chassis rail over it. The tube ends just past the clamps, and each
+		// boot from there, pleated and narrowing, stops short of the inner tie rod's ball (at RACK_BALL_Z): the rods
+		// swing up and down off their balls as the wheels hang, clear of it all.
 		constexpr float Y = 0.036f;
-		Cylinder(rack, AlongX({ 0.f, Y, 0.f }), 0.026f, 0.68f, ALLOY, 14);
+		constexpr float TUBE_END = RACK_CLAMP_Z + 0.04f, BOOT_END = RACK_BALL_Z - 0.012f;
+		Cylinder(rack, AlongX({ 0.f, Y, 0.f }), 0.026f, 2.f * TUBE_END, ALLOY, 14);
 		for (float side : { -1.f, 1.f })
 		{
-			Cylinder(rack, AlongX({ side * 0.38f, Y, 0.f }), 0.022f, 0.08f, RUBBER, 12);	// over the inner tie rods' balls
-			Cylinder(rack, AlongX({ side * 0.32f, Y, 0.f }), 0.03f, 0.04f, RUBBER, 14);
-			Box(rack, { side * 0.32f, 0.033f, 0.f }, { 0.028f, 0.062f, 0.068f }, IRON);
-			Box(rack, { side * 0.32f, 0.063f, 0.f }, { 0.036f, 0.006f, 0.13f }, IRON);
+			constexpr int PLEATS = 5;
+			const float pleat = (BOOT_END - TUBE_END) / PLEATS;
+			for (int i = 0; i < PLEATS; i++)
+			{
+				const float x = TUBE_END + pleat * (i + 0.5f), narrow = 0.004f * i / (PLEATS - 1);
+				Cylinder(rack, AlongX({ side * x, Y, 0.f }), (i % 2 == 0 ? 0.024f : 0.02f) - narrow, pleat, RUBBER, 12);
+			}
+			Cylinder(rack, AlongX({ side * RACK_CLAMP_Z, Y, 0.f }), 0.03f, 0.04f, RUBBER, 14);
+			Box(rack, { side * RACK_CLAMP_Z, 0.033f, 0.f }, { 0.028f, 0.062f, 0.068f }, IRON);
+			Box(rack, { side * RACK_CLAMP_Z, 0.063f, 0.f }, { 0.036f, 0.006f, 0.13f }, IRON);
 		}
-		Cylinder(rack, At({ -0.18f, 0.11f, 0.f }), 0.02f, 0.1f, ALLOY, 12);
+		Cylinder(rack, At({ -0.12f, 0.11f, 0.f }), 0.02f, 0.1f, ALLOY, 12);
 		add(PartType::STEERING_RACK, rack);
 	}
 	{
@@ -881,17 +931,29 @@ void ShopAssets::LoadCarParts()
 		add(PartType::TIE_ROD_INNER, inner);
 	}
 	{
-		// The tie rod end, built about its taper stud (up through the steering arm's eye), along +x inward: the ball's
-		// housing under the arm, the neck up from it, the body, and its threaded shank that the inner rod goes into.
-		// (Its bottom on the floor: the stud's middle, level with the rods, is 0.055 up.)
+		// The tie rod end, an L: the ball's round housing at the corner, its body straight in from it level with the rod
+		// (along +x, inward) to the threaded shank the inner rod screws into, and the taper stud straight down from the
+		// housing through the eye of the knuckle's steering arm. (Its bottom on the floor: the rod's line is UP above it, on
+		// the stud's axis at x = 0.)
 		MeshBuilder end;
-		constexpr float UP = 0.055f;
-		Cylinder(end, At({ 0.f, UP, 0.f }), 0.009f, 0.06f, ALLOY, 10);
-		Cylinder(end, At({ 0.f, UP - 0.042f, 0.f }), 0.02f, 0.026f, IRON, 14);
-		Box(end, { 0.032f, UP - 0.034f, 0.f }, { 0.044f, 0.018f, 0.024f }, IRON);
-		Box(end, { 0.064f, UP - 0.014f, 0.f }, { 0.03f, 0.04f, 0.026f }, IRON);
-		Cylinder(end, AlongX({ 0.09f, UP, 0.f }), 0.0095f, 0.03f, IRON, 10);
+		constexpr float UP = CarBody::TIE_ROD_END_UP;
+		Cylinder(end, At({ 0.f, UP, 0.f }), 0.02f, 0.03f, IRON, 14);
+		Box(end, { 0.042f, UP, 0.f }, { 0.05f, 0.022f, 0.024f }, IRON);
+		Cylinder(end, AlongX({ 0.087f, UP, 0.f }), 0.0095f, 0.04f, IRON, 10);
+		Cylinder(end, At({ 0.f, UP - 0.0375f, 0.f }), 0.009f, 0.045f, ALLOY, 10);
 		add(PartType::TIE_ROD_END, end);
+
+		// On the car it's two (see ShopModels::TIE_ROD_END_BODY): the housing, body and shank in line with the rod, and the
+		// stud, square in the steering arm's eye: the ball in the housing lets them meet at an angle. Both in the end's own
+		// space, the ball at (0, UP, 0).
+		MeshBuilder body;
+		Cylinder(body, At({ 0.f, UP, 0.f }), 0.02f, 0.03f, IRON, 14);
+		Box(body, { 0.042f, UP, 0.f }, { 0.05f, 0.022f, 0.024f }, IRON);
+		Cylinder(body, AlongX({ 0.087f, UP, 0.f }), 0.0095f, 0.04f, IRON, 10);
+		AddModel(ShopModels::TIE_ROD_END_BODY, body);
+		MeshBuilder stud;
+		Cylinder(stud, At({ 0.f, UP - 0.0375f, 0.f }), 0.009f, 0.045f, ALLOY, 10);
+		AddModel(ShopModels::TIE_ROD_STUD, stud);
 	}
 	{
 		// The column, lying along x (its top end, at the wheel, toward -x), with its shroud under the wheel and a
@@ -1559,6 +1621,8 @@ void ShopAssets::LoadCarParts()
 		}
 		// The filler neck and its pressure cap, on the top tank: the cap's two ears, and the small pipe out of the neck's side.
 		Cylinder(radiator, At({ 0.12f, 0.43f, 0.f }), 0.021f, 0.022f, TANK, 16);
+		// Its mouth, open, dark down into the tank (seen with the cap off; the bubbles come up out of it).
+		Cylinder(radiator, At({ 0.12f, 0.4412f, 0.f }), 0.0155f, 0.0006f, { 0.03f, 0.035f, 0.04f }, 16);
 		// (Its cap is a thing of its own: ShopWorld::FillerSeat puts it on the neck.)
 		// The overflow tank it comes with: a white bottle beside the core on the car's left, behind it, its cap, a level line, and the
 		// thin hose over to it from the filler neck.
@@ -2227,7 +2291,7 @@ void ShopAssets::BuildProjectCarShell()
 	Box(car, { REAR_JACK_POINT[0], REAR_JACK_POINT[1] + 0.003f, 0.f }, { 0.14f, 0.006f, 0.3f }, PRIMER);
 	// The pads under the chassis rails' inner edges that the steering rack's clamps bolt up to.
 	for (float side : { -1.f, 1.f })
-		Box(car, { 1.4f, 0.2025f, side * 0.315f }, { 0.1f, 0.015f, 0.05f }, UNDERSEAL);
+		Box(car, { 1.4f, 0.2025f, side * (RACK_CLAMP_Z - 0.005f) }, { 0.1f, 0.015f, 0.05f }, UNDERSEAL);
 	// The front crossmember under the back of the engine, between the chassis rails, the lower arms pivoting on its ears.
 	Box(car, { 1.1f, 0.16f, 0.f }, { 0.07f, 0.05f, 0.8f }, UNDERSEAL);
 	for (float side : { -1.f, 1.f })

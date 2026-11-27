@@ -1,4 +1,5 @@
 #include "GameAudio.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -649,7 +650,7 @@ namespace
 
 void GameAudio::Init()
 {
-	m_audio = AudioManager::Get().get();
+	m_audio = Lordi::Get()->GetAudioManager().get();
 	if (!m_audio->IsAvailable())
 	{
 		std::cout << "[WARNING] No audio device: the game will be silent\n";

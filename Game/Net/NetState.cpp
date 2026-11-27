@@ -8,6 +8,7 @@
 #include <set>
 #include <unordered_set>
 
+#include "LV/Engine/Lordi.h"
 #include "LV/Engine/Objects/ObjectManager.h"
 #include "NetProtocol.h"
 #include "../Save/SaveText.h"
@@ -1052,7 +1053,7 @@ void NetState::Apply(Workshop& workshop, ShopWorld& world, const std::vector<Sta
 		}
 	}
 
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	auto removePackage = [&](uint32_t id) {
 		auto it = world.m_packages.find(id);
 		if (it == world.m_packages.end())

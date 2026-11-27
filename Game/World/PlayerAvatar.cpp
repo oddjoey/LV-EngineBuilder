@@ -1,4 +1,5 @@
 #include "PlayerAvatar.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -81,7 +82,7 @@ void PlayerAvatar::Remove()
 	for (auto* object : Pieces())
 	{
 		if (*object)
-			ObjectManager::Get()->RemoveObject(*object);
+			Lordi::Get()->GetObjectManager()->RemoveObject(*object);
 		*object = nullptr;
 	}
 }

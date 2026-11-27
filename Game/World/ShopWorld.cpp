@@ -1,4 +1,5 @@
 #include "ShopWorld.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <bit>
@@ -93,7 +94,7 @@ glm::vec3 Station::Anchor() const
 pObject ShopWorld::Spawn(const std::string& model, const std::string& texture, const glm::vec3& position, float yaw)
 {
 	Object info(position, Yaw(yaw), { 1.f, 1.f, 1.f }, m_assets->Model(model), texture.empty() ? 0u : m_assets->TextureFor(model, texture));
-	return ObjectManager::Get()->CreateObject(info);
+	return Lordi::Get()->GetObjectManager()->CreateObject(info);
 }
 
 size_t ShopWorld::AddStation(StationType type, const std::string& name, const pObject& object, bool movable,
@@ -217,7 +218,7 @@ void ShopWorld::RemoveFurniture()
 {
 	// (The jacks and stands go with it: nothing's under the car.)
 	ReleaseCarSupports();
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	for (auto& [station, pieces] : m_jacks)
 		for (auto* object : { &pieces.arm, &pieces.saddle, &pieces.handle })
 			if (*object)
@@ -580,7 +581,7 @@ ShopWorld::CameraView ShopWorld::UpdateThirdPersonCamera(const FirstPersonContro
 	glm::vec3 direction = offset / distance;
 	if (auto wall = WallHit(eye, direction); wall && *wall < distance)
 		distance = *wall;
-	auto hit = ObjectManager::Get()->Raycast(eye, direction, distance, [&](const pObject& object) {
+	auto hit = Lordi::Get()->GetObjectManager()->Raycast(eye, direction, distance, [&](const pObject& object) {
 		auto target = m_targets.find(object.get());
 		return target != m_targets.end() && target->second.kind == TargetKind::STATION;
 	});
@@ -924,7 +925,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 		if (clamp && (!onHead || compressor->hostPart != clamp->head))
 			workshop.ReleaseValveSpring();
 		else if (!clamp && onHead)
-			SetPlace(*compressor, ItemPlace::STORAGE);
+			SetAside(*compressor, compressor->object->GetPosition());
 	}
 	else if (workshop.GetValveCompressor())
 		workshop.ReleaseValveSpring();
@@ -1152,7 +1153,7 @@ std::optional<UIRequest> ShopWorld::Update(float deltaTime, Workshop& workshop, 
 
 ItemVisual& ShopWorld::CreateItem(const ItemRef& ref, const pPart& part, uint32_t modelIndex, uint32_t textureIndex)
 {
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	Object info({}, glm::quat(1.f, 0.f, 0.f, 0.f), { 1.f, 1.f, 1.f }, modelIndex, textureIndex);
 	auto object = objectManager->CreateObject(info);
 	object->SetPickable(true);
@@ -1192,7 +1193,7 @@ void ShopWorld::RemoveItem(const ItemRef& ref)
 	if (it == m_items.end())
 		return;
 
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	m_targets.erase(it->second.object.get());
 	objectManager->RemoveObject(it->second.object);
 	for (auto& [overlay, object] : it->second.overlays)
@@ -1288,7 +1289,7 @@ void ShopWorld::SyncItems(Workshop& workshop)
 	if (!gone.empty())
 		SyncHand();
 
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	for (auto it = m_packages.begin(); it != m_packages.end();)
 	{
 		auto& items = it->second.items;
@@ -1508,7 +1509,7 @@ void ShopWorld::OpenPackage(Package& package, const FirstPersonController* playe
 	auto stations = package.stations;
 	std::string label = package.label;
 	m_targets.erase(package.object.get());
-	ObjectManager::Get()->RemoveObject(package.object);
+	Lordi::Get()->GetObjectManager()->RemoveObject(package.object);
 	m_packages.erase(packageId);
 	if (player)
 	{
@@ -1687,7 +1688,7 @@ void ShopWorld::LayOutToolBoard()
 	const auto& tools = ToolCatalog::All();
 	if (m_toolHooks.size() == tools.size())
 		return;
-	static const auto manager = ModelManager::Get();
+	static const auto manager = Lordi::Get()->GetModelManager();
 	// The board is 1.8 m wide and 1.25 m tall about its middle. Tools hang inside a margin, just
 	// clear of its face.
 	constexpr float LEFT = -0.84f;
@@ -2212,7 +2213,7 @@ const std::pair<glm::vec3, glm::vec3>& ShopWorld::PartBounds(PartType type) cons
 	auto bounds = m_partBounds.find(type);
 	if (bounds == m_partBounds.end())
 	{
-		const Model* model = ModelManager::Get()->PeekModel(m_assets->PartModel(type));
+		const Model* model = Lordi::Get()->GetModelManager()->PeekModel(m_assets->PartModel(type));
 		bounds = m_partBounds.emplace(type, std::pair{ model->GetBoundsMin(), model->GetBoundsMax() }).first;
 	}
 	return bounds->second;
@@ -2929,7 +2930,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 					wanted = m_assets->Model(ShopModels::PlugLeadFitted(std::clamp(slot->second, 0, 3)));
 			if (visual.object->GetModelIndex() != wanted)
 			{
-				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				Lordi::Get()->GetObjectManager()->ChangeObjectModel(visual.object, wanted);
 				visual.standSlot = { AssemblySlot::COUNT, -1 };
 			}
 		}
@@ -2946,7 +2947,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 					: m_assets->PartModel(visual.part->GetType());
 				if (visual.object->GetModelIndex() != wanted)
 				{
-					ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+					Lordi::Get()->GetObjectManager()->ChangeObjectModel(visual.object, wanted);
 					visual.carSlot = -1;
 				}
 			}
@@ -2956,7 +2957,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 			uint32_t wanted = visual.place == ItemPlace::CAR ? m_assets->Model(ShopModels::TRANSMISSION_BODY) : m_assets->PartModel(PartType::TRANSMISSION);
 			if (visual.object->GetModelIndex() != wanted)
 			{
-				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				Lordi::Get()->GetObjectManager()->ChangeObjectModel(visual.object, wanted);
 				visual.carSlot = -1;
 			}
 		}
@@ -2973,7 +2974,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 				: m_assets->PartModel(type);
 			if (visual.object->GetModelIndex() != wanted)
 			{
-				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				Lordi::Get()->GetObjectManager()->ChangeObjectModel(visual.object, wanted);
 				visual.carSlot = -1;
 			}
 		}
@@ -2983,7 +2984,7 @@ void ShopWorld::LayoutItems(const Workshop& workshop, const FirstPersonControlle
 			uint32_t wanted = visual.place == ItemPlace::CAR ? m_assets->Model(ShopModels::SEAT_BASE) : m_assets->PartModel(PartType::SEAT);
 			if (visual.object->GetModelIndex() != wanted)
 			{
-				ObjectManager::Get()->ChangeObjectModel(visual.object, wanted);
+				Lordi::Get()->GetObjectManager()->ChangeObjectModel(visual.object, wanted);
 				visual.carSlot = -1;
 			}
 		}
@@ -3576,7 +3577,7 @@ void ShopWorld::UpdateHover(const Workshop& workshop, const FirstPersonControlle
 	// without something in hand: what you're carrying goes on the hotbar to free the hand. Items are
 	// tested by their triangles, so the one really in front wins; stations by their boxes, so aiming
 	// at the open space of a shelf or bench still means that station.
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	const pObject carObject = m_rig.carStation < m_stations.size() ? m_stations[m_rig.carStation].object : nullptr;
 	auto raycast = [&](bool stations) {
 		auto hit = objectManager->Raycast(player.GetEyePosition(), player.GetForward(), INTERACT_DISTANCE, [&](const pObject& object) {
@@ -5112,14 +5113,21 @@ void ShopWorld::PlaceInWorld(ItemVisual& visual, const glm::vec3& position, cons
 	visual.body.resting = false;
 }
 
+void ShopWorld::SetAside(ItemVisual& visual, const glm::vec3& at)
+{
+	if (visual.ref.IsTool())
+		PlaceInWorld(visual, at, {});
+	else
+		SetPlace(visual, ItemPlace::STORAGE);
+}
 
 void ShopWorld::SetPlace(ItemVisual& visual, ItemPlace place, int machineIndex)
 {
 	m_supportChanged = true;
-	// The bench and each machine hold one part; whatever was there goes back to storage.
+	// The bench and each machine hold one thing; whatever was there is set aside (a tool drops where it was).
 	if (place == ItemPlace::BENCH || place == ItemPlace::MACHINE)
 		if (auto occupant = FindItemAt(place, machineIndex); occupant && occupant != &visual)
-			SetPlace(*occupant, ItemPlace::STORAGE);
+			SetAside(*occupant, occupant->object->GetPosition());
 
 	// Only the backpack and hands keep an item in the inventory.
 	if (place != ItemPlace::INVENTORY && place != ItemPlace::HAND)
@@ -5159,7 +5167,7 @@ bool ShopWorld::FittedInPlace(const Workshop& workshop, const Part& part)
 
 void ShopWorld::UnpackFittedParts(const Workshop& workshop)
 {
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	for (auto it = m_packages.begin(); it != m_packages.end();)
 	{
 		auto& items = it->second.items;
@@ -5214,7 +5222,7 @@ void ShopWorld::UpdateCarFittings(const Workshop& workshop)
 					SyncHand();
 				}
 				else if (!on && visual->place == ItemPlace::ATTACHED)
-					SetPlace(*visual, ItemPlace::STORAGE);
+					SetAside(*visual, visual->object->GetPosition());
 			}
 			continue;
 		}
@@ -5244,7 +5252,7 @@ void ShopWorld::UpdateCarFittings(const Workshop& workshop)
 				SyncHand();
 			}
 			else if (!host && visual->place == ItemPlace::ATTACHED)
-				SetPlace(*visual, ItemPlace::STORAGE);
+				SetAside(*visual, visual->object->GetPosition());
 		}
 	}
 }

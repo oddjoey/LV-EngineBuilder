@@ -1,4 +1,5 @@
 #include "ShopLighting.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -38,13 +39,13 @@ namespace
 void ShopLighting::Build(const ShopAssets& assets)
 {
 	Object info({}, glm::quat(1.f, 0.f, 0.f, 0.f), { 1.f, 1.f, 1.f }, assets.Model(ShopModels::SKY_DOME), 0);
-	m_sky = ObjectManager::Get()->CreateObject(info);
+	m_sky = Lordi::Get()->GetObjectManager()->CreateObject(info);
 	m_sky->SetShading(ObjectShading::SKY);
 	m_sky->SetCastsShadows(false);
 	// The mountains round the horizon, kept centred on the camera like the sky.
 	Object mountains({}, glm::quat(1.f, 0.f, 0.f, 0.f), { 1.f, 1.f, 1.f }, assets.Model(ShopModels::MOUNTAINS),
 		assets.TextureFor(ShopModels::MOUNTAINS, ShopTextures::ROCK));
-	m_mountains = ObjectManager::Get()->CreateObject(mountains);
+	m_mountains = Lordi::Get()->GetObjectManager()->CreateObject(mountains);
 	m_mountains->SetCastsShadows(false);
 }
 
@@ -125,7 +126,7 @@ void ShopLighting::Update(const glm::vec3& cameraPosition, float farPlane, float
 	// Let the eye adjust a little at night so it stays playable.
 	lighting.exposure = brightness * glm::mix(1.35f, 1.f, daylight);
 
-	Renderer::Get()->SetSceneLighting(lighting);
+	Lordi::Get()->GetRenderer()->SetSceneLighting(lighting);
 
 	m_sky->SetPosition(cameraPosition);
 	m_sky->SetScale(glm::vec3(farPlane * 0.9f));

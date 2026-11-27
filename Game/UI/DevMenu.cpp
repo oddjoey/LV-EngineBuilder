@@ -1,4 +1,5 @@
 #include "DevMenu.h"
+#include "LV/Engine/Lordi.h"
 
 #include <cfloat>
 #include <cmath>
@@ -64,7 +65,7 @@ void DevMenu::Draw(float& timeOfDay)
 			if (ImGui::BeginTabItem("Lordi"))
 			{
 				if (ImGui::BeginChild("Lordi"))
-					IMGUIManager::Get()->DrawDebugContents(FrameProfiler::Get().IsEnabled());
+					Lordi::Get()->GetIMGUIManager()->DrawDebugContents(FrameProfiler::Get().IsEnabled());
 				ImGui::EndChild();
 				ImGui::EndTabItem();
 			}

@@ -107,7 +107,7 @@
     <ClCompile Include="LV\Engine\Networking\Crypto.cpp">
       <Filter>LV\Engine\Networking</Filter>
     </ClCompile>
-    <ClCompile Include="LV\Libraries\monocypher\monocypher.c">
+    <ClCompile Include="LV\Libraries\monocypher\src\monocypher.c">
       <Filter>LV\Engine\Networking</Filter>
     </ClCompile>
     <ClCompile Include="Game\Net\ServerBrowser.cpp">

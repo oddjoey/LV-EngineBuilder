@@ -1,4 +1,5 @@
 #include "ShopWorld.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 
@@ -24,7 +25,7 @@ void ShopWorld::BuildUpgrades(bool bay, bool upper, bool lot)
 	const float outerZ = HALF_DEPTH + WALL;
 
 	// Start again from the plain garage: take away whatever the last upgrades added.
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	for (auto& object : m_upgradeObjects)
 		objectManager->RemoveObject(object);
 	m_upgradeObjects.clear();

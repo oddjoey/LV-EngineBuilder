@@ -1,4 +1,5 @@
 #include "InventoryUI.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -180,7 +181,7 @@ void InventoryUI::DrawContents(ShopWorld& world, Workshop& workshop, const First
 	// Dragging: the item follows the cursor and snaps to the cell under it.
 	if (!m_dragging.IsNone())
 	{
-		if (Controls::Pressed(*InputManager::Get(), Control::ROTATE))
+		if (Controls::Pressed(*Lordi::Get()->GetInputManager(), Control::ROTATE))
 		{
 			m_dragSize = { m_dragSize.y, m_dragSize.x };
 			m_grabOffset = { m_grabOffset.y, m_grabOffset.x };

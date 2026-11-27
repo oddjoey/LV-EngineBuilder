@@ -44,7 +44,7 @@ add_executable(LV-EngineBuilder
 	${ENGINE_SOURCES}
 	${IMGUI_SOURCES}
 	${LIBRARIES}/ufbx/ufbx.c
-	${LIBRARIES}/monocypher/monocypher.c)
+	${LIBRARIES}/monocypher/src/monocypher.c)
 
 target_include_directories(LV-EngineBuilder PRIVATE
 	${CMAKE_SOURCE_DIR}
@@ -55,6 +55,7 @@ target_include_directories(LV-EngineBuilder PRIVATE
 	${LIBRARIES}/termcolor/include/termcolor
 	${LIBRARIES}/tinyobjloader
 	${LIBRARIES}/ufbx
+	${LIBRARIES}/monocypher/src
 	${LIBRARIES}/DLSS/include)
 
 # Like the Visual Studio project: pch.h goes into every game and engine source, except the ones built
@@ -82,7 +83,7 @@ add_custom_command(TARGET LV-EngineBuilder POST_BUILD
 
 # ---- The servers
 
-set(NETWORKING_SOURCES ${LORDI}/Engine/Networking/Socket.cpp ${LORDI}/Engine/Networking/Crypto.cpp ${LIBRARIES}/monocypher/monocypher.c)
+set(NETWORKING_SOURCES ${LORDI}/Engine/Networking/Socket.cpp ${LORDI}/Engine/Networking/Crypto.cpp ${LIBRARIES}/monocypher/src/monocypher.c)
 
 add_executable(LV-EngineServer
 	${CMAKE_SOURCE_DIR}/Server/main.cpp
@@ -97,3 +98,7 @@ add_executable(LV-AccountServer
 	${CMAKE_SOURCE_DIR}/AccountServer/Accounts.cpp
 	${NETWORKING_SOURCES})
 set_target_properties(LV-AccountServer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/Server)
+
+# Crypto.cpp includes <monocypher.h>.
+target_include_directories(LV-EngineServer PRIVATE ${LIBRARIES}/monocypher/src)
+target_include_directories(LV-AccountServer PRIVATE ${LIBRARIES}/monocypher/src)

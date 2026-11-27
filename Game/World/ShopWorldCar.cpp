@@ -1937,7 +1937,6 @@ void ShopWorld::MoveCar(float deltaTime, Workshop& workshop, const InputManager&
 			// Braked to a stop in gear with the clutch up, it stalls.
 			if (bite > 0.9f && wheelRevs < 300.f && throttle == 0.f && (brake > 0.f || handbrake) && std::abs(speed) < 0.3f)
 			{
-				Toast("Stalled: clutch down ([Clutch]) before it stops.");
 				EndDrive();
 				return;
 			}
@@ -2749,9 +2748,6 @@ void ShopWorld::SpinOffGround(float deltaTime, Workshop& workshop, const InputMa
 	if (drive.gear != 0 && drive.clutch > 0.6f && (drive.handbrake || braked || !rearUp))
 	{
 		Cue(Sound::DROP, GetCarPosition(), 0.35f);
-		Toast(drive.handbrake ? "Stalled: the handbrake's holding the back wheels. Clutch down ([Clutch]) first, or let it off."
-			: braked ? "Stalled: the brakes are holding the wheels. Clutch down ([Clutch]) before letting it up."
-			: "Stalled: the back wheels are on the ground and the car's held up. Clutch down ([Clutch]), or put it in neutral.");
 		EndDrive();
 		return;
 	}
@@ -2980,7 +2976,6 @@ void ShopWorld::IdleCar(float deltaTime, Workshop& workshop)
 			}
 		}
 		Cue(Sound::DROP, GetCarPosition(), 0.35f);
-		Toast("It lurched and stalled: it was left in gear.");
 		return EndDrive();
 	}
 	if (drive.gear != 0)

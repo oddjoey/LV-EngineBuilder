@@ -1,4 +1,5 @@
 #include "ShopWorld.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -246,7 +247,7 @@ const std::vector<pObject>& ShopWorld::GetLampHeads() const
 void ShopWorld::SetNeighbours(const std::vector<float>& offsets)
 {
 	using namespace GarageLayout;
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	for (const auto& object : m_neighbourObjects)
 		objectManager->RemoveObject(object);
 	m_neighbourObjects.clear();

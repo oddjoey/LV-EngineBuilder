@@ -99,7 +99,7 @@ void EngineBuilderGame::OnLoadAssets()
 	m_player.SetPosition(m_world.GetSpawnPosition());
 	m_player.SetYaw(m_world.GetSpawnYaw());
 
-	auto cameraManager = CameraManager::Get();
+	auto cameraManager = Lordi::Get()->GetCameraManager();
 	Camera cameraInfo = {};
 	cameraInfo.SetNearPlane(0.03f)->SetFarPlane(m_settings.renderDistance);
 	m_camera = cameraManager->CreateCamera(cameraInfo);
@@ -179,7 +179,7 @@ void EngineBuilderGame::ApplyVideoSettings(bool force)
 {
 	const auto& video = m_settings;
 	const auto& applied = m_appliedVideo;
-	auto graphics = Graphics::Get();
+	auto graphics = Lordi::Get()->GetGraphics();
 
 	bool displayChanged = video.displayMode != applied.displayMode || video.resolutionWidth != applied.resolutionWidth
 		|| video.resolutionHeight != applied.resolutionHeight;
@@ -188,7 +188,7 @@ void EngineBuilderGame::ApplyVideoSettings(bool force)
 	if (force || video.vsync != applied.vsync)
 		graphics->SetVSync(video.vsync ? VSyncOptions::ENABLED : VSyncOptions::NONE);
 	if (force || video.shadowQuality != applied.shadowQuality || video.shadowDistance != applied.shadowDistance)
-		Renderer::Get()->SetShadowSettings({ video.ShadowResolution(), video.shadowDistance });
+		Lordi::Get()->GetRenderer()->SetShadowSettings({ video.ShadowResolution(), video.shadowDistance });
 	if (force || video.dlss != applied.dlss)
 		graphics->SetDLSSMode(static_cast<DLSSMode>(video.dlss));
 	if (force || video.frameLimit != applied.frameLimit)
@@ -199,7 +199,7 @@ void EngineBuilderGame::ApplyVideoSettings(bool force)
 
 void EngineBuilderGame::OnStart()
 {
-	m_input = InputManager::Get();
+	m_input = Lordi::Get()->GetInputManager();
 	m_input->SetCursorLocked(true);
 	// LV_PROFILE=1 in the environment starts with the frame profiler on.
 #ifdef _WIN32
@@ -216,7 +216,7 @@ void EngineBuilderGame::OnStart()
 #endif
 	ApplyVideoSettings(true);
 	// Lordi's debug panels live in the dev menu (F3) instead of their own Home window.
-	IMGUIManager::Get()->SetDebugWindowEnabled(false);
+	Lordi::Get()->GetIMGUIManager()->SetDebugWindowEnabled(false);
 	RegisterConsoleCommands();
 	// Every sound is made here, once, before the first frame.
 	m_audio.Init();
@@ -232,7 +232,7 @@ void EngineBuilderGame::OnUpdate(float deltaTime)
 	auto& profiler = FrameProfiler::Get();
 	if (profiler.IsEnabled())
 	{
-		auto performance = PerformanceManager::Get();
+		auto performance = Lordi::Get()->GetPerformanceManager();
 		profiler.Add("render: record", performance->GetGraphicsCommandBufferDuration().count());
 		profiler.Add("render: imgui", performance->GetIMGUICommandBufferDuration().count());
 		profiler.Add("render: wait for GPU", performance->GetCPUWaitForGPUDuration().count());
@@ -488,7 +488,7 @@ void EngineBuilderGame::ReturnToMenu()
 	m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 	SaveGame::StartNew(*m_workshop, m_world, m_player);
 	m_timeOfDay = 9.5f;
-	Renderer::Get()->ResetTemporalHistory();
+	Lordi::Get()->GetRenderer()->ResetTemporalHistory();
 	m_inventoryUI.CancelDrag();
 	m_ui.Close();
 	m_manual.Close();
@@ -518,7 +518,7 @@ void EngineBuilderGame::PlayOffline()
 		m_timeOfDay = 9.5f;
 	}
 	m_offline = true;
-	Renderer::Get()->ResetTemporalHistory();
+	Lordi::Get()->GetRenderer()->ResetTemporalHistory();
 	m_inventoryUI.CancelDrag();
 	m_ui.Close();
 	m_pauseMenu.Close();
@@ -634,7 +634,7 @@ void EngineBuilderGame::UpdateNetwork(float deltaTime)
 		m_workshop = std::make_unique<Workshop>(EngineSpec::InlineFour(), Workshop::StartingMoney(EngineSpec::InlineFour()));
 		SaveGame::StartNew(*m_workshop, m_world, m_player);
 		m_net.ApplyWelcome(*m_workshop, m_world, m_player);
-		Renderer::Get()->ResetTemporalHistory();
+		Lordi::Get()->GetRenderer()->ResetTemporalHistory();
 		m_inventoryUI.CancelDrag();
 		m_ui.Close();
 		m_pauseMenu.SetStatus("");
@@ -733,10 +733,10 @@ void EngineBuilderGame::OnGUI()
 	context.pressedInput = Controls::FirstPressed(*m_input);
 	if (m_pauseMenu.IsOpen())
 	{
-		context.resolutions = Graphics::Get()->GetDisplayResolutions();
-		context.maxMsaa = (std::min)(8, static_cast<int>(Graphics::Get()->GetMaxMSAA()));
+		context.resolutions = Lordi::Get()->GetGraphics()->GetDisplayResolutions();
+		context.maxMsaa = (std::min)(8, static_cast<int>(Lordi::Get()->GetGraphics()->GetMaxMSAA()));
 
-		auto graphics = Graphics::Get();
+		auto graphics = Lordi::Get()->GetGraphics();
 		context.dlssAvailable = graphics->IsDLSSAvailable();
 		context.dlssStatus = graphics->GetDLSSStatus();
 

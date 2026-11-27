@@ -50,6 +50,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\LV\Libraries\monocypher\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -81,7 +82,7 @@
     <ClCompile Include="Accounts.cpp" />
     <ClCompile Include="..\LV\Engine\Networking\Socket.cpp" />
     <ClCompile Include="..\LV\Engine\Networking\Crypto.cpp" />
-    <ClCompile Include="..\LV\Libraries\monocypher\monocypher.c" />
+    <ClCompile Include="..\LV\Libraries\monocypher\src\monocypher.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AccountServer.h" />

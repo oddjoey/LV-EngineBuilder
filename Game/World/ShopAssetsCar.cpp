@@ -2197,8 +2197,9 @@ void ShopAssets::BuildProjectCarShell()
 			SidePanel(car, x0, x1, Level(FLAP_Y + FLAP_HALF), Level(BELT_Y), skinZ, SKIN, BODY_WHITE, 2);
 			SidePanel(car, x1, DOOR_REAR_X, quarterBottom, Level(BELT_Y), skinZ, SKIN, BODY_WHITE, 40);
 			Box(car, { FLAP_X, FLAP_Y, SIDE - SKIN - 0.003f }, { 2.f * FLAP_HALF, 2.f * FLAP_HALF, 0.006f }, TRIM_BLACK);
-			Cylinder(car, AlongZ({ FLAP_X, FLAP_Y, SIDE - SKIN + 0.01f }), 0.036f, 0.02f, { 0.2f, 0.2f, 0.21f }, 16);
-			Box(car, { FLAP_X, FLAP_Y, SIDE - SKIN + 0.021f }, { 0.05f, 0.012f, 0.004f }, ALLOY);
+			// The filler neck, its mouth 0.012 out of the pocket (its cap is a thing of its own: ShopWorld::FillerSeat puts it on).
+			Cylinder(car, AlongZ({ FLAP_X, FLAP_Y, SIDE - SKIN + 0.006f }), 0.034f, 0.012f, { 0.2f, 0.2f, 0.21f }, 16);
+			Cylinder(car, AlongZ({ FLAP_X, FLAP_Y, SIDE - SKIN + 0.0125f }), 0.018f, 0.001f, { 0.04f, 0.04f, 0.04f }, 16);
 		}
 		else
 			SidePanel(car, TAIL_X, DOOR_REAR_X, quarterBottom, Level(BELT_Y), skinZ, SKIN, BODY_WHITE, 48);

@@ -25,7 +25,6 @@ namespace
 		{ "rotate", "Turn the engine over by hand; turn equipment or a backpack item", "Working", "R", GLFW_KEY_R },
 		{ "roll_back", "Roll the engine on its stand one way", "Working", "RollBack", GLFW_KEY_COMMA },
 		{ "roll_forward", "Roll the engine on its stand the other way", "Working", "RollForward", GLFW_KEY_PERIOD },
-		{ "wrench_size", "Take the battery off a cordless tool", "Working", "C", GLFW_KEY_C },
 		{ "turn_held", "Hold and move the mouse to turn the part you're holding (not a tool), to set it down that way", "Working", "Q", GLFW_KEY_Q },
 
 		{ "shift_up", "At the car's wheel: up a gear", "Working", "Up", GLFW_KEY_E },

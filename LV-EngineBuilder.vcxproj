@@ -42,7 +42,7 @@
     <LordiDir>$(ProjectDir)LV\</LordiDir>
   </PropertyGroup>
   <PropertyGroup>
-    <IncludePath>$(ProjectDir);$(LordiDir)Libraries\vulkan\Include;$(LordiDir)Libraries\glfw-3.4\include;$(LordiDir)Libraries\imgui;$(LordiDir)Libraries\glm;$(LordiDir)Libraries\magic_enum\include\magic_enum;$(LordiDir)Libraries\stb;$(LordiDir)Libraries\termcolor\include\termcolor;$(LordiDir)Libraries\tinyobjloader;$(LordiDir)Libraries\ufbx;$(LordiDir)Libraries\DLSS\include;$(IncludePath)</IncludePath>
+    <IncludePath>$(ProjectDir);$(LordiDir)Libraries\monocypher\src;$(LordiDir)Libraries\vulkan\Include;$(LordiDir)Libraries\glfw-3.4\include;$(LordiDir)Libraries\imgui;$(LordiDir)Libraries\glm;$(LordiDir)Libraries\magic_enum\include\magic_enum;$(LordiDir)Libraries\stb;$(LordiDir)Libraries\termcolor\include\termcolor;$(LordiDir)Libraries\tinyobjloader;$(LordiDir)Libraries\ufbx;$(LordiDir)Libraries\DLSS\include;$(IncludePath)</IncludePath>
     <!-- Run from the repository root: Lordi's shaders are loaded from LV/, the game's files from here. -->
     <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
@@ -202,7 +202,7 @@ xcopy /y /d /i /s "$(ProjectDir)Resources" "$(OutDir)Resources\"</Command>
       <ForcedIncludeFiles>
       </ForcedIncludeFiles>
     </ClCompile>
-    <ClCompile Include="LV\Libraries\monocypher\monocypher.c">
+    <ClCompile Include="LV\Libraries\monocypher\src\monocypher.c">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <ForcedIncludeFiles>
       </ForcedIncludeFiles>

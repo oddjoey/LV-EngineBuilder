@@ -1,6 +1,7 @@
 // A car no one's working on, drawn as a few merged models instead of its hundreds of parts one by one.
 
 #include "ShopWorld.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <chrono>
@@ -167,7 +168,7 @@ void ShopWorld::StartCarMerge(const Workshop& workshop, int car)
 	pending->members = CarMergeMembers(workshop, car);
 	std::vector<MemberShot> shots;
 	shots.reserve(pending->members.size());
-	auto models = ModelManager::Get();
+	auto models = Lordi::Get()->GetModelManager();
 	for (const pObject& object : pending->members)
 	{
 		const Model* model = models->PeekModel(object->GetModelIndex());
@@ -191,8 +192,8 @@ void ShopWorld::FinishCarMerge(int car)
 	// Something about it changed while it was being put together: it's left as it is, to be merged again once it's settled.
 	if (HashMembers(pending->members) != pending->membersHash)
 		return;
-	auto models = ModelManager::Get();
-	auto objectManager = ObjectManager::Get();
+	auto models = Lordi::Get()->GetModelManager();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	for (auto& [key, batch] : batches)
 	{
 		if (batch.vertices.empty() || batch.indices.empty())
@@ -225,11 +226,11 @@ void ShopWorld::UnmergeCar(int car)
 		return;
 	for (const pObject& object : rig.merge.members)
 		object->SetMerged(false);
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	for (const pObject& object : rig.merge.batches)
 		objectManager->RemoveObject(object);
 	for (uint32_t model : rig.merge.models)
-		ModelManager::Get()->ReleaseDynamicModel(model);
+		Lordi::Get()->GetModelManager()->ReleaseDynamicModel(model);
 	rig.merge.members.clear();
 	rig.merge.batches.clear();
 	rig.merge.models.clear();

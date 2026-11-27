@@ -1025,6 +1025,9 @@ private:
 	bool LevelOut(ItemVisual& visual);
 	bool StepTip(ItemVisual& visual, Tip& tip, float deltaTime);
 	void PlaceInWorld(ItemVisual& visual, const glm::vec3& position, const glm::vec3& velocity);
+	// Something let go of by something else (a pack swapped off a tool, a cap or bleeder knocked off, a clamp let go):
+	// a tool drops where it is, as it's never hung back on the tool board by itself; a part goes to the shelf.
+	void SetAside(ItemVisual& visual, const glm::vec3& at);
 	void SetPlace(ItemVisual& visual, ItemPlace place, int machineIndex = -1);
 	ItemVisual* FindItemAt(ItemPlace place, int machineIndex = -1);
 	ItemVisual* Find(const ItemRef& ref);

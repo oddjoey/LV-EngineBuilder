@@ -1,4 +1,5 @@
 #include "ModelPreview.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -234,7 +235,7 @@ namespace ModelPreview
 
 	void DrawAt(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, uint32_t modelIndex, ImVec4 tint, bool turning)
 	{
-		auto model = ModelManager::Get()->GetModel(modelIndex);
+		auto model = Lordi::Get()->GetModelManager()->GetModel(modelIndex);
 		if (!model || model->GetVertices().empty() || model->GetIndices().size() < 3)
 			return;
 
@@ -288,7 +289,7 @@ namespace ModelPreview
 			glm::vec3 low = glm::vec3(FLT_MAX), high = glm::vec3(-FLT_MAX);
 			for (const auto& piece : pieces)
 			{
-				auto model = ModelManager::Get()->GetModel(piece.modelIndex);
+				auto model = Lordi::Get()->GetModelManager()->GetModel(piece.modelIndex);
 				if (!model)
 					continue;
 				const auto& vertices = model->GetVertices();

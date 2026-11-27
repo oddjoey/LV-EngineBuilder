@@ -1,6 +1,7 @@
 // Measuring with hand tools, moving equipment, and the HUD.
 
 #include "ShopWorld.h"
+#include "LV/Engine/Lordi.h"
 
 #include <cmath>
 
@@ -224,7 +225,7 @@ void ShopWorld::UpdatePlastigauge(const Workshop& workshop)
 	// a main or rod journal, on top of a cam journal), flattened and wider once the cap has squashed
 	// it. Under the cap it's hidden, as it should be.
 	using namespace EngineLayout;
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	while (m_stripObjects.size() > m_plastigauge.size())
 	{
 		objectManager->RemoveObject(m_stripObjects.back());
@@ -283,7 +284,7 @@ std::optional<ShopWorld::MeasureTarget> ShopWorld::FindMeasureTarget(const Works
 	// Points buried deep behind whatever the crosshair is on (a main housing under a bore, seen
 	// from above) can't be reached from here. Everything is judged against the first box hit.
 	const Object* heldObject = GetHeld() ? GetHeld()->object.get() : nullptr;
-	auto surface = ObjectManager::Get()->Raycast(eye, forward, MEASURE_DISTANCE + 1.f,
+	auto surface = Lordi::Get()->GetObjectManager()->Raycast(eye, forward, MEASURE_DISTANCE + 1.f,
 		[&](const pObject& object) { return object.get() != heldObject; });
 	constexpr float REACH_INTO_PART = 0.12f;
 
@@ -1631,6 +1632,46 @@ void ShopWorld::DrawHud(const Workshop& workshop, const FirstPersonController& p
 		drawList->PathArcTo(center, RING, start, start + glm::two_pi<float>() * (std::min)(ring, 1.f), 40);
 		drawList->PathStroke(IM_COL32(255, 210, 120, 240), 0, 3.f);
 	}
+	// What can be done with what is aimed at and with what's in hand, in the bottom right corner, clear of the crosshair
+	// and the hotbar: a line for each control (the prompts run them together, three spaces apart), and nothing else.
+	{
+		std::vector<std::pair<std::string, ImU32>> hints;
+		auto split = [&](const std::string& prompt, ImU32 color) {
+			size_t start = 0;
+			while (start < prompt.size())
+			{
+				size_t gap = prompt.find("   ", start);
+				std::string piece = prompt.substr(start, gap == std::string::npos ? std::string::npos : gap - start);
+				// Only what a key does: a piece naming no control (the state of things, advice) isn't shown here.
+				const size_t open = piece.find('[');
+				const bool namesKey = open != std::string::npos && piece.find(']', open) != std::string::npos;
+				if (size_t first = piece.find_first_not_of(' '); namesKey && first != std::string::npos)
+					hints.push_back({ Controls::Keys(piece.substr(first)), color });
+				if (gap == std::string::npos)
+					break;
+				start = gap + 3;
+			}
+		};
+		split(m_prompt, white);
+		split(m_secondaryPrompt, IM_COL32(200, 200, 200, 200));
+		// And what the thing in hand can do, last, in a cooler grey.
+		split(m_heldHint, IM_COL32(185, 200, 215, 220));
+		if (!hints.empty())
+		{
+			const float line = ImGui::GetTextLineHeightWithSpacing();
+			float width = 0.f;
+			for (const auto& [text, color] : hints)
+				width = (std::max)(width, ImGui::CalcTextSize(text.c_str()).x);
+			const ImVec2 max = { display.x - 20.f, display.y - 20.f };
+			const ImVec2 min = { max.x - width - 24.f, max.y - line * hints.size() - 14.f };
+			drawList->AddRectFilled(min, max, IM_COL32(15, 18, 22, 140), 6.f);
+			for (size_t i = 0; i < hints.size(); i++)
+			{
+				float textWidth = ImGui::CalcTextSize(hints[i].first.c_str()).x;
+				ShadowText(drawList, { max.x - 12.f - textWidth, min.y + 8.f + line * i }, hints[i].second, hints[i].first, false);
+			}
+		}
+	}
 
 	if (m_toastTime > 0.f)
 	{
@@ -1689,7 +1730,7 @@ std::string ShopWorld::SpannerLabel(size_t toolIndex) const
 	if (tool.powered)
 	{
 		auto battery = BatteryOn(toolIndex);
-		pack = battery ? std::format("   Battery {}   [C] Take it off", BatteryLabel(*battery)) : "   No battery";
+		pack = battery ? std::format("   Battery {}", BatteryLabel(*battery)) : "   No battery";
 	}
 	switch (tool.handKind)
 	{
@@ -1831,7 +1872,7 @@ std::optional<ShopWorld::FastenerTarget> ShopWorld::FindFastenerTarget(const Wor
 		const auto& candidate = candidates[i];
 		glm::vec3 toward = candidate.target.position - eye;
 		float distance = glm::length(toward);
-		auto hit = ObjectManager::Get()->Raycast(eye, toward / distance, distance, [&](const pObject& object) {
+		auto hit = Lordi::Get()->GetObjectManager()->Raycast(eye, toward / distance, distance, [&](const pObject& object) {
 			return object.get() != heldObject && object.get() != candidate.object && object.get() != candidate.holds && m_targets.contains(object.get());
 		});
 		if (!hit || hit->distance > distance - 0.03f)
@@ -2205,31 +2246,25 @@ bool ShopWorld::UpdateBatteries(Workshop& workshop, const InputManager& input, I
 	const auto& tools = ToolCatalog::All();
 	const MeasuringTool* heldTool = held && held->ref.IsTool() ? &ToolCatalog::Of(held->ref.id) : nullptr;
 	bool pressedE = Controls::Pressed(input, Control::USE);
-
-	// A cordless tool in hand: C takes its pack off, back to its place on the tool board.
-	if (heldTool && heldTool->powered && Controls::Pressed(input, Control::WRENCH_SIZE))
-		if (auto battery = BatteryOn(held->ref.id))
-		{
-			m_batteries[*battery].on = -1;
-			Cue(Sound::SOCKET_CLINK, held->object->GetPosition());
-			Toast(std::format("Took the {} off the {}: it's back on the tool board.", ToolCatalog::Of(*battery).name, heldTool->name));
-			return true;
-		}
-
 	if (!m_hover || m_hover->kind != TargetKind::ITEM || !m_hover->item.IsTool())
 		return false;
 	ItemVisual& aimed = *Find(m_hover->item);
 	size_t aimedIndex = aimed.ref.id;
 	const auto& aimedTool = ToolCatalog::Of(aimedIndex);
 
-	// A pack, with a cordless tool in hand: it clips on, and the one on before goes back on the board.
+	// A pack, with a cordless tool in hand: it clips on, and the one on before is left where the new one was.
 	if (aimedTool.handKind == HandToolKind::BATTERY && heldTool && heldTool->powered)
 	{
 		m_prompt = std::format("[E] Clip the {} ({}) on the {}", aimedTool.name, BatteryLabel(aimedIndex), heldTool->name);
 		if (!pressedE)
 			return false;
+		const glm::vec3 spot = aimed.object->GetPosition();
 		if (auto old = BatteryOn(held->ref.id))
+		{
 			m_batteries[*old].on = -1;
+			if (ItemVisual* pack = Find(ItemRef::Tool(static_cast<uint32_t>(*old))))
+				SetAside(*pack, spot);
+		}
 		SetPlace(aimed, ItemPlace::STORAGE);
 		m_batteries[aimedIndex].on = static_cast<int>(held->ref.id);
 		Cue(Sound::SOCKET_CLINK, aimed.object->GetPosition());

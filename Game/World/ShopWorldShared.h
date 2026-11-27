@@ -12,6 +12,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <imgui.h>
 
+#include "LV/Engine/Lordi.h"
 #include "LV/Engine/Graphics/Models/ModelManager.h"
 #include "LV/Engine/Objects/Object.h"
 #include "../Simulation/EngineAssembly.h"
@@ -132,7 +133,7 @@ namespace ShopLayout
 	// Called for every item every frame: no reference counting, on the manager or the model.
 	inline const Model* ModelOf(const pObject& object)
 	{
-		static const auto manager = ModelManager::Get();
+		static const auto manager = Lordi::Get()->GetModelManager();
 		return manager->PeekModel(object->GetModelIndex());
 	}
 

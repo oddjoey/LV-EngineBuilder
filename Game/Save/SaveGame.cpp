@@ -1,4 +1,5 @@
 #include "SaveGame.h"
+#include "LV/Engine/Lordi.h"
 
 #include <array>
 #include <cctype>
@@ -1891,7 +1892,7 @@ void SaveGame::StartNew(Workshop& workshop, ShopWorld& world, FirstPersonControl
 
 void SaveGame::ResetWorld(Workshop& workshop, ShopWorld& world)
 {
-	auto objectManager = ObjectManager::Get();
+	auto objectManager = Lordi::Get()->GetObjectManager();
 	std::vector<ItemRef> refs;
 	for (const auto& [ref, visual] : world.m_items)
 		refs.push_back(ref);

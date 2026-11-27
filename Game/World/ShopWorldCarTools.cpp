@@ -1,6 +1,7 @@
 // The project car's tools in hand: pouring at the fillers, bleeding at the nipples, springs onto struts and tires onto
 // wheels, and the gauges and strobe that set the car up.
 #include "ShopWorld.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -29,7 +30,7 @@ namespace
 			case FluidCircuit::CLUTCH:			return { 0.93f, 0.82f, -0.56f };
 			case FluidCircuit::TRANSMISSION:	return { 0.68f, 0.3f, 0.1f };
 			case FluidCircuit::DIFFERENTIAL:	return { -1.05f, 0.15f, 0.1f };
-			case FluidCircuit::FUEL:			return { CarBody::FLAP_X, CarBody::FLAP_Y, CarBody::SIDE - 0.01f };	// the cap behind the flap
+			case FluidCircuit::FUEL:			return { CarBody::FLAP_X, CarBody::FLAP_Y, CarBody::SIDE - CarBody::SKIN + 0.012f };	// the neck's mouth behind the flap
 			case FluidCircuit::COUNT:			break;
 		}
 		return {};
@@ -586,6 +587,9 @@ ShopWorld::FillerSeatAt ShopWorld::FillerSeat(const Workshop& workshop, FluidCir
 		}
 	if (const ItemVisual* visual = host ? Find(ItemRef::Part(host->GetId())) : nullptr)
 		return { glm::vec3(visual->object->GetModelMatrix() * glm::vec4(neck, 1.f)), visual->object->GetRotation() };
+	// The fuel filler faces out of the right rear quarter: its cap's up (+y) turned to the car's +z.
+	if (circuit == FluidCircuit::FUEL)
+		return { CarToWorld(FillPoint(circuit)), CarRotation() * glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.f, 0.f, 0.f)) };
 	return { CarToWorld(FillPoint(circuit)), CarRotation() };
 }
 
@@ -645,7 +649,7 @@ std::vector<ShopWorld::DrainPoint> ShopWorld::CarDrainPoints(const Workshop& wor
 	// The middle of a part's underside, where its plug is, as the part is.
 	auto bottomOf = [&](const pPart& part) -> std::optional<glm::vec3> {
 		const ItemVisual* visual = part ? Find(ItemRef::Part(part->GetId())) : nullptr;
-		const Model* model = visual ? ModelManager::Get()->PeekModel(visual->object->GetModelIndex()) : nullptr;
+		const Model* model = visual ? Lordi::Get()->GetModelManager()->PeekModel(visual->object->GetModelIndex()) : nullptr;
 		if (!model)
 			return std::nullopt;
 		const glm::vec3 low = model->GetBoundsMin(), high = model->GetBoundsMax();

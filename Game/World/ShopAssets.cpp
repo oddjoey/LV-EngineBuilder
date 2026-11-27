@@ -1,4 +1,5 @@
 #include "ShopAssets.h"
+#include "LV/Engine/Lordi.h"
 
 #include "../Simulation/CarFluids.h"
 
@@ -907,7 +908,7 @@ void ShopAssets::LoadTools()
 						const float angle = rib * glm::pi<float>() / 4.f;
 						Box(builder, { radius * std::cos(angle), 0.008f, radius * std::sin(angle) }, { 0.004f, 0.016f, 0.004f }, colour);
 					}
-					if (circuit == FluidCircuit::COOLANT)
+					if (circuit == FluidCircuit::COOLANT || circuit == FluidCircuit::FUEL)
 						Box(builder, { 0.f, 0.019f, 0.f }, { radius * 2.4f, 0.004f, 0.008f }, steel);
 				}
 				break;
@@ -990,7 +991,7 @@ void ShopAssets::LoadOverrides()
 
 void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder, bool asBuilt)
 {
-	auto modelManager = ModelManager::Get();
+	auto modelManager = Lordi::Get()->GetModelManager();
 
 	auto it = m_overrides.find(name);
 	if (it != m_overrides.end())
@@ -1030,7 +1031,7 @@ void ShopAssets::AddModel(const std::string& name, const MeshBuilder& builder, b
 			}
 
 			if (!entry.texture.empty())
-				m_modelTextures[name] = TextureManager::Get()->CreateTexture({ name, MODEL_FOLDER + entry.texture })->GetIndex();
+				m_modelTextures[name] = Lordi::Get()->GetTextureManager()->CreateTexture({ name, MODEL_FOLDER + entry.texture })->GetIndex();
 
 			LOG_INFO("Loaded custom model for " + name + " from " + path);
 			return;
@@ -1229,7 +1230,7 @@ uint32_t ShopAssets::SurfaceTexture(const Feature& feature) const
 
 void ShopAssets::LoadTextures()
 {
-	auto textureManager = TextureManager::Get();
+	auto textureManager = Lordi::Get()->GetTextureManager();
 	// Each is a quarter of a million pixels of noise, and none needs any of the others: they're all made at once, on
 	// as many threads as there are, and handed to the renderer in this order as they finish.
 	const std::pair<std::string, ProceduralTextures::Image (*)()> MADE[] = {

@@ -1,4 +1,5 @@
 #include "WallPaint.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cmath>
@@ -139,7 +140,7 @@ void WallPaint::Place(Tile& tile)
 	glm::vec3 position = along + u * (tile.id.i * TILE) + v * (tile.id.j * TILE) + normal * SHEET_OFF;
 	glm::quat rotation = glm::quat_cast(glm::mat3(u, v, normal));
 	Object info(position, rotation, { TILE, TILE, 1.f }, m_model, m_textures[tile.slot]);
-	tile.object = ObjectManager::Get()->CreateObject(info);
+	tile.object = Lordi::Get()->GetObjectManager()->CreateObject(info);
 	tile.object->SetShading(ObjectShading::CUTOUT);
 	tile.object->SetCastsShadows(false);
 	tile.object->SetPickable(false);
@@ -156,7 +157,7 @@ void WallPaint::Release(const TileId& id)
 	if (m_lastTile == &it->second)
 		m_lastTile = nullptr;
 	if (it->second.object)
-		ObjectManager::Get()->RemoveObject(it->second.object);
+		Lordi::Get()->GetObjectManager()->RemoveObject(it->second.object);
 	if (it->second.slot >= 0)
 		m_freeSlots.push_back(it->second.slot);
 	m_tiles.erase(it);
@@ -297,7 +298,7 @@ void WallPaint::Update(float deltaTime)
 			updates.push_back({ m_textures[tile.slot], &tile.rgba });
 			sent.push_back(&tile);
 		}
-	TextureManager::Get()->UpdateTextures(updates);
+	Lordi::Get()->GetTextureManager()->UpdateTextures(updates);
 	// The upload's ahead of the next frame on the GPU, so they show with their own paint.
 	for (Tile* tile : sent)
 		if (tile->object)

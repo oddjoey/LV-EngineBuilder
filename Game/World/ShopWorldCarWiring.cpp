@@ -1,6 +1,7 @@
 // The project car's wiring in the 3D shop: the plugs on its harness, taken in hand and pushed onto what they feed.
 // And its plumbing, done the same way: the unions on its brake pipes and its clutch's pipe, and its fuel hoses' ends.
 #include "ShopWorld.h"
+#include "LV/Engine/Lordi.h"
 
 #include <algorithm>
 #include <cctype>
@@ -319,7 +320,7 @@ std::optional<ShopWorld::CarAim> ShopWorld::AimAtCar(const glm::vec3& eye, const
 {
 	if (m_rig.carStation >= m_stations.size() || !m_stations[m_rig.carStation].present)
 		return std::nullopt;
-	auto hit = ObjectManager::Get()->Raycast(eye, direction, reach, [&](const pObject& object) { return m_targets.contains(object.get()); }, true);
+	auto hit = Lordi::Get()->GetObjectManager()->Raycast(eye, direction, reach, [&](const pObject& object) { return m_targets.contains(object.get()); }, true);
 	if (!hit)
 		return std::nullopt;
 	return CarAim{ eye + direction * hit->distance, hit->distance, hit->object == m_stations[m_rig.carStation].object };
